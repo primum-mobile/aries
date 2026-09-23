@@ -33,6 +33,7 @@ import {
   patchCorpusDoctrinePreferences,
   patchOptions,
   previewArabicPart,
+  recoverSavedSettings,
   resolvePlace,
   setDefaultLocationFromMap,
   upsertCustomCorpusSemanticProfile,
@@ -177,6 +178,10 @@ function SettingsBody({
   const t = useT();
   const [opts, setOpts] = React.useState<OptionsPayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = React.useState(false);
+  const [recoveryConfirming, setRecoveryConfirming] = React.useState(false);
+  const [recovered, setRecovered] = React.useState(false);
+  const [recoveryError, setRecoveryError] = React.useState<string | null>(null);
   const applyThemeState = useThemeStore((state) => state.applyThemeState);
   const syncLocale = useSyncLocale();
   const [selectedTab, setSelectedTab] = React.useState(initialTab);
@@ -307,8 +312,33 @@ function SettingsBody({
 
   if (error) {
     return (
-      <div className="px-[var(--aries-dialog-padding)] py-[var(--aries-section-gap)] text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
-        {t("settings.loadFailed")}: {error}
+      <div className="flex min-h-0 flex-col items-center gap-[var(--aries-section-gap)] overflow-y-auto px-[var(--aries-dialog-padding)] py-[var(--aries-section-gap)] text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
+        <p className="max-w-full break-all">{t("settings.loadFailed")}: {error}</p>
+        {recovered ? (
+          <p>{t("settings.recoveryRestart")}</p>
+        ) : (
+          <>
+            <p>{t("settings.recoveryExplanation")}</p>
+            {recoveryConfirming ? (
+              <>
+                <p>{t("settings.recoveryConfirm")}</p>
+                <div className="flex gap-[var(--aries-section-gap)]">
+                  <Button type="button" variant="outline" disabled={recoveryBusy} onClick={() => setRecoveryConfirming(false)}>{t("settings.cancel")}</Button>
+                  <Button type="button" disabled={recoveryBusy} onClick={() => {
+                    setRecoveryBusy(true);
+                    setRecoveryError(null);
+                    void recoverSavedSettings().then(() => setRecovered(true)).catch((cause) => {
+                      setRecoveryError(String(cause));
+                    }).finally(() => setRecoveryBusy(false));
+                  }}>{t("settings.recoveryAction")}</Button>
+                </div>
+              </>
+            ) : (
+              <Button type="button" onClick={() => setRecoveryConfirming(true)}>{t("settings.recoveryAction")}</Button>
+            )}
+            {recoveryError && <p>{t("settings.recoveryFailed")}: {recoveryError}</p>}
+          </>
+        )}
       </div>
     );
   }

@@ -5293,9 +5293,22 @@ export async function importArabicParts(
 export async function fetchOptions(signal?: AbortSignal): Promise<OptionsPayload> {
   const response = await daemonFetch(`${daemonBaseUrl()}/api/options`, { cache: "no-store", signal });
   if (!response.ok) {
-    throw new Error(`options fetch failed: ${response.status}`);
+    const body = await response.json().catch(() => null) as { detail?: unknown } | null;
+    const detail = typeof body?.detail === "string" ? body.detail : "";
+    throw new Error(`options fetch failed: ${response.status}${detail ? ` — ${detail}` : ""}`);
   }
   return (await response.json()) as OptionsPayload;
+}
+
+export async function recoverSavedSettings(): Promise<void> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/recover`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: unknown } | null;
+    throw new Error(typeof body?.detail === "string" ? body.detail : `settings recovery failed: ${response.status}`);
+  }
 }
 
 export async function fetchAsteroidCatalog(

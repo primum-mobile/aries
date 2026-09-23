@@ -1,5 +1,10 @@
 {
   "settings.topocentricMoon": "月球视差校正",
+  "settings.recoveryAction": "恢复设置",
+  "settings.recoveryExplanation": "Aries 可以备份已保存的设置并恢复默认值。您的星盘和许可证会保留。",
+  "settings.recoveryConfirm": "要备份并重置已保存的设置吗？之后需要重新启动 Aries。",
+  "settings.recoveryRestart": "设置已备份。请完全退出 Aries，然后重新打开。",
+  "settings.recoveryFailed": "恢复失败",
   "quickopt.topocentricMoon": "月球视差校正",
   "optmenu.topocentricMoon": "月球视差校正",
   "styleLab.control.arrowStyle": "箭头样式",

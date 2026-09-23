@@ -1,5 +1,10 @@
 {
   "settings.topocentricMoon": "A Hold parallaxisának korrekciója",
+  "settings.recoveryAction": "Beállítások helyreállítása",
+  "settings.recoveryExplanation": "Az Aries biztonsági másolatot készíthet a beállításokról, majd visszaállíthatja az alapértékeket. A képletek és a licenc megmaradnak.",
+  "settings.recoveryConfirm": "Biztonsági másolat készítése és a beállítások visszaállítása? Ezután újra kell indítani az Aries alkalmazást.",
+  "settings.recoveryRestart": "A beállítások biztonsági másolata elkészült. Lépjen ki teljesen az Aries alkalmazásból, majd nyissa meg újra.",
+  "settings.recoveryFailed": "A helyreállítás nem sikerült",
   "quickopt.topocentricMoon": "A Hold parallaxisának korrekciója",
   "optmenu.topocentricMoon": "A Hold parallaxisának korrekciója",
   "styleLab.control.arrowStyle": "Nyílstílus",

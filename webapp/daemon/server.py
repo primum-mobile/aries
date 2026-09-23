@@ -3269,6 +3269,19 @@ def options_get() -> dict:
     try:
         return options_service.get_options()
     except Exception as exc:
+        logging.getLogger(__name__).exception("options-get-failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/options/recover")
+def options_recover() -> dict:
+    """Preserve saved settings for support and load factory state on restart."""
+    try:
+        from .settings_recovery import preserve_and_reset_settings
+
+        return preserve_and_reset_settings(options_service.options)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("options-recovery-failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

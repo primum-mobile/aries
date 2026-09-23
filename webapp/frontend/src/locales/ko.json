@@ -1,5 +1,10 @@
 {
   "settings.topocentricMoon": "달 시차 보정",
+  "settings.recoveryAction": "설정 복구",
+  "settings.recoveryExplanation": "Aries가 저장된 설정을 백업하고 기본값으로 다시 시작할 수 있습니다. 차트와 라이선스는 그대로 유지됩니다.",
+  "settings.recoveryConfirm": "저장된 설정을 백업하고 초기화할까요? 이후 Aries를 다시 시작해야 합니다.",
+  "settings.recoveryRestart": "설정이 백업되었습니다. Aries를 완전히 종료한 다음 다시 여세요.",
+  "settings.recoveryFailed": "복구에 실패했습니다",
   "quickopt.topocentricMoon": "달 시차 보정",
   "optmenu.topocentricMoon": "달 시차 보정",
   "styleLab.control.arrowStyle": "화살표 스타일",

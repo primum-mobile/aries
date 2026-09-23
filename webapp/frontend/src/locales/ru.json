@@ -1,5 +1,10 @@
 {
   "settings.topocentricMoon": "Поправка на параллакс Луны",
+  "settings.recoveryAction": "Восстановить настройки",
+  "settings.recoveryExplanation": "Aries может сохранить резервную копию настроек и вернуться к значениям по умолчанию. Карты и лицензия сохранятся.",
+  "settings.recoveryConfirm": "Сохранить резервную копию и сбросить настройки? После этого потребуется перезапустить Aries.",
+  "settings.recoveryRestart": "Резервная копия настроек сохранена. Полностью закройте Aries и откройте его снова.",
+  "settings.recoveryFailed": "Не удалось восстановить настройки",
   "quickopt.topocentricMoon": "Поправка на параллакс Луны",
   "optmenu.topocentricMoon": "Поправка на параллакс Луны",
   "styleLab.control.arrowStyle": "Стиль стрелки",
