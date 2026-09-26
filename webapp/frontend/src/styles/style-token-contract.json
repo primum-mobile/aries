@@ -4,9 +4,9 @@
   "publicManifestPath": "src/styles/style-token-public.generated.json",
   "expected": {
     "cssTokens": 1491,
-    "runtimeOnlyTokens": 7,
+    "runtimeOnlyTokens": 14,
     "externalTokens": 10,
-    "inventoryTokens": 1508
+    "inventoryTokens": 1515
   },
   "legacyOverlay": {
     "source": "src/styles/style-tokens.ts",
@@ -320,6 +320,97 @@
       "scope": "component",
       "type": "number",
       "unit": "%"
+    },
+    {
+      "name": "--aries-navbar-dock-top",
+      "default": "0px",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-top",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--aries-navbar-dock-left",
+      "default": "0px",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-left",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--aries-navbar-dock-room",
+      "default": "0px",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-room",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--aries-navbar-dock-height",
+      "default": "28px",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-height",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--aries-navbar-dock-radius",
+      "default": "6px",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-radius",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": "px"
+    },
+    {
+      "name": "--aries-navbar-dock-bg",
+      "default": "transparent",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-fill",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "color",
+      "unit": ""
+    },
+    {
+      "name": "--aries-navbar-dock-border",
+      "default": "transparent",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-stroke",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/workspace-content.tsx",
+      "scope": "component",
+      "type": "color",
+      "unit": ""
     }
   ],
   "externalTokens": [

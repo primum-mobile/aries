@@ -18,7 +18,7 @@ import {
 } from "@/lib/daemon/client";
 import { resolveShellHost } from "@/lib/shell-host";
 import { tablePrintColor } from "@/lib/theme/table-print-palette";
-import { exportFileBaseName } from "./text-export";
+import { chartExportFileStem, exportFileBaseName } from "./text-export";
 import {
   adHocTableToConfiguredAlignedText,
   tableToConfiguredAlignedText,
@@ -138,7 +138,7 @@ export async function buildTableExportDocument(
     : rows;
   return {
     title,
-    fileStem: options?.fileStem ?? payload.tableId ?? tableExportBaseName(title),
+    fileStem: chartExportFileStem(payload.sourceName, options?.fileStem ?? tableExportBaseName(title)),
     text: await tableToConfiguredAlignedText(exportPayload, exportRows, {
       title,
       headerLines: options?.headerLines,
@@ -156,7 +156,7 @@ export async function buildAdHocTableExportDocument(
 ): Promise<TableExportDocument> {
   return {
     title: params.title,
-    fileStem: params.fileStem,
+    fileStem: chartExportFileStem(params.sourceName, params.fileStem),
     text: await adHocTableToConfiguredAlignedText(params),
     pdf: {
       profile: params.pdfProfile ?? "standard",

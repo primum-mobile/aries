@@ -3636,8 +3636,16 @@ function projectTransitSearchRows(
     }
     const lunarEvent = SEARCH_LUNAR_TECHNIQUES.has(row.technique);
     const signIngress = row.metadata.sign_change === true;
-    if (!lunarEvent && row.promittorId && !promittors.has(row.promittorId)) return false;
-    if (!signIngress && row.significatorId && !significators.has(row.significatorId)) return false;
+    // Celestial Weather emits each moving pair once in catalog order, which
+    // can be the reverse of the selected From/To roles.
+    if (row.technique === "mundane_weather" && row.promittorId && row.significatorId) {
+      const selectedPair = promittors.has(row.promittorId) && significators.has(row.significatorId);
+      const selectedReversePair = promittors.has(row.significatorId) && significators.has(row.promittorId);
+      if (!selectedPair && !selectedReversePair) return false;
+    } else {
+      if (!lunarEvent && row.promittorId && !promittors.has(row.promittorId)) return false;
+      if (!signIngress && row.significatorId && !significators.has(row.significatorId)) return false;
+    }
     if (
       row.technique !== "sign_changes"
       && !SEARCH_NON_ASPECT_TECHNIQUES.has(row.technique)

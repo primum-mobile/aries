@@ -62,13 +62,13 @@
     "mundane-render-style-contract-test": "node --test ./scripts/mundane-render-style-contract.test.mjs",
     "astrolabe-render-style-contract-test": "node --test ./scripts/astrolabe-render-style-contract.test.mjs",
     "astrocart-style-contract-test": "node --test ./scripts/astrocart-style-contract.test.mjs",
-    "astrocart-runtime-contract-test": "node --test ./scripts/astrocart-curve.test.mjs ./scripts/astrocart-ruler.test.mjs ./scripts/astrocart-label-burst-contract.test.mjs ./scripts/astrocart-scene-burst-contract.test.mjs ./scripts/astrocart-frame-cadence-contract.test.mjs ./scripts/astrocart-print-precise-data-contract.test.mjs ./scripts/astrocart-precision-lifecycle-contract.test.mjs",
+    "astrocart-runtime-contract-test": "node --test ./scripts/astrocart-curve.test.mjs ./scripts/astrocart-ruler.test.mjs ./scripts/astrocart-label-burst-contract.test.mjs ./scripts/astrocart-scene-burst-contract.test.mjs ./scripts/astrocart-frame-cadence-contract.test.mjs ./scripts/astrocart-print-precise-data-contract.test.mjs ./scripts/astrocart-nautical-print.test.mjs ./scripts/astrocart-precision-lifecycle-contract.test.mjs",
     "palette-profile-contract-test": "node --test ./scripts/palette-profile-contract.test.mjs",
     "style-state-check": "node --test ./scripts/style-state-contract.test.mjs",
     "style-check": "npm run renderer-style-contract-check && npm run style-token-check && npm run style-profile-catalog-check && npm run style-literal-contract-test && npm run layout-chrome-contract-test && npm run style-token-contract-test && npm run wheel-factory-baseline-test && npm run wheel-geometry-preset-test && npm run wheel-render-style-contract-test && npm run wheel-projection-contract-test && npm run multiwheel-render-style-contract-test && npm run outer-glyph-lane-contract-test && npm run wheel-authoring-unit-contract-test && npm run wheel-editor-contract-test && npm run semantic-class-manifest-contract-test && npm run wheel-effect-style-contract-test && npm run wheel-style-scene-contract-test && npm run style-lab-integration-contract-test && npm run ephemeris-render-style-contract-test && npm run square-render-style-contract-test && npm run sphere-render-style-contract-test && npm run strip-render-style-contract-test && npm run mundane-render-style-contract-test && npm run astrolabe-render-style-contract-test && npm run astrocart-style-contract-test && npm run astrocart-runtime-contract-test && npm run palette-profile-contract-test && npm run style-state-check",
     "prebuild": "npm run style-check && npm run chart-clipboard-contract-test && npm run angle-interaction-contract-test",
     "lint": "eslint",
-    "chart-events-store-test": "node --test ./scripts/chart-events-store.test.mjs ./scripts/event-notes-store.test.mjs"
+    "chart-events-store-test": "node --test ./scripts/chart-events-store.test.mjs ./scripts/event-notes-store.test.mjs ./scripts/event-tab-title.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

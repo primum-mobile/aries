@@ -7,6 +7,8 @@ export const EDITOR_REQUEST = 'aries://chart-editor-request';
 export const EDITOR_REPLY = 'aries://chart-editor-reply';
 export const EDITOR_CONTEXT = 'aries://chart-editor-context';
 export const EDITOR_CLOSED = 'aries://chart-editor-closed';
+export const EDITOR_WINDOW_WIDTH = 640;
+export const EDITOR_WINDOW_MAX_HEIGHT = 540;
 export type EditorWindowContext = {id: string; editTarget: EditTarget | null};
 export type EditorWindowAction =
   | {kind: 'context'}

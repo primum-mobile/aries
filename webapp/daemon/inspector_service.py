@@ -353,7 +353,7 @@ def _syzygy_region(chrt, options, chart_role="primary", partner_chart=None):
         "display_lon": display_lon,
         "house_index": _house_index(chrt, lon, options),
         "colour": tuple(getattr(options, "clrsigns", ())),
-        "title": mtexts.txts.get("PrenatalSyzygy", "Syzygy"),
+        "title": export_chart_json.prenatal_syzygy_label(chrt),
     }
     return {"kind": "syzygy", "object_id": "syzygy", "chart_role": chart_role, "data": data}
 
@@ -375,6 +375,7 @@ def _eclipse_region(chrt, options, chart_role="primary", partner_chart=None):
             eclipse_kind,
         ),
     )
+    title = export_chart_json.prenatal_eclipse_label(event, chrt, title)
     data = {
         "chart": chrt,
         "partner_chart": partner_chart,

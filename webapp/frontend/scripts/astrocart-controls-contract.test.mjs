@@ -473,17 +473,30 @@ test("retained controls keep selected map points, timed layers, and applied-only
   assert.match(controls, /const normalizedDraft = copySpec\(payload\.spec\)/);
   assert.match(controls, /configuration\.dynamicTechniques/);
   assert.match(controls, /type="datetime-local"/);
-  assert.match(controls, /technique === "transit" \? configuration\.defaultTransitCursorIso : null/);
+  assert.match(
+    controls,
+    /technique === "transit" \|\| technique === "lewis_ccg"\s*\? configuration\.defaultTransitCursorIso\s*: null/,
+  );
+  // Lewis CCG is map-owned: its progressed-angles toggle exists only on that
+  // technique and never leaks onto generic layers.
+  assert.match(controls, /layer\.technique === "lewis_ccg" \? \(\s*<ToggleRow/);
+  assert.match(controls, /t\("astrocart\.config\.progressedAnglesRa"\)/);
+  // Drawer layers open as real child tabs (same navbar/stepping as sidebar
+  // launches); Lewis CCG is a map-owned transits tab.
+  assert.match(controls, /onClick=\{\(\) => openLayerTab\(technique\.id\)\}/);
+  assert.match(controls, /astrocartTechnique: technique === "lewis_ccg" \? "lewis_ccg" : null/);
+  assert.match(controls, /lewis_ccg: "secondary-progression"/);
+  assert.match(controls, /setAstrocartLayerOptions\(layerDocumentId, \{ progressedAnglesRa \}\)/);
   assert.match(controls, /cursorIso: newDynamicCursor\(configuration, technique\)/);
   assert.match(controls, /cursorIso: localDateTimeInstant\(event\.target\.value\)/);
   assert.doesNotMatch(controls, /Sheet(Content|Trigger|Footer)/);
   assert.match(controls, /data-astrocart-controls-pane/);
   assert.match(controls, /LIST_PANE_CLASSES\.compactHeader/);
   assert.match(controls, /VirtualPointList/);
-  assert.match(controls, /const EXPORT_ROLE = "export_participant"/);
+  assert.doesNotMatch(controls, /setPdfSelection|ExportCheckboxGrid|const EXPORT_ROLE/);
   assert.match(
     controls,
-    /defaultPdfSelection\(payload\.spec, natalLayerVisible\)/,
+    /defaultPdfSelection\(configuration\.spec, natalLayerVisible\)/,
   );
   assert.match(controls, /\(\["A4", "A3"\] as const\)/);
   assert.match(controls, /lineModes\.length === 0 && !configuration\.spec\.paran\.enabled/);
@@ -505,10 +518,6 @@ test("retained controls keep selected map points, timed layers, and applied-only
   assert.match(controls, /activeSaveSpecRef/);
   assert.match(controls, /queueSpecSave\(next, true\)/);
   assert.match(controls, /onStandardViewReset\(\)/);
-  assert.match(
-    controls,
-    /defaultPdfSelection\(next, natalLayerVisible\)/,
-  );
   assert.match(controls, /t\("astrocart\.config\.resetToStandardView"\)/);
   assert.match(controls, /t\("astrocart\.config\.standardView"\)/);
   assert.match(controls, /point\.family === "standard_body"/);
@@ -566,14 +575,18 @@ test("parans remain a natal overlay when natal lines are hidden", async () => {
   assert.doesNotMatch(paranFilter, /acgLayerRoleFilter/);
   assert.match(workspace, /const dynamicVisible = previousOverlays\?\.layers\?\.dynamic \?\? true/);
   assert.match(workspace, /onDynamicLayerVisibilityChange=\{handleAstrocartDynamicLayerVisibility\}/);
-  const layers = controls.indexOf('<ConfigSection title={t("astrocart.pdf.layers")}');
-  const appearance = controls.indexOf('<ConfigSection title={t("appearance.title")}');
+  const layers = controls.indexOf('<ConfigSection sectionId="layers" title={t("astrocart.pdf.layers")}');
+  const appearance = controls.indexOf('<ConfigSection sectionId="appearance" title={t("appearance.title")}');
   const coordinates = controls.indexOf('t("astrocart.config.coordinates")', appearance);
   const units = controls.indexOf('t("astrocart.ruler.units")', appearance);
   const mapPoints = controls.indexOf('t("astrocart.config.mapPoints")', appearance);
-  const angular = controls.indexOf('<ConfigSection title={t("astrocart.config.angularLines")}');
+  const angular = controls.indexOf('<ConfigSection sectionId="angularLines" title={t("astrocart.config.lines")}');
   assert.ok(layers >= 0 && layers < appearance && appearance < coordinates);
   assert.ok(coordinates < units && units < mapPoints && mapPoints < angular);
+  // Section disclosure survives layer loads/refetches, and a refetch keeps the
+  // current sections on screen instead of swapping in the loading state.
+  assert.match(controls, /configSectionOpenState\.get\(sectionId\) \?\? defaultOpen/);
+  assert.match(controls, /\{\(!draft \|\| !configuration\) && !failed \? \(/);
 });
 
 test("new angular-line points optimistically join supported paran participants", async () => {
@@ -593,6 +606,35 @@ test("new angular-line points optimistically join supported paran participants",
     controls,
     /activateAngularLinePoints\(configuration, current, selectedIds\)/,
   );
+});
+
+test("parans can follow selected line points and return to manual selection", async () => {
+  const controls = await source("src/components/workshell/astrocart-controls.tsx");
+  const client = await source("src/lib/daemon/client.ts");
+  const paranSection = controls.slice(
+    controls.indexOf('<ConfigSection sectionId="parans"'),
+    controls.indexOf('<ConfigSection sectionId="aspectLines"'),
+  );
+  assert.match(paranSection, /checked=\{draft\.paran\.enabled\}[\s\S]*astrocart\.config\.showParans/);
+  assert.match(client, /followLines: boolean/);
+  assert.match(controls, /function supportedParanLineIds\(/);
+  assert.match(controls, /participantIds: current\.paran\.followLines\s*\? supportedParanLineIds\(configuration, selectedIds\)/);
+  assert.match(controls, /label=\{t\("astrocart\.config\.followLines"\)\}/);
+  assert.match(controls, /disabled=\{!draft\.paran\.enabled \|\| draft\.paran\.followLines\}/);
+  assert.match(controls, /participantIds: followLines\s*\? supportedParanLineIds\(configuration, current\.staticAngleLinePointIds\)/);
+});
+
+test("point controls unfold directly inside their configuration section", async () => {
+  const controls = await source("src/components/workshell/astrocart-controls.tsx");
+  const picker = controls.slice(
+    controls.indexOf("function PointPicker("),
+    controls.indexOf("type PointPickerEntry ="),
+  );
+  assert.match(picker, /<Input[\s\S]*<VirtualPointList/);
+  assert.doesNotMatch(picker, /aria-expanded=\{open\}|setOpen\(/);
+  assert.doesNotMatch(picker, /t\("astrocart\.pdf\.points"\)/);
+  assert.match(controls, /<ConfigSection sectionId="angularLines"[\s\S]*<PointPicker/);
+  assert.match(controls, /<ConfigSection sectionId="parans"[\s\S]*<PointPicker/);
 });
 
 test("timing layers follow the selected map points through creation and technique changes", async () => {
@@ -659,7 +701,9 @@ test("configuration refreshes geometry and labels independently while preserving
   assert.doesNotMatch(visibilityBridge, /aries\.applyState/);
   assert.match(workspace, /<AstrocartControls/);
   assert.match(workspace, /catalogRevision=\{catalogRevision\}/);
-  assert.match(workspace, /data-right-pane-module="astrocart-controls"/);
+  assert.match(workspace, /data-right-pane-module=\{activePaneKind \?\? undefined\}/);
+  assert.match(workspace, /<FeatureCatalogPaneContent pane=\{featureCatalogPane\}/);
+  assert.match(workspace, /activePaneKind === "feature-catalog" \? closeFeatureCatalogPane : closeAstrocartControlsPane/);
   assert.match(workspace, /<RightPaneSash/);
   assert.match(workspace, /onPreviewChange=\{handleAstrocartConfigurationPreview\}/);
   assert.match(
@@ -935,6 +979,7 @@ test("astrocart controls use the canonical retained right-pane ontology", async 
     paneLayout,
     /astrocartControlsPane\.documentId === input\.activeAstrocartDocumentId/,
   );
+  assert.match(workspaceStore, /openHelpPane:[\s\S]*openExclusiveRightPane\("featureCatalogPane"/);
   assert.match(uiCommands, /rightWorkspacePaneIsOpen\(workspace\)/);
 });
 
@@ -964,7 +1009,7 @@ test("every shipped locale contains the new astrocart controls", async () => {
     "astrocart.config.resetToStandardView",
     "astrocart.config.standardView",
     "astrocart.config.coordinates",
-    "astrocart.config.angularLines",
+    "astrocart.config.lines",
     "astrocart.config.parans",
     "astrocart.config.aspectLines",
     "astrocart.config.zenithPoints",
@@ -1024,4 +1069,63 @@ test("every shipped locale contains the new astrocart controls", async () => {
       assert.ok(messages[key].trim(), `${localeFile} has an empty ${key}`);
     }
   }
+});
+
+test("astrocart navbar docks in the map toolbar row with the toolbar box style", async () => {
+  const [map, workspace, css] = await Promise.all([
+    source("../../Res/astrocart/map.html"),
+    source("src/components/workshell/workspace-content.tsx"),
+    source("src/app/globals.css"),
+  ]);
+  assert.match(map, /type: 'top-controls-rect'/);
+  assert.match(map, /min-height:calc\(var\(--chrome-control-size\) - 6px\)/);
+  assert.match(workspace, /payload\.type === "top-controls-rect"/);
+  assert.match(workspace, /astrocartDock=\{navbarDock\}/);
+  assert.match(workspace, /"--aries-navbar-dock-top": `\$\{top\}px`/);
+  // flex-wrap semantics: in the row when the natural width fits before the
+  // Legend, else a second row under the toolbar's left edge.
+  assert.match(workspace, /const rowLeft = dock\.right \+ dock\.gap;/);
+  assert.match(workspace, /const fitsRow = naturalWidth > 0 && naturalWidth <= dock\.limit - rowLeft;/);
+  assert.match(workspace, /const top = fitsRow \? dock\.top : dock\.bottom \+ dock\.gap;/);
+  assert.match(workspace, /"--aries-navbar-dock-left": `\$\{left\}px`/);
+  assert.match(css, /\.aries-mode-hint--astrocart\.aries-mode-hint--docked \{/);
+  assert.match(css, /height: var\(--aries-navbar-dock-height\);/);
+  // Docked = anchored: never dragged or clamped into a shrinking pane, never
+  // squeezed; a narrower row (Legend / settings pane) fades it instead.
+  assert.match(map, /limit: limit,/);
+  assert.match(workspace, /anchored: docked,/);
+  assert.match(workspace, /"--aries-navbar-dock-room": `\$\{Math\.max\(0, room\)\}px`/);
+  assert.match(css, /width: max-content;\s*max-width: none;/);
+  assert.match(css, /mask-image: linear-gradient\(\s*to right,\s*#000 calc\(var\(--aries-navbar-dock-room\) - 24px\)/);
+  const hook = await source("src/hooks/use-draggable-overlay.ts");
+  assert.match(hook, /if \(anchored \|\| !element \|\| !container\) return;/);
+});
+
+test("the map titlebar shows radix · Astrocartography · birth time with the chart copy control", async () => {
+  const [workspace, copy, css] = await Promise.all([
+    source("src/components/workshell/workspace-content.tsx"),
+    source("src/components/workshell/chart-copy-control.tsx"),
+    source("src/app/globals.css"),
+  ]);
+  assert.match(workspace, /export function astrocartTitleParts\(/);
+  assert.match(workspace, /parts\.push\(formatIsoDateTimeDisplay\(radix\.displayDatetime, dateConvention\)\);/);
+  assert.match(workspace, /const parts = mapTitleParts \?\? buildTitleParts\(chart, activeDoc, t\);/);
+  // Plain title text over the map: no pill backplate.
+  assert.doesNotMatch(workspace, /aries-titlebar-title-backplate/);
+  assert.doesNotMatch(copy, /variant/);
+  assert.doesNotMatch(css, /aries-titlebar-title-backplate/);
+});
+
+
+test("PDF title and save filename reuse the map titlebar text", async () => {
+  const controls = await source("src/components/workshell/astrocart-controls.tsx");
+  const workspace = await source("src/components/workshell/workspace-content.tsx");
+  assert.match(workspace, /chartTitle=\{\(astrocartTitleParts\(daemonDocuments, document.documentId, dateConvention, t\)/);
+  assert.match(controls, /title: chartTitle,/);
+  const start = controls.indexOf("const filename = ") + "const filename = ".length;
+  const end = controls.indexOf(";", start);
+  const filename = new Function("chartTitle", `return ${controls.slice(start, end)};`);
+  assert.equal(filename("Mara · Astrocartography · 2000-01-02 03:04"),
+    "Mara · Astrocartography · 2000-01-02 03-04.pdf");
+  assert.equal(filename("José / 李 · Astrocartography"), "José - 李 · Astrocartography.pdf");
 });

@@ -55,5 +55,18 @@
     return { ...data, features: data.features.map((feature, index) =>
       meshes[index] ? { ...feature, geometry: meshes[index] } : feature) };
   }
-  return { request, cancel, getData };
+  function retainUnchanged(data) {
+    const priorFeatures = source && source.features || [];
+    const priorMeshes = meshes;
+    const meshByFeature = priorMeshes
+      ? new Map(priorFeatures.map((feature, index) => [feature, priorMeshes[index]]))
+      : null;
+    cancel();
+    source = data;
+    meshes = meshByFeature && Array.isArray(data.features)
+      ? data.features.map((feature) => meshByFeature.get(feature) || null)
+      : null;
+    cache.clear();
+  }
+  return { request, cancel, getData, retainUnchanged };
 });

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { useId, type ReactNode } from 'react';
-import { closestCenter, DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, PointerSensor, pointerWithin, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from 'lucide-react';
@@ -23,13 +23,13 @@ function SortableRingRow({id, fixed, children}: {id: string; fixed: boolean; chi
   const t = useT();
   const {attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging} =
     useSortable({id, disabled: fixed});
-  return <div ref={setNodeRef} className="relative flex items-center gap-2" style={{
+  return <div ref={setNodeRef} className="relative flex min-h-7 items-center gap-2" style={{
     transform: CSS.Transform.toString(transform), transition,
     zIndex: isDragging ? 1 : undefined,
   }}>
     <button ref={setActivatorNodeRef} type="button" {...attributes} {...listeners}
       tabIndex={-1} disabled={fixed} title={t('wheelComposition.drag')} aria-label={t('wheelComposition.drag')}
-      className="touch-none cursor-grab active:cursor-grabbing disabled:invisible">
+      className="grid size-7 shrink-0 touch-none select-none place-items-center cursor-grab active:cursor-grabbing disabled:invisible">
       <GripVertical size={14} />
     </button>
     {children}
@@ -66,8 +66,15 @@ export function WheelCompositionControls({ composition, profile, onChange, selec
     <legend>{t('wheelComposition.title')}</legend>
     <DndContext key={profile} id={dragId} sensors={sensors}
       accessibility={{announcements: pointerAnnouncements, screenReaderInstructions: {draggable: t('wheelComposition.reorderKeys')}}}
-      collisionDetection={args => closestCenter({...args, droppableContainers: args.droppableContainers.filter(target =>
-        moveWheelRing(composition, String(args.active.id), String(target.id)) !== null)})}
+      collisionDetection={args => {
+        // A forbidden target must not make the row jump to a distant legal row.
+        // Keep the active item as the sortable target so it still follows the
+        // pointer even when there is no legal row beneath it.
+        const hits = pointerWithin(args);
+        const target = hits.find(hit => hit.id !== args.active.id) ?? hits[0];
+        return target && moveWheelRing(composition, String(args.active.id), String(target.id))
+          ? [target] : [{id: args.active.id, data: {value: 0}}];
+      }}
       onDragEnd={({active, over}) => {
         if (!over || active.id === over.id) return;
         const next = moveWheelRing(composition, String(active.id), String(over.id));

@@ -456,7 +456,9 @@ export const tauriShellHost: ShellHost = {
       minWidth: 640,
       minHeight: 480,
       resizable: true,
-      decorations: true,
+      decorations: false,
+      shadow: true,
+      skipTaskbar: true,
       center: true,
     });
 

@@ -60,6 +60,7 @@ TYPOGRAPHY_CLASSES = frozenset({
     "aspects.interchart.glyph",
     "secondaryRing.fixedStar.label",
     "secondaryRing.asteroid.label",
+    "secondaryRing.asteroid.motion",
     "secondaryRing.midpoint.glyph",
     "secondaryRing.midpoint.text",
     "secondaryRing.antiscia.glyph",

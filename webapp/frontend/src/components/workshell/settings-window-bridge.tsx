@@ -12,6 +12,7 @@ import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { SETTINGS_COLOR_PREVIEW, useColorSettingsPreviewStore, type SettingsColorPreviewEvent } from "@/stores/color-settings-preview-store";
 
 type Props = Pick<ComponentProps<typeof SettingsDialog>, "onOptionsPatched" | "onSemanticProfileSelect" | "onSemanticProfilesCommitted">;
 
@@ -23,6 +24,21 @@ export function SettingsWindowBridge({ onOptionsPatched, onSemanticProfileSelect
     let listening = false;
     const cleanup: (() => void)[] = [];
     void import("@tauri-apps/api/event").then(async ({ listen, emitTo }) => {
+      let lastPreviewSequence = 0;
+      const stopColorPreview = await listen<SettingsColorPreviewEvent>(
+        SETTINGS_COLOR_PREVIEW,
+        ({ payload }) => {
+          if (payload.sequence <= lastPreviewSequence) return;
+          lastPreviewSequence = payload.sequence;
+          if (payload.kind === "opacity") {
+            useColorSettingsPreviewStore.getState().setZodiacFieldOpacity(payload.value);
+          } else {
+            if (payload.color) useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
+            useColorSettingsPreviewStore.getState().setColor(payload.color);
+          }
+        },
+      );
+      cleanup.push(stopColorPreview);
       const publish = () => {
         if (listening) void emitTo("settings", SETTINGS_STATE, readSettingsContext());
       };

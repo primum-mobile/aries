@@ -282,7 +282,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       displayDatetime: summary.displayDatetime ?? undefined,
       tabSuffix: summary.tabSuffix ?? undefined,
       titleKey:
-        summary.titleKey ??
+        summary.titleKey !== undefined ? summary.titleKey :
         (summary.compoundKind === "synastry" ? "supplementary.synastry" : null),
       title: daemonTitle || SUPPLEMENTARY_KIND_LABELS.synastry,
       dirty: summary.dirty,
@@ -292,11 +292,13 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
   }
   const publicKind = publicFeatureKind(summary.featureKind);
   const isSupplementary = publicKind != null;
+  // Explicit null means a user-authored/data-bearing title: preserve it.
+  // Only older summaries without the field need a chart-type fallback.
   // Stable semantic title keys keep already-open derived documents live-localized.
   // Planetary returns and solar averages retain daemon titles because those carry
   // body/range-specific data (for example "Mars Return" / an age span).
   const supplementaryTitleKey =
-    summary.titleKey ?? (isSupplementary && publicKind !== "planetary-return" && publicKind !== "solar-average"
+    summary.titleKey !== undefined ? summary.titleKey : (isSupplementary && publicKind !== "planetary-return" && publicKind !== "solar-average"
       ? `supplementary.${publicKind}`
       : null);
   const title = isSupplementary

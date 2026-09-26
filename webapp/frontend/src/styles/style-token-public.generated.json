@@ -12616,7 +12616,7 @@
       "scope": "app",
       "type": "number",
       "unit": "vh",
-      "default": "76vh",
+      "default": "100vh",
       "effectiveAuthority": "css-root",
       "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-viewport-max-height",
       "affectedSurfaces": [

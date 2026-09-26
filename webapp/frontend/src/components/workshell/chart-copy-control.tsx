@@ -12,12 +12,15 @@ import { cn } from "@/lib/utils";
 type ChartCopyControlProps = {
   enabled: boolean;
   onCopy?: () => void | Promise<boolean>;
+  /** Accessible name; defaults to "Copy chart as PNG". */
+  label?: string;
   children: React.ReactNode;
 };
 
 export function ChartCopyControl({
   enabled,
   onCopy,
+  label,
   children,
 }: ChartCopyControlProps) {
   const t = useT();
@@ -59,8 +62,8 @@ export function ChartCopyControl({
   return (
     <button
       type="button"
-      aria-label={t("nativeMenu.copyChartAsPng")}
-      title={t("nativeMenu.copyChartAsPng")}
+      aria-label={label ?? t("nativeMenu.copyChartAsPng")}
+      title={label ?? t("nativeMenu.copyChartAsPng")}
       data-aries-titlebar-title=""
       data-chart-copy-feedback={phase}
       onPointerEnter={() => {

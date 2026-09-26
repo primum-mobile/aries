@@ -259,6 +259,8 @@ def init_environment():
     common.ensure_swe_ready()
     opts = options.Options()
     opts.load()
+    from webapp.daemon.release_languages import release_langid
+    opts.langid = release_langid(getattr(opts, 'langid', 0))
     activate_language(getattr(opts, 'langid', 0))
     common.common = common.Common()
     common.common.update(opts)
@@ -741,13 +743,33 @@ def export_syzygy(chrt):
         "id": "syzygy",
         "longitude": lon,
         "house": house_num,
-        "label": str(mtexts.txts.get("PrenatalSyzygy", "Syzygy")),
+        "label": prenatal_syzygy_label(chrt),
         "glyph": "Sy",
         "glyphFont": "text",
         "color": css_rgb(chrt.options.clrsigns),
     }
     entry.update(deg_min_payload(lon))
     return entry
+
+
+def prenatal_syzygy_label(chrt):
+    label = str(mtexts.txts.get("PrenatalSyzygy", "Syzygy"))
+    moment = getattr(getattr(chrt, "syzygy", None), "time", None)
+    if moment is None:
+        return label
+    date = dateformat.date_text(moment.year, moment.month, moment.day, chrt.options,
+                                bc=bool(getattr(moment, "bc", False)))
+    return f"{label} · {date}" if date else label
+
+
+def prenatal_eclipse_label(event, chrt, label=None):
+    label = label if label is not None else eclipses.eclipse_event_label(event)
+    try:
+        year, month, day, *_ = eclipses.local_datetime_tuple(event.jdut, chrt)
+    except (AttributeError, TypeError, ValueError):
+        year, month, day, _ = astrology.swe_revjul(event.jdut, astrology.SE_GREG_CAL)
+    date = dateformat.date_text(year, month, day, getattr(chrt, "options", None), bc=int(year) <= 0)
+    return f"{label} · {date}" if date else label
 
 
 def export_recent_eclipse(chrt):
@@ -778,7 +800,7 @@ def export_recent_eclipse(chrt):
     if syzygy_lon is not None:
         coincides = abs(((lon - syzygy_lon + 180.0) % 360.0) - 180.0) <= 1e-3
     is_solar = bool(getattr(event, "is_solar", False))
-    label = eclipses.eclipse_event_label(event)
+    label = prenatal_eclipse_label(event, chrt)
     entry = {
         "id": "eclipse",
         "semanticId": "point:eclipse",
@@ -1784,6 +1806,7 @@ def export_chart(
             getattr(render_options, "showouterhouselines", True)
         ),
         "showPositions": bool(getattr(chrt.options, "positions", False)),
+        "showPositionMinutes": bool(getattr(chrt.options, "positionsminutes", True)),
         "showOuterPositions": bool(getattr(chrt.options, "showouterpositions", False)),
         "showOuterMinutes": bool(getattr(chrt.options, "showouterminutes", True)),
         "showInformation": bool(getattr(chrt.options, "information", True)),
@@ -2217,6 +2240,7 @@ def export_fixstar_items(chrt, display_options=None, *, filter_hits=True):
 
 def export_asteroid_items(chrt, role="primary", *, filter_hits=True):
     items = []
+    filter_hits = filter_hits and not bool(getattr(chrt.options, "asteroid_outer_ring_all", False))
     for item in common.collect_asteroid_ring_items(chrt, chrt.options, filter_hits=filter_hits):
         try:
             body_id = int(item["bodyId"])
@@ -2234,7 +2258,10 @@ def export_asteroid_items(chrt, role="primary", *, filter_hits=True):
             semantic_id=_semantic_identity("ephemeris-body", body_id),
             motion_ref={"kind": "ephemerisBody", "bodyId": body_id},
         )
-        payload["speed"] = float(item.get("speed", 0.0) or 0.0)
+        speed = float(item.get("speed", 0.0) or 0.0)
+        payload["speed"] = speed
+        if speed < 0.0:
+            payload["motion"] = "R"
         items.append(payload)
     return items
 
@@ -2281,7 +2308,10 @@ def export_hybrid_items(chrt, role="primary", *, filter_hits=True):
             motion_ref=motion_ref,
         )
         if family == "asteroid":
-            payload["speed"] = float(item.get("speed", 0.0) or 0.0)
+            speed = float(item.get("speed", 0.0) or 0.0)
+            payload["speed"] = speed
+            if speed < 0.0:
+                payload["motion"] = "R"
         items.append(payload)
     return items
 

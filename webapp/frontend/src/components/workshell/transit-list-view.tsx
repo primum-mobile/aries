@@ -2098,6 +2098,7 @@ function transitPointGroupLabel(family: string, t: TFunc): string {
   if (family === "planet") return t("tlview.planets");
   if (family === "node") return t("common.nodes");
   if (family === "angle") return t("styleLab.scene.angles");
+  if (family === "house_cusp") return t("primdir.houseCusps");
   if (family === "fortune") return t("common.fortune");
   if (family === "fixed_star") return t("common.fixedStars");
   if (family === "syzygy") return t("common.syzygy");

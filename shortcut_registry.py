@@ -29,6 +29,7 @@ WORKSPACE_SHORTCUT_OVERRIDES = {
 	# HMLoad still carries the legacy wx Ctrl+L hint. The Tauri/native File
 	# menu binds Open to CmdOrCtrl+O, so publish the live product shortcut.
 	'open_chart': 'CmdOrCtrl+O',
+	'astrocart': 'CmdOrCtrl+A',
 	'transits': 'T',
 	'solar_return': 'R',
 	'lunar_return': 'L',
@@ -169,6 +170,13 @@ ACCELERATOR_HELP_ROWS = (
 
 # Live Tauri/web shortcuts owned by the manifest dispatcher.
 TAURI_MANIFEST_SHORTCUT_ROWS = (
+	{
+		'keys': '⌘ A',
+		'label': 'Astrocartography',
+		'labelKey': 'settings.astrocartography',
+		'group': 'WORKSPACE',
+		'commandId': 'astrocartography',
+	},
 	{
 		'keys': '⌘ ⇧ E',
 		'label': 'Chart Style Lab',

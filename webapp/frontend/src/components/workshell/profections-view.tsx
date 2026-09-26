@@ -306,6 +306,8 @@ export function ProfectionsView({ documentId, parentDocumentId, sourceName, onCl
       headerSurface="surface"
       toolbar={
         <TextExportActions
+          sourceName={sourceName}
+          fileStem="profections"
           buildDocument={() =>
             buildTableExportDocument(payload, payload.rows, {
               fileStem: "profections",

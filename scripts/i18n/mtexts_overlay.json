@@ -2055,6 +2055,42 @@
     "fr": "Éclipses",
     "es": "Eclipses"
   },
+  "NoEclipses": {
+    "en": "No eclipses in this range",
+    "de": "Keine Finsternisse in diesem Bereich",
+    "fr": "Aucune éclipse dans cette plage",
+    "es": "No hay eclipses en este rango",
+    "it": "Nessuna eclissi in questo intervallo",
+    "ru": "В этом диапазоне нет затмений",
+    "hu": "Nincs fogyatkozás ebben a tartományban",
+    "ko": "이 범위에 일식/월식이 없습니다",
+    "zh-Hans": "此范围内没有日月食",
+    "zh-Hant": "此範圍內沒有日月食"
+  },
+  "NoTransits": {
+    "en": "No transits this month",
+    "de": "Keine Transite in diesem Monat",
+    "fr": "Aucun transit ce mois-ci",
+    "es": "No hay tránsitos este mes",
+    "it": "Nessun transito questo mese",
+    "ru": "В этом месяце нет транзитов",
+    "hu": "Ebben a hónapban nincs tranzit",
+    "ko": "이번 달에는 트랜짓이 없습니다",
+    "zh-Hans": "本月没有行运",
+    "zh-Hant": "本月沒有行運"
+  },
+  "TypefaceSystemFont": {
+    "en": "System font",
+    "de": "Systemschrift",
+    "fr": "Police système",
+    "es": "Fuente del sistema",
+    "it": "Font di sistema",
+    "ru": "Системный шрифт",
+    "hu": "Rendszerbetűtípus",
+    "ko": "시스템 글꼴",
+    "zh-Hans": "系统字体",
+    "zh-Hant": "系統字體"
+  },
   "Ecliptic": {
     "en": "Ecliptic",
     "fr": "Écliptique",
@@ -3315,6 +3351,102 @@
     "de": "Lose",
     "fr": "Parts",
     "es": "Lotes"
+  },
+  "Kind": {
+    "en": "Kind",
+    "fr": "Genre",
+    "es": "Clase",
+    "it": "Genere",
+    "ru": "Вид",
+    "de": "Art",
+    "hu": "Fajta",
+    "zh-Hans": "种类",
+    "zh-Hant": "種類",
+    "ko": "종류"
+  },
+  "Bodies": {
+    "en": "Body",
+    "fr": "Astre",
+    "es": "Astro",
+    "it": "Corpo",
+    "ru": "Тело",
+    "de": "Gestirn",
+    "hu": "Test",
+    "zh-Hans": "星体",
+    "zh-Hant": "星體",
+    "ko": "천체"
+  },
+  "HarmonicChart": {
+    "en": "Harmonic Chart",
+    "de": "Harmonische Karte",
+    "fr": "Thème harmonique",
+    "es": "Carta armónica",
+    "it": "Carta armonica",
+    "ru": "Гармоническая карта",
+    "hu": "Harmonikus kép",
+    "zh-Hans": "泛音盘",
+    "zh-Hant": "泛音盤",
+    "ko": "하모닉 차트"
+  },
+  "AnnualDirections": {
+    "en": "Annual Directions",
+    "de": "Jährliche Direktionen",
+    "fr": "Directions annuelles",
+    "es": "Direcciones anuales",
+    "it": "Direzioni annuali",
+    "ru": "Годовые дирекции",
+    "hu": "Éves direkciók",
+    "zh-Hans": "年度推运",
+    "zh-Hant": "年度推運",
+    "ko": "연간 디렉션"
+  },
+  "MonthlyDirections": {
+    "en": "Monthly Directions",
+    "de": "Monatliche Direktionen",
+    "fr": "Directions mensuelles",
+    "es": "Direcciones mensuales",
+    "it": "Direzioni mensili",
+    "ru": "Месячные дирекции",
+    "hu": "Havi direkciók",
+    "zh-Hans": "月度推运",
+    "zh-Hant": "月度推運",
+    "ko": "월간 디렉션"
+  },
+  "Asteroids": {
+    "en": "Asteroids",
+    "de": "Asteroiden",
+    "fr": "Astéroïdes",
+    "es": "Asteroides",
+    "it": "Asteroidi",
+    "ru": "Астероиды",
+    "hu": "Kisbolygók",
+    "zh-Hans": "小行星",
+    "zh-Hant": "小行星",
+    "ko": "소행성"
+  },
+  "ExtractParticipant": {
+    "en": "Extract Participant",
+    "de": "Teilnehmer extrahieren",
+    "fr": "Extraire le participant",
+    "es": "Extraer participante",
+    "it": "Estrai partecipante",
+    "ru": "Извлечь участника",
+    "hu": "Résztvevő kiemelése",
+    "zh-Hans": "提取参与者",
+    "zh-Hant": "提取參與者",
+    "ko": "참가자 추출"
+  },
+  "ExtractAllParticipants": {
+    "en": "Extract All Participants",
+    "de": "Alle Teilnehmer extrahieren",
+    "fr": "Extraire tous les participants",
+    "es": "Extraer todos los participantes",
+    "it": "Estrai tutti i partecipanti",
+    "ru": "Извлечь всех участников",
+    "hu": "Összes résztvevő kiemelése",
+    "zh-Hans": "提取所有参与者",
+    "zh-Hant": "提取所有參與者",
+    "ko": "모든 참가자 추출"
   },
   "Lunar": {
     "en": "Lunar",
@@ -5567,7 +5699,7 @@
     "es": "Total",
     "it": "Totale",
     "ru": "Полное",
-    "de": "Gesamt"
+    "de": "Total"
   },
   "TotalScores1": {
     "en": "Total",

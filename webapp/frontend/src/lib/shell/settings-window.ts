@@ -13,6 +13,7 @@ export const SETTINGS_REQUEST = "aries://settings-request";
 export const SETTINGS_REPLY = "aries://settings-reply";
 export const SETTINGS_STATE = "aries://settings-state";
 export const SETTINGS_OPEN = "aries://settings-open";
+export const SETTINGS_WINDOW_WIDTH = 640;
 
 export function readSettingsContext() {
   const workspace = useWorkspaceStore.getState();
@@ -71,10 +72,10 @@ export async function openNativeSettings(tab: SettingsTabId, title: string): Pro
   const probe = document.createElement("div");
   probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:min(var(--aries-dialog-viewport-width),calc(100vw - var(--aries-dialog-viewport-inset)),var(--aries-dialog-width-workspace));height:min(var(--aries-dialog-viewport-height),calc(var(--aries-dialog-content-height-workspace) + var(--aries-dialog-padding) + var(--aries-pane-header-padding-y) + var(--aries-font-size-large) + var(--aries-sash-rule-size)))";
   document.body.append(probe);
-  const { width, height } = probe.getBoundingClientRect();
+  const { height } = probe.getBoundingClientRect();
   probe.remove();
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("open_settings_window", { tab, title, width, height });
+  await invoke("open_settings_window", { tab, title, width: SETTINGS_WINDOW_WIDTH, height });
   return true;
 }
 

@@ -1,4 +1,4 @@
-import { WHEEL_RING_ARCHETYPES, WHEEL_FACTORY_SETTINGS, type WheelRingArchetypeId } from "./wheel-composition";
+import { ringEnabled, WHEEL_RING_ARCHETYPES, WHEEL_FACTORY_SETTINGS, type WheelRingArchetypeId } from "./wheel-composition";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -1272,7 +1272,7 @@ export function resolveWheelBandLayout(
     edges[id] = { outer, inner, visible: canonicalEdge.visible };
   }
   const layout = assembleLayout(family, edges, { ...rings });
-  return usesOriginalWheelTopology(input) ? originalAuthoringBands(input, layout) : layout;
+  return usesOriginalWheelTopology(input) ? originalAuthoringBands(style, input, layout) : layout;
 }
 
 /** Secondary tracks reserve their own space beyond the actual primary rim.
@@ -1312,9 +1312,9 @@ export function reserveWheelSecondarySpace(
     if (value < minimum - 1e-9) { next[field] = minimum; changed = true; }
   }
   if (!changed) return rings;
-  // The original comparison ruler belongs to the external framework. In an
-  // authored topology the degree ring is an independent primary band instead.
-  if (!input.composition || usesOriginalWheelTopology(input)) {
+  // Only the uncomposed comparison ruler belongs to the external framework.
+  // Composed rulers resolve from their own band or sign-hosted overlay.
+  if (!input.composition) {
     for (const field of ["rOuter0", "rOuter1", "rOuter5", "rOuter10"] as const) {
       if (canonical[field] > canonical.r30) {
         next[field] = Math.max(rings[field], rim + canonical[field] - canonical.r30);
@@ -1335,12 +1335,14 @@ export function reserveWheelSecondarySpace(
       return {...band, inner, outer: Math.max(input.maxRadius, inner,
         ...fields.map(field => result[field] ?? 0)) + glyphClearance};
     }
-    if (band.id === "degree" && band.overlay) return {...band,
+    if (band.id === "degree" && band.overlay && !input.composition) return {...band,
       outer: isAngloFamilyProfile(input.profile) ? result.rOuter0 : result.r10,
       inner: isAngloFamilyProfile(input.profile) ? result.rOuter10 : result.r0};
     return band;
   });
-  COMPOSED_LAYOUTS.set(result, {...layout, rings: result, bands});
+  const target = input.composition && usesOriginalWheelTopology(input)
+    ? ORIGINAL_WIDTH_LAYOUTS : COMPOSED_LAYOUTS;
+  target.set(result, {...layout, rings: result, bands});
   return result;
 }
 
@@ -1651,6 +1653,40 @@ export function wheelOuterAttachmentRadius(rings: Readonly<WheelRingSet>): numbe
   return radius;
 }
 
+/** Explicit ring visibility wins over the original renderer's mode gates. */
+export function wheelHasOuterDegreeRuler(input: Pick<WheelGeometryInput,
+  "profile" | "composition" | "hasOuterRing" | "comparisonWithOuterHouses">): boolean {
+  if (!ringEnabled(input.composition, "degree")) return false;
+  const anglo = isAngloFamilyProfile(input.profile);
+  if (anglo && input.composition) return true;
+  return input.hasOuterRing && (!anglo || input.comparisonWithOuterHouses);
+}
+
+/** The ruler points inward above Signs and outward below Signs. */
+function wheelTicksAtSigns(
+  composition: WheelGeometryInput["composition"], kind: "degree" | "cuspRuler", outer: number, inner: number,
+): Readonly<{base: number; tip: number}> {
+  const instrument = composition?.rings.findIndex(ring => ring.archetypeId === kind);
+  const zodiac = composition?.rings.findIndex(ring => ring.archetypeId === "zodiac");
+  return instrument != null && zodiac != null && instrument > zodiac
+    ? {base: inner, tip: outer}
+    : {base: outer, tip: inner};
+}
+
+export function wheelDegreeTickEnds(
+  composition: WheelGeometryInput["composition"], outer: number, inner: number,
+): Readonly<{base: number; tip: number}> {
+  return wheelTicksAtSigns(composition, "degree", outer, inner);
+}
+
+/** A Cusp ruler touching Signs uses the sign band's adjoining edge. */
+export function wheelCuspRulerTickEnds(
+  composition: WheelGeometryInput["composition"], band: ResolvedWheelBand,
+): Readonly<{base: number; tip: number}> {
+  return band.overlay ? wheelTicksAtSigns(composition, "cuspRuler", band.outer, band.inner)
+    : {base: band.outer, tip: band.inner};
+}
+
 function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
   const composition = input.composition;
   if (!composition) return false;
@@ -1661,9 +1697,10 @@ function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
   // requires the general composition solver.
   const optional = (kind: string) => kind === "degree" || kind === "cuspRuler" || kind === "cuspLabels";
   const retained = original.rings.filter(source => !optional(source.archetypeId)
-    || composition.rings.some(ring => ring.archetypeId === source.archetypeId));
-  if (composition.projection !== original.projection || composition.rings.length !== retained.length) return false;
-  return composition.rings.every((ring, index) => {
+    || composition.rings.some(ring => ring.archetypeId === source.archetypeId && ring.enabled));
+  const activeOrder = composition.rings.filter(ring => !optional(ring.archetypeId) || ring.enabled);
+  if (composition.projection !== original.projection || activeOrder.length !== retained.length) return false;
+  return activeOrder.every((ring, index) => {
     const source = retained[index];
     if (ring.archetypeId !== source.archetypeId || ring.chartRole !== source.chartRole) return false;
     if (optional(ring.archetypeId) && source.enabled) return true;
@@ -1678,7 +1715,7 @@ function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
 
 /** Describe the visible original bands without splitting a hosted ruler out of
  * its sign band, or retaining the invisible Anglo ruler slot in Cusp/House. */
-function originalAuthoringBands(input: WheelGeometryInput, layout: ResolvedWheelLayout): ResolvedWheelLayout {
+function originalAuthoringBands(style: WheelRenderStyle, input: WheelGeometryInput, layout: ResolvedWheelLayout): ResolvedWheelLayout {
   const rings = layout.rings;
   const bands: ResolvedWheelBand[] = layout.bands.map(band => {
     const instance = input.composition?.rings.find(ring => ring.archetypeId === band.id);
@@ -1696,9 +1733,14 @@ function originalAuthoringBands(input: WheelGeometryInput, layout: ResolvedWheel
       overlay: true, contents: WHEEL_RING_ARCHETYPES[id].paintClasses});
   };
   const outerRuler = isAngloFamilyProfile(input.profile);
-  addOverlay("degree", outerRuler ? rings.rOuter0 : rings.r10,
-    outerRuler ? rings.rOuter10 : rings.r0,
-    !outerRuler || (input.hasOuterRing && Boolean(input.showOuterHouses ?? input.comparisonWithOuterHouses)));
+  const attachedAnglo = input.profile === "anglo" && wheelHasOuterDegreeRuler(input);
+  const signWidth = rings.r30 - rings.r0;
+  const attachedDepth = attachedAnglo ? Math.min(signWidth * WHEEL_RULER_DEPTH_RANGE.max,
+    resolveWheelRulerDepth(style, input.profile, "zodiacOuter", signWidth,
+      Math.abs(rings.rOuter0 - rings.rOuter10))) : 0;
+  addOverlay("degree", attachedAnglo ? rings.r0 + attachedDepth : outerRuler ? rings.rOuter0 : rings.r10,
+    attachedAnglo ? rings.r0 : outerRuler ? rings.rOuter10 : rings.r0,
+    !outerRuler || wheelHasOuterDegreeRuler(input));
   if (layout.family === "angloComparisonNoHouses" || (input.hasOuterRing && input.mode !== "comparison")) {
     const center = rings.rOuterPlanet ?? rings.rAntis ?? rings.r30;
     addOverlay("outerBodies", 2 * center - rings.r30, rings.r30, true);
@@ -1712,18 +1754,48 @@ function originalAuthoringBands(input: WheelGeometryInput, layout: ResolvedWheel
  * width consumes the hub, then stops. Only jointly oversized imported edits
  * share the available growth, never the unedited bands. */
 function resizeWheelBandStack(style: WheelRenderStyle, input: WheelGeometryInput,
-  stack: readonly ResolvedWheelBand[]): ResolvedWheelBand[] {
+  stack: readonly ResolvedWheelBand[], carriedWidths: Readonly<Record<string, number>> = {}): ResolvedWheelBand[] {
   const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
   const widths = style.authoringOverrides.ringWidths?.[input.profile] ?? {};
   const hub = stack.find(band => band.id === "hub")!;
   const hubMinimum = Math.min(hub.outer, WHEEL_RING_ARCHETYPES.hub.minWidth * scale);
   const minimum = (band: ResolvedWheelBand) => band.id === "margin" ? band.outer - band.inner
     : Math.min(band.outer - band.inner, WHEEL_RING_ARCHETYPES[band.id].minWidth * scale);
+  // Authored radii can leave depth in an invisible subdivision slot. Give that
+  // depth to Signs, keeping the inner bands and the wheel's outer edge fixed.
+  // The saved radii remain untouched, so showing the subdivisions restores
+  // their original widths.
+  const zodiac = stack.find(band => band.id === "zodiac" && band.visible);
+  const reclaimed = zodiac ? stack.reduce((total, band) =>
+    total + ((!band.visible && (band.id === "terms" || band.id === "decans"))
+      ? band.outer - band.inner : 0), 0) : 0;
+  const pinnedAngloCusp = input.profile === "anglo"
+    && style.authoringOverrides.ringRadii.anglo?.cuspOuterRing !== undefined
+    && (!input.showTerms || !input.showDecans);
+  const fullCuspWidth = pinnedAngloCusp
+    ? resolveCanonicalWheelLayout(style, {...input, showTerms: true, showDecans: true})
+      .bands.find(band => band.id === "cuspRuler")! : undefined;
+  const pinnedCuspLabels = pinnedAngloCusp
+    && style.authoringOverrides.ringRadii.anglo?.innerBoundaryRing !== undefined
+    ? ((style.authoringOverrides.ringRadii.anglo.cuspOuterRing!
+      - style.authoringOverrides.ringRadii.anglo.innerBoundaryRing!) * scale
+      - (fullCuspWidth!.outer - fullCuspWidth!.inner)) : undefined;
   const desired = stack.map(band => {
     const old = band.outer - band.inner;
     const requested = band.instanceId ? widths[band.instanceId] : undefined;
-    if ((band.id === "cuspRuler" || band.id === "cuspLabels") && !band.visible) return 0;
-    return band.id === "hub" || !band.visible || requested == null ? old : Math.max(minimum(band), requested * scale);
+    if (!band.visible && (band.id === "terms" || band.id === "decans"
+      || band.id === "cuspRuler" || band.id === "cuspLabels")) return 0;
+    if (band === zodiac) return (requested == null ? old
+      : Math.max(minimum(band), requested * scale)) + reclaimed;
+    // Anglo's automatic ruler width grows as subdivision density falls. A
+    // pinned cusp boundary instead keeps the ruler's saved full-density width;
+    // the newly free depth belongs to Signs rather than a blank ruler band.
+    if (band.id === "cuspRuler" && pinnedAngloCusp && requested == null)
+      return Math.max(minimum(band), fullCuspWidth!.outer - fullCuspWidth!.inner);
+    if (band.id === "cuspLabels" && pinnedCuspLabels !== undefined && requested == null)
+      return Math.max(minimum(band), pinnedCuspLabels);
+    return band.id === "hub" || !band.visible || requested == null ? old
+      : Math.max(minimum(band), requested * scale + (band.instanceId ? carriedWidths[band.instanceId] ?? 0 : 0));
   });
   let growth = 0, released = 0;
   stack.forEach((band, index) => {
@@ -1811,13 +1883,21 @@ function resizeOriginalWheelBands(style: WheelRenderStyle, input: WheelGeometryI
     }
     const requested = overlay.instanceId ? widths[overlay.instanceId] : undefined;
     let outer = mapRadius(overlay.outer), inner = mapRadius(overlay.inner);
+    const attachedAnglo = overlay.id === "degree" && input.profile === "anglo"
+      && wheelHasOuterDegreeRuler(input);
     const max = overlay.id === "degree"
-      ? isAngloFamilyProfile(input.profile) ? next.rOuter0 - next.r30 : next.r30 - next.r0
+      ? attachedAnglo ? (next.r30 - next.r0) * WHEEL_RULER_DEPTH_RANGE.max
+        : isAngloFamilyProfile(input.profile) ? next.rOuter0 - (next.rOuter0 > next.r30 ? next.r30 : next.r0) : next.r30 - next.r0
       : outer - inner;
     const min = Math.min(outer - inner, WHEEL_RING_ARCHETYPES[overlay.id as WheelRingArchetypeId].minWidth * scale);
-    if (requested != null && overlay.id === "degree") {
-      const depth = Math.max(min, Math.min(Math.max(min, max), requested * scale));
-      if (isAngloFamilyProfile(input.profile)) {
+    if ((requested != null || attachedAnglo) && overlay.id === "degree") {
+      const depth = Math.max(min, Math.min(Math.max(min, max), requested == null ? outer - inner : requested * scale));
+      if (attachedAnglo) {
+        next.rOuter0 = next.r0 + depth;
+        next.rOuter10 = next.r0;
+        [next.rOuter1, next.rOuter5] = interiorThird(next.rOuter0, next.rOuter10);
+        outer = next.rOuter0; inner = next.rOuter10;
+      } else if (isAngloFamilyProfile(input.profile)) {
         next.rOuter10 = next.rOuter0 - depth;
         [next.rOuter1, next.rOuter5] = interiorThird(next.rOuter0, next.rOuter10);
         outer = next.rOuter0; inner = next.rOuter10;
@@ -1861,7 +1941,26 @@ export function composeWheelBands(
     && active.some(ring => ring.chartRole === "outer");
   const floatingCusp = !hasClosedOuterBands && primary[0]?.archetypeId === "cuspLabels"
     && primary.some(ring => ring.archetypeId === "zodiac") ? primary[0] : undefined;
-  const stacked = (openOuterTracks ? primary : active).filter(ring => ring !== floatingCusp);
+  const zodiacIndex = primary.findIndex(ring => ring.archetypeId === "zodiac");
+  const degreeIndex = primary.findIndex(ring => ring.archetypeId === "degree");
+  const cuspRulerIndex = primary.findIndex(ring => ring.archetypeId === "cuspRuler");
+  const hostedDegree = zodiacIndex >= 0 && Math.abs(degreeIndex - zodiacIndex) === 1
+    ? primary[degreeIndex] : undefined;
+  const hostedCuspRuler = zodiacIndex >= 0 && Math.abs(cuspRulerIndex - zodiacIndex) === 1
+    ? primary[cuspRulerIndex] : undefined;
+  // When Degree moves to the outside of Signs, Cusp ruler can occupy the
+  // inside of Signs. Keep its former space with the annotations so the chart
+  // points do not jump outward and the combined cusp lane does not collapse.
+  const originalCuspWidth = Math.max(0, (sourceById.get("cuspRuler")?.outer ?? 0)
+    - (sourceById.get("cuspRuler")?.inner ?? 0));
+  const cuspWidthOverride = hostedCuspRuler
+    ? style.authoringOverrides.ringWidths?.[input.profile]?.[hostedCuspRuler.instanceId] : undefined;
+  const cuspAnnotationCarry = hostedCuspRuler && degreeIndex >= 0 && degreeIndex < zodiacIndex
+    ? cuspWidthOverride == null ? originalCuspWidth
+      : Math.max(Math.min(originalCuspWidth, WHEEL_RING_ARCHETYPES.cuspRuler.minWidth * scale),
+        cuspWidthOverride * scale) : 0;
+  const stacked = (openOuterTracks ? primary : active).filter(ring => ring !== floatingCusp
+    && ring !== hostedDegree && ring !== hostedCuspRuler);
   const minimum = (kind: WheelRingArchetypeId) => WHEEL_RING_ARCHETYPES[kind].minWidth * scale;
   const entries = stacked.map(ring => {
     const old = sourceById.get(ring.archetypeId);
@@ -1869,9 +1968,13 @@ export function composeWheelBands(
     if (ring.archetypeId === "cuspLabels" && isCuspBandProfile(input.profile)) {
       priorWidth = legacy.r30 - legacy.rInner;
     }
+    if (ring.archetypeId === "cuspLabels" && priorWidth != null) {
+      priorWidth += cuspAnnotationCarry;
+    }
     // Sample the recipe's hosted ruler once. Its current visibility must not
     // change the sign band's preferred width (and then compress every band).
-    if (ring.archetypeId === "zodiac" && priorWidth != null) {
+    if (ring.archetypeId === "zodiac" && priorWidth != null
+      && degreeIndex >= 0 && !hostedDegree) {
       priorWidth = Math.max(minimum("zodiac"), priorWidth - Math.abs(legacy.r10 - legacy.r0));
     }
     if (ring.archetypeId === "degree") priorWidth = Math.abs(legacy.r10 - legacy.r0) || undefined;
@@ -1895,7 +1998,30 @@ export function composeWheelBands(
   }
   // Fit the new topology once, then use the same width budget as originals.
   // A numeric width edit must not trigger another global packing/compression.
-  bands.splice(0, bands.length, ...resizeWheelBandStack(style, input, bands));
+  const annotation = stacked.find(ring => ring.archetypeId === "cuspLabels");
+  bands.splice(0, bands.length, ...resizeWheelBandStack(style, input, bands,
+    annotation && cuspAnnotationCarry ? {[annotation.instanceId]: cuspAnnotationCarry} : {}));
+  for (const instrument of [hostedDegree, hostedCuspRuler]) {
+    if (!instrument) continue;
+    const kind = instrument.archetypeId as "degree" | "cuspRuler";
+    const zodiac = bands.find(band => band.id === "zodiac")!;
+    const hostWidth = zodiac.outer - zodiac.inner;
+    const maximum = hostWidth * WHEEL_RULER_DEPTH_RANGE.max;
+    const minDepth = Math.min(maximum, minimum(kind));
+    const source = sourceById.get(kind);
+    const natural = kind === "degree" ? Math.abs(legacy.r10 - legacy.r0)
+      : source && source.outer > source.inner ? source.outer - source.inner
+        : WHEEL_RING_ARCHETYPES.cuspRuler.preferredWidth * scale;
+    const requested = style.authoringOverrides.ringWidths?.[input.profile]?.[instrument.instanceId];
+    const depth = Math.min(maximum, Math.max(minDepth, requested == null ? natural : requested * scale));
+    const index = kind === "degree" ? degreeIndex : cuspRulerIndex;
+    const outside = index < zodiacIndex;
+    bands.push({id: kind, instanceId: instrument.instanceId, overlay: true,
+      outer: outside ? zodiac.outer : zodiac.inner + depth,
+      inner: outside ? zodiac.outer - depth : zodiac.inner,
+      visible: true, contents: WHEEL_RING_ARCHETYPES[kind].paintClasses,
+      widthBounds: {min: minDepth, max: maximum}});
+  }
   if (floatingCusp) {
     const old = sourceById.get("cuspLabels");
     const min = minimum("cuspLabels");
@@ -1945,8 +2071,9 @@ export function composeWheelBands(
   next.r10 = ruler.outer; next.r1 = ruler.inner + (ruler.outer - ruler.inner) / 3;
   next.r5 = ruler.inner + (ruler.outer - ruler.inner) * 2 / 3;
   const cuspRuler = band("cuspRuler"), labels = band("cuspLabels");
-  next.rCuspOuter = byId.has("cuspRuler") ? cuspRuler.outer : byId.has("cuspLabels") ? labels.outer : band("bodies").outer;
-  next.rCuspRulerInner = byId.has("cuspRuler") ? cuspRuler.inner : next.rCuspOuter;
+  next.rCuspOuter = byId.has("cuspRuler") && !hostedCuspRuler ? cuspRuler.outer
+    : byId.has("cuspLabels") ? labels.outer : band("bodies").outer;
+  next.rCuspRulerInner = byId.has("cuspRuler") && !hostedCuspRuler ? cuspRuler.inner : next.rCuspOuter;
   next.rCuspLabelOuter = byId.has("cuspLabels") ? labels.outer : next.rCuspRulerInner;
   if (byId.has("cuspLabels")) next.rCuspLabel = next.rPosHouses = (labels.outer + labels.inner) / 2;
   const bodies = band("bodies"), houses = band("houses"), hub = band("hub");
@@ -1974,7 +2101,9 @@ export function composeWheelBands(
     if (!outerBodies) next.rOuterPlanet = next.rOuterRetr = undefined;
     const anchored = {...next};
     for (let index = 0; index < bands.length; index++) {
-      if (bands[index].overlay) bands[index] = resizeOpenWheelTrack(style, input, bands[index], anchored, next);
+      if (bands[index].overlay && bands[index].id.startsWith("outer")) {
+        bands[index] = resizeOpenWheelTrack(style, input, bands[index], anchored, next);
+      }
     }
   } else if (input.mode === "comparison") {
     // All comparison anchors belong to the resolved outer zone. Do not retain

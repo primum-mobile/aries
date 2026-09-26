@@ -81,7 +81,7 @@ export function PaneSelect({
     <select
       data-aries-control-appearance="local"
       className={cn(
-        "h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]",
+        "aries-desktop-focus h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)]",
         surface ? "bg-[color:var(--aries-surface)]" : "bg-background",
         className,
       )}

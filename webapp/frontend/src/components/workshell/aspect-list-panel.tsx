@@ -9,6 +9,7 @@ import { Clipboard, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SplitAspectSelection } from "@/lib/chart/types";
 import { SideBySideAspectSources } from "./side-by-side-aspect-sources";
+import { AspectListExport } from "./aspect-list-export";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -53,7 +54,7 @@ import {
   defaultAspectListSecondaryRingIncluded,
   isAspectListPhaseIncluded,
   isAspectListRowIncluded,
-  isAspectListSecondaryRingFilterId,
+  isAspectListInclusionFilterId,
 } from "@/lib/aspect-list-filter-state.mjs";
 import {
   fetchAspectList,
@@ -474,11 +475,13 @@ function AspectListFilterDrawer({
   rxFocusEnabled,
   activeSecondaryRing,
   includeActiveSecondaryRing,
+  includeHouseCusps,
   onToggleFocus,
   onFocusMatchModeChange,
   onToggleRxFocus,
   onClearFocus,
   onToggleSecondaryRing,
+  onToggleHouseCusps,
 }: {
   items: AspectListFilter[];
   focusedIds: ReadonlySet<string>;
@@ -486,16 +489,19 @@ function AspectListFilterDrawer({
   rxFocusEnabled: boolean;
   activeSecondaryRing: AspectListPayload["activeSecondaryRing"];
   includeActiveSecondaryRing: boolean;
+  includeHouseCusps: boolean;
   onToggleFocus: (id: string) => void;
   onFocusMatchModeChange: (mode: "or" | "and") => void;
   onToggleRxFocus: () => void;
   onClearFocus: () => void;
   onToggleSecondaryRing: () => void;
+  onToggleHouseCusps: () => void;
 }) {
   const t = useT();
   const focusItems = items.filter(
-    (item) => !isAspectListSecondaryRingFilterId(item.id),
+    (item) => !isAspectListInclusionFilterId(item.id),
   );
+  const hasHouseCusps = items.some((item) => item.id === "house-cusps");
   const canUseAnd = focusedIds.size >= 2;
   return (
     <div className="w-full max-h-48 overflow-auto border-t border-border/70 pt-2">
@@ -562,6 +568,37 @@ function AspectListFilterDrawer({
             </Button>
           </div>
         </div>
+        {hasHouseCusps || activeSecondaryRing ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+              {t("aspectList.include")}
+            </span>
+            {hasHouseCusps ? (
+              <Button
+                type="button"
+                size="xs"
+                variant={includeHouseCusps ? "default" : "outline"}
+                aria-pressed={includeHouseCusps}
+                onClick={onToggleHouseCusps}
+                className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+              >
+                {t("styleLab.variant.cusps")}
+              </Button>
+            ) : null}
+            {activeSecondaryRing ? (
+              <Button
+                type="button"
+                size="xs"
+                variant={includeActiveSecondaryRing ? "default" : "outline"}
+                aria-pressed={includeActiveSecondaryRing}
+                onClick={onToggleSecondaryRing}
+                className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+              >
+                <span className="truncate">{activeSecondaryRing.label}</span>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span aria-hidden className="mr-1 min-w-14" />
           {focusItems.map((item) => (
@@ -571,6 +608,8 @@ function AspectListFilterDrawer({
               size="xs"
               variant={focusedIds.has(item.id) ? "default" : "outline"}
               aria-pressed={focusedIds.has(item.id)}
+              aria-label={item.label}
+              title={item.label}
               onClick={() => onToggleFocus(item.id)}
               className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
             >
@@ -579,23 +618,6 @@ function AspectListFilterDrawer({
             </Button>
           ))}
         </div>
-        {activeSecondaryRing ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-              {t("aspectList.include")}
-            </span>
-            <Button
-              type="button"
-              size="xs"
-              variant={includeActiveSecondaryRing ? "default" : "outline"}
-              aria-pressed={includeActiveSecondaryRing}
-              onClick={onToggleSecondaryRing}
-              className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-            >
-              <span className="truncate">{activeSecondaryRing.label}</span>
-            </Button>
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -1234,7 +1256,7 @@ export function AspectListPanel({
     () =>
       new Set(
         visibleFilterItems
-          .filter((item) => !isAspectListSecondaryRingFilterId(item.id))
+          .filter((item) => !isAspectListInclusionFilterId(item.id))
           .map((item) => item.id),
       ),
     [visibleFilterItems],
@@ -1260,6 +1282,7 @@ export function AspectListPanel({
         defaultAspectListSecondaryRingIncluded(activeSecondaryRing.id)
       )
     : false;
+  const includeHouseCusps = preferences?.includeHouseCusps ?? true;
   const displayRows = React.useMemo(
     () =>
       filterRetainedRowsByHiddenIds(
@@ -1284,6 +1307,7 @@ export function AspectListPanel({
             rxFocusEnabled,
             effectiveFocusMatchMode,
             [row.left.filterIds, row.right.filterIds],
+            includeHouseCusps,
           ),
       ),
     [
@@ -1291,6 +1315,7 @@ export function AspectListPanel({
       displayRows,
       effectiveFocusedFilterIdSet,
       includeActiveSecondaryRing,
+      includeHouseCusps,
       maxOrb,
       phaseFilter,
       rxFocusEnabled,
@@ -1672,6 +1697,15 @@ export function AspectListPanel({
               ? t("aspectList.refreshing")
               : t("aspectList.count", { count: rows.length })}
           </span>
+          <AspectListExport
+            rows={rows}
+            perfectionByRow={perfectionByRow}
+            retainedPerfectionByRow={retainedPerfectionByRow}
+            modeLabel={modeOptions.find((option) => option.id === activeMode)?.label ?? t("aspectList.title")}
+            sourceName={sourceName}
+            maxOrb={maxOrb}
+            disabled={!payload || !payloadIsCurrent || loading}
+          />
         </div>
         {splitSelection ? <SideBySideAspectSources selection={splitSelection} /> : null}
         <div className={LIST_PANE_CLASSES.controlRow}>
@@ -1731,6 +1765,7 @@ export function AspectListPanel({
             rxFocusEnabled={rxFocusEnabled}
             activeSecondaryRing={activeSecondaryRing}
             includeActiveSecondaryRing={includeActiveSecondaryRing}
+            includeHouseCusps={includeHouseCusps}
             onToggleFocus={toggleFocus}
             onFocusMatchModeChange={setFocusMatchMode}
             onToggleRxFocus={toggleRxFocus}
@@ -1744,6 +1779,11 @@ export function AspectListPanel({
                 },
               });
             }}
+            onToggleHouseCusps={() =>
+              setPreferences(preferencesDocumentId, {
+                includeHouseCusps: !includeHouseCusps,
+              })
+            }
           />
         ) : null}
       </div>

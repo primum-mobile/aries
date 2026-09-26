@@ -208,6 +208,8 @@ export function FirdariaView({ documentId, parentDocumentId, sourceName, onClose
       onClose={onClose}
       toolbar={
         <TextExportActions
+          sourceName={sourceName}
+          fileStem="firdaria"
           buildDocument={() =>
             buildTableExportDocument(payload, payload.rows, {
               fileStem: "firdaria",

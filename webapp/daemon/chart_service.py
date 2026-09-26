@@ -275,7 +275,7 @@ def style_lab_preview_manifest(base_options) -> dict[str, object]:
                     ("P", "Placidus"), ("K", "Koch"), ("R", "Regiomontanus"),
                     ("C", "Campanus"), ("E", _txt("Equal", "Equal")),
                     ("W", _txt("WholeSign", "Whole Sign")),
-                    ("F", _txt("FortuneWholeSign", "Fortune Houses")),
+                    ("F", _txt("HSFortuneWholeSign", "Fortune Houses")),
                     ("X", _txt("AxialRotation", "Axial Rotation")),
                     ("Q", _txt("TrueAscendant", "True Ascendant")),
                     ("M", "Morinus"), ("H", _txt("Horizon", "Horizon")),
@@ -616,6 +616,9 @@ class ChartSnapshotService:
         with self._lock:
             if self._options is None:
                 self._options = export_chart_json.init_environment()
+                # Step Alerts are parked in the Tauri app. Preserve saved
+                # preferences for a future redesign without playing sounds.
+                self._options.step_alerts_suspended = True
             return self._options
 
     def snapshot(

@@ -15,6 +15,7 @@ official supported installers.
 |---|---|
 | `Cmd/Ctrl + N` | New chart |
 | `Cmd/Ctrl + O` | Open chart |
+| `Cmd/Ctrl + A` | Astrocartography |
 | `Cmd/Ctrl + E` | Edit chart data |
 | `Cmd/Ctrl + R` | Here and Now |
 | `Cmd/Ctrl + S` | Save |

@@ -176,6 +176,7 @@ export function TransitListExport({ request, monthLabel, sourceName, disabled, b
     <TextExportActions
       buildDocument={buildDocument}
       fileStem={`transits-${request.year}-${String(request.month).padStart(2, "0")}`}
+      sourceName={sourceName}
       disabled={disabled}
       scopeLabel={monthLabel}
       onError={(failure) => {

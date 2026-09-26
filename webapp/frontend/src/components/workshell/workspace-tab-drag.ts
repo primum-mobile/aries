@@ -14,6 +14,12 @@ export function documentPairSupportsDirectAttach(
   target: WorkspaceDocument | null | undefined,
 ): boolean {
   if (!source || !target) return false;
+  if (target.kind === "astrocart") {
+    return source.kind === "supplementary" &&
+      ["transits", "secondary", "minor", "tertiary", "solar_arc"].includes(
+        source.supplementaryFeatureKind ?? "",
+      );
+  }
   if (source.parentDocumentId !== target.parentDocumentId) return true;
   return source.parentDocumentId === null &&
     isChartDocument(source) &&

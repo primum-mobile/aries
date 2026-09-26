@@ -1,4 +1,5 @@
 export function isAspectListSecondaryRingFilterId(filterId: string): boolean;
+export function isAspectListInclusionFilterId(filterId: string): boolean;
 export function defaultAspectListSecondaryRingIncluded(mode: string): boolean;
 export function isAspectListPhaseIncluded(
   phase: "applying" | "separating" | "exact" | "none",
@@ -14,4 +15,5 @@ export function isAspectListRowIncluded(
   rxFocusEnabled?: boolean,
   focusMatchMode?: "or" | "and",
   endpointFilterIds?: readonly (readonly string[])[] | null,
+  includeHouseCusps?: boolean,
 ): boolean;

@@ -12,6 +12,7 @@ aries/astrology/transit_fast/_transit_kernel.c -whitespace linguist-generated
 *.bmp binary
 *.ttf binary
 *.otf binary
+*.pbf binary
 *.so binary
 *.pyd binary
 *.dll binary

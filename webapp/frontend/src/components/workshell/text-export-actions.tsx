@@ -19,7 +19,7 @@ import {
   exportPreparedTableDocument,
   type TableExportDocument,
 } from "./table-pdf-export";
-import { copyTextToClipboard } from "./text-export";
+import { chartExportFileStem, copyTextToClipboard } from "./text-export";
 
 type TextExportActionsProps = {
   buildDocument: () => TableExportDocument | Promise<TableExportDocument>;
@@ -27,6 +27,7 @@ type TextExportActionsProps = {
   className?: string;
   scopeLabel?: string;
   fileStem?: string;
+  sourceName?: string;
   onError?: (error: unknown) => void;
 };
 
@@ -36,6 +37,7 @@ export function TextExportActions({
   className,
   scopeLabel,
   fileStem,
+  sourceName,
   onError,
 }: TextExportActionsProps) {
   const t = useT();
@@ -86,7 +88,7 @@ export function TextExportActions({
       title: t("textExport.dialogTitle"),
       pdfFiles: t("textExport.pdfFiles"),
       textFiles: t("textExport.textFiles"),
-    }, fileStem)
+    }, fileStem ? chartExportFileStem(sourceName, fileStem) : undefined)
       .catch((error: unknown) => {
         console.error("[table-export]", error);
         onError?.(error);
@@ -95,7 +97,7 @@ export function TextExportActions({
         pendingRef.current = false;
         setPending(false);
       });
-  }, [buildDocument, fileStem, onError, t]);
+  }, [buildDocument, fileStem, onError, sourceName, t]);
 
   const unavailable = disabled || pending;
   const copyLabel = [t("textExport.copy"), scopeLabel].filter(Boolean).join(" · ");

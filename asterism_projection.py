@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-from math import acos, asin, atan2, ceil, cos, degrees, radians, sin
+from math import acos, asin, atan2, ceil, cos, degrees, floor, radians, sin
 from pathlib import Path
 
 import astrology
@@ -31,6 +31,10 @@ J2000_JD = 2451545.0
 _MAX_ARC_STEP_DEG = 1.0
 _REFERENCE_STEP_DEG = 2.0
 _REFERENCE_TICK_HALF_SPAN_DEG = 0.65
+_HOUSE_CONTOUR_SYSTEMS = frozenset({"P", "K", "T"})
+_HOUSE_INTERMEDIATE_CUSPS = frozenset({2, 3, 5, 6, 8, 9, 11, 12})
+_HOUSE_CONTOUR_RA_STEP_DEG = 3
+_HOUSE_CONTOUR_DEC_STEP_DEG = 1
 
 
 @lru_cache(maxsize=4)
@@ -224,17 +228,382 @@ def _house_plane_for_system(house_system_code: str) -> str:
 
     Whole Sign and other ecliptic-defined systems retain the ecliptic poles.
     Campanus and Regiomontanus both meet at the North/South points of the local
-    horizon, Horizontal uses zenith/nadir, and Meridian/Morinus use the
-    celestial-equator poles.
+    horizon, Horizontal uses zenith/nadir, and Meridian/Alcabitius use the
+    celestial-equator poles. Morinus uses ecliptic longitude for spatial
+    house position in Swiss Ephemeris.
     """
     code = str(house_system_code or "").upper()
-    if code in {"X", "M"}:
+    if code in _HOUSE_CONTOUR_SYSTEMS:
+        return "house-position-contour"
+    if code in {"X", "B"}:
         return "celestial-equator"
     if code in {"C", "R"}:
         return "prime-vertical"
     if code == "H":
         return "local-horizon"
     return "ecliptic"
+
+
+def _equatorial_to_ecliptic(
+    ra_deg: float,
+    dec_deg: float,
+    obliquity_deg: float,
+) -> tuple[float, float]:
+    """Inverse of the map's tropical ecliptic-to-equatorial rotation."""
+    ra = radians(ra_deg)
+    dec = radians(dec_deg)
+    eps = radians(obliquity_deg)
+    x = cos(dec) * cos(ra)
+    y = cos(dec) * sin(ra) * cos(eps) + sin(dec) * sin(eps)
+    z = -cos(dec) * sin(ra) * sin(eps) + sin(dec) * cos(eps)
+    return degrees(atan2(y, x)) % 360.0, degrees(asin(max(-1.0, min(1.0, z))))
+
+
+def _house_position_on_sphere(
+    ra_deg: float,
+    dec_deg: float,
+    *,
+    armc_deg: float,
+    observer_lat: float,
+    obliquity_deg: float,
+    house_system_code: str,
+) -> float | None:
+    """Swiss's actual 3D house position, or None where it is undefined.
+
+    Placidus has no diurnal/nocturnal semiarcs for circumpolar sky points.
+    Swiss offers an Otto Ludwig convention there, but drawing that as a
+    Placidus boundary would conceal the system's genuine polar limit.
+    """
+    if house_system_code == "P" and abs(dec_deg) >= 90.0 - abs(observer_lat):
+        return None
+    lon, lat = _equatorial_to_ecliptic(ra_deg, dec_deg, obliquity_deg)
+    position, warning = astrology.swe_house_pos(
+        armc_deg,
+        observer_lat,
+        obliquity_deg,
+        ord(house_system_code),
+        lon,
+        lat,
+    )
+    if not 0.0 < position <= 13.0 or warning:
+        return None
+    return (float(position) - 1.0) % 12.0
+
+
+def _house_contour_rows(
+    *,
+    house_system_code: str,
+    observer_lat: float,
+    cusp_declinations: tuple[float, ...],
+) -> list[float]:
+    step = 0.5 if house_system_code == "T" else _HOUSE_CONTOUR_DEC_STEP_DEG
+    count = int(89.0 / step)
+    decs = [
+        index * step
+        for index in range(-count, count + 1)
+    ]
+    decs.extend(cusp_declinations)
+    if house_system_code == "P":
+        edge = 90.0 - abs(observer_lat) - 0.001
+        decs = [dec for dec in decs if -edge <= dec <= edge]
+        if edge > 0.0:
+            decs.extend((-edge, edge))
+    return sorted(set(decs))
+
+
+def _angular_house_boundary(
+    house: int,
+    observer_lon: float,
+    observer_lat: float,
+) -> list[list[list[float]]]:
+    """The four quadrant angles have exact horizon/meridian boundaries."""
+    if house in (1, 7):
+        start = 0 if house == 1 else 180
+        return _split_antimeridian([
+            _horizon_point(observer_lon, observer_lat, float(bearing))
+            for bearing in range(start, start + 181, int(_REFERENCE_STEP_DEG))
+        ])
+    if house in (4, 10):
+        meridian = _normalize_lon(observer_lon + (180.0 if house == 4 else 0.0))
+        return [[[round(meridian, 6), -90.0], [round(meridian, 6), 90.0]]]
+    return []
+
+
+def _house_contour_root(
+    ra0: float,
+    ra1: float,
+    value0: float,
+    level: int,
+    dec: float,
+    position_at,
+) -> float | None:
+    """Refine one sampled crossing without bridging a discontinuity."""
+    left, right = ra0, ra1
+    left_delta = value0 - level
+    for _ in range(15):
+        mid = (left + right) / 2.0
+        raw = position_at(mid, dec)
+        if raw is None:
+            return None
+        value = value0 + ((raw - value0 + 6.0) % 12.0 - 6.0)
+        delta = value - level
+        if (delta < 0.0) == (left_delta < 0.0):
+            left, left_delta = mid, delta
+        else:
+            right = mid
+    root = (left + right) / 2.0
+    raw = position_at(root, dec)
+    if raw is None or abs((raw - level + 6.0) % 12.0 - 6.0) > 0.01:
+        return None
+    return root % 360.0
+
+
+def _house_contour_root_near(
+    guess_ra: float,
+    dec: float,
+    house: int,
+    position_at,
+    *,
+    span_deg: float,
+) -> float | None:
+    """Find the selected boundary nearest a predicted point on a contour."""
+    target = house - 1
+    candidates = []
+    start = guess_ra - span_deg
+    step = 0.5
+    count = int(2.0 * span_deg / step)
+    previous_ra = start
+    previous_value = position_at(previous_ra, dec)
+    for index in range(1, count + 1):
+        ra = start + index * step
+        value = position_at(ra, dec)
+        if previous_value is not None and value is not None:
+            delta = (value - previous_value + 6.0) % 12.0 - 6.0
+            if abs(delta) <= 2.0:
+                lo, hi = sorted((previous_value, previous_value + delta))
+                for cycle in range(-1, 2):
+                    level = target + cycle * 12
+                    if lo <= level <= hi:
+                        root = _house_contour_root(
+                            previous_ra, ra, previous_value, level, dec,
+                            position_at,
+                        )
+                        if root is not None:
+                            candidates.append(root)
+        previous_ra, previous_value = ra, value
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda ra: abs((ra - guess_ra + 180.0) % 360.0 - 180.0),
+    )
+
+
+def _refine_house_contour_path(path, house: int, position_at):
+    """Bound interpolation error between accurately solved row crossings."""
+    if len(path) < 2:
+        return path
+
+    def subdivide(start, end, depth):
+        ra0, dec0 = start
+        ra1, dec1 = end
+        ra_delta = (ra1 - ra0 + 180.0) % 360.0 - 180.0
+        guess_ra = ra0 + ra_delta / 2.0
+        mid_dec = (dec0 + dec1) / 2.0
+        value = position_at(guess_ra, mid_dec)
+        error = (
+            abs((value - (house - 1) + 6.0) % 12.0 - 6.0)
+            if value is not None else float("inf")
+        )
+        angular = degrees(acos(max(-1.0, min(1.0, _vector_dot(
+            _to_vector(ra0, dec0), _to_vector(ra1, dec1),
+        )))))
+        if (error <= 0.005 and angular <= 2.0) or depth >= 7:
+            return [start, end]
+        root = _house_contour_root_near(
+            guess_ra, mid_dec, house, position_at,
+            span_deg=max(4.0, abs(ra_delta) + 2.0),
+        )
+        if root is None:
+            return [start, end]
+        middle = (root, mid_dec)
+        return subdivide(start, middle, depth + 1)[:-1] + subdivide(
+            middle, end, depth + 1,
+        )
+
+    refined = [path[0]]
+    for start, end in zip(path, path[1:]):
+        refined.extend(subdivide(start, end, 0)[1:])
+    return refined
+
+
+@lru_cache(maxsize=16)
+def _sample_house_position_contours(
+    *,
+    jd_ut: float,
+    observer_lon: float,
+    observer_lat: float,
+    obliquity_deg: float,
+    zodiac_offset_deg: float,
+    house_cusps: tuple[float, ...],
+    house_system_code: str,
+) -> tuple[dict[int, list[list[list[float]]]], dict[int, dict[str, list[float]]]]:
+    """Trace each true house-position boundary across the celestial sphere.
+
+    A cusp longitude gives only the ecliptic intersection, not a spatial
+    boundary. Sampling Swiss house position at each declination lets Placidus,
+    Koch, and Polich/Page produce their non-great-circle contours. Rows stop
+    where the selected calculation is undefined instead of inventing a pole.
+    """
+    sidereal = float(astrology.swe_sidtime(float(jd_ut))) * 15.0
+    if (
+        house_system_code in {"P", "K"}
+        and abs(observer_lat) >= 90.0 - obliquity_deg
+    ):
+        # Swiss falls back to Porphyry cusps for these systems inside the
+        # polar circle. Those fallback degrees are not Placidus/Koch spatial
+        # cusps, so keep only the physical horizon and meridian angles.
+        return {
+            house: _angular_house_boundary(house, observer_lon, observer_lat)
+            for house in range(1, 13)
+        }, {}
+    armc = (sidereal + observer_lon) % 360.0
+    cusp_equatorial = tuple(
+        _ecliptic_to_equatorial(float(cusp) + zodiac_offset_deg, obliquity_deg)
+        for cusp in house_cusps[:12]
+    )
+    decs = _house_contour_rows(
+        house_system_code=house_system_code,
+        observer_lat=observer_lat,
+        cusp_declinations=tuple(dec for _ra, dec in cusp_equatorial),
+    )
+    # All three quadrant systems have the real horizon for 1/7 and the
+    # meridian for 4/10. Swiss's Topocentric house-position inversion becomes
+    # irregular close to one horizon end; do not let that numerical artifact
+    # displace the physical Ascendant/Descendant boundaries.
+    contour_houses = _HOUSE_INTERMEDIATE_CUSPS
+
+    def position_at(ra: float, dec: float) -> float | None:
+        return _house_position_on_sphere(
+            ra, dec,
+            armc_deg=armc,
+            observer_lat=observer_lat,
+            obliquity_deg=obliquity_deg,
+            house_system_code=house_system_code,
+        )
+
+    active: dict[int, list[list[tuple[float, float]]]] = {house: [] for house in range(1, 13)}
+    completed: dict[int, list[list[tuple[float, float]]]] = {house: [] for house in range(1, 13)}
+    previous_dec: float | None = None
+    for dec in decs:
+        samples = [
+            (float(ra), position_at(float(ra), dec))
+            for ra in range(0, 361, _HOUSE_CONTOUR_RA_STEP_DEG)
+        ]
+        roots: dict[int, list[float]] = {house: [] for house in range(1, 13)}
+        for (ra0, value0), (ra1, value1) in zip(samples, samples[1:]):
+            if value0 is None or value1 is None:
+                continue
+            delta = (value1 - value0 + 6.0) % 12.0 - 6.0
+            if abs(delta) > 2.0:
+                continue
+            lo, hi = sorted((value0, value0 + delta))
+            for level in range(ceil(lo), floor(hi) + 1):
+                house = level % 12 + 1
+                if house not in contour_houses:
+                    continue
+                root = _house_contour_root(
+                    ra0, ra1, value0, level, dec, position_at,
+                )
+                if root is not None:
+                    roots[house].append(root)
+        # The exact ecliptic cusp is a known point on its own contour. Include
+        # it so the spatial line and the wheel's cusp remain registered.
+        for house, (cusp_ra, cusp_dec) in enumerate(cusp_equatorial, start=1):
+            if (
+                house in contour_houses
+                and abs(dec - cusp_dec) < 1e-10
+                and not (
+                    house_system_code in {"P", "K"}
+                    and abs(observer_lat) >= 90.0 - obliquity_deg
+                )
+                and (value := position_at(cusp_ra, cusp_dec)) is not None
+                and abs((value - (house - 1) + 6.0) % 12.0 - 6.0) < 0.01
+            ):
+                roots[house].append(cusp_ra)
+
+        for house in range(1, 13):
+            unique = []
+            for ra in sorted(roots[house]):
+                if not unique or abs((ra - unique[-1] + 180.0) % 360.0 - 180.0) > 0.005:
+                    unique.append(ra)
+            old_paths = active[house]
+            matches = []
+            for old_index, path in enumerate(old_paths):
+                old_ra, old_dec = path[-1]
+                if previous_dec is None or abs(old_dec - previous_dec) > 1e-8:
+                    continue
+                for new_index, ra in enumerate(unique):
+                    angular = degrees(acos(max(-1.0, min(1.0, _vector_dot(
+                        _to_vector(old_ra, old_dec), _to_vector(ra, dec),
+                    )))))
+                    if angular <= max(4.0, 8.0 * abs(dec - old_dec)):
+                        matches.append((angular, old_index, new_index))
+            used_old: set[int] = set()
+            used_new: set[int] = set()
+            next_paths = []
+            for _distance, old_index, new_index in sorted(matches):
+                if old_index in used_old or new_index in used_new:
+                    continue
+                used_old.add(old_index)
+                used_new.add(new_index)
+                path = old_paths[old_index]
+                path.append((unique[new_index], dec))
+                next_paths.append(path)
+            completed[house].extend(
+                path for index, path in enumerate(old_paths) if index not in used_old
+            )
+            next_paths.extend([(
+                unique[index], dec,
+            )] for index in range(len(unique)) if index not in used_new)
+            active[house] = next_paths
+        previous_dec = dec
+
+    for house in range(1, 13):
+        completed[house].extend(active[house])
+    lines: dict[int, list[list[list[float]]]] = {}
+    for house, paths in completed.items():
+        if house not in contour_houses:
+            lines[house] = _angular_house_boundary(
+                house, observer_lon, observer_lat,
+            )
+            continue
+        segments = []
+        for path in paths:
+            if len(path) < 2:
+                continue
+            path = _refine_house_contour_path(path, house, position_at)
+            projected = [(_normalize_lon(ra - sidereal), dec) for ra, dec in path]
+            segments.extend(_split_antimeridian(projected))
+        lines[house] = segments
+
+    labels: dict[int, dict[str, list[float]]] = {}
+    label_dec = min(30.0, max(4.0, 0.55 * (90.0 - abs(observer_lat))))
+    for house in range(1, 13):
+        labels[house] = {}
+        target = (house - 0.5) % 12.0
+        for pole, dec in (("north", label_dec), ("south", -label_dec)):
+            candidates = [
+                (abs((value - target + 6.0) % 12.0 - 6.0), ra)
+                for ra in range(0, 360, 2)
+                if (value := position_at(float(ra), dec)) is not None
+            ]
+            if candidates:
+                _error, ra = min(candidates)
+                labels[house][pole] = [
+                    round(_normalize_lon(ra - sidereal), 6), round(dec, 6),
+                ]
+    return lines, labels
 
 
 def _house_plane_axis(
@@ -452,12 +821,23 @@ def build_reference_features(
             })
 
     house_plane = _house_plane_for_system(house_system_code)
-    house_axis = _house_plane_axis(
+    house_axis = None if house_plane == "house-position-contour" else _house_plane_axis(
         plane=house_plane,
         local_sidereal_deg=local_sidereal_deg,
         observer_lat=observer_lat,
         obliquity_deg=obliquity_deg,
     )
+    contour_lines, contour_labels = ({}, {})
+    if house_plane == "house-position-contour" and house_cusps:
+        contour_lines, contour_labels = _sample_house_position_contours(
+            jd_ut=jd_ut,
+            observer_lon=observer_lon,
+            observer_lat=observer_lat,
+            obliquity_deg=obliquity_deg,
+            zodiac_offset_deg=zodiac_offset_deg,
+            house_cusps=tuple(house_cusps),
+            house_system_code=str(house_system_code).upper(),
+        )
     house_tangents = []
     for house_index, cusp_longitude in enumerate(house_cusps[:12], start=1):
         selected_zodiac_cusp = float(cusp_longitude)
@@ -466,11 +846,12 @@ def build_reference_features(
             tropical_longitude,
             obliquity_deg,
         )
-        tangent = _plane_tangent_through(
+        tangent = None if house_axis is None else _plane_tangent_through(
             house_axis,
             _to_vector(cusp_ra, cusp_dec),
         )
-        house_tangents.append(tangent)
+        if tangent is not None:
+            house_tangents.append(tangent)
         features.append({
             "type": "Feature",
             "properties": {
@@ -480,45 +861,63 @@ def build_reference_features(
                 "houseSystem": str(house_system_code or ""),
                 "plane": house_plane,
                 "angle": house_index in (1, 4, 7, 10),
-                "frame": "house-system-great-circle",
+                "frame": (
+                    "house-system-position-contour"
+                    if house_axis is None else "house-system-great-circle"
+                ),
             },
             "geometry": {
                 "type": "MultiLineString",
-                "coordinates": _sample_axis_semicircle(
-                    axis=house_axis,
-                    tangent=tangent,
-                    earth_fixed=earth_fixed,
+                "coordinates": (
+                    contour_lines.get(house_index, [])
+                    if house_axis is None
+                    else _sample_axis_semicircle(
+                        axis=house_axis,
+                        tangent=tangent,
+                        earth_fixed=earth_fixed,
+                    )
                 ),
             },
         })
 
     house_names = ("I", "2", "3", "IV", "5", "6", "VII", "8", "9", "X", "11", "12")
-    for index, tangent in enumerate(house_tangents):
-        next_tangent = house_tangents[(index + 1) % len(house_tangents)]
-        midpoint = _unit_vector(tuple(
-            left + right for left, right in zip(tangent, next_tangent)
-        ))
+    for index in range(min(len(house_cusps), 12)):
         house_index = index + 1
+        midpoint = None
+        if house_axis is not None:
+            tangent = house_tangents[index]
+            next_tangent = house_tangents[(index + 1) % len(house_tangents)]
+            midpoint = _unit_vector(tuple(
+                left + right for left, right in zip(tangent, next_tangent)
+            ))
         for north in (True, False):
+            pole = "north" if north else "south"
+            coordinate = (
+                contour_labels.get(house_index, {}).get(pole)
+                if house_axis is None
+                else _pole_label_point(
+                    axis=house_axis,
+                    tangent=midpoint,
+                    north=north,
+                    earth_fixed=earth_fixed,
+                    inset_deg=6.0,
+                )
+            )
+            if coordinate is None:
+                continue
             features.append({
                 "type": "Feature",
                 "properties": {
                     "kind": "REFERENCE_HOUSE_POLE_LABEL",
                     "house": house_index,
                     "label": house_names[index],
-                    "pole": "north" if north else "south",
+                    "pole": pole,
                     "plane": house_plane,
                     "angle": house_index in (1, 4, 7, 10),
                 },
                 "geometry": {
                     "type": "Point",
-                    "coordinates": _pole_label_point(
-                        axis=house_axis,
-                        tangent=midpoint,
-                        north=north,
-                        earth_fixed=earth_fixed,
-                        inset_deg=6.0,
-                    ),
+                    "coordinates": coordinate,
                 },
             })
 

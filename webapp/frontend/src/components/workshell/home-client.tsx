@@ -5,6 +5,7 @@
 
 "use client";
 
+import { coerceDateConvention, type DateConvention } from "@/lib/date-display";
 import { activateWheelStyle, flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
 
 import {
@@ -396,7 +397,12 @@ const TABLE_ID_BY_MENU_COMMAND: Record<string, string> = {
 };
 
 function exportBaseName(doc: WorkspaceDocument | null): string {
-  const raw = doc?.title.replace(/\s*\*$/, "").trim() || "aries-chart";
+  const title = doc?.title.replace(/\s*\*$/, "").trim() || "aries-chart";
+  const source = doc?.sourceName.trim() || "";
+  const namedTitle = source && !title.toLowerCase().startsWith(source.toLowerCase())
+    ? `${source} ${title}` : title;
+  const suffix = doc?.tabSuffix?.trim();
+  const raw = suffix && !namedTitle.includes(suffix) ? `${namedTitle} ${suffix}` : namedTitle;
   return raw.replace(/[\\/:*?"<>|]+/g, "_") || "aries-chart";
 }
 
@@ -1178,7 +1184,7 @@ export function HomeClient() {
         // initial shell/daemon readiness race.
         void prewarmToolWindows(t("settings.title"), t("editor.titleEdit"))
           .catch(error => console.error("[tool-window-prewarm]", error));
-        prewarmChartPickerWindowApi();
+        prewarmChartPickerWindowApi(t("picker.windowTitleOpen"));
         prewarmChartPickerRows(CHART_PICKER_ROWS_REFRESH_MIN_INTERVAL_MS);
       };
       if ("requestIdleCallback" in window) {
@@ -1335,6 +1341,7 @@ export function HomeClient() {
   // intentionally do not rewrite the document tree just to carry datetime.
   const { chart: activeChart } = useActiveDocumentChart(activeDoc);
   const activeDocRef = useRef<WorkspaceDocument | null>(activeDoc);
+  const astrocartLayerDocumentIdsRef = useRef<Set<string>>(new Set());
   const activeChartRef = useRef(activeChart);
   const recoveredSynodicTableDocumentRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -1343,6 +1350,13 @@ export function HomeClient() {
   useLayoutEffect(() => {
     activeDocRef.current = activeDoc;
   }, [activeDoc]);
+  useLayoutEffect(() => {
+    const mapIds = new Set(documents.filter((doc) => doc.kind === "astrocart").map((doc) => doc.id));
+    astrocartLayerDocumentIdsRef.current = new Set(
+      documents.filter((doc) => doc.parentDocumentId && mapIds.has(doc.parentDocumentId))
+        .map((doc) => doc.id),
+    );
+  }, [documents]);
 
   // Synastry / astrocart / here-now are REAL daemon documents (open-synastry /
   // open-astrocart / open-here-now). These launch handlers are shared with the
@@ -1549,28 +1563,41 @@ export function HomeClient() {
   const openSpotlight = useCallback((initialText = "") => {
     setSpotlight((current) => ({
       open: true,
-      initialText,
+      initialText: current.open && /^[0-9]$/.test(initialText)
+        ? current.initialText + initialText
+        : initialText,
       version: current.version + 1,
     }));
   }, []);
+  const executeSpotlightAction = useCallback(
+    async (text: string, action: "open-chart" | SpotlightActionId): Promise<boolean> => {
+      const finish = beginWorkspaceSnapshotCommand();
+      try {
+        const result = await spotlightExecute(text, action);
+        applyImmediateWorkspaceCommandResult(result, result.documentId);
+        return true;
+      } catch (err) {
+        console.error("[spotlight-execute]", err);
+        return false;
+      } finally {
+        finish();
+      }
+    },
+    [],
+  );
   const handleSpotlightCommit = useCallback(
     async (
       action: "open-chart" | SpotlightActionId,
       _preview: SpotlightPreview,
       text: string,
     ) => {
-      const finish = beginWorkspaceSnapshotCommand();
-      try {
-        const result = await spotlightExecute(text, action);
-        applyImmediateWorkspaceCommandResult(result, result.documentId);
-        setSpotlightOpen(false);
-      } catch (err) {
-        console.error("[spotlight-execute]", err);
-      } finally {
-        finish();
-      }
+      if (await executeSpotlightAction(text, action)) setSpotlightOpen(false);
     },
-    [setSpotlightOpen],
+    [executeSpotlightAction, setSpotlightOpen],
+  );
+  const setAstrocartCursorMoment = useCallback(
+    (moment: string) => executeSpotlightAction(moment, "current"),
+    [executeSpotlightAction],
   );
   useAmbientSpotlightTriggers({
     open: spotlight.open,
@@ -1870,6 +1897,9 @@ export function HomeClient() {
   }, [revealKeyHints]);
 
   const activeChartDocumentId = activeChart?.document?.documentId ?? activeDoc?.id ?? "";
+  const activeMapLayer = Boolean(activeDoc?.parentDocumentId && documents.some(
+    (doc) => doc.id === activeDoc.parentDocumentId && doc.kind === "astrocart",
+  ));
   const activeChartViewMode = activeChart?.document?.viewMode ?? null;
   const activeChartPresent = activeChart != null;
   const activeChartHasComparison = activeChart?.comparisonChart != null;
@@ -2131,6 +2161,7 @@ export function HomeClient() {
     [launcherEnabledActions],
   );
   const activeLaunchDatetime =
+    (activeMapLayer ? activeDoc?.symbolicTime?.signifiedDatetime ?? activeDoc?.displayDatetime : null) ??
     activeChart?.document?.symbolicTime?.signifiedDatetime ??
     activeDoc?.symbolicTime?.signifiedDatetime ??
     activeChart?.document?.displayDatetime ??
@@ -2396,7 +2427,7 @@ export function HomeClient() {
       if (!enabledIds.has(id) && id !== "ascensional-transits") return;
       // Top actions.
       if (id === "open") {
-        void openChartPickerWindow({ mode: "open-radix" });
+        void openChartPickerWindow({ mode: "open-radix", title: t("picker.windowTitleOpen") });
         return;
       }
       if (id === "now") {
@@ -2425,6 +2456,13 @@ export function HomeClient() {
       // it is false, the action is inert for this session — the wx
       // morin._workspace_navigation_state behaviour, not recomputed in TS.
       if (!launcherIsRuntimeEnabled(id)) return;
+      // A map layer tab (a chart child of an Astrocart document) keeps its map
+      // as the launch context, exactly like the Astrocart tab itself.
+      const mapDocumentId = activeDoc?.kind === "astrocart"
+        ? activeDoc.id
+        : activeMapLayer
+          ? activeDoc?.parentDocumentId ?? null
+          : null;
       if (id.startsWith("table:")) {
         // Tables / Time Lords sidebar rows — daemon-owned dispatch ids
         // ("table:<tables_service id>") for the embedded generic table child
@@ -2497,6 +2535,7 @@ export function HomeClient() {
       if (id === "synastry") {
         void openChartPickerWindow({
           mode: "synastry-partner",
+          title: t("picker.windowTitleSynastryPartner"),
           parentRadixId: launchParent.id,
           excludeNames: [launchParent.sourceName],
         });
@@ -2572,9 +2611,10 @@ export function HomeClient() {
         return;
       }
       if (id === "transits") {
+        const chartParentId = mapDocumentId ?? launchParent.id;
         const existingChild = findSupplementaryChildByKind(
           documents,
-          launchParent.id,
+          chartParentId,
           "transits",
         );
         const openList = () => {
@@ -2593,7 +2633,7 @@ export function HomeClient() {
         const openChart = () => {
           const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
           void workspaceOpen({
-            parentDocumentId: launchParent.id,
+            parentDocumentId: chartParentId,
             featureKind: "transits",
             reuseExisting: true,
           })
@@ -2603,6 +2643,10 @@ export function HomeClient() {
             .catch((err) => console.error("[ws-open-transits]", err))
             .finally(finishSnapshotCommand);
         };
+        if (mapDocumentId) {
+          openChart();
+          return;
+        }
         void fetchProgressionLaunchPredicate()
           .then((predicate) => {
             const mode = normalizeChartListLaunchMode(predicate.mode);
@@ -2651,6 +2695,12 @@ export function HomeClient() {
         return;
       }
       if (supplementaryIds.has(id)) {
+        if (mapDocumentId && [
+          "secondary-progression", "minor-progression", "tertiary-progression", "solar-arc",
+        ].includes(id)) {
+          openSupplementaryChild(mapDocumentId, id as SupplementaryKind);
+          return;
+        }
         const secondaryMethod = progressionDirectionsMethod(id);
         if (secondaryMethod) {
           void fetchProgressionLaunchPredicate()
@@ -2705,8 +2755,10 @@ export function HomeClient() {
       // Any other enabled action with no client surface yet: no-op.
     },
     [
+      t,
       documents,
       activeDoc,
+      activeMapLayer,
       activeLaunchParent,
       activeRadix,
       activateDocument,
@@ -2807,12 +2859,23 @@ export function HomeClient() {
     setSynastryPartnerRequester((radix) =>
       void openChartPickerWindow({
         mode: "synastry-partner",
+        title: t("picker.windowTitleSynastryPartner"),
         parentRadixId: radix.id,
         excludeNames: [radix.sourceName],
       }),
     );
     return () => setSynastryPartnerRequester(null);
-  }, [setSynastryPartnerRequester]);
+  }, [setSynastryPartnerRequester, t]);
+
+  // Saved events provide an explicit document and seed; never fall back to the radix.
+  useEffect(() => {
+    useWorkspaceStore.getState().setEventEditorRequester((documentId, seed) => {
+      setEditTarget(seed ? { name: seed.fields?.name ?? "", cursorDocId: documentId, cursorSeed: seed }
+        : { name: "", eventOwnerDocumentId: documentId });
+      setEditorOpen(true);
+    });
+    return () => useWorkspaceStore.getState().setEventEditorRequester(null);
+  }, []);
 
   // Register the edit-chart opener so the radix-wheel context menu's "Edit chart
   // data" item opens THIS editor dialog. Two lanes (onData, morin.py:14813):
@@ -2879,6 +2942,10 @@ export function HomeClient() {
       const target = navigateTargetForDocument(activeDoc);
       if (!target) return;
       const docId = target.documentId;
+      // An Astrocart child displays the retained map. Its ChartSession still
+      // owns the cursor, but no wheel snapshot is useful during this step.
+      const paintsSnapshot = target.paintsSnapshot &&
+        !astrocartLayerDocumentIdsRef.current.has(docId);
       const shift = Boolean(modifiers.shift);
       const alt = Boolean(modifiers.alt);
       const intentAt = perfNow();
@@ -2895,7 +2962,7 @@ export function HomeClient() {
         key,
         shift,
         alt,
-        target.paintsSnapshot,
+        paintsSnapshot,
         intentAt,
       );
       const inputIds = inputId == null ? [] : [inputId];
@@ -2910,7 +2977,7 @@ export function HomeClient() {
         if (
           repeatable &&
           latest?.documentId === docId &&
-          latest.paintsSnapshot === target.paintsSnapshot &&
+          latest.paintsSnapshot === paintsSnapshot &&
           latest?.key === key &&
           latest.shift === shift &&
           latest.alt === alt &&
@@ -2924,7 +2991,7 @@ export function HomeClient() {
         } else {
           pending.push({
             documentId: docId,
-            paintsSnapshot: target.paintsSnapshot,
+            paintsSnapshot,
             key,
             shift,
             alt,
@@ -2951,8 +3018,15 @@ export function HomeClient() {
       ) => {
         steppingRef.current = true;
         const stepGeneration = ++stepGenerationRef.current;
+        const mapTarget = astrocartLayerDocumentIdsRef.current.has(targetDocId);
+        if (mapTarget) {
+          window.dispatchEvent(new CustomEvent("aries:chart-step-start", {
+            detail: { documentId: targetDocId },
+          }));
+        }
         let documentCommandGenerationAtRequest: number | null = null;
         let publishedStepSnapshot: ChartRenderSnapshot | null = null;
+        let mapStepCursor: { displayDatetime: string | null; tabSuffix: string | null } | null = null;
         // Activation may have queued a first-full-overlay completion for this
         // same document. The step now owns its partial -> full lifecycle, so
         // prevent that older scheduler from starting a competing snapshot GET.
@@ -2974,7 +3048,7 @@ export function HomeClient() {
         const startNavigationRequest = () => {
           documentCommandGenerationAtRequest =
             workspaceDocumentSnapshotCommandGeneration(targetDocId);
-          return workspaceNavigateKey(targetDocId, k, shift, alt, repeat);
+          return workspaceNavigateKey(targetDocId, k, shift, alt, repeat, !mapTarget);
         };
         const navigationRequest = hasPendingWorkspaceDocumentSnapshotCommand(targetDocId)
           ? waitForWorkspaceDocumentSnapshotCommands(targetDocId).then(startNavigationRequest)
@@ -3017,6 +3091,18 @@ export function HomeClient() {
                 stepInputIds,
                 paintsSnapshot ? "missing-step-snapshot" : "no-canvas-target",
               );
+            }
+            if (mapTarget && res.stepped) {
+              mapStepCursor = {
+                displayDatetime: res.displayDatetime,
+                tabSuffix: res.tabSuffix ?? null,
+              };
+              window.dispatchEvent(new CustomEvent("aries:chart-step-published", {
+                detail: {
+                  documentId: targetDocId,
+                  burstOpen: heldStepEnvelopesRef.current.size > 0,
+                },
+              }));
             }
           })
           .catch((err) => {
@@ -3090,7 +3176,7 @@ export function HomeClient() {
             // T1/T6: this runs ONCE per burst, gated on the close edge — never
             // on a quiet-window timer. If the key is still held, the settle
             // trigger is parked and the close edge fires it.
-            if (!paintsSnapshot) {
+            if (!paintsSnapshot && !mapTarget) {
               return;
             }
             if (
@@ -3118,6 +3204,19 @@ export function HomeClient() {
                     pendingStepsRef.current.length > 0 ||
                     heldStepEnvelopesRef.current.size > 0
                   ) return;
+                  if (mapTarget) {
+                    if (mapStepCursor) {
+                      useDaemonWorkspaceStore.getState().commitMapStepCursor(
+                        targetDocId,
+                        mapStepCursor.displayDatetime,
+                        mapStepCursor.tabSuffix,
+                      );
+                    }
+                    window.dispatchEvent(new CustomEvent("aries:chart-step-settle", {
+                      detail: { documentId: targetDocId },
+                    }));
+                    return;
+                  }
                   const controller = new AbortController();
                   settleRequestRef.current = controller;
                   recordChartPerf("chart-step-settle-start", {
@@ -3191,7 +3290,7 @@ export function HomeClient() {
           });
       };
 
-      fire(docId, target.paintsSnapshot, key, shift, alt, intentAt, 1, inputIds);
+      fire(docId, paintsSnapshot, key, shift, alt, intentAt, 1, inputIds);
     },
     [pushSteppedSnapshot, closeStepBurst, openStepBurst],
   );
@@ -3876,7 +3975,7 @@ export function HomeClient() {
   // keep "Name (date)" through activeDoc.tabSuffix.
   useEffect(() => {
     let suffix = "";
-    const liveTitleSuffix = activeChart?.document?.titleSuffix ?? null;
+    const liveTitleSuffix = activeMapLayer ? null : activeChart?.document?.titleSuffix ?? null;
     if (activeDoc?.isHorary) {
       suffix = liveTitleSuffix
         ? ` • ${liveTitleSuffix}`
@@ -3896,7 +3995,7 @@ export function HomeClient() {
     return () => {
       cancelled = true;
     };
-  }, [activeChart?.document?.titleSuffix, activeDoc, t]);
+  }, [activeChart?.document?.titleSuffix, activeDoc, activeMapLayer, t]);
 
   // App-quit notes flush (DEF-003; wx onExit _flush_notes_if_dirty,
   // morin.py:15638-15645). The notes pane debounce-saves; on quit we force any
@@ -4103,6 +4202,16 @@ export function HomeClient() {
     supplementaryFeatureKind: activeDoc?.supplementaryFeatureKind,
     harmonicNumber: activeHarmonicNumber,
     harmonicProjectionMode: activeHarmonicProjectionMode,
+    ...(activeMapLayer ? {
+      cursorDatetime:
+        activeDoc?.displayDatetime ??
+        activeChart?.document?.symbolicTime?.signifiedDatetime ??
+        activeChart?.document?.displayDatetime ??
+        activeChart?.displayDatetime ??
+        activeDoc?.symbolicTime?.signifiedDatetime,
+      dateConvention: nativeQuickOptions?.display.dateconvention ?? "current",
+      onSetCursorMoment: setAstrocartCursorMoment,
+    } : {}),
     onToggleComparison: toggleComparisonView,
     onSwitchRelationshipMode: handleRelationshipModeChange,
     onHintInteraction: renewKeyHints,
@@ -4139,11 +4248,14 @@ export function HomeClient() {
           onRevealKeyHints={
             keyHintsAllowed && keyHintsAutoAllowed ? revealKeyHintsAtEdge : undefined
           }
+          dateConvention={coerceDateConvention(nativeQuickOptions?.display.dateconvention)}
         >
           <ActiveDocumentSurface
+            dateConvention={coerceDateConvention(nativeQuickOptions?.display.dateconvention)}
             doc={activeDoc}
             chart={activeChart}
             navbar={chartNavbar}
+            onOpenSettings={openSettings}
           />
         </WorkspaceFrame>
         <AmbientSpotlight
@@ -4881,15 +4993,19 @@ function QuitConfirmDialog({
 }
 
 function ActiveDocumentSurface({
+  dateConvention,
   doc,
   chart,
   navbar,
+  onOpenSettings,
 }: {
+  dateConvention: DateConvention;
   doc: WorkspaceDocument | null;
   chart: ChartRenderSnapshot | null;
   navbar?: ModeHintRailProps | null;
+  onOpenSettings: (tab?: SettingsTabId) => void;
 }) {
-  return <WorkspaceContent chart={chart} activeDoc={doc} navbar={navbar} />;
+  return <WorkspaceContent dateConvention={dateConvention} chart={chart} activeDoc={doc} navbar={navbar} onOpenSettings={onOpenSettings} />;
 }
 
 type ActiveDocumentChart = {

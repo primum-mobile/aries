@@ -145,10 +145,62 @@ class ChartEventsService:
         session['saved_event_id'] = event['id']
         session['saved_event_owner'] = owner_id
         session['saved_event_signature'] = signature
+        session['saved_event_source_signature'] = event['signature']
         session['saved_event_name'] = event['name']
         self.workspace._controller._sync_runtime_title(session)
         self.workspace._manager.broadcast_threadsafe({'type': 'documents.changed', 'tree': self.workspace._tree_payload()})
         return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': event['id']}
+
+    def create(self, document_id, fields, event_id):
+        """Create a portable event without opening or activating a workspace chart."""
+        from webapp.daemon.editor_service import editor_fields_to_record, editor_service
+        from webapp.daemon.notes_service import write_note_state
+        event_id = str(uuid.UUID(str(event_id)))
+        owner_id, owner, radix = self.owner(document_id)
+        fields = editor_service._new_chart_fields_with_default_location(fields)
+        record = editor_fields_to_record({**fields, 'id': event_id, 'type': 'transit'})
+        name = record['name'].strip()
+        if not name:
+            raise ValueError('An event needs a name')
+        markdown = record.pop('notes', '')
+        chrt = chart_factory.chart_from_record(record, chart_snapshot_service.options)
+        cs = chart_session.ChartSession(chrt, radix, chart_snapshot_service.options)
+        node = self._capture_node({'chart_session': cs, 'base_title': name,
+                                  'supplementary_feature_kind': 'transits', 'launcher_kind': 'transits'})
+        events = copy.deepcopy(owner.get('saved_events', []))
+        # A retry after a failed note write must not add a second event.
+        event = next((item for item in events if item['id'] == event_id), None)
+        if event is None:
+            event = {'v': 1, 'id': event_id}
+            events.append(event)
+        event.update(name=name, signature=_signature([node]), nodes=[node])
+        self._persist(owner_id, owner, radix, events)
+        write_note_state(name, markdown, record_id=owner['chart_id'], event_id=event_id)
+        return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': event_id}
+
+    def update_from_editor(self, document_id, name):
+        """Replace the attached recipe while retaining its identity and metadata."""
+        session = self.workspace._controller.session(document_id)
+        if not session or not session.get('saved_event_id'):
+            return
+        owner_id, owner, radix = self.owner(document_id)
+        if session.get('saved_event_owner') != owner_id:
+            raise ValueError('Event owner changed')
+        events = copy.deepcopy(owner.get('saved_events', []))
+        event = next((item for item in events if item['id'] == session['saved_event_id']), None)
+        if event is None:
+            raise ValueError('Saved event no longer exists')
+        event['name'] = str(name or event['name']).strip() or event['name']
+        nodes = self._nodes(document_id, owner_id)
+        nodes[-1]['label'] = event['name']
+        event['nodes'] = nodes
+        event['signature'] = _signature(nodes)
+        self._persist(owner_id, owner, radix, events)
+        session['custom_title_root'] = event['name']
+        session['saved_event_name'] = event['name']
+        session['saved_event_signature'] = _signature(self._nodes(document_id, owner_id))
+        session['saved_event_source_signature'] = event['signature']
+        self.workspace._controller._sync_runtime_title(session)
 
     def note_context(self, document_id):
         """Nearest saved event owns notes for its branch; no file access."""
@@ -201,12 +253,18 @@ class ChartEventsService:
             self._tags_changed()
         self.workspace._manager.broadcast_threadsafe({'type': 'chart.events.changed', 'documentIds': owners})
 
-    def list(self, document_id, *, offset=0, limit=128, query=''):
+    def list(self, document_id, *, offset=0, limit=128, query='', sort='date', descending=False):
         owner_id, owner, radix = self.owner(document_id)
         events = owner.get('saved_events', [])
         needle = str(query).strip().casefold()
-        ordered = sorted((event for event in events if not needle or needle in event['name'].casefold()),
-                         key=lambda event: event['nodes'][-1]['cursorJd'])
+        if sort not in ('date', 'added'):
+            raise ValueError('Unknown event sort')
+        ordered = [event for event in events if not needle or needle in event['name'].casefold()]
+        if sort == 'date':
+            ordered.sort(key=lambda event: event['nodes'][-1]['cursorJd'])
+        # The persisted array is insertion order, including legacy events.
+        if descending:
+            ordered.reverse()
         start = max(0, int(offset))
         stop = start + min(256, max(1, int(limit)))
         rows = []
@@ -304,6 +362,7 @@ class ChartEventsService:
         workspace = self.workspace
         for doc_id, session in workspace._controller._runtime.items():
             if (session.get('saved_event_id') == event_id and session.get('saved_event_owner') == owner_id
+                    and session.get('saved_event_source_signature') == event.get('signature')
                     and session.get('saved_event_signature') == _signature(self._nodes(doc_id, owner_id))):
                 workspace._controller.activate_document(doc_id)
                 return workspace._attach_full_snapshot({'ok': True, 'documentId': doc_id,
@@ -330,6 +389,7 @@ class ChartEventsService:
         session['saved_event_id'] = event_id
         session['saved_event_owner'] = owner_id
         session['saved_event_signature'] = _signature(self._nodes(parent_id, owner_id))
+        session['saved_event_source_signature'] = event.get('signature')
         session['saved_event_name'] = event['name']
         workspace._controller._sync_runtime_title(session)
         tree = workspace._tree_payload()

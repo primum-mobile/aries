@@ -88,7 +88,7 @@ function createHarness() {
         },
       };
 
-      function isDomLabelMovementActive() {
+      function isMapMotionActive() {
         return activeMapMotionPhases.size > 0;
       }
       function setAsterismHoverEnabled(value) {
@@ -105,11 +105,11 @@ function createHarness() {
       function ensureEclipseLayers() { calls.push(['ensure', 'eclipse']); }
       function hideAsterismStarPopup() { calls.push(['hide-popup']); }
       function syncBirthplaceMarker() { calls.push(['marker']); }
+      function scheduleAcgChipAnchors() { calls.push(['chip-anchors']); }
       function updateLegend() { calls.push(['legend']); }
       function syncReferenceVisibility() { calls.push(['reference']); }
       function scheduleRuntimeOverlayReplay() { calls.push(['replay']); }
       function fitFeatureCollection() { calls.push(['fit']); }
-      function scheduleDomAcgLabels(reason) { calls.push(['dom-labels', reason]); }
       function applyDisplayStyle() { calls.push(['display-style']); }
       function setStatus() {}
       function postPerfSnapshot(reason) { calls.push(['perf', reason]); }
@@ -147,7 +147,7 @@ function sceneWork(calls) {
     "marker",
     "legend",
     "reference",
-    "dom-labels",
+    "chip-anchors",
     "repaint",
     "ruler",
   ].includes(kind));
@@ -191,7 +191,7 @@ test("latest scene payloads stay offscreen through overlapping movement and flus
       ["setData", "eclipse-path", "eclipse-1"],
     ],
   );
-  for (const kind of ["marker", "legend", "reference", "dom-labels", "repaint", "ruler"]) {
+  for (const kind of ["marker", "legend", "reference", "chip-anchors", "repaint", "ruler"]) {
     assert.equal(calls.filter(([entry]) => entry === kind).length, 1, kind);
   }
   assert.equal(api.perfState.runtimeSceneCoherentFlushes, 1);
@@ -218,7 +218,7 @@ test("hidden payloads use the same dirty scene without replaying camera fit", ()
   assert.equal(api.flushRetainedRuntimeOverlayScene("reactivate"), true);
   assert.equal(calls.filter(([kind]) => kind === "polar").length, 1);
   assert.equal(calls.filter(([kind]) => kind === "fit").length, 0);
-  assert.equal(calls.filter(([kind]) => kind === "dom-labels").length, 1);
+  assert.equal(calls.filter(([kind]) => kind === "chip-anchors").length, 1);
 });
 
 test("public data replacement defers before styling and final events own the flush", () => {

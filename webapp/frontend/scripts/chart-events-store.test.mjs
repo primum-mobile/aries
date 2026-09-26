@@ -185,3 +185,30 @@ test("tags rank chart usage first, then recent assignments, then names", () => {
     ["chart", "used", "recent", "unused", "last"]);
   assert.equal(catalog[0].id, "unused");
 });
+
+test("sort retains visible rows until replacement and rejects old paging responses", async () => {
+  const { store, calls } = harness();
+  const initial = store.getState().load("a");
+  calls[0].resolve(page("old", 300));
+  await initial;
+  store.getState().patch("a", { scrollTop: 500 });
+  const append = store.getState().load("a", true);
+  store.getState().sort("a", "added", true);
+  assert.equal(calls[1].signal.aborted, true);
+  assert.equal(store.getState().views.a.rows[0].id, "old");
+  assert.equal(store.getState().views.a.scrollTop, 500);
+  const replacement = store.getState().load("a");
+  assert.equal(calls[2].payload.sort, "added");
+  assert.equal(calls[2].payload.descending, true);
+  calls[2].resolve(page("new", 300));
+  await replacement;
+  calls[1].resolve(page("stale"));
+  await append;
+  assert.equal(store.getState().views.a.rows[0].id, "new");
+  assert.equal(store.getState().views.a.scrollTop, 0);
+  const next = store.getState().load("a", true);
+  assert.equal(calls[3].payload.sort, "added");
+  assert.equal(calls[3].payload.descending, true);
+  calls[3].resolve(page("next", 300));
+  await next;
+});

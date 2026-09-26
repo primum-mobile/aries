@@ -271,12 +271,19 @@ class WorkspaceSessionController:
 
     def _comparison_chart_for_parent(self, parent_session: Optional[dict]):
         # morin.py:6445 _workspace_comparison_chart_for_parent_session
+        parent_session = self._chart_context_parent(parent_session)
         if parent_session is None:
             return None
         parent_cs = parent_session.get('chart_session')
         if parent_cs is not None:
             return getattr(parent_cs, 'chart', None)
         return parent_session.get('chart')
+
+    def _chart_context_parent(self, parent_session: Optional[dict]):
+        """ACG is a view of its parent chart; chart children inherit that chart."""
+        if parent_session and parent_session.get('launcher_kind') == 'astrocart':
+            return self._runtime.get(parent_session.get('parent_document_id'))
+        return parent_session
 
     def _comparison_chart_for_child_session(
         self,
@@ -303,7 +310,7 @@ class WorkspaceSessionController:
         anchor = session.get('comparison_chart')
         if anchor is not None:
             return anchor
-        parent_session = self._runtime.get(session.get('parent_document_id'))
+        parent_session = self._chart_context_parent(self._runtime.get(session.get('parent_document_id')))
         return self._comparison_chart_for_child_session(session, parent_session)
 
     def _runtime_radix_for_session(self, session: dict):
@@ -487,7 +494,7 @@ class WorkspaceSessionController:
                 mark(document_id)
                 continue
 
-            parent_session = self._runtime.get(session.get('parent_document_id'))
+            parent_session = self._chart_context_parent(self._runtime.get(session.get('parent_document_id')))
             if (session.get('chart_projection_following_source') and parent_session is not None
                     and (mode != 'pd-in-chart' or session.get('pd_in_chart_binding'))
                     and (mode != 'solar-arc' or session.get('supplementary_feature_kind') == 'solar_arc')):
@@ -691,6 +698,9 @@ class WorkspaceSessionController:
         source edge: morin.py:9224-9244 / 9305-9320 explicitly rebuilds open
         supplementary descendants while walking by indent.
         """
+        parent_session = self._chart_context_parent(parent_session)
+        if parent_session is None:
+            return False
         cs = session.get('chart_session')
         parent_cs = parent_session.get('chart_session')
         if cs is None or parent_cs is None:
@@ -850,7 +860,7 @@ class WorkspaceSessionController:
 
         # Parent comparison + parent_source_datetime seed (morin.py:9631-9643).
         if parent_document_id is not None:
-            parent_session = self._runtime.get(parent_document_id)
+            parent_session = self._chart_context_parent(self._runtime.get(parent_document_id))
             if session.get('comparison_chart') is None:
                 session['comparison_chart'] = self._comparison_chart_for_child_session(
                     session,
@@ -1136,6 +1146,7 @@ class WorkspaceSessionController:
                     if child_session is None:
                         continue
                     immediate_parent = self._runtime.get(child_session.get('parent_document_id'))
+                    immediate_parent = self._chart_context_parent(immediate_parent)
                     if immediate_parent is None:
                         continue
                     # Parent-anchor sync (morin.py:7218).
@@ -1165,6 +1176,9 @@ class WorkspaceSessionController:
         """morin.py:7229 _rebuild_workspace_child_session via the headless
         driver + adapter (the Binding -> Deriver -> Chart path). Returns True if
         the child chart was rebuilt."""
+        parent_session = self._chart_context_parent(parent_session)
+        if parent_session is None:
+            return False
         parent_refresh = session.get('parent_refresh_handler')
         if callable(parent_refresh):
             return bool(parent_refresh(session, parent_session))
@@ -1241,6 +1255,7 @@ class WorkspaceSessionController:
         previous_chart = getattr(cs, 'chart', None)
         session['chart'] = rebuilt_chart
         parent_session = self._runtime.get(session.get('parent_document_id'))
+        parent_session = self._chart_context_parent(parent_session)
         session['comparison_chart'] = self._comparison_chart_for_child_session(
             session,
             parent_session,
@@ -1305,7 +1320,9 @@ class WorkspaceSessionController:
         session = self._runtime.get(document_id)
         if session is None:
             return None
-        if not self.uses_session_cursor(document_id):
+        if not self.uses_session_cursor(document_id) and not (
+            session.get('saved_event_id') and session.get('supplementary_feature_kind') == 'transits'
+        ):
             return None
         cs = session.get('chart_session')
         chrt = getattr(cs, 'chart', None) if cs is not None else session.get('chart')
@@ -1398,9 +1415,13 @@ class WorkspaceSessionController:
             'hour': h, 'minute': mi, 'second': s,
             'lonDeg': int(getattr(p, 'deglon', 0)),
             'lonMin': int(getattr(p, 'minlon', 0)),
+            'lonSec': float(getattr(p, 'seclon', 0)),
+            'lon': float(p.lon),
             'east': bool(getattr(p, 'east', True)),
             'latDeg': int(getattr(p, 'deglat', 0)),
             'latMin': int(getattr(p, 'minlat', 0)),
+            'latSec': float(getattr(p, 'seclat', 0)),
+            'lat': float(p.lat),
             'north': bool(getattr(p, 'north', True)),
             'place': getattr(p, 'place', '') or '',
             'cal': _CAL_INDEX_TO_STR.get(int(getattr(t, 'cal', 0)), 'gregorian'),
@@ -1430,24 +1451,29 @@ class WorkspaceSessionController:
         if cs is None:
             return False
         driver = self._driver_for_session(session)
-        if not driver._supplementary_uses_session_cursor(feature_kind, chart_session=cs):
+        if not driver._supplementary_uses_session_cursor(feature_kind, chart_session=cs) and not (
+            session.get('saved_event_id') and feature_kind == 'transits'
+        ):
             return False
-        parent_session = self._runtime.get(session.get('parent_document_id'))
+        parent_session = self._chart_context_parent(self._runtime.get(session.get('parent_document_id')))
         if parent_session is None:
             return False
 
         place = chart.Place(
-            (fields.get('place', '') or '')[:20],
+            fields.get('place', '') or '',
             int(fields.get('lonDeg', 0) or 0),
             int(fields.get('lonMin', 0) or 0),
-            0,
+            float(fields.get('lonSec', 0) or 0),
             bool(fields.get('east', True)),
             int(fields.get('latDeg', 0) or 0),
             int(fields.get('latMin', 0) or 0),
-            0,
+            float(fields.get('latSec', 0) or 0),
             bool(fields.get('north', True)),
             int(fields.get('altitude', 0) or 0),
         )
+        if fields.get('lon') is not None and fields.get('lat') is not None:
+            place.lon = float(fields['lon'])
+            place.lat = float(fields['lat'])
         display_dt = (
             int(fields.get('year', 2000)), int(fields.get('month', 1)),
             int(fields.get('day', 1)), int(fields.get('hour', 0)),
@@ -1497,7 +1523,7 @@ class WorkspaceSessionController:
         try:
             result = adapter.build(
                 driver, driver_state, binding,
-                current_chart=getattr(cs, 'chart', None), session=session,
+                current_chart=None if feature_kind == 'transits' else getattr(cs, 'chart', None), session=session,
             )
         except Exception:
             return False
@@ -1543,6 +1569,11 @@ class WorkspaceSessionController:
                 'zh': int(fields.get('zoneHour', 0) or 0),
                 'zm': int(fields.get('zoneMin', 0) or 0),
                 'daylight': bool(fields.get('daylightSaving', False)),
+                'tzid': str(fields.get('tzid') or ''),
+                'tzauto': bool(fields.get('tzauto', False)),
+                'cal': {'gregorian': chart.Time.GREGORIAN, 'julian': chart.Time.JULIAN}.get(fields.get('cal'), chart.Time.GREGORIAN),
+                'zt': {'zone': chart.Time.ZONE, 'greenwich': chart.Time.GREENWICH,
+                       'lmt': chart.Time.LOCALMEAN, 'lat': chart.Time.LOCALAPPARENT}.get(fields.get('zt'), chart.Time.ZONE),
             })
         if feature_kind == 'lunar_return':
             retained['lunar_cycle_offset'] = 0

@@ -3172,6 +3172,8 @@ function PrimaryDirectionsPanel({
               onOpenChange={onSettingsOpenChange}
             />
             <TextExportActions
+              sourceName={sourceName}
+              fileStem="primary-directions"
               disabled={!rows.length}
               buildDocument={primaryExportDocument}
             />
@@ -4083,6 +4085,7 @@ function SecondaryDirectionsPanel({
 
   const sourceRows = React.useMemo(() => store?.rows ?? [], [store]);
   const pointFilterItems = store?.meta.filterPoints ?? [];
+  const houseCuspItems = pointFilterItems.filter((item) => item.groupId === "house_cusp");
   const availablePointIds = pointFilterItems.filter((item) => item[pointFilterSide]).map((item) => item.id);
   const selectAllPointIds = pointRoleSelectAllIds(pointFilterItems, pointFilterSide);
   const selectedPointIds = pointFilterSide === "from" ? selectedFromIds : selectedToIds;
@@ -4555,6 +4558,8 @@ function SecondaryDirectionsPanel({
                 : "")}
             />
             <TextExportActions
+              sourceName={sourceName}
+              fileStem="secondary-directions"
               disabled={!rows.length}
               buildDocument={secondaryExportDocument}
             />
@@ -4652,23 +4657,33 @@ function SecondaryDirectionsPanel({
               onClearAspects={() => setSecondaryPreferences({ aspectIds: [] })}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {pointFilterItems.map((item) => (
+                {pointFilterItems.map((item) => {
+                  if (item.groupId === "house_cusp" && item.id !== houseCuspItems[0]?.id) return null;
+                  const ids = item.groupId === "house_cusp"
+                    ? houseCuspItems.filter((cusp) => cusp[pointFilterSide]).map((cusp) => cusp.id)
+                    : [item.id];
+                  const selectedCount = ids.filter((id) => selectedPointIds.has(id)).length;
+                  const pressed = selectedCount === 0 ? false : selectedCount === ids.length ? true : "mixed";
+                  return (
                   <Button
                     key={item.id}
                     type="button"
                     size="xs"
-                    variant={item[pointFilterSide] && selectedPointIds.has(item.id) ? "default" : "outline"}
-                    aria-pressed={item[pointFilterSide] && selectedPointIds.has(item.id)}
-                    disabled={!item[pointFilterSide]}
+                    variant={selectedCount > 0 ? "default" : "outline"}
+                    aria-pressed={pressed}
+                    disabled={ids.length === 0}
                     onClick={() => setSecondaryPreferences({
-                      pointRoles: togglePointRoleIds(pointSelection, pointFilterSide, [item.id]),
+                      pointRoles: togglePointRoleIds(pointSelection, pointFilterSide, ids),
                     })}
+                    title={item.groupId === "house_cusp" ? t("styleLab.variant.cusps") : item.label}
+                    aria-label={item.groupId === "house_cusp" ? t("styleLab.variant.cusps") : item.label}
                     className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
                   >
-                    {item.glyph ? <Glyph ch={item.glyph} /> : null}
-                    <span className="truncate">{item.label}</span>
+                    {item.groupId !== "house_cusp" && item.glyph ? <Glyph ch={item.glyph} /> : null}
+                    <span className="truncate">{item.groupId === "house_cusp" ? t("styleLab.variant.cusps") : item.label}</span>
                   </Button>
-                ))}
+                  );
+                })}
               </div>
             </PointAspectFilters>
           </div>
@@ -5544,6 +5559,8 @@ function CircumambulationPanel({
               onOpenChange={onSettingsOpenChange}
             />
             <TextExportActions
+              sourceName={sourceName}
+              fileStem="circumambulations"
               disabled={!displayRows.length}
               buildDocument={circumExportDocument}
             />
@@ -5593,7 +5610,7 @@ function CircumambulationPanel({
             variant="outline"
             onClick={() => setSignificatorDrawerOpen((open) => !open)}
           >
-            {t("dirview.pointLabel", { label: selectedSignificatorLabel })}
+            {t("dirview.releaserLabel", { label: selectedSignificatorLabel })}
           </Button>
           {!isReturnMode ? (
             <AgeRangePager

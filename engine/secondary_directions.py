@@ -113,6 +113,7 @@ def _secondary_radix_target_ids(catalog):
             searchcatalog.SearchObject.FAMILY_PLANET,
             searchcatalog.SearchObject.FAMILY_NODE,
             searchcatalog.SearchObject.FAMILY_ANGLE,
+            searchcatalog.SearchObject.FAMILY_HOUSE_CUSP,
             searchcatalog.SearchObject.FAMILY_FORTUNE,
         ):
             ids.append(object_id)

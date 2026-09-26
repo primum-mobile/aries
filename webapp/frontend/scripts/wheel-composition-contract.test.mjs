@@ -14,7 +14,8 @@ const transpile = async path => ts.transpileModule(await readFile(new URL(path, 
 const layoutUrl = url(await transpile('../src/lib/chart/wheel-layout-model.ts'));
 const wheel = await import(url((await transpile('../src/lib/chart/wheel-render-style.ts'))
   .replaceAll('"./wheel-layout-model"', `"${layoutUrl}"`)));
-const {composedWheelLayout, resolveWheelBandLayout, wheelOuterAttachmentRadius} = await import(layoutUrl);
+const {composedWheelLayout, resolveWheelBandLayout, wheelOuterAttachmentRadius, wheelDegreeTickEnds,
+  wheelCuspRulerTickEnds, resolveWheelBandFillRegions} = await import(layoutUrl);
 const {compatibleRingOrder, moveWheelRing, WHEEL_FACTORY_SETTINGS, WHEEL_RING_ARCHETYPES} = await import(compositionModuleUrl);
 const recipe = (profile, ids) => ({schemaVersion: 1, customized: true,
   projection: profile === 'houses' ? 'houses' : 'zodiac',
@@ -81,7 +82,7 @@ test('Anglo ruler combinations preserve neighboring widths and additive geometry
             `${context}: ${band.id} cannot resize when an instrument is toggled`);
         }
         const singles = [sample(degree, true, true), sample(true, cuspRuler, true), sample(true, true, cuspLabels)];
-        for (const key of ['rPlanet', 'rHouse', 'rAsp']) {
+        for (const key of reordered ? [] : ['rPlanet', 'rHouse', 'rAsp']) {
           const expected = baseline.rings[key] + singles.reduce((delta, item) => delta + item.rings[key] - baseline.rings[key], 0);
           assert.ok(Math.abs(current.rings[key] - expected) < 1e-8, `${context}: ${key} must combine additively`);
         }
@@ -229,15 +230,46 @@ test('open transit role widths move only their own anchors and retain the primar
   }
 });
 
-test('untouched factory compositions preserve all five original dimensions', () => {
+test('factory compositions preserve their dimensions while Anglo Degree attaches to Signs', () => {
   for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
     for (const arrangement of ['single', 'auxiliary', 'transit', 'synastry']) {
       for (const maxRadius of [200, 400, 600]) {
         const geometry = arrangementGeometry(profile, factoryComposition(profile), arrangement, maxRadius);
-        assert.deepEqual(wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry),
-          wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, {...geometry, composition: undefined}),
-          `${profile}/${arrangement}/${maxRadius} must retain the original radii`);
+        const actual = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry);
+        const factory = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, {...geometry, composition: undefined});
+        const where = `${profile}/${arrangement}/${maxRadius}`;
+        if (profile === 'anglo') {
+          const degreeFields = new Set(['rOuter0', 'rOuter1', 'rOuter5', 'rOuter10']);
+          assert.deepEqual(Object.fromEntries(Object.entries(actual).filter(([key]) => !degreeFields.has(key))),
+            Object.fromEntries(Object.entries(factory).filter(([key]) => !degreeFields.has(key))),
+            `${where} must retain every non-degree factory radius`);
+          assert.equal(actual.rOuter10, actual.r0, `${where} ruler rests on the inner sign edge`);
+          assert.ok(actual.rOuter0 > actual.r0 && actual.rOuter0 < actual.r30,
+            `${where} outward ticks stay within Signs`);
+        } else assert.deepEqual(actual, factory, `${where} must retain the original radii`);
       }
+    }
+  }
+});
+
+test('moving Degree above Signs reverses its attachment in every arrangement', () => {
+  for (const arrangement of ['single', 'auxiliary', 'transit', 'synastry']) {
+    const original = factoryComposition('anglo');
+    const moved = structuredClone(original);
+    const index = moved.rings.findIndex(ring => ring.archetypeId === 'degree');
+    [moved.rings[index], moved.rings[index - 1]] = [moved.rings[index - 1], moved.rings[index]];
+    for (const [composition, above] of [[original, false], [moved, true]]) {
+      const geometry = arrangementGeometry('anglo', composition, arrangement);
+      const rings = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry);
+      const bands = resolveWheelBandLayout(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry, rings).bands;
+      const degree = bands.find(band => band.id === 'degree' && band.visible);
+      const signs = bands.find(band => band.id === 'zodiac' && band.visible);
+      const {base, tip} = wheelDegreeTickEnds(composition, degree.outer, degree.inner);
+      const where = `${arrangement}/${above ? 'above' : 'below'}`;
+      assert.ok(above ? base > tip : base < tip, `${where}: tick direction follows order`);
+      assert.ok(above ? Math.abs(base - signs.outer) < 1e-8
+        : Math.abs(base - signs.inner) < 1e-8,
+      `${where}: Degree attaches to the adjoining sign edge`);
     }
   }
 });
@@ -403,6 +435,59 @@ test('disabled bands consume zero depth and restore their preferred width', () =
   assert.deepEqual(solve(composition), enabled);
 });
 
+test('authored Anglo subdivisions return their space to Signs when hidden', () => {
+  const profile = 'anglo';
+  const authored = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+    ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+    ringRadii: {anglo: {zodiacOuterRing: 379.1, zodiacInnerRing: 348.1,
+      termRing: 335.1, cuspOuterRing: 321.4, innerBoundaryRing: 299.1,
+      houseBoundaryRing: 211, baseRing: 190.6}},
+  }};
+  for (const maxRadius of [360, 400])
+  for (const arrangement of ['single', 'auxiliary', 'transit', 'synastry']) {
+    const sample = (showTerms, showDecans) => {
+      const composition = factoryComposition(profile);
+      composition.rings = composition.rings.map(ring =>
+        ring.archetypeId === 'terms' ? {...ring, enabled: showTerms}
+          : ring.archetypeId === 'decans' ? {...ring, enabled: showDecans} : ring);
+      const geometry = {...arrangementGeometry(profile, composition, arrangement, maxRadius), showTerms, showDecans};
+      const rings = wheel.resolveWheelRingSet(authored, geometry);
+      return {rings, bands: resolveWheelBandLayout(authored, geometry, rings).bands};
+    };
+    const full = sample(true, true);
+    const fullSign = full.bands.find(band => band.id === 'zodiac');
+    for (const [terms, decans] of [[true, false], [false, true], [false, false]]) {
+      const current = sample(terms, decans);
+      const sign = current.bands.find(band => band.id === 'zodiac');
+      const freed = full.bands.filter(band => (band.id === 'terms' && !terms)
+        || (band.id === 'decans' && !decans)).reduce((sum, band) => sum + thickness(band), 0);
+      assert.ok(thickness(sign) >= thickness(fullSign) + freed - 1e-7,
+        `${arrangement}/${terms}/${decans}: Signs must absorb hidden subdivision widths`);
+      assert.ok(Math.abs(sign.outer - fullSign.outer) < 1e-7);
+      assert.ok(Math.abs(current.rings.r0 - sign.inner) < 1e-7
+        && current.rings.rSign > sign.inner && current.rings.rSign < sign.outer,
+      `${arrangement}/${terms}/${decans}: sign circle and glyphs must use the expanded band`);
+      const nextVisible = current.bands.find(band => band.id === (terms ? 'terms' : decans ? 'decans' : 'cuspRuler'));
+      assert.ok(Math.abs(sign.inner - nextVisible.outer) < 1e-7,
+        `${arrangement}/${terms}/${decans}: no empty band may remain inside Signs`);
+      const signFill = resolveWheelBandFillRegions(current.bands).find(region => region.classId === 'fills.zodiacBand');
+      assert.ok(signFill && Math.abs(signFill.inner - sign.inner) < 1e-7,
+        `${arrangement}/${terms}/${decans}: sign paint must reach its new inner edge`);
+      assert.ok(Math.abs(current.rings.rInner - full.rings.rInner) < 1e-7,
+        `${arrangement}/${terms}/${decans}: inner chart must stay in place`);
+      assert.ok(Math.abs(thickness(current.bands.find(band => band.id === 'cuspRuler'))
+        - thickness(full.bands.find(band => band.id === 'cuspRuler'))) < 1e-7,
+        `${arrangement}/${terms}/${decans}: cusp ruler must keep its saved width`);
+      for (const kind of ['terms', 'decans']) {
+        const band = current.bands.find(item => item.id === kind);
+        if ((kind === 'terms' && !terms) || (kind === 'decans' && !decans))
+          assert.ok(!band.visible && Math.abs(thickness(band)) < 1e-7);
+      }
+    }
+    assert.deepEqual(sample(true, true).rings, full.rings);
+  }
+});
+
 test('compatible ring ordering keeps house rays out of zodiac instruments', () => {
   assert.ok(compatibleRingOrder(recipe('cusps',['decans','terms','bodies','houses','hub'])));
   assert.equal(compatibleRingOrder(recipe('cusps',['bodies','terms','houses','hub'])),false);
@@ -462,7 +547,6 @@ test('biwheel outer bands reclaim the legacy outer zone and discard removed anch
 });
 
 test('cusp material joins adjacent parts but never crosses a reordered intervening ring', async () => {
-  const {resolveWheelBandFillRegions} = await import(layoutUrl);
   for (const ruler of [false, true]) for (const labels of [false, true]) {
     const composition = factoryComposition('anglo');
     for (const ring of composition.rings) {
@@ -484,9 +568,119 @@ test('cusp material joins adjacent parts but never crosses a reordered interveni
   const rings = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry);
   const bands = composedWheelLayout(rings).bands;
   const regions = resolveWheelBandFillRegions(bands).filter(r => r.classId === 'fills.cuspDegreeBand');
-  assert.equal(regions.length, 2);
+  assert.equal(regions.length, 1, 'a cusp ruler hosted by Signs adds no independent material band');
   const zodiac = bands.find(b => b.id === 'zodiac');
+  assert.ok(bands.find(b => b.id === 'cuspRuler')?.overlay);
   assert.ok(regions.every(r => r.inner >= zodiac.outer || r.outer <= zodiac.inner));
+});
+
+test('adjacent Cusp rulers occupy Signs without allocating another band in every Anglo-family layout', () => {
+  for (const profile of ['anglo', 'houses', 'cusps'])
+  for (const arrangement of ['single', 'transit', 'synastry'])
+  for (const outside of [false, true]) {
+    const composition = factoryComposition(profile);
+    composition.rings = composition.rings.map(ring => ring.archetypeId === 'degree'
+      ? {...ring, enabled: false} : ring.archetypeId === 'zodiac'
+        ? {...ring, enabled: true} : ring);
+    const termsIndex = composition.rings.findIndex(ring => ring.archetypeId === 'terms');
+    const decansIndex = composition.rings.findIndex(ring => ring.archetypeId === 'decans');
+    [composition.rings[termsIndex], composition.rings[decansIndex]] =
+      [composition.rings[decansIndex], composition.rings[termsIndex]];
+    const cusp = composition.rings.splice(composition.rings.findIndex(r => r.archetypeId === 'cuspRuler'), 1)[0];
+    cusp.enabled = true;
+    const signIndex = composition.rings.findIndex(r => r.archetypeId === 'zodiac');
+    composition.rings.splice(signIndex + Number(!outside), 0, cusp);
+    const geometry = arrangementGeometry(profile, composition, arrangement);
+    const rings = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry);
+    const bands = composedWheelLayout(rings)?.bands;
+    const signs = bands?.find(b => b.id === 'zodiac');
+    const ruler = bands?.find(b => b.id === 'cuspRuler');
+    const where = `${profile}/${arrangement}/${outside ? 'outside' : 'inside'}`;
+    assert.ok(ruler?.overlay && ruler.visible, `${where}: Cusp ruler is hosted`);
+    assert.ok(ruler.inner >= signs.inner && ruler.outer <= signs.outer, `${where}: ticks stay within Signs`);
+    const ends = wheelCuspRulerTickEnds(composition, ruler);
+    assert.equal(ends.base, outside ? signs.outer : signs.inner, `${where}: attach at adjoining edge`);
+    assert.ok(outside ? ends.tip < ends.base : ends.tip > ends.base, `${where}: point into Signs`);
+    const without = {...composition, rings: composition.rings.map(r => r === cusp ? {...r, enabled: false} : r)};
+    const baseline = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, {...geometry, composition: without});
+    for (const key of ['r30', 'r0', 'rSign', 'rPlanet', 'rHouse', 'rAsp']) {
+      assert.ok(Math.abs(rings[key] - baseline[key]) < 1e-8, `${where}: hosted ticks must not shift ${key}`);
+    }
+    assert.ok(!resolveWheelBandFillRegions(bands).some(region => region.classId === 'fills.cuspDegreeBand'
+      && region.outer === ruler.outer && region.inner === ruler.inner), `${where}: no separate Cusp annulus`);
+  }
+});
+
+test('moving Degree outside Signs keeps the combined Anglo cusp annotation lane', () => {
+  for (const arrangement of ['single', 'transit', 'synastry'])
+  for (const maxRadius of [180, 400, 800]) {
+    const inside = factoryComposition('anglo');
+    inside.rings = inside.rings.map(ring => ['terms', 'decans'].includes(ring.archetypeId)
+      ? {...ring, enabled: false} : ring);
+    const outside = structuredClone(inside);
+    const degree = outside.rings.splice(outside.rings.findIndex(ring => ring.archetypeId === 'degree'), 1)[0];
+    outside.rings.splice(outside.rings.findIndex(ring => ring.archetypeId === 'zodiac'), 0, degree);
+    const sample = composition => {
+      const geometry = {...factoryGeometry('anglo', arrangement), composition, maxRadius,
+        showTerms: false, showDecans: false};
+      const rings = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry);
+      const bands = resolveWheelBandLayout(wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry, rings).bands;
+      return {rings, bands, band: id => bands.find(item => item.id === id)};
+    };
+    const before = sample(inside), after = sample(outside);
+    const context = `${arrangement}/${maxRadius}`;
+    assert.ok(after.band('degree').overlay && after.band('cuspRuler').overlay, `${context}: both rulers are hosted`);
+    assert.ok(Math.abs(thickness(after.band('cuspLabels'))
+      - thickness(before.band('cuspRuler')) - thickness(before.band('cuspLabels'))) < 1e-8,
+      `${context}: annotation lane inherits the hosted cusp ruler's space`);
+    for (const key of ['r30', 'r0', 'rInner', 'rPlanet', 'rHouse', 'rAsp']) {
+      assert.ok(Math.abs(after.rings[key] - before.rings[key]) < 1e-8,
+        `${context}: moving Degree must not shift ${key}`);
+    }
+  }
+});
+
+test('authored cusp widths stay additive when Degree moves outside Signs', () => {
+  const inside = factoryComposition('anglo');
+  inside.rings = inside.rings.map(ring => ['terms', 'decans'].includes(ring.archetypeId)
+    ? {...ring, enabled: false} : ring);
+  const outside = structuredClone(inside);
+  const degree = outside.rings.splice(outside.rings.findIndex(ring => ring.archetypeId === 'degree'), 1)[0];
+  outside.rings.splice(outside.rings.findIndex(ring => ring.archetypeId === 'zodiac'), 0, degree);
+  const ruler = inside.rings.find(ring => ring.archetypeId === 'cuspRuler');
+  const labels = inside.rings.find(ring => ring.archetypeId === 'cuspLabels');
+  const editedStyle = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+    ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+    ringWidths: {anglo: {[ruler.instanceId]: 15, [labels.instanceId]: 30}},
+  }};
+  const sample = composition => {
+    const geometry = {...factoryGeometry('anglo', 'single'), composition,
+      showTerms: false, showDecans: false};
+    const rings = wheel.resolveWheelRingSet(editedStyle, geometry);
+    return {rings, bands: resolveWheelBandLayout(editedStyle, geometry, rings).bands};
+  };
+  const before = sample(inside), after = sample(outside);
+  const width = (layout, kind) => thickness(layout.bands.find(band => band.id === kind));
+  assert.ok(Math.abs(width(after, 'cuspLabels') - width(before, 'cuspRuler')
+    - width(before, 'cuspLabels')) < 1e-8);
+  assert.ok(Math.abs(after.rings.rPlanet - before.rings.rPlanet) < 1e-8);
+});
+
+test('moving disabled cusp instruments cannot change the active wheel', () => {
+  for (const profile of ['anglo', 'houses', 'cusps'])
+  for (const arrangement of ['single', 'transit', 'synastry']) {
+    const composition = factoryComposition(profile);
+    composition.rings = composition.rings.map(ring => ['cuspRuler', 'cuspLabels'].includes(ring.archetypeId)
+      ? {...ring, enabled: false} : ring);
+    const baseline = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      arrangementGeometry(profile, composition, arrangement));
+    const moved = structuredClone(composition);
+    const inactive = moved.rings.filter(ring => ['cuspRuler', 'cuspLabels'].includes(ring.archetypeId));
+    moved.rings = [...inactive, ...moved.rings.filter(ring => !inactive.includes(ring))];
+    const actual = wheel.resolveWheelRingSet(wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      arrangementGeometry(profile, moved, arrangement));
+    assert.deepEqual(actual, baseline, `${profile}/${arrangement}: unchecked rows cannot change geometry`);
+  }
 });
 
 

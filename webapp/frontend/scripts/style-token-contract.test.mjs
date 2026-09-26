@@ -18,15 +18,16 @@ test("the checked-in style contract resolves one provider graph", () => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.inventory.counts, {
     // +24 over the three-profile contract: one independent painted-ring radius
-    // token per role for both House Wheel and Cusp Wheel.
-    tokens: 1508,
+    // token per role for both House Wheel and Cusp Wheel; +7 runtime tokens for
+    // the Astrocart navbar docked in the map toolbar row.
+    tokens: 1515,
     cssTokens: 1491,
-    cssDeclarations: 1576,
-    runtimeOnlyTokens: 7,
+    cssDeclarations: 1585,
+    runtimeOnlyTokens: 14,
     externalTokens: 10,
     public: 1106,
     derived: 198,
-    runtime: 204,
+    runtime: 211,
   });
   const printPalettePath = "src/lib/theme/table-print-palette.ts";
   const printRoles = [...readFileSync(join(frontendRoot, printPalettePath), "utf8")
@@ -45,6 +46,13 @@ test("the checked-in style contract resolves one provider graph", () => {
       .map((token) => token.name),
     [
       "--aries-destructive",
+      "--aries-navbar-dock-bg",
+      "--aries-navbar-dock-border",
+      "--aries-navbar-dock-height",
+      "--aries-navbar-dock-left",
+      "--aries-navbar-dock-radius",
+      "--aries-navbar-dock-room",
+      "--aries-navbar-dock-top",
       "--aries-navbar-scale",
       "--morinus-angles",
       "--morinus-background",

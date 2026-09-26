@@ -76,6 +76,8 @@ function fixture() {
       showMcCircle: true,
       showHouseLines: true,
       showZodiacLines: true,
+      lineLabelGlyphs: false,
+      localSpaceBearings: true,
     },
   };
 }
@@ -155,6 +157,96 @@ test("only a validated immutable style crosses the iframe message boundary", () 
   assert.equal(message.payload.styleHash, "hash-1");
   assert.ok(Object.isFrozen(message));
   assert.ok(Object.isFrozen(message.payload));
+});
+
+test("the host's live UI font replaces the daemon fallback in map chrome", () => {
+  const fallback = createAstrocartStyleMessage(fixture());
+  const themed = createAstrocartStyleMessage(fixture(), {
+    fontUi: "'Kosugi Aries', 'FreeSans', sans-serif",
+  });
+  assert.equal(themed.payload.chrome.fontUi, "'Kosugi Aries', 'FreeSans', sans-serif");
+  assert.notEqual(fallback.payload.chrome.fontUi, themed.payload.chrome.fontUi);
+  assert.ok(Object.isFrozen(themed.payload.chrome));
+  assert.equal(
+    createAstrocartStyleMessage(fixture(), { fontUi: "  " }).payload.chrome.fontUi,
+    fallback.payload.chrome.fontUi,
+  );
+});
+
+test("the map registers the app UI font faces the host sends", async () => {
+  const [map, workspace] = await Promise.all([
+    readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/workshell/workspace-content.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(map, /case 'aries\.setUiFontFaces':/);
+  assert.match(map, /new FontFace\(face\.family, face\.data, descriptors\)/);
+  assert.match(workspace, /createAstrocartStyleMessage\(payload, \{\s*fontUi: appUiFontStack\(\),/);
+  assert.match(workspace, /type: "aries\.setUiFontFaces", payload: \{ faces \}/);
+});
+
+test("glyph line labels are upright chrome chips drawn as map icons", async () => {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  assert.match(map, /'showHouseLines', 'showZodiacLines', 'lineLabelGlyphs', 'localSpaceBearings',/);
+  // Upright, collision-managed icons instead of rotated text with inline images.
+  assert.match(map, /'icon-rotation-alignment': 'viewport'/);
+  // One chip per line and paran, anchored on its own point source.
+  assert.match(map, /const ACG_CHIP_SOURCE_ID = 'acg-chip-anchors';/);
+  assert.match(map, /if \(motionSettled\) scheduleAcgChipAnchors\(\);/);
+  // Point glyphs are never inline images in rotated text any more.
+  assert.doesNotMatch(map, /acgGlyphImagePrefix|acg-glyph\|/);
+  // Parans carry both glyphs, keyed to each body's colour.
+  assert.match(map, /side\('a'\)[\s\S]*side\('b'\)/);
+  assert.match(map, /if \(a\.color\) props\.a_color = a\.color;/);
+  // The card wears the map chrome tokens; only the glyph is coloured.
+  for (const token of ["--chrome-bg", "--chrome-border", "--chrome-text", "--chrome-panel-radius"]) {
+    assert.ok(map.includes(`acgChipToken('${token}'`), `chip reads ${token}`);
+  }
+  assert.match(map, /background: print \? PRINT_ATLAS_OVERLAY_HALO : acgChipToken\('--chrome-bg'/);
+  assert.match(map, /border: print \? 'rgba\(0,0,0,0\.12\)' : acgChipToken\('--chrome-border'/);
+  assert.doesNotMatch(map, /id="acg-dom-labels"/);
+  // Both the live and the print map draw chips on demand, only once Morinus is ready.
+  assert.match(map, /map\.on\('styleimagemissing', \(event\) => \{\s*provideAcgChipImage\(map,/);
+  assert.match(map, /printMap\.on\('styleimagemissing', \(event\) => \{\s*provideAcgChipImage\(printMap,/);
+  assert.match(map, /document\.fonts\.check\('12px Morinus'\)/);
+});
+
+test("chip glyph colours are lifted to readable contrast on the card", async () => {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  const start = map.indexOf("function acgChipLuminance");
+  const end = map.indexOf("function acgChipSegments", start);
+  assert.ok(start >= 0 && end > start);
+  const colours = { "#000080": [0, 0, 128, 255], "rgba(29,30,33,0.88)": [29, 30, 33, 224], "#ffd700": [255, 215, 0, 255], "rgba(255,255,255,0.94)": [255, 255, 255, 240] };
+  const readable = new Function("colours", `
+    const acgChipColorCache = new Map();
+    function acgChipRgba(value) { const c = colours[value]; return c ? [c[0], c[1], c[2], c[3] / 255] : null; }
+    ${map.slice(start, end)}
+    return { acgChipReadableColor, acgChipLuminance };
+  `)(colours);
+  const ratio = (rgb, bg) => {
+    const a = readable.acgChipLuminance(rgb);
+    const b = readable.acgChipLuminance(bg);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  };
+  const parse = (value) => value.match(/\d+/g).slice(0, 3).map(Number);
+  // Navy on the dark chrome card is lightened; yellow on a print card is darkened.
+  const navy = parse(readable.acgChipReadableColor("#000080", "rgba(29,30,33,0.88)"));
+  assert.ok(ratio(navy, [29, 30, 33]) >= 3);
+  const gold = parse(readable.acgChipReadableColor("#ffd700", "rgba(255,255,255,0.94)"));
+  assert.ok(ratio(gold, [255, 255, 255]) >= 3);
+});
+
+test("copy as PNG captures the live map viewport without UI chrome", async () => {
+  const [map, workspace] = await Promise.all([
+    readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/workshell/workspace-content.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(map, /case 'aries\.captureViewport':/);
+  assert.match(map, /map\.once\('render', \(\) => \{/);
+  assert.match(map, /'#map \.maplibregl-marker, #map \.maplibregl-marker \*'/);
+  assert.doesNotMatch(map, /#place-labels \*|#acg-dom-labels \*/);
+  assert.doesNotMatch(map.slice(map.indexOf("async function captureViewportPng"), map.indexOf("function postToParent")), /top-controls|#legend/);
+  assert.match(workspace, /registerChartExportRenderer\(id, renderViewport\)/);
+  assert.match(workspace, /const ids = \[documentId, \.\.\.layerDocumentIdsKey\.split\(","\)\.filter\(Boolean\)\];/);
 });
 
 test("all generated profile bounds equal the strict iframe envelope", () => {
@@ -447,4 +539,165 @@ test("eclipse framing wraps the dateline and anchors the maximum point", async (
     type: "easeTo",
     options: { center: [176.5, -41.25], zoom: 3.25, duration: 500 },
   });
+});
+
+async function loadChipPlacement() {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  const slice = (startMarker, endMarker) => {
+    const start = map.indexOf(startMarker);
+    const end = map.indexOf(endMarker, start);
+    assert.ok(start >= 0 && end > start, `missing ${startMarker}`);
+    return map.slice(start, end);
+  };
+  const source = [
+    slice("  function acgChipRunPosition", "  // Screen box a chip will occupy"),
+    slice("  const ACG_CHIP_FRACTIONS", "  // options.shown(properties)"),
+    slice("  function acgChipAnchorFilter", "  function acgNamedLabelLayout"),
+  ].join("\n");
+  return new Function(`
+    ${source}
+    return { acgChipRunPosition, acgChipRunPointAtRadius, acgChipCandidatePoints, acgChipAnchorFilter, ACG_CHIP_RADIAL_BANDS };
+  `)();
+}
+
+function screenRun(points) {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+  }
+  return { points, length };
+}
+
+test("local space chips ring the birthplace at one screen radius", async () => {
+  const chips = await loadChipPlacement();
+  const origin = { x: 500, y: 400, radius: 150 };
+  // Spokes leave the birthplace toward the frame at different lengths; a
+  // mid-run rule would trace the rectangle, the ring keeps one radius.
+  for (const [dx, dy, reach] of [[1, 0, 480], [0, -1, 340], [0.8, 0.6, 520], [-0.6, 0.8, 300]]) {
+    const run = screenRun(Array.from({ length: 41 }, (_, index) => ({
+      x: origin.x + dx * reach * (index / 40),
+      y: origin.y + dy * reach * (index / 40),
+    })));
+    const [first, ...bands] = chips.acgChipCandidatePoints({ kind: "LOCAL_SPACE" }, run, origin);
+    assert.ok(Math.abs(Math.hypot(first.x - origin.x, first.y - origin.y) - 150) < 0.5);
+    // Crowded spokes step to other bands rather than sliding along freely.
+    for (const point of bands) {
+      const factor = Math.hypot(point.x - origin.x, point.y - origin.y) / 150;
+      assert.ok(chips.ACG_CHIP_RADIAL_BANDS.some((band) => Math.abs(band - factor) < 0.01));
+    }
+  }
+});
+
+test("other line chips sit at half the visible run, then step outward", async () => {
+  const chips = await loadChipPlacement();
+  const run = screenRun([{ x: 0, y: 100 }, { x: 400, y: 100 }]);
+  const candidates = chips.acgChipCandidatePoints({ kind: "MC" }, run, { x: 0, y: 100, radius: 50 });
+  assert.deepEqual(candidates.slice(0, 3).map((point) => point.x), [200, 152, 248]);
+  // Without a visible birthplace, local space falls back to the midpoint too.
+  assert.equal(chips.acgChipCandidatePoints({ kind: "LOCAL_SPACE" }, run, null)[0].x, 200);
+});
+
+test("chip anchor layers mirror their line filters with the stamped geometry", async () => {
+  const chips = await loadChipPlacement();
+  const filter = ["all", ["==", ["geometry-type"], "LineString"], ["match", ["get", "kind"], ["MC"], true, false]];
+  assert.deepEqual(chips.acgChipAnchorFilter(filter), [
+    "all",
+    ["==", ["get", "acg_anchor_geometry"], "LineString"],
+    ["match", ["get", "kind"], ["MC"], true, false],
+  ]);
+});
+
+test("local space opposition labels carry the Morinus opposition glyph, not a word", async () => {
+  const [map, service] = await Promise.all([
+    readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8"),
+    readFile(new URL("../../daemon/astrocart_service.py", import.meta.url), "utf8"),
+  ]);
+  // The daemon stamps the glyph (common.py Aspects[10]) on opposition features.
+  assert.match(service, /_MORINUS_OPPOSITION_GLYPH = "W"/);
+  assert.match(
+    service,
+    /if kind == localspace\.KIND_LOCAL_SPACE_OPPOSITION:\s+props\["aspect_glyph_morinus"\] = _MORINUS_OPPOSITION_GLYPH/,
+  );
+  // No label path appends the localized word any more.
+  assert.doesNotMatch(map, /` \$\{uiLabels\.localSpaceOpposition\}`/);
+  assert.doesNotMatch(map, /const opposition = kind === 'LOCAL_SPACE_OPPOSITION'/);
+  // Names mode, vector: trailing Morinus glyph as an inline image, print-coloured in print.
+  assert.match(map, /\['image', \['concat', acgInlineGlyphImagePrefix\(print\), \['get', 'aspect_glyph_morinus'\]\]\]/);
+  assert.match(map, /lineLabels\.layout\['text-field'\] = acgLineLabelExpression\(true\);/);
+  assert.match(map, /provideAcgInlineGlyphImage\(printMap, event && event\.id, pixelRatio\);/);
+  assert.match(map, /provideAcgInlineGlyphImage\(map, event && event\.id, window\.devicePixelRatio \|\| 1\);/);
+  // Glyph mode chips: fifth content field, drawn in the Morinus face.
+  assert.match(map, /\['coalesce', \['get', 'aspect_glyph_morinus'\], ''\],\n    \];/);
+  assert.match(map, /if \(kindGlyph\) segments\.push\(segment\(kindGlyph, labelColor, \{ glyph: true \}\)\);/);
+  // The native chip image carries the same glyph on offline maps.
+  assert.match(map, /\['coalesce', \['get', 'aspect_glyph_morinus'\], ''\]/);
+  assert.match(map, /if \(kindGlyph\) segments\.push\(segment\(kindGlyph, labelColor, \{ glyph: true \}\)\);/);
+  // The legend pairs the glyph with the explanatory word.
+  assert.match(map, /id="legend-local-space-opposition-row"[^\n]*<span class="glyph legend-kind-glyph"><\/span>/);
+});
+
+test("local space bearing degrees follow the ACG Appearance switch", async () => {
+  const [map, controls, service] = await Promise.all([
+    readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/components/workshell/astrocart-controls.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../daemon/astrocart_service.py", import.meta.url), "utf8"),
+  ]);
+  // Daemon style behaviour carries the persisted view preference (default off).
+  assert.match(service, /"localSpaceBearings": normalized_astrocart_local_space_bearings\(/);
+  assert.match(service, /def normalized_astrocart_local_space_bearings\(value: Any\) -> bool:\n    return value is True/);
+  assert.match(controls, /astrocart_local_space_bearings \?\? false/);
+  // Appearance toggle writes the canonical display option.
+  assert.match(controls, /updateAppearanceOption\("astrocart_local_space_bearings", shown\)/);
+  assert.match(controls, /t\("astrocart\.config\.localSpaceBearings"\)/);
+  // Map: vector and chip suffixes, plus the empty-suffix join, follow it.
+  assert.match(map, /return referenceBehavior\(\)\.localSpaceBearings === true;/);
+  assert.match(map, /const bearing = acgLocalSpaceBearings\(\)\n      \? \['coalesce', \['get', 'bearing_label'\]/);
+  assert.match(map, /const bearing = acgLocalSpaceBearings\(\)\n        \? String\(p\.bearing_label/);
+  assert.match(map, /acgChipImageExpression\(imageLayerId, print\)/);
+  assert.match(map, /\['case', \['==', suffix, ''\], '', \['concat', ' ', suffix\]\]/);
+  // A glyph-only chip still draws through the native symbol layer.
+  assert.match(map, /'icon-image': acgChipImageExpression\(imageLayerId, print\)/);
+});
+
+test("a paran's single −180→180 segment is clipped into the view, not collapsed", async () => {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  const start = map.indexOf("  function acgChipSegmentWindows");
+  const end = map.indexOf("  // Screen-space runs of the feature", start);
+  assert.ok(start >= 0 && end > start);
+  const windows = new Function(`${map.slice(start, end)}\nreturn acgChipSegmentWindows;`)();
+  const camera = { west: 5, east: 20, south: 40, north: 55 };
+  const [window] = windows([-180, 48], [180, 48], camera);
+  assert.equal(window.shift, 0);
+  assert.ok(Math.abs(-180 + 360 * window.t0 - 5) < 1e-9);
+  assert.ok(Math.abs(-180 + 360 * window.t1 - 20) < 1e-9);
+  // Across the antimeridian the adjacent world copy supplies the rest.
+  const wrapped = windows([-180, 48], [180, 48], { west: 170, east: 200, south: 40, north: 55 });
+  assert.deepEqual(wrapped.map((entry) => entry.shift).sort(), [0, 360]);
+  // Off-latitude parans stay out.
+  assert.deepEqual(windows([-180, 70], [180, 70], camera), []);
+});
+
+test("paran chips are the quieter secondary tier", async () => {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  assert.match(map, /const ACG_PARAN_CHIP_SIZE_STEP = 2;/);
+  assert.match(map, /kind === 'paran' \? acgParanChipSize\(s\) : s\.labelSize/);
+  assert.match(map, /const textWeight = secondary \? 500 : 600;/);
+  assert.match(map, /ACG_PARAN_CHIP_OPACITY = 0\.85/);
+  assert.match(map, /sourceLayerId === 'acg-paran-labels'[\s\S]*ACG_PARAN_CHIP_OPACITY/);
+});
+
+test("overlapping local space pills step along their line instead of hiding", async () => {
+  const map = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  // Ring spots continue out and in along the spoke, so a conjunction offsets.
+  const bands = /const ACG_CHIP_RADIAL_BANDS = \[([^\]]+)\]/.exec(map);
+  assert.ok(bands, "radial bands declared");
+  const values = bands[1].split(",").map((value) => Number(value.trim())).filter(Number.isFinite);
+  assert.ok(values.length >= 12, "enough ring spots to clear a conjunction");
+  assert.ok(Math.max(...values) >= 3, "steps well out along the line");
+  // Native chip anchors try each band and reserve a box before MapLibre's
+  // collision pass, so nearby spokes can keep separate labels.
+  assert.match(map, /for \(const band of ACG_CHIP_RADIAL_BANDS\)/);
+  assert.match(map, /for \(const point of acgChipCandidatePoints\(entry\.properties, entry\.run, origin\)\)/);
+  assert.match(map, /const box = acgChipEstimatedBox\(entry\.properties, candidate\.point\)/);
+  assert.match(map, /if \(placed\.some\(\(other\) => acgChipBoxesOverlap\(box, other\)\)\) continue;/);
 });

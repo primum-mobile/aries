@@ -70,12 +70,17 @@ TECHNIQUE_SECONDARY_PROGRESSION = "secondary_progression"
 TECHNIQUE_MINOR_PROGRESSION = "minor_progression"
 TECHNIQUE_TERTIARY_PROGRESSION = "tertiary_progression"
 TECHNIQUE_SOLAR_ARC = "solar_arc"
+# Jim Lewis's Cyclocartography (US 4,304,554): progressed Sun-Mars plus
+# transiting everything else, computed by the map itself. Map-drawer only; no
+# chart launcher produces it.
+TECHNIQUE_LEWIS_CCG = "lewis_ccg"
 DYNAMIC_TECHNIQUES = (
     TECHNIQUE_TRANSIT,
     TECHNIQUE_SECONDARY_PROGRESSION,
     TECHNIQUE_MINOR_PROGRESSION,
     TECHNIQUE_TERTIARY_PROGRESSION,
     TECHNIQUE_SOLAR_ARC,
+    TECHNIQUE_LEWIS_CCG,
 )
 
 ROLE_ANGULAR_LINE_SOURCE = "angular_line_source"
@@ -221,6 +226,8 @@ _DYNAMIC_TECHNIQUE_ALIASES = {
     "tertiary_progressions": TECHNIQUE_TERTIARY_PROGRESSION,
     "solar-arc": TECHNIQUE_SOLAR_ARC,
     "solar_arc_direction": TECHNIQUE_SOLAR_ARC,
+    "ccg": TECHNIQUE_LEWIS_CCG,
+    "cyclocartography": TECHNIQUE_LEWIS_CCG,
 }
 
 _TECHNIQUE_ROLE = {
@@ -229,6 +236,9 @@ _TECHNIQUE_ROLE = {
     TECHNIQUE_MINOR_PROGRESSION: ROLE_MINOR_PROGRESSION_ACTOR,
     TECHNIQUE_TERTIARY_PROGRESSION: ROLE_TERTIARY_PROGRESSION_ACTOR,
     TECHNIQUE_SOLAR_ARC: ROLE_SOLAR_ARC_ACTOR,
+    # Every CCG actor needs a real ephemeris position (transit or
+    # day-for-a-year progressed), which is exactly transit capability.
+    TECHNIQUE_LEWIS_CCG: ROLE_TRANSIT_ACTOR,
 }
 
 
@@ -411,6 +421,10 @@ class AstrocartDynamicLayer:
     cursor_iso: str | None = None
     selected_actor_ids: tuple[str, ...] = ()
     enabled: bool = False
+    source_document_id: str | None = None
+    # Lewis CCG only: read the layer against progressed angles (natal RAMC
+    # advanced by the progressed Sun's arc in right ascension).
+    progressed_angles: bool = False
 
     def __post_init__(self) -> None:
         technique = str(self.technique).strip().lower().replace("-", "_").replace(" ", "_")
@@ -427,6 +441,16 @@ class AstrocartDynamicLayer:
             _normalized_ids(self.selected_actor_ids),
         )
         object.__setattr__(self, "enabled", enabled)
+        source_document_id = (
+            str(self.source_document_id).strip()
+            if self.source_document_id is not None else ""
+        )
+        object.__setattr__(self, "source_document_id", source_document_id or None)
+        object.__setattr__(
+            self,
+            "progressed_angles",
+            bool(self.progressed_angles) and technique == TECHNIQUE_LEWIS_CCG,
+        )
 
     @property
     def moving_actor_ids(self) -> tuple[str, ...]:
@@ -453,6 +477,11 @@ class AstrocartDynamicLayer:
                     default=(),
                 ),
                 enabled=_strict_bool(value.get("enabled"), False),
+                source_document_id=_mapping_value(value, "sourceDocumentId", "source_document_id"),
+                progressed_angles=_strict_bool(
+                    _mapping_value(value, "progressedAnglesRa", "progressed_angles"),
+                    False,
+                ),
             )
         except (TypeError, ValueError):
             return None
@@ -464,6 +493,12 @@ class AstrocartDynamicLayer:
             "cursorIso": self.cursor_iso,
             "movingActorIds": list(self.selected_actor_ids),
             "enabled": self.enabled,
+            **({"sourceDocumentId": self.source_document_id} if self.source_document_id else {}),
+            **(
+                {"progressedAnglesRa": self.progressed_angles}
+                if self.technique == TECHNIQUE_LEWIS_CCG
+                else {}
+            ),
         }
 
 
@@ -488,6 +523,7 @@ class AstrocartMapSpec:
     selected_point_ids: tuple[str, ...] = DEFAULT_SELECTED_POINT_IDS
     selected_angle_kinds: tuple[str, ...] = ANGLE_KINDS
     paran_enabled: bool = False
+    paran_follow_lines: bool = False
     paran_participant_ids: tuple[str, ...] = DEFAULT_SELECTED_POINT_IDS
     zenith_enabled: bool = False
     aspect_definitions: tuple[AstrocartAspectDefinition, ...] = ()
@@ -514,6 +550,7 @@ class AstrocartMapSpec:
             _normalized_angle_kinds(self.selected_angle_kinds, default=ANGLE_KINDS),
         )
         object.__setattr__(self, "paran_enabled", bool(self.paran_enabled))
+        object.__setattr__(self, "paran_follow_lines", bool(self.paran_follow_lines))
         object.__setattr__(
             self,
             "paran_participant_ids",
@@ -713,6 +750,10 @@ class AstrocartMapSpec:
                 ),
                 False,
             ),
+            paran_follow_lines=_strict_bool(
+                _mapping_value(paran_payload, "followLines", "follow_lines", default=False),
+                False,
+            ),
             paran_participant_ids=_normalized_ids(
                 participant_raw,
                 default=DEFAULT_SELECTED_POINT_IDS,
@@ -810,6 +851,7 @@ class AstrocartMapSpec:
             "selectedAngleKinds": list(self.selected_angle_kinds),
             "paran": {
                 "enabled": self.paran_enabled,
+                "followLines": self.paran_follow_lines,
                 "participantIds": list(self.paran_participant_ids),
             },
             "zenithEnabled": self.zenith_enabled,
@@ -2305,7 +2347,11 @@ def normalize_spec_for_catalog(
         spec,
         paran_participant_ids=tuple(
             point_id
-            for point_id in spec.paran_participant_ids
+            for point_id in (
+                spec.selected_point_ids
+                if spec.paran_follow_lines
+                else spec.paran_participant_ids
+            )
             if record_by_id[point_id].capability(ROLE_PARAN_PARTICIPANT).supported
         ),
         aspect_actor_ids=tuple(
@@ -2331,6 +2377,9 @@ def enroll_newly_activated_paran_participants(
     again. Capability filtering keeps structural or otherwise ineligible point
     families out of the paran calculation.
     """
+
+    if spec.paran_follow_lines:
+        return spec
 
     newly_activated = (
         set(spec.selected_point_ids) - set(previous_spec.selected_point_ids)

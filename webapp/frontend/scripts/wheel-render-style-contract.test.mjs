@@ -85,6 +85,7 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
   const secondaryRing = (label, projected, motion) => ({
     "secondaryRing.fixedStar.label": label,
     "secondaryRing.asteroid.label": label,
+    "secondaryRing.asteroid.motion": label,
     "secondaryRing.midpoint.glyph": label,
     "secondaryRing.midpoint.text": label,
     "secondaryRing.antiscia.glyph": projected,
@@ -4466,10 +4467,11 @@ test("step-fast Anglo leader columns are stable across settle and H toggles", { 
   );
 });
 
-function recordingCanvas(recordedText, recordedLines = []) {
+function recordingCanvas(recordedText, recordedLines = [], recordedCircles = []) {
   const stateStack = [];
   let currentPoint = null;
   let currentSegments = [];
+  let currentArc = null;
   const context = {
     font: "400 14px sans-serif",
     strokeStyle: "#fff",
@@ -4530,6 +4532,7 @@ function recordingCanvas(recordedText, recordedLines = []) {
     beginPath() {
       currentPoint = null;
       currentSegments = [];
+      currentArc = null;
     },
     moveTo(x, y) {
       currentPoint = [x, y];
@@ -4539,9 +4542,10 @@ function recordingCanvas(recordedText, recordedLines = []) {
       if (currentPoint) currentSegments.push({ from: currentPoint, to: next });
       currentPoint = next;
     },
-    arc() {},
+    arc(x, y, radius) { currentArc = {x, y, radius}; },
     closePath() {},
     stroke() {
+      if (currentArc) recordedCircles.push({...currentArc, strokeStyle: this.strokeStyle});
       for (const segment of currentSegments) {
         recordedLines.push({
           ...segment,
@@ -4551,6 +4555,7 @@ function recordingCanvas(recordedText, recordedLines = []) {
       }
       currentSegments = [];
       currentPoint = null;
+      currentArc = null;
     },
     fill() {},
   };
@@ -5677,7 +5682,8 @@ test('edited Anglo transit composition keeps paint, hit targets and outer-house 
     assert.equal(houseTargets.length,houseBand?12:0);
     if (houseBand) for (const target of houseTargets) {
       assert.ok(Math.abs(Math.hypot(target.x1-400,target.y1-400)-houseBand.inner)<1e-6);
-      assert.ok(Math.abs(Math.hypot(target.x2-400,target.y2-400)-houseBand.outer)<1e-6);
+      assert.ok(Math.abs(Math.hypot(target.x2-400,target.y2-400)-houseBand.outer)<1e-6,
+        `${width}/${showOuterHouses}/${showOuterBodies}/${converse}: outer-house target must end at its band`);
     }
   }
 });
@@ -5721,7 +5727,7 @@ test('Anglo rulers and annotation paint and hits remain independent of each othe
         houses: {cusps: Array.from({length: 12}, (_, index) => 11.5 + index * 30),
           cuspDegMin: Array.from({length: 12}, () => ({degText: '11', minText: '30'}))},
         options: {theme: WHEEL_FACTORY_SETTINGS.layouts[profile].optionValue,
-          wheelComposition: composition, showHouses: houses, showPositions: true,
+          wheelComposition: composition, showHouses: houses, showPositions: false,
           showTerms: false, showDecans: false, showAspects: false, showSymbols: false,
           showCusplessAscMcLabels: false, showOuterHouseLines: true, signVariant: 1},
       };
@@ -5748,8 +5754,8 @@ test('Anglo rulers and annotation paint and hits remain independent of each othe
         `${context}: zodiac ruler paint follows its own band`);
       if (profile === 'anglo') {
         const degreeLines = lines.filter(item => item.strokeStyle === degreeColor);
-        assert.equal(degreeLines.length, 0,
-          `${context}: toggling a compatibility ruler cannot introduce a second degree scale into original Anglo`);
+        assert.equal(degreeLines.length, degree ? 360 : 0,
+          `${context}: the degree ruler obeys its checkbox independently of the cusp ruler`);
         for (const line of lines.filter(item => item.strokeStyle === rulerColor)) {
           assert.ok(Math.hypot(line.to[0] - 400, line.to[1] - 400)
             > Math.hypot(line.from[0] - 400, line.from[1] - 400),
@@ -6272,5 +6278,126 @@ test('open wheels retain size and cusp anchors through moving bodies, time steps
         `${profile}: changing houses, rotation, and degree text must not change wheel size`);
     }
 
+  }
+});
+
+test('degree ruler visibility survives moving its row away and back to original order', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const [profile, theme] of [['anglo', 2], ['houses', 3], ['cusps', 4]])
+  for (const arrangement of ['single', 'transit', 'synastry']) for (const enabled of [true, false]) {
+    const original = structuredClone(WHEEL_FACTORY_SETTINGS.layouts[profile].composition);
+    original.rings = original.rings.map(ring => ({...ring,
+      enabled: ring.archetypeId === 'degree' ? enabled
+        : ['terms', 'decans', 'cuspRuler', 'cuspLabels'].includes(ring.archetypeId) ? false : ring.enabled}));
+    const moved = structuredClone(original);
+    const index = moved.rings.findIndex(ring => ring.archetypeId === 'degree');
+    [moved.rings[index], moved.rings[index - 1]] = [moved.rings[index - 1], moved.rings[index]];
+    for (const composition of [original, moved, structuredClone(original)]) {
+      const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+        angles: {asc: 0, mc: 270, dsc: 180, ic: 90}, houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+        options: {theme, wheelComposition: composition, showHouses: true, showOuterHouseLines: true,
+          showTerms: false, showDecans: false, showPositions: false, showAspects: false}};
+      const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full',
+        ...(arrangement === 'single' ? {} : {comparisonChart: chart, document: {compoundKind: arrangement}})};
+      const lines = [], draw = new renderer.CanvasDraw(recordingCanvas([], lines));
+      draw.resize(800, 800, 1);
+      const style = {...DEFAULT_WHEEL_RENDER_STYLE, elementColors: {...DEFAULT_WHEEL_RENDER_STYLE.elementColors},
+        linePaint: {...DEFAULT_WHEEL_RENDER_STYLE.linePaint}};
+      // Degree ticks are the only 360-line sweep with both cusp instruments off.
+      renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+      assert.equal(lines.length >= 360, enabled, `${profile}/${arrangement}: row order cannot change the toggle's meaning`);
+    }
+  }
+});
+
+test('Anglo Degree attaches to either side of Signs without a terminal circle', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const tickColor = '#ec2359', terminalColor = '#2468aa';
+  const style = createWheelRenderStyle({
+    palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    elementColors: {...DEFAULT_WHEEL_RENDER_STYLE.elementColors, outerDegreeRing: terminalColor},
+    authoringTargetProfile: 'anglo',
+    authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides, linePaint: {anglo: {
+      ...Object.fromEntries(['1deg', '5deg', '10deg'].map(size =>
+        [`zodiac.tick.outer.${size}`, {color: tickColor}])),
+    }}},
+  });
+  const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
+  for (const arrangement of ['single', 'transit', 'synastry']) for (const above of [false, true]) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    if (above) {
+      const index = composition.rings.findIndex(ring => ring.archetypeId === 'degree');
+      [composition.rings[index], composition.rings[index - 1]] = [composition.rings[index - 1], composition.rings[index]];
+    }
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme: 2, wheelComposition: composition, showHouses: true,
+        showOuterHouseLines: true, showTerms: false, showDecans: false,
+        showPositions: false, showAspects: false}};
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full',
+      ...(arrangement === 'single' ? {} : {comparisonChart: chart, document: {compoundKind: arrangement}})};
+    const lines = [], circles = [];
+    const draw = new renderer.CanvasDraw(recordingCanvas([], lines, circles));
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+    const ticks = lines.filter(line => line.strokeStyle === tickColor);
+    const where = `${arrangement}/${above ? 'above' : 'below'} Signs`;
+    assert.equal(ticks.length, 360, `${where}: every degree tick paints`);
+    assert.ok(ticks.every(line => above ? radius(line.to) < radius(line.from)
+      : radius(line.to) > radius(line.from)), `${where}: ticks point into Signs`);
+    const tickInner = Math.min(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
+    const tickOuter = Math.max(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
+    assert.equal(circles.filter(circle => circle.strokeStyle === terminalColor
+      && circle.radius >= tickInner - 1 && circle.radius <= tickOuter + 1).length, 0,
+      `${where}: no terminal circle crosses the sign glyphs`);
+  }
+});
+
+test('adjacent Anglo Cusp ruler paints inside Signs without a second circle', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const tickColor = '#e42a65', terminalColor = '#214aa8';
+  const style = createWheelRenderStyle({
+    palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    elementColors: {...DEFAULT_WHEEL_RENDER_STYLE.elementColors, cuspOuterRing: terminalColor},
+    authoringTargetProfile: 'anglo',
+    authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides, linePaint: {anglo: {
+      ...Object.fromEntries(['1deg', '5deg', '10deg'].map(size =>
+        [`zodiac.tick.angloCuspRuler.${size}`, {color: tickColor}])),
+    }}},
+  });
+  const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
+  for (const arrangement of ['single', 'transit', 'synastry']) for (const outside of [false, true]) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    composition.rings = composition.rings.map(ring => ['degree', 'terms', 'decans', 'cuspLabels'].includes(ring.archetypeId)
+      ? {...ring, enabled: false} : ring);
+    const cusp = composition.rings.splice(composition.rings.findIndex(r => r.archetypeId === 'cuspRuler'), 1)[0];
+    const signIndex = composition.rings.findIndex(r => r.archetypeId === 'zodiac');
+    composition.rings.splice(signIndex + Number(!outside), 0, cusp);
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme: 2, wheelComposition: composition, showHouses: true,
+        showOuterHouseLines: true, showTerms: false, showDecans: false,
+        showPositions: false, showAspects: false}};
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full',
+      ...(arrangement === 'single' ? {} : {comparisonChart: chart, document: {compoundKind: arrangement}})};
+    const lines = [], circles = [];
+    const draw = new renderer.CanvasDraw(recordingCanvas([], lines, circles));
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+    const ticks = lines.filter(line => line.strokeStyle === tickColor);
+    const where = `${arrangement}/${outside ? 'outside' : 'inside'} Signs`;
+    assert.equal(ticks.length, outside ? 360 : 348, `${where}: Cusp ticks paint`);
+    assert.ok(ticks.every(line => outside ? radius(line.to) < radius(line.from)
+      : radius(line.to) > radius(line.from)), `${where}: Cusp ticks point into Signs`);
+    const tickInner = Math.min(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
+    const tickOuter = Math.max(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
+    assert.equal(circles.filter(circle => circle.strokeStyle === terminalColor
+      && circle.radius >= tickInner - 1 && circle.radius <= tickOuter + 1).length, 0,
+      `${where}: hosted ticks have no separate Cusp circle`);
   }
 });

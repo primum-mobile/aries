@@ -486,10 +486,15 @@ _RES_ASTROCART_ALLOWLIST = {
     "astrocart/vendor/geographiclib-geodesic.js",
     "astrocart/capitals.geojson",
     "astrocart/places.geojson",
+    "astrocart/natural-earth-admin0-110m.geojson",
     "astrocart/vendor/maplibre-gl.css",
     "astrocart/vendor/maplibre-gl.js",
     "astrocart/vendor/pmtiles.js",
 }
+
+# Bundled MapLibre glyph ranges (scripts/fonts/build_astrocart_glyphs.py).
+_ASTROCART_GLYPH_STACKS = frozenset({"Noto Sans Regular", "Noto Sans Bold", "Noto Sans Italic"})
+_ASTROCART_GLYPH_RANGE = re.compile(r"astrocart/fonts/(?P<stack>[^/]+)/(?P<start>\d+)-(?P<end>\d+)\.pbf")
 
 _RES_NOTES_ALLOWLIST = {
     "notes/index.html",
@@ -548,8 +553,34 @@ def _astrocart_asset_revision() -> str:
     return _astrocart_revision_for_files(tuple(files))
 
 
+def _astrocart_glyph_range(resource_path: str) -> Optional[Response]:
+    """Serve one offline-map glyph range, empty when the faces lack it.
+
+    MapLibre drops every label in a tile when any glyph range it needs fails,
+    so a range the bundled Noto Sans faces do not cover (Arabic, CJK, ...)
+    answers with a valid, glyph-free fontstack rather than a 404.
+    """
+    match = _ASTROCART_GLYPH_RANGE.fullmatch(resource_path)
+    if not match or match["stack"] not in _ASTROCART_GLYPH_STACKS:
+        return None
+    start, end = int(match["start"]), int(match["end"])
+    if start % 256 or end != start + 255 or end > 0x10FFFF:
+        return None
+    headers = {"Cache-Control": "no-cache"}
+    path = RES_DIR / "astrocart" / "fonts" / match["stack"] / f"{start}-{end}.pbf"
+    if path.is_file():
+        return FileResponse(path, media_type="application/x-protobuf", headers=headers)
+    name = match["stack"].encode()
+    glyph_range = f"{start}-{end}".encode()
+    stack = b"\x0a" + bytes([len(name)]) + name + b"\x12" + bytes([len(glyph_range)]) + glyph_range
+    return Response(b"\x0a" + bytes([len(stack)]) + stack, media_type="application/x-protobuf", headers=headers)
+
+
 @app.get("/Res/{resource_path:path}")
 def res_resource(resource_path: str):
+    glyphs = _astrocart_glyph_range(resource_path)
+    if glyphs is not None:
+        return glyphs
     path = _allowed_res_resource(resource_path)
     if path is None:
         raise HTTPException(status_code=404, detail="resource not found")
@@ -2201,35 +2232,6 @@ def astrocart_display_style() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.get("/api/astrocart/city-labels")
-def astrocart_city_labels(
-    west: float,
-    south: float,
-    east: float,
-    north: float,
-    zoom: float = 0.0,
-    limit: Optional[int] = None,
-) -> dict:
-    """Viewport city labels from the bundled GeoNames cities500 database.
-
-    Used by map.html for local/offline basemaps, where PMTiles provide land and
-    borders but not reliable city names.
-    """
-    try:
-        return astrocart_service.city_labels_geojson(
-            west=west,
-            south=south,
-            east=east,
-            north=north,
-            zoom=zoom,
-            limit=limit,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
 @app.get("/api/astrocart/eclipse-path")
 def astrocart_eclipse_path(jd: float, retflag: int = 0) -> dict:
     """Swiss Ephemeris solar-eclipse shadow-path GeoJSON for the astrocart map
@@ -2251,6 +2253,7 @@ def workspace_document_astrocart(
     mode: Optional[str] = None,
     modes: Optional[str] = None,
     precision: Optional[str] = None,
+    dynamicOnly: bool = False,
 ) -> dict:
     """ACG GeoJSON for a workspace astrocart document, resolved from its live
     parent chart instead of a saved collection name."""
@@ -2260,6 +2263,7 @@ def workspace_document_astrocart(
             mode=mode,
             modes=None if modes is None else [part for part in modes.split(",") if part],
             precision=precision,
+            dynamic_only=dynamicOnly,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2330,7 +2334,7 @@ def workspace_document_astrocart_store_spec(
 _ASTROCART_PDF_PNG_DATA_URL_PREFIX = "data:image/png;base64,"
 _ASTROCART_PDF_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _ASTROCART_PDF_BASE64_PATTERN = re.compile(r"[A-Za-z0-9+/]*={0,2}\Z")
-_ASTROCART_PDF_ATLAS_MIN_PAGES = 2
+_ASTROCART_PDF_ATLAS_MIN_PAGES = 1
 _ASTROCART_PDF_ATLAS_MAX_PAGES = 25
 _ASTROCART_PDF_ATLAS_MAX_DIMENSION = 4096
 _ASTROCART_PDF_ATLAS_MAX_PAGE_URL_CHARS = 32_000_000
@@ -2487,7 +2491,7 @@ def _validated_astrocart_pdf_atlas(payload: Any) -> dict[str, Any] | None:
         <= len(pages)
         <= _ASTROCART_PDF_ATLAS_MAX_PAGES
     ):
-        _astrocart_pdf_atlas_error("atlas must contain 2 to 25 pages")
+        _astrocart_pdf_atlas_error("atlas must contain 1 to 25 pages")
 
     total_bytes = 0
     for index, page in enumerate(pages):
@@ -4369,6 +4373,12 @@ class WorkspaceOpenPayload(BaseModel):
     planetType: Optional[int] = None
     binding: Optional[dict] = None
     reuseExisting: bool = False
+    # Map-owned technique tab under an Astrocart document ("lewis_ccg").
+    astrocartTechnique: Optional[str] = None
+
+
+class AstrocartLayerOptionsPayload(BaseModel):
+    progressedAnglesRa: bool
 
 
 class SidebarSectionCollapsedPayload(BaseModel):
@@ -4488,6 +4498,7 @@ class WorkspaceNavigateKeyPayload(BaseModel):
     shift: bool = False
     alt: bool = False
     repeat: int = Field(default=1, ge=1, le=64)
+    includeSnapshot: bool = True
 
 
 class WorkspaceToggleComparisonPayload(BaseModel):
@@ -5283,11 +5294,29 @@ def workspace_open(
             binding_payload=payload.binding,
             reuse_existing=payload.reuseExisting,
             include_perf=perf,
+            astrocart_technique=payload.astrocartTechnique,
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SystemExit as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/document/{doc_id}/astrocart-layer-options")
+def workspace_document_astrocart_layer_options(
+    doc_id: str,
+    payload: AstrocartLayerOptionsPayload,
+) -> dict:
+    """Set a Lewis CCG tab's progressed-angles reading; returns its map spec."""
+    try:
+        return workspace_service.set_astrocart_layer_options(
+            doc_id,
+            progressed_angles=payload.progressedAnglesRa,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -6003,6 +6032,7 @@ def workspace_navigate_key(
             alt=payload.alt,
             repeat=payload.repeat,
             include_perf=perf,
+            attach_snapshot=payload.includeSnapshot,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

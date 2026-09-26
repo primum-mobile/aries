@@ -53,7 +53,7 @@ export function WheelPresetControls({profile, surface = 'editor', beforeAction}:
   const selectedId = selected?.id.startsWith('working.') ? `factory.${profile}` : presets?.selected[profile] ?? '';
   const listed = Boolean(selected && presets?.presets.some(item => item.id === selected.id));
   const pending = loadedProfile === profile && !equalChartStyleOverrides(geometry, synced);
-  const dirty = Boolean(presets?.drafts[profile]?.dirty) || pending;
+  const dirty = Boolean(presets?.drafts[profile]?.dirty) || pending || Boolean(compositionPreview[profile]);
   const canOverwrite = Boolean(selected && listed && !selected.factory);
   // Settings can edit a different layout from the parked Style Lab variant.
   // Share the catalog without retargeting that editor's live geometry draft.

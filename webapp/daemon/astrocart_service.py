@@ -21,8 +21,7 @@ separate and calculation-free.
 """
 from __future__ import annotations
 
-import bisect
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import hashlib
 import json
 from math import acos, asin, atan2, cos, degrees, isfinite, radians, sin, tan
@@ -31,7 +30,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -83,7 +82,6 @@ _HORIZON_LABEL_LATITUDES = (0.0, 25.0, -25.0, 50.0, -50.0)
 _HORIZON_LABEL_FRACTIONS = (0.2, 0.35, 0.5, 0.65, 0.8)
 _LOCAL_SPACE_LABEL_DISTANCE_METERS = 16_000_000.0
 _LOCAL_SPACE_LABEL_STEP_METERS = 2_000_000.0
-_CITY_LABEL_RESOURCE = Path("Res") / "astrocart" / "places.geojson"
 _ASTERISM_RESOURCE = Path("Res") / "astrocart" / "constellations.lines.min.geojson"
 _ASTERISM_STAR_RESOURCE = Path("Res") / "astrocart" / "constellations.stars.min.geojson"
 
@@ -147,6 +145,9 @@ _LEGACY_POINT_CLR_INDEX: dict[str, int] = {
 _MORINUS_PLANETS_DEFAULT = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
 _MORINUS_URANUS_VARIANTS = ("H", "6")
 _MORINUS_PLUTO_VARIANTS = ("J", "7", "8", "9")
+# Morinus opposition glyph (common.py Aspects[10]); marks Local Space
+# opposition line labels in place of a localized word.
+_MORINUS_OPPOSITION_GLYPH = "W"
 
 ASTROCART_STYLE_SCHEMA_VERSION = 10
 ASTROCART_TITLEBAR_SAFE_TOP = 34
@@ -727,34 +728,6 @@ def _astrocart_renderer_style(is_dark: bool) -> dict:
         "referencePoleLabelHaloWidth": 0.9,
     }
 
-_CITY_LABEL_THRESHOLDS = (
-    (1.7, 0, 4_000_000, 60),
-    (2.3, 1, 1_000_000, 110),
-    (3.0, 2, 250_000, 180),
-    (4.0, 3, 100_000, 260),
-)
-
-
-@dataclass(frozen=True, slots=True)
-class _CityLabel:
-    name: str
-    ascii_name: str
-    country: str
-    longitude: float
-    latitude: float
-    population: int
-    level: int
-    feature_code: str
-    canonical_rank: int
-
-
-@dataclass(frozen=True, slots=True)
-class _CityLabelIndex:
-    rows_by_latitude: tuple[_CityLabel, ...]
-    latitudes: tuple[float, ...]
-    row_count: int
-    load_ms: float
-
 _UNICODE_GLYPHS: dict[str, str] = {
     "sun": "☉",       # ☉
     "moon": "☽",      # ☽
@@ -919,6 +892,8 @@ def _inject_glyphs(
             # Unicode only for the established legacy IDs; semantic asteroid,
             # fixed-star, and structural IDs fall back to their text labels.
             props["glyph_unicode"] = _UNICODE_GLYPHS.get(pid, "")
+            if kind == localspace.KIND_LOCAL_SPACE_OPPOSITION:
+                props["aspect_glyph_morinus"] = _MORINUS_OPPOSITION_GLYPH
 
 
 def _catalog_labels(catalog: astrocart_spec.AstrocartPointCatalog) -> dict[str, str]:
@@ -1029,6 +1004,19 @@ def _append_natal_ascendant_lines(
             **natal_kwargs,
         )
     payload = result.to_geojson()
+    if geodetic_meridian_lon is not None:
+        label_mode = (
+            ASTROCART_MODE_GEODETIC_GREENWICH
+            if geodetic_meridian_lon == astrocart.GEODETIC_GREENWICH_MERIDIAN_LON
+            else ASTROCART_MODE_GEODETIC_GIZA
+        )
+        _inject_label_contract(
+            payload,
+            acg_result=result,
+            mode=label_mode,
+            origin_lon=float(radix.place.lon),
+            origin_lat=float(radix.place.lat),
+        )
     for feature in payload.get("features", []):
         properties = feature.setdefault("properties", {})
         properties["natal_angle"] = True
@@ -1079,40 +1067,6 @@ def _normalize_lon(value: float) -> float:
     return 180.0 if value == -180.0 else value
 
 
-def _city_label_budget(zoom: float) -> tuple[int, int, int]:
-    try:
-        z = float(zoom)
-    except (TypeError, ValueError):
-        z = 0.0
-    for max_zoom, max_level, min_pop, max_labels in _CITY_LABEL_THRESHOLDS:
-        if z < max_zoom:
-            return max_level, min_pop, max_labels
-    return 4, 0, 420
-
-
-def _clamp_label_limit(limit: Optional[int], default_limit: int) -> int:
-    try:
-        value = int(limit) if limit is not None else int(default_limit)
-    except (TypeError, ValueError):
-        value = int(default_limit)
-    return max(1, min(1000, value))
-
-
-def _bundled_city_labels_path() -> Path:
-    """Resolve the canonical offline label pack in source and Tauri builds."""
-    daemon_base = os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip()
-    if daemon_base:
-        # The daemon bootstrap makes this override authoritative. In a packaged
-        # app, silently falling back to the source checkout would mask a broken
-        # resource bundle and make offline behavior installation-dependent.
-        return Path(daemon_base).expanduser() / _CITY_LABEL_RESOURCE
-    if getattr(sys, "frozen", False):
-        mei = getattr(sys, "_MEIPASS", None)
-        if mei:
-            return Path(mei) / _CITY_LABEL_RESOURCE
-    return REPO_ROOT / _CITY_LABEL_RESOURCE
-
-
 def _bundled_asterism_path() -> Path:
     """Resolve the all-sky figure catalogue in source and Tauri builds."""
     daemon_base = os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip()
@@ -1135,103 +1089,6 @@ def _bundled_asterism_star_path() -> Path:
         if mei:
             return Path(mei) / _ASTERISM_STAR_RESOURCE
     return REPO_ROOT / _ASTERISM_STAR_RESOURCE
-
-
-def _load_city_label_index(path: Path) -> tuple[Optional[_CityLabelIndex], Optional[str], float]:
-    """Parse and latitude-index the generated places.geojson exactly once."""
-    started = time.perf_counter()
-    if not path.is_file():
-        return None, "missing", (time.perf_counter() - started) * 1000.0
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        features = payload.get("features") if isinstance(payload, dict) else None
-        if (
-            not isinstance(payload, dict)
-            or payload.get("type") != "FeatureCollection"
-            or not isinstance(features, list)
-        ):
-            raise ValueError("not a GeoJSON FeatureCollection")
-
-        rows: list[_CityLabel] = []
-        for rank, feature in enumerate(features):
-            if not isinstance(feature, dict) or feature.get("type") != "Feature":
-                raise ValueError("invalid city feature")
-            geometry = feature.get("geometry")
-            properties = feature.get("properties")
-            if not isinstance(geometry, dict) or geometry.get("type") != "Point":
-                raise ValueError("invalid city geometry")
-            if not isinstance(properties, dict):
-                raise ValueError("invalid city properties")
-            coordinates = geometry.get("coordinates")
-            if not isinstance(coordinates, (list, tuple)) or len(coordinates) < 2:
-                raise ValueError("invalid city coordinates")
-
-            longitude = float(coordinates[0])
-            latitude = float(coordinates[1])
-            population = int(properties.get("population", 0) or 0)
-            level = int(properties["level"])
-            name = str(properties.get("name") or "").strip()
-            if (
-                not name
-                or not isfinite(longitude)
-                or not isfinite(latitude)
-                or not -180.0 <= longitude <= 180.0
-                or not -90.0 <= latitude <= 90.0
-                or not 0 <= level <= 4
-                or population < 0
-            ):
-                raise ValueError("invalid city label value")
-            ascii_name = str(properties.get("ascii") or name)
-            rows.append(_CityLabel(
-                name=name,
-                ascii_name=ascii_name,
-                country=str(properties.get("country") or ""),
-                longitude=longitude,
-                latitude=latitude,
-                population=population,
-                level=level,
-                feature_code=str(properties.get("feature") or ""),
-                canonical_rank=rank,
-            ))
-        if not rows:
-            raise ValueError("empty city label resource")
-    except FileNotFoundError:
-        return None, "missing", (time.perf_counter() - started) * 1000.0
-    except (OSError, UnicodeError):
-        return None, "unreadable", (time.perf_counter() - started) * 1000.0
-    except (KeyError, OverflowError, TypeError, ValueError, json.JSONDecodeError):
-        return None, "corrupt", (time.perf_counter() - started) * 1000.0
-
-    rows.sort(key=lambda row: (row.latitude, row.canonical_rank))
-    load_ms = (time.perf_counter() - started) * 1000.0
-    return _CityLabelIndex(
-        rows_by_latitude=tuple(rows),
-        latitudes=tuple(row.latitude for row in rows),
-        row_count=len(rows),
-        load_ms=load_ms,
-    ), None, load_ms
-
-
-def _city_label_features(rows) -> list[dict]:
-    return [
-        {
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [row.longitude, row.latitude],
-            },
-            "properties": {
-                "name": row.name,
-                "ascii": row.ascii_name,
-                "country": row.country,
-                "population": row.population,
-                "level": row.level,
-                "feature": row.feature_code,
-            },
-        }
-        for row in rows
-    ]
 
 
 def _round_anchor(lon: float, lat: float) -> list[float]:
@@ -1705,6 +1562,56 @@ def _all_aspect_payloads() -> list[dict]:
     ]
 
 
+# Map line weight (ACG Appearance). "thin" is the renderer's native width;
+# every ACG line family derives from these four base widths, so scaling them
+# thickens angle, aspect, local-space and paran lines together.
+ASTROCART_LINE_WEIGHT_THIN = "thin"
+ASTROCART_LINE_WEIGHTS = ("thin", "medium", "bold")
+ASTROCART_LINE_WEIGHT_SCALE = {"thin": 1.0, "medium": 1.5, "bold": 2.0}
+_ASTROCART_LINE_WIDTH_KEYS = ("casingWidth", "solidWidth", "dashedWidth", "paranWidth")
+
+
+def normalized_astrocart_line_weight(value: Any) -> str:
+    return value if value in ASTROCART_LINE_WEIGHTS else ASTROCART_LINE_WEIGHT_THIN
+
+
+# Map line labels (ACG Appearance): planet names, or Morinus planet glyphs with
+# only the angle/aspect/bearing text ("<Venus glyph> ASC").
+ASTROCART_LINE_LABELS_NAMES = "names"
+ASTROCART_LINE_LABELS = ("names", "glyphs")
+
+
+def normalized_astrocart_line_labels(value: Any) -> str:
+    return value if value in ASTROCART_LINE_LABELS else ASTROCART_LINE_LABELS_NAMES
+
+
+# Local Space line labels show the bearing ("Sun 45°") only when turned on in
+# ACG Appearance; a fresh install leaves it off.
+def normalized_astrocart_local_space_bearings(value: Any) -> bool:
+    return value is True
+
+
+def _astrocart_view_preference(opts: Any, key: str) -> Any:
+    preferences = getattr(opts, "astrocartography_preferences", {}) or {}
+    view = preferences.get("view") if isinstance(preferences, dict) else None
+    return view.get(key) if isinstance(view, dict) else None
+
+
+def _apply_astrocart_line_weight(renderer_style: dict, opts: Any) -> None:
+    preferences = getattr(opts, "astrocartography_preferences", {}) or {}
+    view = preferences.get("view") if isinstance(preferences, dict) else None
+    weight = normalized_astrocart_line_weight(
+        view.get("lineWeight") if isinstance(view, dict) else None
+    )
+    scale = ASTROCART_LINE_WEIGHT_SCALE[weight]
+    if scale == 1.0:
+        return
+    for key in _ASTROCART_LINE_WIDTH_KEYS:
+        value = renderer_style.get(key)
+        if isinstance(value, (int, float)):
+            renderer_style[key] = round(float(value) * scale, 4)
+
+
 def _dynamic_technique_payloads() -> list[dict]:
     return [
         {
@@ -1718,35 +1625,6 @@ def _dynamic_technique_payloads() -> list[dict]:
 class AstrocartService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._city_index_lock = threading.Lock()
-        self._city_index_loaded = False
-        self._city_index: Optional[_CityLabelIndex] = None
-        self._city_index_error: Optional[str] = None
-        self._city_index_load_ms = 0.0
-
-    def _get_city_label_index(
-        self,
-    ) -> tuple[Optional[_CityLabelIndex], Optional[str], float, bool]:
-        # City-label disk/index work must never queue behind precise astrology
-        # calculation, which is serialized separately by ``self._lock``.
-        with self._city_index_lock:
-            cached = self._city_index_loaded
-            if not self._city_index_loaded:
-                index, error, load_ms = _load_city_label_index(_bundled_city_labels_path())
-                self._city_index = index
-                self._city_index_error = error
-                self._city_index_load_ms = load_ms
-                self._city_index_loaded = True
-            return (
-                self._city_index,
-                self._city_index_error,
-                self._city_index_load_ms,
-                cached,
-            )
-
-    def prewarm_city_labels(self) -> None:
-        """Build the compact world-label index before the first map opens."""
-        self._get_city_label_index()
 
     def _catalog_and_spec(
         self,
@@ -1972,9 +1850,16 @@ class AstrocartService:
                 "showMcCircle": bool(getattr(opts, "astrocart_show_mc_circle", False)),
                 "showHouseLines": bool(getattr(opts, "astrocart_show_house_lines", False)),
                 "showZodiacLines": bool(getattr(opts, "astrocart_show_zodiac_lines", False)),
+                "lineLabelGlyphs": normalized_astrocart_line_labels(
+                    _astrocart_view_preference(opts, "lineLabels")
+                ) == "glyphs",
+                "localSpaceBearings": normalized_astrocart_local_space_bearings(
+                    _astrocart_view_preference(opts, "localSpaceBearings")
+                ),
             },
         }
         _apply_astrocart_profile(payload, active_profile)
+        _apply_astrocart_line_weight(payload["renderer"], opts)
         resolved_unknown_color = payload["renderer"]["fallbackUnknownColor"]
         for point_id in fallback_point_ids:
             point_style = payload["points"].get(point_id)
@@ -2011,102 +1896,6 @@ class AstrocartService:
             "installing": installing,
         }
 
-    def city_labels_geojson(
-        self,
-        *,
-        west: float,
-        south: float,
-        east: float,
-        north: float,
-        zoom: float,
-        limit: Optional[int] = None,
-    ) -> dict:
-        """Fast offline labels from the canonical compact bundled index.
-
-        The online map keeps provider-owned labels. This endpoint exists only
-        for local/minimal offline basemaps and intentionally preserves the
-        curated label set instead of exposing the full cities500 database.
-        """
-        started = time.perf_counter()
-        try:
-            west_f = float(west)
-            east_f = float(east)
-            south_f = max(-90.0, min(90.0, float(south)))
-            north_f = max(-90.0, min(90.0, float(north)))
-        except (TypeError, ValueError):
-            raise ValueError("invalid map bounds")
-        if south_f > north_f:
-            south_f, north_f = north_f, south_f
-
-        zoom_f = float(zoom)
-        max_level, min_pop, default_limit = _city_label_budget(zoom_f)
-        row_limit = _clamp_label_limit(limit, default_limit)
-
-        raw_span = east_f - west_f
-        if raw_span < 0:
-            raw_span += 360.0
-        covers_world = raw_span >= 359.0 or abs(east_f - west_f) >= 359.0
-        west_n = _normalize_lon(west_f)
-        east_n = _normalize_lon(east_f)
-
-        index, index_error, load_ms, cached = self._get_city_label_index()
-        if index is None:
-            return _presentation_geojson({
-                "type": "FeatureCollection",
-                "features": [],
-                "meta": {
-                    "source": "places.geojson",
-                    "available": False,
-                    "reason": index_error or "unavailable",
-                    "cached": cached,
-                    "loadMs": round(load_ms, 3),
-                    "queryMs": round((time.perf_counter() - started) * 1000.0, 3),
-                },
-            })
-
-        low_index = bisect.bisect_left(index.latitudes, south_f)
-        high_index = bisect.bisect_right(index.latitudes, north_f)
-        candidates = index.rows_by_latitude[low_index:high_index]
-
-        def longitude_visible(longitude: float) -> bool:
-            if covers_world:
-                return True
-            normalized = _normalize_lon(longitude)
-            if west_n <= east_n:
-                return west_n <= normalized <= east_n
-            return normalized >= west_n or normalized <= east_n
-
-        rows = [
-            row for row in candidates
-            if (row.level <= max_level or row.population >= min_pop)
-            and longitude_visible(row.longitude)
-        ]
-        # Match places.geojson/map.html exactly: level first, population second,
-        # then retain the canonical generated-resource order for stable ties.
-        rows.sort(key=lambda row: (row.level, -row.population, row.canonical_rank))
-        rows = rows[:row_limit]
-
-        features = _city_label_features(rows)
-
-        return _presentation_geojson({
-            "type": "FeatureCollection",
-            "features": features,
-            "meta": {
-                "source": "places.geojson",
-                "available": True,
-                "cached": cached,
-                "rowCount": len(features),
-                "indexRowCount": index.row_count,
-                "candidateCount": len(candidates),
-                "zoom": zoom_f,
-                "maxLevel": max_level,
-                "minPopulation": min_pop,
-                "limit": row_limit,
-                "loadMs": round(load_ms, 3),
-                "queryMs": round((time.perf_counter() - started) * 1000.0, 3),
-            },
-        })
-
     def _geojson_for_chart(
         self,
         radix,
@@ -2117,6 +1906,7 @@ class AstrocartService:
         local_space_standalone: bool = False,
         spec=None,
         catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> dict:
         mode = _normalize_mode(mode)
         precision = _normalize_precision(precision)
@@ -2253,6 +2043,7 @@ class AstrocartService:
                 compute_kwargs,
                 mode=mode,
                 geodetic_meridian_lon=geodetic_meridian,
+                dynamic_source_charts=dynamic_source_charts,
             )
             if dynamic_enabled
             else []
@@ -2295,9 +2086,13 @@ class AstrocartService:
         *,
         mode: str,
         geodetic_meridian_lon: Optional[float],
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> list[dict]:
         dynamic_meta: list[dict] = []
+        source_charts = dynamic_source_charts or {}
         for layer in spec.dynamic_layers:
+            if layer.source_document_id and layer.source_document_id not in source_charts:
+                continue
             dynamic_result = astrocart_dynamic.compute_dynamic_layer(
                 radix,
                 catalog,
@@ -2307,6 +2102,7 @@ class AstrocartService:
                 include_parans=False,
                 include_zenith_markers=spec.zenith_enabled,
                 geodetic_meridian_lon=geodetic_meridian_lon,
+                source_chart=source_charts.get(layer.source_document_id),
                 **compute_kwargs,
             )
             if dynamic_result is None:
@@ -2336,6 +2132,7 @@ class AstrocartService:
         precision: str,
         spec: astrocart_spec.AstrocartMapSpec,
         catalog: astrocart_spec.AstrocartPointCatalog,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> dict:
         """Compute timing geometry when every natal line mode is hidden."""
         opts = chart_snapshot_service.options
@@ -2359,6 +2156,7 @@ class AstrocartService:
             compute_kwargs,
             mode=ASTROCART_MODE_STANDARD,
             geodetic_meridian_lon=None,
+            dynamic_source_charts=dynamic_source_charts,
         )
         self._append_separate_parans(
             geojson,
@@ -2401,6 +2199,100 @@ class AstrocartService:
             meta["dynamicLayers"] = dynamic_meta
         geojson["meta"] = meta
         return geojson
+
+    def _moving_layers_geojson(
+        self,
+        radix,
+        *,
+        source_name: str,
+        modes: Sequence[str],
+        precision: Optional[str],
+        spec,
+        catalog: Optional[astrocart_spec.AstrocartPointCatalog],
+        dynamic_source_charts: Optional[dict[str, object]],
+    ) -> dict:
+        """Export only cursor-dependent geometry for a retained map."""
+        normalized_modes = _normalize_modes(modes)
+        primary_modes = [
+            mode for mode in normalized_modes
+            if mode != ASTROCART_MODE_LOCAL_SPACE
+        ] or [ASTROCART_MODE_STANDARD]
+        normalized_precision = _normalize_precision(precision)
+        resolved_catalog, normalized_spec = self._catalog_and_spec(
+            radix, spec=spec, catalog=catalog,
+        )
+        opts = chart_snapshot_service.options
+        display_opts = effective_display_options(opts)
+        colored_catalog = _catalog_with_display_colors(
+            resolved_catalog,
+            source_options=opts,
+            display_options=display_opts,
+        )
+        geojson = {"type": "FeatureCollection", "features": []}
+        dynamic_layers_by_id: dict[str, dict] = {}
+        for mode in primary_modes:
+            mode_payload = {"type": "FeatureCollection", "features": []}
+            for layer_meta in self._append_dynamic_layers(
+                mode_payload,
+                radix,
+                normalized_spec,
+                colored_catalog,
+                _precision_compute_kwargs(normalized_precision),
+                mode=mode,
+                geodetic_meridian_lon=_GEODETIC_MERIDIANS.get(mode),
+                dynamic_source_charts=dynamic_source_charts,
+            ):
+                layer_id = str(layer_meta.get("id") or "")
+                if layer_id:
+                    dynamic_layers_by_id.setdefault(layer_id, layer_meta)
+            for feature in mode_payload["features"]:
+                properties = feature.setdefault("properties", {})
+                properties["astrocart_mode"] = mode
+                if properties.get("label_id"):
+                    properties["label_id"] = f"{mode}:{properties['label_id']}"
+                if "id" in feature:
+                    feature["id"] = f"{mode}:{feature['id']}"
+                geojson["features"].append(feature)
+        _inject_glyphs(
+            geojson, display_opts,
+            label_by_point=_catalog_labels(colored_catalog),
+        )
+        _stamp_feature_contract(geojson)
+        meta = _chart_geojson_meta(
+            radix,
+            source_name=source_name,
+            options=display_opts,
+            precision=normalized_precision,
+            spec=normalized_spec,
+            line_system=normalized_spec.coordinate_system,
+            paran_system=astrocart.LINE_SYSTEM_IN_MUNDO,
+        )
+        meta["dynamicLayers"] = list(dynamic_layers_by_id.values())
+        geojson["meta"] = meta
+        return geojson
+
+    def moving_layers_geojson_for_chart_modes(
+        self,
+        radix,
+        *,
+        source_name: str,
+        modes: Sequence[str],
+        precision: Optional[str] = None,
+        spec=None,
+        catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
+    ) -> dict:
+        with self._lock:
+            payload = self._moving_layers_geojson(
+                radix,
+                source_name=source_name,
+                modes=modes,
+                precision=precision,
+                spec=spec,
+                catalog=catalog,
+                dynamic_source_charts=dynamic_source_charts,
+            )
+        return _presentation_geojson(payload)
 
     def _legacy_geojson_for_chart(
         self,
@@ -2476,12 +2368,14 @@ class AstrocartService:
             )
             primary_result = result
             geojson = result.to_geojson()
+            include_natal_ascendant = True
         if include_natal_ascendant:
             _append_natal_ascendant_lines(
                 geojson,
                 radix,
                 display_opts,
                 compute_kwargs,
+                geodetic_meridian_lon=geodetic_meridian,
             )
         _inject_glyphs(geojson, display_opts)
         _stamp_feature_contract(geojson)
@@ -2719,6 +2613,7 @@ class AstrocartService:
         precision: Optional[str] = None,
         spec=None,
         catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> dict:
         normalized_modes = _normalize_modes(modes)
         normalized_precision = _normalize_precision(precision)
@@ -2734,11 +2629,13 @@ class AstrocartService:
                 precision=normalized_precision,
                 spec=normalized_spec,
                 catalog=resolved_catalog,
+                dynamic_source_charts=dynamic_source_charts,
             )
         features = []
         physical_overlay_indices: dict[str, int] = {}
         line_system_by_mode: dict[str, str] = {}
         paran_system_by_mode: dict[str, str] = {}
+        mode_spec_key_by_mode: dict[str, str] = {}
         dynamic_layers_by_id: dict[str, dict] = {}
         for mode in normalized_modes:
             payload = self._geojson_for_chart(
@@ -2749,6 +2646,7 @@ class AstrocartService:
                 local_space_standalone=mode == ASTROCART_MODE_LOCAL_SPACE,
                 spec=spec,
                 catalog=resolved_catalog,
+                dynamic_source_charts=dynamic_source_charts,
             )
             payload_meta = payload.get("meta", {})
             if isinstance(payload_meta, dict):
@@ -2760,6 +2658,9 @@ class AstrocartService:
                     payload_meta.get("paranSystem")
                     or astrocart.LINE_SYSTEM_IN_MUNDO
                 )
+                mode_spec_key = payload_meta.get("modeSpecKey")
+                if isinstance(mode_spec_key, str) and mode_spec_key:
+                    mode_spec_key_by_mode[mode] = mode_spec_key
                 for layer_metadata in payload_meta.get("dynamicLayers", ()):
                     if not isinstance(layer_metadata, dict):
                         continue
@@ -2852,7 +2753,12 @@ class AstrocartService:
             "localSpaceAdditive": ASTROCART_MODE_LOCAL_SPACE in normalized_modes,
             "lineSystems": line_system_by_mode,
             "paranSystems": paran_system_by_mode,
+            # Per-mode cache identity, so a consumer can prove each composed
+            # mode matches the canonical spec it captured (print atlas).
+            "modeSpecKeys": mode_spec_key_by_mode,
         })
+        if len(normalized_modes) == 1 and normalized_modes[0] in mode_spec_key_by_mode:
+            meta["modeSpecKey"] = mode_spec_key_by_mode[normalized_modes[0]]
         if dynamic_layers_by_id:
             meta["dynamicLayers"] = list(dynamic_layers_by_id.values())
         return {
@@ -2870,6 +2776,7 @@ class AstrocartService:
         precision: Optional[str] = None,
         spec=None,
         catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> dict:
         with self._lock:
             payload = self._geojson_for_chart(
@@ -2879,6 +2786,7 @@ class AstrocartService:
                 precision=precision,
                 spec=spec,
                 catalog=catalog,
+                dynamic_source_charts=dynamic_source_charts,
             )
         return _presentation_geojson(payload)
 
@@ -2891,6 +2799,7 @@ class AstrocartService:
         precision: Optional[str] = None,
         spec=None,
         catalog: Optional[astrocart_spec.AstrocartPointCatalog] = None,
+        dynamic_source_charts: Optional[dict[str, object]] = None,
     ) -> dict:
         with self._lock:
             payload = self._geojson_for_chart_modes(
@@ -2900,6 +2809,7 @@ class AstrocartService:
                 precision=precision,
                 spec=spec,
                 catalog=catalog,
+                dynamic_source_charts=dynamic_source_charts,
             )
         return _presentation_geojson(payload)
 

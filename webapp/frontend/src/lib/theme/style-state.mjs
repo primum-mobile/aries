@@ -7,7 +7,9 @@ export function replaceThemeTokens(root, tokens) {
   for (const name of previous) {
     if (!Object.hasOwn(tokens, name)) root.style.removeProperty(name);
   }
-  for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
+  for (const [name, value] of Object.entries(tokens)) {
+    if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value);
+  }
   root.dataset.themeTokens = JSON.stringify(Object.keys(tokens));
 }
 
@@ -69,6 +71,11 @@ export function normalizeThemeState(value) {
         candidate.profileOverrides?.wheelAuthoring &&
         typeof candidate.profileOverrides.wheelAuthoring === "object"
           ? candidate.profileOverrides.wheelAuthoring
+          : {},
+      wheelColorRoleAliases:
+        candidate.profileOverrides?.wheelColorRoleAliases &&
+        typeof candidate.profileOverrides.wheelColorRoleAliases === "object"
+          ? candidate.profileOverrides.wheelColorRoleAliases
           : {},
       appAuthoring:
         candidate.profileOverrides?.appAuthoring &&

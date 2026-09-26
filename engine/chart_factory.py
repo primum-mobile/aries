@@ -23,6 +23,7 @@ Derivers compute the Moment + context and call these; they do not construct.
 
 import chart
 import chartfile
+import astrology
 
 
 def build_time(y, m, d, h, mi, s, *, place,
@@ -32,7 +33,7 @@ def build_time(y, m, d, h, mi, s, *, place,
                plus=True, zh=0, zm=0,
                daylight=False,
                full=True,
-               tzid='', tzauto=False):
+               tzid='', tzauto=False, exact_jd=None):
     """Local civil digits + zone context -> ``chart.Time``.
 
     The digits are LOCAL (as-entered) civil time; ``chart.Time`` performs the
@@ -40,11 +41,20 @@ def build_time(y, m, d, h, mi, s, *, place,
     holding a UT instant must convert through ``engine.moment`` first — never
     feed UT digits to a zone-typed Time (the display-rule bug class).
     """
-    return chart.Time(
+    time_obj = chart.Time(
         int(y), int(m), int(d), int(h), int(mi), int(s),
         bool(bc), cal, zt, bool(plus), int(zh), int(zm), bool(daylight),
         place, bool(full), tzid=tzid or '', tzauto=bool(tzauto),
     )
+    if exact_jd is not None:
+        # Relocation starts from an existing instant. Civil fields round to a
+        # whole second for display, while the source JD can carry a fraction.
+        exact_jd = float(exact_jd)
+        if abs((time_obj.jd - exact_jd) * 86400.0) > 0.51:
+            raise ValueError("relocated civil time does not match its UT instant")
+        time_obj.jd = exact_jd
+        time_obj.sidTime = astrology.swe_sidtime(exact_jd)
+    return time_obj
 
 
 def build_chart(name, male, time_obj, place, htype, notes, options, *args, **kwargs):

@@ -25,6 +25,7 @@ export type SavedChartEvent = {
 type EventPage = { recordId: string; rows: SavedChartEvent[]; total: number; sourceName: string;
   tagCatalog: EventTag[]; catalogVersion?: number; tagCounts: Record<string, number>; untaggedCount: number };
 type EventView = EventPage & {
+  sort: "date" | "added"; descending: boolean; sortPending: boolean;
   query: string; scrollTop: number; loaded: boolean; stale: boolean;
   loading: boolean; error: string | null; revision: number;
   rowHeights: Record<string, number>; rowWidth: number;
@@ -32,6 +33,7 @@ type EventView = EventPage & {
   tagIds: string[]; tagMatch: "any" | "all"; untagged: boolean;
 };
 export const EMPTY_EVENT_VIEW: EventView = {
+  sort: "date", descending: false, sortPending: false,
   recordId: "", rows: [], total: 0, sourceName: "", query: "", scrollTop: 0,
   loaded: false, stale: true, loading: false, error: null, revision: 0,
   tagsOpen: false, tagQuery: "",
@@ -58,6 +60,7 @@ export const useChartEventsStore = create<{
   applyTagCatalog: (tags: EventTag[], version?: number) => void;
   patch: (id: string, patch: Partial<EventView>) => void;
   invalidate: (ids: string[]) => void;
+  sort: (id: string, sort: "date" | "added", descending: boolean) => void;
   load: (id: string, append?: boolean, ownerId?: string) => Promise<void>;
   setTags: (ownerId: string, eventId: string, tagIds: string[], name?: string) => Promise<void>;
   changeTag: (ownerId: string, tagId: string, name?: string) => Promise<void>;
@@ -88,6 +91,13 @@ export const useChartEventsStore = create<{
     }
     return { views };
   }),
+  sort: (id, sort, descending) => {
+    const view = get().views[id] ?? EMPTY_EVENT_VIEW;
+    if (view.sort === sort && view.descending === descending) return;
+    requests.get(id)?.abort();
+    requests.delete(id);
+    get().patch(id, { sort, descending, sortPending: true, stale: true, loading: false, revision: view.revision + 1 });
+  },
   invalidate: (ids) => {
     for (const id of ids.flatMap((ownerId) => [ownerId, `${ownerId}:events-menu`])) {
       requests.get(id)?.abort();
@@ -124,7 +134,7 @@ export const useChartEventsStore = create<{
   load: async (id, append = false, ownerId = id) => {
     const view = get().views[id] ?? EMPTY_EVENT_VIEW;
     if (view.loading || (!append && view.loaded && !view.stale && view.error !== "chartEvents.loadError")) return;
-    if (append && view.rows.length >= view.total) return;
+    if (append && (view.stale || view.sortPending || view.rows.length >= view.total)) return;
     const controller = new AbortController();
     requests.get(id)?.abort();
     requests.set(id, controller);
@@ -132,13 +142,14 @@ export const useChartEventsStore = create<{
     const started = perfNow();
     try {
       const page = await executeWorkspaceContextMenuAction("workspace.list_events", {
-        documentId: ownerId, query: "", offset: append ? view.rows.length : 0, limit: 128,
+        documentId: ownerId, query: "", sort: view.sort, descending: view.descending, offset: append ? view.rows.length : 0, limit: 128,
       }, controller.signal) as unknown as EventPage;
       if (requests.get(id) !== controller) return;
       if (page.tagCatalog) get().applyTagCatalog(page.tagCatalog, page.catalogVersion);
       get().patch(id, {
         ...page, tagCatalog: get().tagCatalog, rows: append ? [...view.rows, ...page.rows] : page.rows,
-        loaded: true, stale: false, loading: false,
+        loaded: true, stale: false, loading: false, sortPending: false,
+        ...(view.sortPending ? { scrollTop: 0 } : {}),
       });
       recordChartPerf("chart-events-page", {
         rowCount: page.rows.length, totalRows: page.total,

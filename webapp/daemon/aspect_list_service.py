@@ -198,6 +198,7 @@ def _aspect_metadata(display_options, aspect_type: int) -> dict[str, Any]:
         "glyph": glyph,
         "glyphFont": glyph_font,
         "name": str(mtexts.txts.get(name_key, name_key or aspect_type)),
+        "exportSymbolText": common.aspect_text_export_mark(aspect_type),
         "color": color,
         "colorRole": aspect_color_role(
             display_options,
@@ -274,6 +275,24 @@ def _planet_metadata(chrt, key: str, role: str, display_options) -> dict[str, An
 def _point_metadata(chrt, key: str, role: str, display_options) -> dict[str, Any]:
     if key == "dc":
         key = "dsc"
+    if key.startswith("cusp") and key[4:].isdigit():
+        number = int(key[4:])
+        if 1 <= number <= 12:
+            return {
+                "key": key,
+                "role": role,
+                "objectType": "houseCusp",
+                "planetId": None,
+                "sortOrder": 33 + number,
+                "glyph": "",
+                "glyphFont": "text",
+                "name": str(mtexts.txts.get(f"HC{number}", number)),
+                "color": _rgb_hex(getattr(display_options, "clrtexts", None)),
+                "colorRole": "--morinus-text-bright",
+                "filterIds": ["house-cusps"],
+                "longitude": float(chrt.houses.cusps[number]),
+                "motionRef": {"kind": "angleSource", "angle": key},
+            }
     if key in ("asc", "dsc", "mc", "ic"):
         color_value = getattr(display_options, "clrtexts", None)
         label_key = _ANGLE_LABEL_KEY_BY_ID[key]
@@ -446,7 +465,7 @@ def _ring_point_metadata(
     motion_marker = (
         _body_motion_marker(chrt, source_planet_id, source_speed)
         if chrt is not None and source_planet_id is not None
-        else ""
+        else str(item.get("motion") or "")
     )
     return {
         "key": key,
@@ -476,7 +495,7 @@ def _endpoint_metadata(chrt, key: str, role: str, display_options) -> dict[str, 
         key = "dsc"
     if key in _PLANET_BY_KEY:
         return _planet_metadata(chrt, key, role, display_options)
-    if key in ("asc", "dsc", "mc", "ic", "fortune", "vertex", "syzygy", "eclipse"):
+    if key in ("asc", "dsc", "mc", "ic", "fortune", "vertex", "syzygy", "eclipse") or key.startswith("cusp"):
         return _point_metadata(chrt, key, role, display_options)
     raise ValueError(f"Unsupported aspect-list endpoint: {key}")
 
@@ -498,7 +517,9 @@ def _motion_body(chrt, key: str, role: str) -> dict[str, Any] | None:
             "motionRef": {"kind": "planet", "bodyId": int(planet_id)},
         }
     try:
-        if key in ("asc", "dsc", "mc", "ic"):
+        if key.startswith("cusp") and key[4:].isdigit():
+            lon = float(chrt.houses.cusps[int(key[4:])])
+        elif key in ("asc", "dsc", "mc", "ic"):
             lon = float(chart.semantic_angle_longitude(chrt, key))
         elif key == "vertex":
             lon = float(chrt.houses.ascmc[houses.Houses.VERTEX])
@@ -649,7 +670,9 @@ def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
     if kind == "angleSource":
         key = "dsc" if str(ref.get("angle")) == "dc" else str(ref.get("angle") or "")
         try:
-            if key in ("asc", "dsc", "mc", "ic"):
+            if key.startswith("cusp") and key[4:].isdigit():
+                longitude = float(chrt.houses.cusps[int(key[4:])])
+            elif key in ("asc", "dsc", "mc", "ic"):
                 longitude = float(chart.semantic_angle_longitude(chrt, key))
             elif key == "vertex":
                 longitude = float(chrt.houses.ascmc[houses.Houses.VERTEX])
@@ -1906,6 +1929,18 @@ def _technique_endpoints(
         except (KeyError, TypeError, ValueError):
             continue
 
+    for key, longitude in export_chart_json._cusp_longitudes(chrt):
+        if int(key[4:]) in (1, 4, 7, 10):
+            continue
+        metadata = _point_metadata(chrt, key, role, display_options)
+        endpoints.append({
+            "key": key,
+            "kind": "houseCusp",
+            "longitude": longitude,
+            "orbs": [float(value) for value in chrt.options.orbisAscMC],
+            "metadata": metadata,
+        })
+
     for item in _technique_ring_items(
         chrt,
         role,
@@ -2005,6 +2040,27 @@ def _same_node_axis(left_endpoint: Any, right_endpoint: Any) -> bool:
     } == {"nnode", "snode"}
 
 
+def _trivial_same_chart_cusp_axis(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Opposite cusps of one chart repeat the house axis, not an event contact."""
+    left_key = str(left.get("key") or "")
+    right_key = str(right.get("key") or "")
+    if not (left_key.startswith("cusp") and right_key.startswith("cusp")):
+        return False
+    try:
+        left_house = int(left_key[4:])
+        right_house = int(right_key[4:])
+        left_lon = float(left["longitude"])
+        right_lon = float(right["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        1 <= left_house <= 12
+        and 1 <= right_house <= 12
+        and abs(left_house - right_house) == 6
+        and abs((left_lon - right_lon) % 360.0 - 180.0) <= 1e-7
+    )
+
+
 def _technique_internal_rows(
     chrt,
     *,
@@ -2029,7 +2085,7 @@ def _technique_internal_rows(
     anchor_jd = _motion_anchor_jd(motion_context, chrt)
     for index, left in enumerate(endpoints):
         for right in endpoints[index + 1:]:
-            if _same_node_axis(left, right):
+            if _same_node_axis(left, right) or _trivial_same_chart_cusp_axis(left, right):
                 continue
             asp = _technique_pair_aspect(chrt, chrt, left, right, chrt.options)
             if asp is None or not _keeps_canonical_angle_contact(
@@ -2832,6 +2888,10 @@ def _filter_items(
                 continue
             if filter_id == "angles":
                 label = str(mtexts.txts.get("Angles", "Angles"))
+                glyph = ""
+                glyph_font = "text"
+            elif filter_id == "house-cusps":
+                label = str(mtexts.txts.get("HouseCusps", "House Cusps"))
                 glyph = ""
                 glyph_font = "text"
             elif filter_id.startswith("outer:"):

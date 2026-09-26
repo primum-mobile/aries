@@ -239,6 +239,10 @@ export type AstrocartStyle = Readonly<{
     showMcCircle: boolean;
     showHouseLines: boolean;
     showZodiacLines: boolean;
+    /** Line labels show Morinus planet glyphs instead of planet names. */
+    lineLabelGlyphs: boolean;
+    /** Local Space line labels show the bearing in degrees. */
+    localSpaceBearings: boolean;
   }>;
 }>;
 
@@ -997,6 +1001,8 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
     "showMcCircle",
     "showHouseLines",
     "showZodiacLines",
+    "lineLabelGlyphs",
+    "localSpaceBearings",
   ] as const;
   for (const field of behaviorFields) {
     if (typeof behavior[field] !== "boolean") {
@@ -1020,16 +1026,33 @@ export function parseAstrocartStyle(value: unknown): AstrocartStyle {
       showMcCircle: behavior.showMcCircle as boolean,
       showHouseLines: behavior.showHouseLines as boolean,
       showZodiacLines: behavior.showZodiacLines as boolean,
+      lineLabelGlyphs: behavior.lineLabelGlyphs as boolean,
+      localSpaceBearings: behavior.localSpaceBearings as boolean,
     }),
   });
 }
 
-export function createAstrocartStyleMessage(value: unknown): Readonly<{
+export function createAstrocartStyleMessage(
+  value: unknown,
+  options: { fontUi?: string | null } = {},
+): Readonly<{
   type: "aries.setDisplayStyle";
   payload: AstrocartStyle;
 }> {
+  const style = parseAstrocartStyle(value);
+  // Hosts pass the app's live UI font so map chrome matches the app instead of
+  // the daemon's generic fallback stack.
+  const fontUi = options.fontUi?.trim();
   return Object.freeze({
     type: "aries.setDisplayStyle",
-    payload: parseAstrocartStyle(value),
+    payload: fontUi
+      ? Object.freeze({
+          ...style,
+          // The iframe skips styles whose hash it already applied; a theme's
+          // font change leaves the daemon hash unchanged, so fold the font in.
+          styleHash: `${style.styleHash}|font:${fontUi}`,
+          chrome: Object.freeze({ ...style.chrome, fontUi }),
+        })
+      : style,
   });
 }

@@ -7,6 +7,9 @@ import type { ChartHitRegion } from "../chart/draw-chart";
 import {
   resolveWheelBandLayout,
   resolveWheelClassFontSizeCeiling,
+  wheelDegreeTickEnds,
+  wheelCuspRulerTickEnds,
+  wheelHasOuterDegreeRuler,
   composedWheelLayout,
   wheelOuterAttachmentRadius,
   wheelExteriorCuspTickRadii,
@@ -3071,9 +3074,9 @@ export function buildWheelStyleScene(
       style.elementColors.innerDegreeRing,
     );
   }
-  const outerDegreePainted = !composedWheelLayout(rings) && geometry.hasOuterRing &&
-    ringEnabled(geometry.composition, "degree") &&
-    (!isAngloFamilyProfile(geometry.profile) || geometry.comparisonWithOuterHouses);
+  const outerDegreeVisible = !composedWheelLayout(rings) && wheelHasOuterDegreeRuler(geometry);
+  const attachedAngloDegree = geometry.profile === "anglo" && Boolean(geometry.composition);
+  const outerDegreePainted = outerDegreeVisible && !attachedAngloDegree;
   if (outerDegreePainted) {
     ring(
       "wheel.ring.degree.outer.10",
@@ -3201,6 +3204,7 @@ export function buildWheelStyleScene(
     endRadius: number,
     matchesDegree: (degree: number) => boolean,
     rulerId?: WheelRulerId,
+    hitTolerance = Math.max(3, geometry.maxRadius * 0.006),
   ) => {
     const geometries: StyleSceneHitGeometry[] = [];
     for (let degree = 0; degree < 360; degree += 1) {
@@ -3209,7 +3213,7 @@ export function buildWheelStyleScene(
         kind: "line",
         start: projectWheelPoint(center, startRadius, degree, ascendantDegrees),
         end: projectWheelPoint(center, endRadius, degree, ascendantDegrees),
-        tolerance: Math.max(3, geometry.maxRadius * 0.006),
+        tolerance: hitTolerance,
       });
     }
     const tickHandles: StyleSceneHandle[] = [];
@@ -3250,14 +3254,16 @@ export function buildWheelStyleScene(
 
   if (composedWheelLayout(rings)) {
     const degreeBand = composedWheelLayout(rings)!.bands.find(band => band.id === "degree");
-    if (degreeBand) {
+    if (degreeBand?.visible) {
+      const {base, tip} = wheelDegreeTickEnds(geometry.composition, degreeBand.outer, degreeBand.inner);
+      const tickFamily = geometry.profile === "anglo" ? "outer" : "inner";
       for (const [suffix, label, share, matches] of [
         ["10deg", "styleLab.scene.tickInner10", 1, (degree: number) => degree % 10 === 0],
         ["5deg", "styleLab.scene.tickInner5", 2 / 3, (degree: number) => degree % 10 === 5],
         ["1deg", "styleLab.scene.tickInner1", 1 / 3, (degree: number) => degree % 5 !== 0],
       ] as const) {
-        addDegreeTickClass(`zodiac.tick.inner.${suffix}`, label, degreeBand.outer,
-          degreeBand.outer - (degreeBand.outer - degreeBand.inner) * share, matches);
+        addDegreeTickClass(`zodiac.tick.${tickFamily}.${suffix}`, label, base,
+          base + (tip - base) * share, matches);
       }
     }
   } else if (!isAngloFamilyProfile(geometry.profile) && ringEnabled(geometry.composition, "degree")) {
@@ -3293,44 +3299,49 @@ export function buildWheelStyleScene(
       "zodiacInner",
     );
   }
-  if (outerDegreePainted) {
-    // On anglo this ruler stands on the outer ring, so its host is the margin
-    // rather than the zodiac band. It is the only degree ruler anglo draws.
+  if (outerDegreeVisible) {
+    const base = attachedAngloDegree ? rings.rOuter10 : rings.rOuter0;
+    const long = attachedAngloDegree ? rings.rOuter0 : rings.rOuter10;
+    const medium = attachedAngloDegree ? rings.rOuter1 : rings.rOuter5;
+    const short = attachedAngloDegree ? rings.rOuter5 : rings.rOuter1;
     addRulerClass(
       "zodiacOuter",
       "styleLab.class.zodiacRulerOuter",
-      rings.rOuter0,
-      rings.rOuter10,
+      base,
+      long,
       true,
-      isAngloFamilyProfile(geometry.profile) ? geometry.maxRadius - rings.r30 : undefined,
+      isAngloFamilyProfile(geometry.profile) && !attachedAngloDegree ? geometry.maxRadius - rings.r30 : undefined,
     );
     addDegreeTickClass(
       "zodiac.tick.outer.10deg",
       "styleLab.scene.tickOuter10",
-      rings.rOuter0,
-      rings.rOuter10,
+      base,
+      long,
       (degree) => degree % 10 === 0,
       "zodiacOuter",
+      attachedAngloDegree ? Math.max(1.5, geometry.maxRadius * 0.003) : undefined,
     );
     addDegreeTickClass(
       "zodiac.tick.outer.5deg",
       "styleLab.scene.tickOuter5",
-      rings.rOuter0,
-      rings.rOuter5,
+      base,
+      medium,
       isAngloFamilyProfile(geometry.profile)
         ? (degree) => degree % 10 === 5
         : (degree) => degree % 5 === 0,
       "zodiacOuter",
+      attachedAngloDegree ? Math.max(1.5, geometry.maxRadius * 0.003) : undefined,
     );
     addDegreeTickClass(
       "zodiac.tick.outer.1deg",
       "styleLab.scene.tickOuter1",
-      rings.rOuter0,
-      rings.rOuter1,
+      base,
+      short,
       isAngloFamilyProfile(geometry.profile)
         ? (degree) => degree % 5 !== 0
         : () => true,
       "zodiacOuter",
+      attachedAngloDegree ? Math.max(1.5, geometry.maxRadius * 0.003) : undefined,
     );
   }
   // Anglo cusp ruler. Every tick of one length is one selectable group, which
@@ -3345,10 +3356,12 @@ export function buildWheelStyleScene(
     && ringEnabled(geometry.composition, "cuspRuler", !isCuspBandProfile(geometry.profile))
     && rings.rCuspOuter != null
   ) {
-    const cuspOuter = rings.rCuspOuter;
+    const hosted = composedWheelLayout(rings)?.bands.find(band => band.id === "cuspRuler" && band.overlay);
+    const hostedEnds = hosted ? wheelCuspRulerTickEnds(geometry.composition, hosted) : null;
+    const cuspOuter = hostedEnds?.base ?? rings.rCuspOuter;
     const canonicalRings = resolveCanonicalWheelRingSet(style, geometry);
     const composed = composedWheelLayout(rings) != null;
-    const inward = composed || geometry.showTerms || geometry.showDecans;
+    const inward = hostedEnds ? hostedEnds.tip < hostedEnds.base : composed || geometry.showTerms || geometry.showDecans;
     const direction = inward ? -1 : 1;
     const rulerTicks = style.geometry.anglo.cuspRulerTicks;
     const addCuspRulerTickClass = (
@@ -3359,7 +3372,8 @@ export function buildWheelStyleScene(
     ) => {
       // Resolved through the same authored share the renderer paints, so the
       // hit shape and the handle sit on the tick actually drawn.
-      const rulerBand = cuspOuter - (rings.rCuspRulerInner ?? rings.rCuspLabelOuter ?? cuspOuter);
+      const rulerBand = hosted ? hosted.outer - hosted.inner
+        : cuspOuter - (rings.rCuspRulerInner ?? rings.rCuspLabelOuter ?? cuspOuter);
       const canonicalRulerBand = (canonicalRings.rCuspOuter ?? cuspOuter)
         - (canonicalRings.rCuspLabelOuter ?? cuspOuter);
       const preferredLength = resolveWheelTickLength(
@@ -3501,19 +3515,23 @@ export function buildWheelStyleScene(
     return Math.abs(180 - delta) < 1e-6;
   };
   const rulerDirection = composedWheelLayout(rings) || geometry.showTerms || geometry.showDecans ? -1 : 1;
+  const hostedCusp = composedWheelLayout(rings)?.bands.find(band => band.id === "cuspRuler" && band.overlay);
+  const hostedCuspEnds = hostedCusp ? wheelCuspRulerTickEnds(geometry.composition, hostedCusp) : null;
+  const cuspDirection = hostedCuspEnds ? Math.sign(hostedCuspEnds.tip - hostedCuspEnds.base) : rulerDirection;
 
   const exteriorCuspTicks = ringEnabled(geometry.composition, "cuspLabels")
     ? wheelExteriorCuspTickRadii(rings, rings.r30 * style.geometry.anglo.houseCuspTickScale) : undefined;
   const showHouseCuspTicks = Boolean(exteriorCuspTicks) || ringEnabled(geometry.composition, "cuspRuler", !isCuspBandProfile(geometry.profile))
     || (isCuspBandProfile(geometry.profile) && ringEnabled(geometry.composition, "cuspLabels"));
   if (isAngloFamilyProfile(geometry.profile) && rings.rCuspOuter != null && showHouseCuspTicks) {
-    const cuspOuter = rings.rCuspOuter;
+    const cuspOuter = hostedCuspEnds?.base ?? rings.rCuspOuter;
     // A cusp that coincides with an angle is already marked by its heavier
     // structural ray; the renderer skips it and so does the target.
     const angleLongitudes = angleRegions.map((region) => region.longitude);
     const preferredTick = rings.r30 * style.geometry.anglo.houseCuspTickScale;
     const tick = composedWheelLayout(rings) && ringEnabled(geometry.composition, "cuspRuler")
-      ? Math.min(preferredTick, Math.max(0, cuspOuter - (rings.rCuspRulerInner ?? cuspOuter)))
+      ? Math.min(preferredTick, hostedCusp ? hostedCusp.outer - hostedCusp.inner
+        : Math.max(0, cuspOuter - (rings.rCuspRulerInner ?? cuspOuter)))
       : preferredTick;
     addGroupedLineClass(
       "zodiac.tick.angloHouseCusp",
@@ -3528,7 +3546,7 @@ export function buildWheelStyleScene(
           start: projectWheelPoint(center, exteriorCuspTicks?.[0] ?? cuspOuter, region.longitude, ascendantDegrees),
           end: projectWheelPoint(
             center,
-            exteriorCuspTicks?.[1] ?? cuspOuter + rulerDirection * tick,
+            exteriorCuspTicks?.[1] ?? cuspOuter + cuspDirection * tick,
             region.longitude,
             ascendantDegrees,
           ),
@@ -3672,7 +3690,7 @@ export function buildWheelStyleScene(
     );
   }
 
-  if (isAngloFamilyProfile(geometry.profile) && rings.rCuspOuter != null) {
+  if (isAngloFamilyProfile(geometry.profile) && rings.rCuspOuter != null && !composedWheelLayout(rings)) {
     ring(
       WHEEL_STYLE_SCENE_ELEMENT_IDS.ringCuspOuter,
       "styleLab.scene.cuspOuterRing",
@@ -4001,13 +4019,17 @@ export function buildWheelStyleScene(
       const elementId = `wheel.composition.${instance.instanceId}`;
       const angle = 45;
       const width = (band.outer - band.inner) * referencePxPerRendered;
+      const hostedInside = band.overlay && (band.id === "degree" || band.id === "cuspRuler")
+        && geometry.composition.rings.findIndex(ring => ring.archetypeId === band.id)
+          > geometry.composition.rings.findIndex(ring => ring.archetypeId === "zodiac");
+      const handleRadius = hostedInside ? band.outer : band.inner;
       const handle: StyleSceneHandle = {
         id: `${elementId}.width`, elementId, kind: "radial", center,
-        radius: band.inner, angleDegrees: angle,
-        position: radialPoint(center, band.inner, angle), editability: EDITABLE,
+        radius: handleRadius, angleDegrees: angle,
+        position: radialPoint(center, handleRadius, angle), editability: EDITABLE,
         binding: {semanticId: wheelAuthoringOverrideId(geometry.profile, classId, "bandWidth"),
           cssVar: "", property: "radius", value: width,
-          valuePerPixel: -referencePxPerRendered,
+          valuePerPixel: hostedInside ? referencePxPerRendered : -referencePxPerRendered,
           min: band.widthBounds ? band.widthBounds.min * referencePxPerRendered : spec.minWidth,
           max: band.widthBounds ? Math.min(400, band.widthBounds.max * referencePxPerRendered) : 400},
       };

@@ -19,7 +19,7 @@ export function resolveSecondaryPointRoles(points: readonly SecondaryPoint[], pr
       ? point.groupId !== "asteroid"
       : point.planetId != null && preferences.planetIds.includes(point.planetId);
   }).map((point) => point.id);
-  return { fromIds, toIds: points.filter((point) => point.to && point.groupId !== "asteroid").map((point) => point.id) };
+  return { fromIds, toIds: points.filter((point) => point.to && point.groupId !== "asteroid" && point.groupId !== "house_cusp" && point.id !== "angle:dsc" && point.id !== "angle:ic").map((point) => point.id) };
 }
 
 export function secondaryPointRolesMatch(fields: SecondaryDirectionRow["fields"], from: ReadonlySet<string>, to: ReadonlySet<string>): boolean {

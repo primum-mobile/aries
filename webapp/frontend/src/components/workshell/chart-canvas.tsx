@@ -54,6 +54,8 @@ import {
   neutralChartPalette,
   readPaletteFromTheme,
   readPaletteProfileOverrides,
+  settingsColorPreviewChartToken,
+  withSettingsColorPreview,
 } from "@/lib/chart/palette";
 import {
   chartPerfEnabled,
@@ -90,6 +92,7 @@ import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { useColorSettingsPreviewStore, withZodiacFieldOpacityPreview, type SettingsColorPreview } from "@/stores/color-settings-preview-store";
 import { hoverRegionKey, useWorkspaceStore, type HoverRegion } from "@/stores/workspace-store";
 
 type DirtyState = {
@@ -98,6 +101,51 @@ type DirtyState = {
   dynamic: boolean;
   outerLabel: boolean;
 };
+
+function dirtyLayersForSettingsColor(
+  preview: SettingsColorPreview | null,
+  chart: ChartRenderSnapshot,
+  theme: ThemeState | null,
+): DirtyState {
+  const none = { fill: false, geometry: false, dynamic: false, outerLabel: false };
+  const token = settingsColorPreviewChartToken(preview);
+  if (!preview || !token || token === "--morinus-table") return none;
+  if (Object.values(theme?.profileOverrides.wheelColorRoleAliases ?? {}).includes(token)) {
+    return { fill: true, geometry: true, dynamic: true, outerLabel: true };
+  }
+  switch (preview.attr) {
+    case "clrindividual":
+    case "clrperegrin":
+    case "clrdomicil":
+    case "clrexil":
+    case "clrexal":
+    case "clrcasus":
+      return { ...none, dynamic: true, outerLabel: true };
+    case "clraspect":
+      return { ...none, dynamic: true };
+    case "clrAscMC":
+    case "clrhouses":
+    case "clrhousenumbers":
+      return { ...none, geometry: true, outerLabel: true };
+    case "clrpositions":
+      return { ...none, geometry: true, dynamic: true, outerLabel: true };
+    case "clrsignelementfire":
+    case "clrsignelementearth":
+    case "clrsignelementair":
+    case "clrsignelementwater":
+      return {
+        ...none,
+        fill: true,
+        geometry: true,
+        dynamic: Boolean(chart.primaryChart.drishti?.length),
+        outerLabel: true,
+      };
+    case "clrsigns":
+      return { fill: true, geometry: true, dynamic: Boolean(chart.primaryChart.drishti?.length), outerLabel: true };
+    default:
+      return { fill: true, geometry: true, dynamic: true, outerLabel: true };
+  }
+}
 
 type RetainedPaintTransform = {
   scale: number;
@@ -712,6 +760,8 @@ function WheelChartCanvas({
   const paintedFillSignatureRef = useRef<string | null>(null);
   const paintedSolarFillSignatureRef = useRef<string | null>(null);
   const paintedRenderStyleRevisionRef = useRef<string | null>(null);
+  const paintedChartRef = useRef<ChartRenderSnapshot | null>(null);
+  const paintedSettingsColorRef = useRef<SettingsColorPreview | null>(null);
   const paintedAspectInteractionKeyRef = useRef<string | null>(null);
   const paintedStyleTargetModeRef = useRef<boolean | null>(null);
   const hitRegionsRef = useRef<ChartHitRegion[]>([]);
@@ -747,6 +797,11 @@ function WheelChartCanvas({
       : undefined
   ));
   const appTheme = useThemeStore((s) => s.theme);
+  const zodiacFieldOpacityPreview = useColorSettingsPreviewStore((s) => s.zodiacFieldOpacity);
+  const settingsColorPreview = useColorSettingsPreviewStore((s) => (
+    settingsColorPreviewChartToken(s.color) === "--morinus-table" ? null
+      : settingsColorPreviewChartToken(s.color) ? s.color : null
+  ));
   const theme = inheritAppTheme ? appTheme : null;
   const styleEditorActive = useChartStyleEditorStore((s) => s.active);
   const styleWorkingPreviewActive = useChartStyleEditorStore(
@@ -889,14 +944,21 @@ function WheelChartCanvas({
   // coherent frame: keep its previous theme until the snapshot carrying the
   // matching composition and radii arrives. This prevents a new font/style
   // from being laid out against the preceding theme's band geometry.
-  const [effectiveTheme, setEffectiveTheme] = useState<ThemeState | null>(candidateTheme);
+  const [settledTheme, setSettledTheme] = useState<ThemeState | null>(candidateTheme);
   // Adjusted during render (React's "store info from previous renders"
   // pattern). The comparison guard is mandatory: any render-phase setState —
   // even one whose updater returns the same value — forces a re-render, so an
   // unguarded call loops forever ("Too many re-renders").
-  if (!wheelThemeTransitionPending && effectiveTheme !== candidateTheme) {
-    setEffectiveTheme(candidateTheme);
+  if (!wheelThemeTransitionPending && settledTheme !== candidateTheme) {
+    setSettledTheme(candidateTheme);
   }
+  const effectiveTheme = useMemo(
+    () => withSettingsColorPreview(
+      settledTheme,
+      inheritAppTheme ? settingsColorPreview : null,
+    ),
+    [inheritAppTheme, settledTheme, settingsColorPreview],
+  );
 
   const palette = useMemo(
     () => ({
@@ -907,9 +969,18 @@ function WheelChartCanvas({
     [chart, effectiveTheme, inheritAppTheme],
   );
   const renderSnapshot = useMemo(
-    () => applyProfileColorsToSnapshot(chart, effectiveTheme),
-    [chart, effectiveTheme],
+    () => withZodiacFieldOpacityPreview(
+      applyProfileColorsToSnapshot(chart, effectiveTheme),
+      inheritAppTheme ? zodiacFieldOpacityPreview : null,
+    ),
+    [chart, effectiveTheme, inheritAppTheme, zodiacFieldOpacityPreview],
   );
+  useEffect(() => {
+    if (zodiacFieldOpacityPreview !== null
+      && chart.primaryChart.options.zodiacElementFieldOpacity === zodiacFieldOpacityPreview) {
+      useColorSettingsPreviewStore.getState().setZodiacFieldOpacity(null);
+    }
+  }, [chart.primaryChart.options.zodiacElementFieldOpacity, zodiacFieldOpacityPreview]);
   const inheritedChartTextFont = morinusTextFontFromTokens(effectiveTheme?.appTokens);
   const wheelTextFont = effectiveTheme?.chartPalette?.["--aries-wheel-font-text"]?.trim();
   const chartTextFont = wheelTextFont && !wheelTextFont.startsWith("var(")
@@ -1562,6 +1633,8 @@ function WheelChartCanvas({
         overlay: perfEnabled ? overlayPerfState(renderSnapshot) : undefined,
       });
       paintedRenderStyleRevisionRef.current = String(renderStyle.revision);
+      paintedChartRef.current = chart;
+      paintedSettingsColorRef.current = settingsColorPreview;
       return true;
     };
 
@@ -1581,7 +1654,10 @@ function WheelChartCanvas({
       });
     };
 
-    const dirty = dirtyStateFromSnapshot(chart);
+    const previewChanged = paintedSettingsColorRef.current !== settingsColorPreview;
+    const dirty = previewChanged && paintedChartRef.current === chart
+      ? { fill: false, geometry: false, dynamic: false, outerLabel: false }
+      : dirtyStateFromSnapshot(chart);
     // The snapshot plan covers daemon-owned chart-frame changes only. Style
     // Lab edits are synchronous local paint inputs and may affect any retained
     // layer (including glyph metrics and the editable hit scene), so a new
@@ -1592,6 +1668,15 @@ function WheelChartCanvas({
       dirty.geometry = true;
       dirty.dynamic = true;
       dirty.outerLabel = true;
+    }
+    if (previewChanged) {
+      for (const preview of [paintedSettingsColorRef.current, settingsColorPreview]) {
+        const affected = dirtyLayersForSettingsColor(preview, chart, effectiveTheme);
+        dirty.fill ||= affected.fill;
+        dirty.geometry ||= affected.geometry;
+        dirty.dynamic ||= affected.dynamic;
+        dirty.outerLabel ||= affected.outerLabel;
+      }
     }
     // Snapshot invalidation describes daemon-frame changes only. A local
     // aspect selection is its own Canvas input, so it must not inherit an
@@ -1707,7 +1792,7 @@ function WheelChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
     };
-  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, wheelVerticalAlignment, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, activePushRole, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, wheelVerticalAlignment, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, activePushRole, settingsColorPreview, effectiveTheme, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
 
   const stylePointFromClient = useCallback((clientX: number, clientY: number): StyleScenePoint | null => {
     const wrap = wrapRef.current;

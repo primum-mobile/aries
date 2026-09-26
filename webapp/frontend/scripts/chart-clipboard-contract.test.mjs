@@ -39,8 +39,9 @@ test("chart copy uses the retained PNG renderer rather than a second export path
   );
   assert.match(
     renderer,
-    /return \{ width: EXPORT_LONG_EDGE, height: EXPORT_LONG_EDGE \};/,
+    /width: EXPORT_LONG_EDGE \+ \(hasExteriorPaint \? PNG_EXPORT_SIDE_GUTTER \* 2 : 0\),[\s\S]*?height: EXPORT_LONG_EDGE/,
   );
+  assert.match(renderer, /exportDimensions\(outerEnvelope\.avoidTitlebar\)/);
   assert.match(renderer, /radixOverlayTopLeftLines\(corner, snapshot\.radixChart\)/);
   assert.match(workspaceContent, /radixOverlayTopLeftLines\(cornerChart, chart\.radixChart\)/);
   assert.match(registry, /const PNG_EXPORT_PIXEL_SIZE = 1200;/);

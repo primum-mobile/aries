@@ -71,6 +71,8 @@ from webapp.daemon.speculum_schema import (
 
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import settings_registry
+from webapp.daemon.release_languages import RELEASE_LANG_IDS, release_langid
+from webapp.daemon.network_tls import download_context
 from webapp.daemon.builtin_style_profiles import (
     BUILTIN_STYLE_PRESET_NAMES,
     BUILTIN_STYLE_PROFILE_IDS,
@@ -779,6 +781,30 @@ _COLOR_BOOL_FIELDS = (
     'usezodiacelementfieldcolors',
     'follow_os_theme',
 )
+_SETTINGS_COLOR_OVERRIDES_KEY = '_settings_color_overrides'
+
+
+def _settings_color_override_attrs(opts) -> set[str]:
+    """Saved Settings edits that take precedence over the selected style."""
+    preset = getattr(opts, 'custom_color_preset', None)
+    values = preset.get(_SETTINGS_COLOR_OVERRIDES_KEY, ()) if isinstance(preset, dict) else ()
+    allowed = set(_COLOR_RGB_FIELDS + _COLOR_LIST_FIELDS + ('useplanetcolors',))
+    return set(values) & allowed if isinstance(values, (list, tuple, set)) else set()
+
+
+def _record_settings_color_overrides(opts, attrs) -> None:
+    if not attrs:
+        return
+    preset = dict(getattr(opts, 'custom_color_preset', None) or {})
+    preset[_SETTINGS_COLOR_OVERRIDES_KEY] = sorted(_settings_color_override_attrs(opts) | set(attrs))
+    opts.custom_color_preset = preset
+
+
+def _clear_settings_color_overrides(opts) -> bool:
+    preset = getattr(opts, 'custom_color_preset', None)
+    if isinstance(preset, dict):
+        return preset.pop(_SETTINGS_COLOR_OVERRIDES_KEY, None) is not None
+    return False
 
 # Display / Appearance. onAppearance1 (morin.py:19463), onToggleHouses (19545).
 # showvertex / showaspectstovertex are the Vertex toggles (options.py:145-146);
@@ -850,7 +876,7 @@ _DISPLAY_BOOL_FIELDS = (
     'exclusive_aspects_on_click_traditional',
     # Positions + In Tables display toggles (appearance1dlg.py:151-153 build,
     # :820-821/:867 fill, :985-987/:1075-1077 check) -> options.py:116-117.
-    'positions', 'showouterpositions', 'showouterminutes', 'intables',
+    'positions', 'positionsminutes', 'showouterpositions', 'showouterminutes', 'intables',
     # Traditional fixstar names in the PD list (appearance1dlg.py:252-253/927/
     # 1190-1192) -> options.py:168.
     'usetradfixstarnamespdlist',
@@ -879,6 +905,9 @@ _DISPLAY_BOOL_VECTOR_FIELDS = ('transcendental', 'aspect')  # list[bool]
 _MINOR_ASPECT_INDICES = (1, 2, 4, 7, 8, 9, 11)
 _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'astrocart_distance_units',
+    'astrocart_line_weight',
+    'astrocart_line_labels',
+    'astrocart_local_space_bearings',
     'wheel_compositions',
     'wheel_preset_revision',
     'wheel_preset_id',
@@ -926,6 +955,7 @@ _DISPLAY_OVERLAY_ONLY_FIELDS = {
     'showradixnameincanvas',
     'showseconds',
     'positions',
+    'positionsminutes',
     'showouterpositions',
     'showouterminutes',
     'intables',
@@ -1863,6 +1893,11 @@ def _effective_style_chart_options(opts, profile: Optional[dict]):
         for index, rgb in aspect_overrides.items():
             aspect_colors[index] = rgb
         resolved.clraspect = aspect_colors
+    # Settings edits made after theme activation are a separate, saved palette
+    # layer. Keep the portable theme unchanged and give Python renderers the
+    # same effective colors as the live wheel.
+    for attr in _settings_color_override_attrs(opts):
+        setattr(resolved, attr, copy.deepcopy(getattr(opts, attr)))
     return resolved
 
 
@@ -1894,7 +1929,12 @@ def _profile_chart_data_overrides(opts, profile: Optional[dict]) -> dict[str, An
     if aspect_requested:
         result['aspects'] = [_css_rgb(value) for value in _effective_aspect_color_list(effective)]
 
-    if sign_requested and bool(getattr(effective, 'usezodiacelementcolors', False)):
+    # The Settings switch is the user's current display intent. A style
+    # profile supplies the four colors, but its saved base preset must not
+    # silently turn element-colored glyphs back on after Settings turns them off.
+    if sign_requested:
+        result['useZodiacElementColors'] = bool(getattr(opts, 'usezodiacelementcolors', False))
+    if sign_requested and result['useZodiacElementColors']:
         element_colors = [
             _css_rgb(_rgb_or(getattr(effective, attr, None), (255, 255, 255)))
             for _semantic_id, _css_var, attr in _PROFILE_ELEMENT_COLOR_ROLES
@@ -1922,9 +1962,11 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     about wx option field names.
     """
     base_values, use_app_base, use_chart_base = _style_profile_base_values(opts, active_profile)
+    settings_colors = _settings_color_override_attrs(opts)
 
     def option_rgb(attr: str, fallback: tuple[int, int, int], *, use_base: bool) -> tuple[int, int, int]:
-        source = base_values.get(attr) if use_base and attr in base_values else getattr(opts, attr, None)
+        source = (base_values.get(attr) if use_base and attr in base_values and attr not in settings_colors
+                  else getattr(opts, attr, None))
         return _rgb_or(source, fallback)
 
     chart_bg = option_rgb('clrbackground', (35, 36, 40), use_base=use_chart_base)
@@ -1940,6 +1982,9 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     typed_overrides = (active_profile or {}).get('overrides', {})
 
     def typed_rgb(semantic_id: str, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+        attr = _PROFILE_APP_BASE_ATTRS.get(semantic_id) or _PROFILE_CHART_BASE_ATTRS.get(semantic_id)
+        if attr in settings_colors:
+            return _rgb_or(getattr(opts, attr, None), fallback)
         value = typed_overrides.get(semantic_id) if isinstance(typed_overrides, dict) else None
         return _rgb_or(value, fallback)
 
@@ -2084,6 +2129,28 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
     profile_chart_tokens.update(explicit_chart_tokens)
     app_tokens.update(explicit_app_tokens)
     chart_palette.update(explicit_chart_tokens)
+    # The profile stays portable and unchanged. A color picked in Settings is
+    # the final paint for that role until another theme/preset is selected.
+    chart_setting_tokens = {**_CHART_TOKEN_TO_PALETTE_ATTR, '--morinus-text-bright': 'clrtexts'}
+    for css_var, attr in chart_setting_tokens.items():
+        if attr in settings_colors:
+            chart_palette[css_var] = profile_chart_tokens[css_var] = _css_rgb(getattr(opts, attr))
+    for roles, attr in ((_PROFILE_BODY_COLOR_ROLES, 'clrindividual'),
+                        (_PROFILE_ASPECT_COLOR_ROLES, 'clraspect')):
+        if attr in settings_colors:
+            colors = getattr(opts, attr)
+            for _semantic_id, css_var, index in roles:
+                if index < len(colors):
+                    chart_palette[css_var] = profile_chart_tokens[css_var] = _css_rgb(colors[index])
+    app_setting_tokens = {
+        'clrappbackground': '--aries-background',
+        'clrapptexts': '--aries-text-primary',
+        'clrsidebar': '--aries-surface',
+        'clrsidebartext': '--aries-sidebar-text',
+    }
+    for attr, css_var in app_setting_tokens.items():
+        if attr in settings_colors:
+            app_tokens[css_var] = profile_app_tokens[css_var] = _css_rgb(getattr(opts, attr))
     active_profile_summary = None
     if active_profile:
         active_profile_summary = {
@@ -2112,6 +2179,12 @@ def _theme_state_payload(opts, active_profile: Optional[dict] = None) -> dict:
                 copy.deepcopy((active_profile or {}).get('authoringOverrides') or {}),
                 chart_palette,
             ),
+            'wheelColorRoleAliases': {
+                semantic_id: css_var
+                for semantic_id, value in ((active_profile or {}).get('authoringOverrides') or {}).items()
+                if (role := authoring_color_alias_target(value))
+                if (css_var := _profile_color_role_css_vars().get(role))
+            },
             'appAuthoring': copy.deepcopy(
                 (active_profile or {}).get('appAuthoringOverrides') or {}
             ),
@@ -2320,6 +2393,7 @@ def _factory_default_palette_state(opts) -> dict:
 
 def _preset_identity_snapshot(state: dict) -> dict:
     snap = dict(state or {})
+    snap.pop(_SETTINGS_COLOR_OVERRIDES_KEY, None)
     snap.pop('usemacsystemcolors', None)
     snap.pop('usezodiacelementcolors', None)
     snap.pop('usezodiacelementfieldcolors', None)
@@ -2445,7 +2519,7 @@ def _palette_values_from_chart_tokens(tokens: dict) -> dict:
 
 
 def _apply_palette_values(opts, name: str, values: dict) -> bool:
-    changed = False
+    changed = _clear_settings_color_overrides(opts)
     follow = (name == _SYSTEM_AUTO_NAME)
     if bool(getattr(opts, 'follow_os_theme', True)) != follow:
         opts.follow_os_theme = follow
@@ -2490,6 +2564,9 @@ def _maybe_update_custom_palette(opts) -> bool:
     if not hasattr(opts, 'get_custom_color_preset') or not hasattr(opts, 'set_custom_color_preset'):
         return False
     state = _capture_palette_state(opts)
+    overrides = _settings_color_override_attrs(opts)
+    if overrides:
+        state[_SETTINGS_COLOR_OVERRIDES_KEY] = sorted(overrides)
     state['follow_os_theme'] = False
     if _preset_identity_snapshot(state) == _preset_identity_snapshot(_factory_default_palette_state(opts)):
         return False
@@ -2916,6 +2993,25 @@ class OptionsService:
         return {layout: {ring['archetypeId']: ring['enabled'] for ring in composition['rings']}
                 for layout, composition in all_compositions(opts).items()}
 
+    def _sync_menu_wheel_visibility(self, opts, fields):
+        """Publish legacy visibility edits through the wheel revision owner."""
+        if not getattr(opts, 'wheel_presets_active', False):
+            return
+        kinds = {kind for kind, field in VISIBILITY_FIELDS.items() if field in fields}
+        if not kinds:
+            return
+        store = self._wheel_presets()
+        saved = store.visibility()
+        # These existing options are global across layouts. Preserve that scope,
+        # including projection compatibility, without modifying preset geometry.
+        visibility = {layout: {ring['archetypeId']: ring['enabled']
+                              for ring in recipe['rings'] if ring['archetypeId'] in kinds}
+                      for layout, recipe in all_compositions(opts).items()}
+        if any(saved.get(layout, {}).get(kind) != enabled
+               for layout, flags in visibility.items() for kind, enabled in flags.items()):
+            store.apply_visibility(visibility)
+            store.hydrate_options(opts)
+
     def _apply_wheel_visibility(self, opts, visibility):
         store = self._wheel_presets()
         before = self._wheel_visibility(opts)
@@ -2964,13 +3060,15 @@ class OptionsService:
                         setattr(opts, field, ring['enabled'])
             selecting_theme_geometry = (payload.get('action') in ('select', 'revert')
                                         and store.effective(payload['layout'])['sourcePresetId'].startswith('working.'))
+            selecting_saved_geometry = (payload.get('action') in ('select', 'revert')
+                                        and store.effective(payload['layout'])['sourcePresetId'].startswith('user.'))
             restoring_geometry = payload.get('action') == 'restore-factory'
-            if selecting_theme_geometry or restoring_geometry:
+            if selecting_theme_geometry or selecting_saved_geometry or restoring_geometry:
                 for ring in store.effective(payload['layout'])['composition']['rings']:
                     field = VISIBILITY_FIELDS.get(ring['archetypeId'])
                     if field:
                         setattr(opts, field, ring['enabled'])
-            if payload.get('activateLayout') or selecting_theme_geometry or restoring_geometry:
+            if payload.get('activateLayout') or selecting_theme_geometry or selecting_saved_geometry or restoring_geometry:
                 opts.saveAppearance1()
             store.hydrate_options(opts)
             after = (opts.wheel_geometry_presets, all_compositions(opts))
@@ -4114,12 +4212,13 @@ class OptionsService:
         root = Path(raw_root)
         long_path, short_path = _asteroid_ephemeris_candidates(root, number)
         long_path.parent.mkdir(parents=True, exist_ok=True)
+        context = download_context()
         for target in (long_path, short_path):
             url = f'{_ASTEROID_DOWNLOAD_ROOT}/ast{number // 1000}/{target.name}'
             temp_name = ''
             try:
                 request = urllib.request.Request(url, headers={'User-Agent': 'Aries/1 asteroid installer'})
-                with urllib.request.urlopen(request, timeout=30) as response:
+                with urllib.request.urlopen(request, timeout=30, context=context) as response:
                     declared = response.headers.get('Content-Length')
                     if declared and int(declared) > _ASTEROID_DOWNLOAD_MAX_BYTES:
                         raise ValueError('asteroid ephemeris file is too large')
@@ -4143,7 +4242,8 @@ class OptionsService:
                     raise ValueError('invalid asteroid ephemeris response')
                 os.replace(temp_name, target)
                 return _asteroid_catalog_row(opts, number)
-            except (OSError, ValueError, urllib.error.URLError):
+            except (OSError, ValueError, urllib.error.URLError) as exc:
+                logger.warning('asteroid %s download failed from %s: %s', number, url, exc)
                 if temp_name:
                     try:
                         Path(temp_name).unlink(missing_ok=True)
@@ -4169,6 +4269,7 @@ class OptionsService:
             'maxSelected': asteroid_model.MAX_SELECTED_ASTEROIDS,
             'conjunctionOrb': float(getattr(opts, 'asteroid_orb_conjunction', 1.5)),
             'oppositionOrb': float(getattr(opts, 'asteroid_orb_opposition', 1.5)),
+            'outerRingAll': bool(getattr(opts, 'asteroid_outer_ring_all', False)),
         }
 
     @staticmethod
@@ -4205,6 +4306,11 @@ class OptionsService:
             if float(getattr(opts, attr, 1.5)) != value:
                 setattr(opts, attr, value)
                 orb_changed = True
+        if 'outerRingAll' in fields:
+            value = bool(fields['outerRingAll'])
+            if bool(getattr(opts, 'asteroid_outer_ring_all', False)) != value:
+                opts.asteroid_outer_ring_all = value
+                orb_changed = True
         return selection_changed, orb_changed
 
     def _sync_asteroids_on_open_charts(self, *, rebuild: bool) -> None:
@@ -4218,6 +4324,8 @@ class OptionsService:
                 getattr(self.options, 'asteroid_orb_conjunction', 1.5))
             chart_opts.asteroid_orb_opposition = float(
                 getattr(self.options, 'asteroid_orb_opposition', 1.5))
+            chart_opts.asteroid_outer_ring_all = bool(
+                getattr(self.options, 'asteroid_outer_ring_all', False))
             chart_opts.asteroid_ephe_path = str(
                 getattr(self.options, 'asteroid_ephe_path', ''))
             rebuild_method = getattr(obj, 'rebuildAsteroids', None)
@@ -4460,9 +4568,7 @@ class OptionsService:
         return changed
 
     def _read_languages(self, opts) -> dict:
-        """Language selection (langsdlg.LanguagesDlg, morin.onLanguages
-        morin.py:20231-20761). ``langid`` is an index into mtexts language
-        tables. The available list is the catalogue of bundled language packs.
+        """Release language selection. IDs still index the mtexts tables.
 
         NOTE: daemon-served labels ARE localized — export_chart_json
         .activate_language() binds mtexts to opts.langid at boot and
@@ -4471,30 +4577,22 @@ class OptionsService:
         follow the selection. React mirrors this same langid through its catalog
         provider, so daemon labels and interface chrome switch together."""
         return {
-            'langid': int(getattr(opts, 'langid', 0) or 0),
+            'langid': release_langid(getattr(opts, 'langid', 0)),
             'available': self._language_catalog(),
         }
 
     @staticmethod
     def _language_catalog() -> list:
-        """Bundled language list — labels verbatim from mtexts.langtexts, the
-        same tuple the wx LanguagesDlg ComboBox lists (langsdlg.py:18). ``value``
-        remains the original combo index / options.langid (langsdlg.py:58-59),
-        while the display order prioritizes the fully translated Western
-        locales used most often in Aries."""
+        """Release languages in product order, preserving canonical langids."""
         try:
             names = list(getattr(mtexts, 'langtexts', None) or [])
         except Exception:
             names = []
-        catalog = [{'value': i, 'label': str(lbl)} for i, lbl in enumerate(names)]
-        preferred_order = {langid: rank for rank, langid in enumerate((0, 3, 5, 2, 9))}
-        catalog.sort(
-            key=lambda entry: (
-                preferred_order.get(entry['value'], len(preferred_order)),
-                entry['value'],
-            )
-        )
-        return catalog
+        return [
+            {'value': langid, 'label': str(names[langid])}
+            for langid in RELEASE_LANG_IDS
+            if langid < len(names)
+        ]
 
     def _apply_languages(self, opts, fields: dict) -> bool:
         """Persist the chosen langid and rebind mtexts' active string tables so
@@ -4511,8 +4609,8 @@ class OptionsService:
             except (TypeError, ValueError):
                 value = None
             catalog = self._language_catalog()
-            valid = {entry['value'] for entry in catalog} if catalog else None
-            if value is not None and (valid is None or value in valid):
+            valid = {entry['value'] for entry in catalog}
+            if value is not None and value in valid:
                 if int(getattr(opts, 'langid', 0) or 0) != value:
                     opts.langid = value
                     changed = True
@@ -4521,7 +4619,8 @@ class OptionsService:
         # value did not change. activate_language() switches mtexts AND rebuilds
         # common.common's month/day tables (captured by value), so dates follow
         # the language live, not just at boot.
-        target = int(getattr(opts, 'langid', 0) or 0)
+        target = release_langid(getattr(opts, 'langid', 0))
+        opts.langid = target
         try:
             from webapp.frontend.scripts import export_chart_json
             active = export_chart_json.activate_language(target)
@@ -5115,6 +5214,18 @@ class OptionsService:
         preferences = getattr(opts, 'astrocartography_preferences', {}) or {}
         units = (preferences.get('view') or {}).get('distanceUnits', 'metric')
         out['astrocart_distance_units'] = units if units in ('metric', 'miles') else 'metric'
+        from .astrocart_service import normalized_astrocart_line_weight
+        out['astrocart_line_weight'] = normalized_astrocart_line_weight(
+            (preferences.get('view') or {}).get('lineWeight')
+        )
+        from .astrocart_service import normalized_astrocart_line_labels
+        out['astrocart_line_labels'] = normalized_astrocart_line_labels(
+            (preferences.get('view') or {}).get('lineLabels')
+        )
+        from .astrocart_service import normalized_astrocart_local_space_bearings
+        out['astrocart_local_space_bearings'] = normalized_astrocart_local_space_bearings(
+            (preferences.get('view') or {}).get('localSpaceBearings')
+        )
         for attr in _DISPLAY_BOOL_FIELDS:
             out[attr] = bool(getattr(opts, attr, False))
         for attr in _DISPLAY_INT_FIELDS:
@@ -5197,7 +5308,7 @@ class OptionsService:
         labels = {
             'P': 'Placidus', 'K': 'Koch', 'R': 'Regiomontanus', 'C': 'Campanus',
             'E': _txt('Equal', 'Equal'), 'W': _txt('WholeSign', 'Whole Sign'),
-            'F': _txt('FortuneWholeSign', 'Fortune Houses'),
+            'F': _txt('HSFortuneWholeSign', 'Fortune Houses'),
             'X': _txt('AxialRotation', 'Axial Rotation'),
             'Q': _txt('TrueAscendant', 'True Ascendant'), 'M': 'Morinus',
             'H': _txt('Horizon', 'Horizon'), 'T': 'Polich-Page (Topocentric)', 'B': 'Alcabitius',
@@ -5927,6 +6038,8 @@ class OptionsService:
                 continue
             if group == 'display' and set(fields).issubset(_LIST_NEUTRAL_DISPLAY_FIELDS):
                 continue
+            if group == 'asteroids' and set(fields).issubset({'outerRingAll'}):
+                continue
             if group == 'quickCharts' and set(fields).issubset({
                     'multiwheel_open_at_three', 'chart_ring_count', 'chart_ring_zodiac'}):
                 continue
@@ -5961,7 +6074,7 @@ class OptionsService:
                 return 'speculum'
         if set(patch) == {'asteroids'}:
             fields = patch.get('asteroids')
-            if isinstance(fields, dict) and fields:
+            if isinstance(fields, dict) and fields and not set(fields).issubset({'outerRingAll'}):
                 return 'aspect-list'
         if set(patch) == {'display'}:
             fields = patch.get('display')
@@ -6352,7 +6465,9 @@ class OptionsService:
         # The presentation cursor has no visible Apply/Save control. A direct
         # hidden-option patch is therefore an explicit persistence request even
         # when the legacy global autosave preference is disabled.
-        force_presentation_save = group == 'display' and 'presentation_cursor' in fields
+        force_presentation_save = (
+            group == 'display' and 'presentation_cursor' in fields
+        ) or (group == 'asteroids' and 'outerRingAll' in fields)
         if not force_presentation_save and not getattr(opts, 'autosave', False):
             return
 
@@ -6360,8 +6475,12 @@ class OptionsService:
         if group == 'colors':
             savers.append('saveColors')
         elif group == 'display':
-            # Map units persist through the shared Astrocart preferences writer.
-            if set(fields) - {'astrocart_distance_units'}:
+            # Map units and line weight persist through the shared Astrocart
+            # preferences writer.
+            if set(fields) - {
+                'astrocart_distance_units', 'astrocart_line_weight', 'astrocart_line_labels',
+                'astrocart_local_space_bearings',
+            }:
                 savers.append('saveAppearance1')
             if 'fontfamily' in fields:
                 savers.append('saveLanguages')
@@ -6456,6 +6575,7 @@ class OptionsService:
     def _apply_colors(self, opts, fields: dict) -> bool:
         changed = False
         manual_palette_change = False
+        edited_colors: set[str] = set()
         follow_requested = bool(fields.get('follow_os_theme')) if 'follow_os_theme' in fields else False
         for attr in _COLOR_RGB_FIELDS:
             if attr in fields:
@@ -6464,11 +6584,14 @@ class OptionsService:
                     setattr(opts, attr, rgb)
                     changed = True
                     manual_palette_change = True
+                    edited_colors.add(attr)
         for attr in _COLOR_LIST_FIELDS:
             if attr in fields and isinstance(fields[attr], (list, tuple)):
                 list_changed = _set_color_list_attr(opts, attr, fields[attr])
                 changed |= list_changed
                 manual_palette_change |= list_changed
+                if list_changed:
+                    edited_colors.add(attr)
         for attr in _COLOR_FLOAT_FIELDS:
             if attr not in fields:
                 continue
@@ -6496,11 +6619,14 @@ class OptionsService:
                 setattr(opts, attr, new)
                 changed = True
                 manual_palette_change = True
+                if attr == 'useplanetcolors':
+                    edited_colors.add(attr)
         if manual_palette_change and not follow_requested:
             if bool(getattr(opts, 'follow_os_theme', True)):
                 opts.follow_os_theme = False
                 changed = True
             _maybe_update_custom_palette(opts)
+            _record_settings_color_overrides(opts, edited_colors)
         return changed
 
     def _apply_display(self, opts, fields: dict) -> bool:
@@ -6509,6 +6635,17 @@ class OptionsService:
         if 'astrocart_distance_units' in fields:
             from .workspace_service import workspace_service
             changed |= workspace_service.set_astrocart_distance_units(fields['astrocart_distance_units'])
+        if 'astrocart_line_weight' in fields:
+            from .workspace_service import workspace_service
+            changed |= workspace_service.set_astrocart_line_weight(fields['astrocart_line_weight'])
+        if 'astrocart_line_labels' in fields:
+            from .workspace_service import workspace_service
+            changed |= workspace_service.set_astrocart_line_labels(fields['astrocart_line_labels'])
+        if 'astrocart_local_space_bearings' in fields:
+            from .workspace_service import workspace_service
+            changed |= workspace_service.set_astrocart_local_space_bearings(
+                fields['astrocart_local_space_bearings']
+            )
         if compositions is not None:
             if getattr(opts, 'wheel_presets_active', False):
                 store = self._wheel_presets()
@@ -6600,6 +6737,7 @@ class OptionsService:
             changed = True
         sync_display_flags(opts, fields)
         sync_legacy_display_flags(opts)
+        self._sync_menu_wheel_visibility(opts, fields)
         return changed
 
     @staticmethod
@@ -6781,6 +6919,7 @@ class OptionsService:
                 changed = True
         sync_display_flags(opts, fields)
         sync_legacy_display_flags(opts)
+        self._sync_menu_wheel_visibility(opts, fields)
         return changed
 
     def _apply_symbols(self, opts, fields: dict) -> bool:
@@ -7014,7 +7153,13 @@ class OptionsService:
         lets one theme carry both.
         """
         try:
-            effective = _effective_style_chart_options(opts, profile)
+            # Theme selection replaces prior Settings overrides. Resolve from
+            # the portable theme before the eventual palette write clears the
+            # previous Settings priority marker.
+            source = copy.copy(opts)
+            source.custom_color_preset = dict(getattr(opts, 'custom_color_preset', None) or {})
+            source.custom_color_preset.pop(_SETTINGS_COLOR_OVERRIDES_KEY, None)
+            effective = _effective_style_chart_options(source, profile)
         except Exception:
             return False
         if effective is None:
@@ -7240,6 +7385,7 @@ class OptionsService:
             new_value = not bool(getattr(opts, 'houses', True))
             opts.houses = new_value
             sync_display_flags(opts, {'houses': new_value})
+            self._sync_menu_wheel_visibility(opts, {'houses': new_value})
             if getattr(opts, 'autosave', False):
                 try:
                     opts.saveAppearance1()

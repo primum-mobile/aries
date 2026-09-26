@@ -35,6 +35,7 @@ from typing import Callable
 from urllib.parse import quote, unquote, urlparse
 
 import app_paths
+from webapp.daemon.network_tls import download_context
 
 
 DEFAULT_WORLD_SLUG = "planet_z6"
@@ -277,7 +278,7 @@ def download_region(region: TileRegion, on_progress: Callable[[float], None] | N
     )
     os.close(fd)
     try:
-        with urllib.request.urlopen(region.url, timeout=20) as response:
+        with urllib.request.urlopen(region.url, timeout=20, context=download_context()) as response:
             total = response.headers.get("Content-Length")
             try:
                 total_bytes = int(total) if total else 0
@@ -487,7 +488,7 @@ def pmtiles_release_asset_url() -> str:
 
 
 def _download_file(url: str, path: str) -> None:
-    with urllib.request.urlopen(url, timeout=30) as response, open(path, "wb") as out:
+    with urllib.request.urlopen(url, timeout=30, context=download_context()) as response, open(path, "wb") as out:
         while True:
             chunk = response.read(1024 * 256)
             if not chunk:

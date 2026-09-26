@@ -344,11 +344,15 @@ test('position toggle controls painted coordinates and hit targets in every whee
         drawChart.drawSnapshotLayer(recordingPositionDraw(texts), snapshot, 'dynamic', opts);
         const context = `theme=${theme}, comparison=${comparison}, visible=${visible}`;
         assert.equal(texts.some(text => text === '17' || text === '17°'), visible, context);
-        assert.equal(texts.some(text => text === '00' || text === '00°'), visible, context);
+        assert.equal(texts.some(text => text === '00' || text === '00°'),
+          visible || theme >= 2, context);
         assert.ok(texts.includes('A'), `planet glyph remains: ${context}`);
         const regions = drawChart.computeHitRegions(snapshot, opts);
-        const positions = regions.filter(region => /^(bodies|angles|houses)\.inner\.position\./.test(region.classId ?? ''));
-        assert.equal(positions.length > 0, visible, `position hit targets: ${context}`);
+        const bodyAndAnglePositions = regions.filter(region => /^(bodies|angles)\.inner\.position\./.test(region.classId ?? ''));
+        const cuspAnnotations = regions.filter(region => /^houses\.inner\.position\./.test(region.classId ?? ''));
+        assert.equal(bodyAndAnglePositions.length > 0, visible, `body and angle targets: ${context}`);
+        assert.equal(cuspAnnotations.length > 0, visible || theme >= 2,
+          `cusp annotation targets: ${context}`);
         assert.ok(regions.some(region => region.kind === 'planet'), `planet remains interactive: ${context}`);
         assert.ok(regions.some(region => region.kind === 'angle'), `angles remain interactive: ${context}`);
       }
@@ -376,6 +380,43 @@ test('tri and quad wheels honor chart position labels and retain their local pos
   }
 });
 
+test('chart position minutes switch leaves degrees, signs, and cusp annotations intact', () => {
+  const opts = { width: 800, height: 800, chartSize: 800,
+    renderStyle: drawChart.DEFAULT_WHEEL_RENDER_STYLE, textsize: () => [12, 12], includeStyleTargets: true };
+  for (const theme of [0, 1, 2, 3, 4]) {
+    const chart = positionLabelFixture(theme, true);
+    const snapshot = { primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full' };
+    for (const visible of [true, false, true]) {
+      chart.options.showPositionMinutes = visible;
+      const texts = [];
+      drawChart.drawSnapshotLayer(recordingPositionDraw(texts), snapshot, 'dynamic', opts);
+      const regions = drawChart.computeHitRegions(snapshot, opts);
+      assert.ok(texts.some(text => text === '17' || text === '17°'), `degree theme=${theme}`);
+      assert.equal(texts.some(text => text === '30' || text === "30'"), visible, `body minute theme=${theme}`);
+      assert.equal(regions.some(region => region.classId === 'bodies.inner.position.minute'), visible, `body target theme=${theme}`);
+      assert.ok(regions.some(region => region.classId === 'bodies.inner.position.degree'), `degree target theme=${theme}`);
+      if (theme >= 2) {
+        assert.ok(regions.some(region => region.classId === 'houses.inner.position.minute'), `cusp minute theme=${theme}`);
+      }
+    }
+  }
+});
+
+test('chart position minutes also gates multiwheel minutes', () => {
+  const style = drawChart.DEFAULT_WHEEL_RENDER_STYLE;
+  const layout = drawChart.resolveMultiwheelLayout({ chartSize: 800, ringCount: 3, ringZodiac: 'rim' });
+  const rings = Array.from({ length: 3 }, () => positionLabelFixture(2, true));
+  for (const visible of [true, false, true]) {
+    for (const chart of rings) chart.options.showPositionMinutes = visible;
+    const texts = [];
+    drawChart.drawMultiwheel(recordingPositionDraw(texts), [400, 400], layout,
+      { primaryChart: rings[0], rings }, style.palette, { symbols: 'AriesMorinus', ui: 'AriesText' },
+      { width: 800, height: 800, topBoundary: 0 }, style);
+    assert.ok(texts.some(text => text === '17' || text === '17°'));
+    assert.equal(texts.some(text => text.startsWith('30')), visible);
+  }
+});
+
 test('hiding coordinates preserves floating AC and MC labels without house lines', () => {
   for (const theme of [2, 3, 4]) {
     const chart = positionLabelFixture(theme, false);
@@ -387,7 +428,8 @@ test('hiding coordinates preserves floating AC and MC labels without house lines
       { width: 800, height: 800, chartSize: 800, renderStyle: drawChart.DEFAULT_WHEEL_RENDER_STYLE });
     assert.ok(texts.includes('AC'), `AC remains in theme ${theme}`);
     assert.ok(texts.includes('MC'), `MC remains in theme ${theme}`);
-    assert.ok(!texts.some(text => text === '00' || text === '00°'));
+    assert.ok(texts.some(text => text === '00' || text === '00°'),
+      `cusp annotations remain in theme ${theme}`);
   }
 });
 
@@ -399,6 +441,7 @@ test('outer minutes switch formats biwheel bodies and every outer-object family 
   for (const theme of [0, 1, 2, 3, 4]) for (const [mode, family] of families) {
     const chart = positionLabelFixture(theme, false);
     chart.options.showOuterPositions = true;
+    chart.options.showPositionMinutes = false;
     const item = { id: 'outer', family, longitude: 17.5, label: 'Outer', role: 'outer',
       degText: '17', minText: '30', segments: [{ text: 'A', kind: 'glyph' }] };
     const snapshot = { primaryChart: chart, outerRingMode: mode, overlayRenderMode: 'full',

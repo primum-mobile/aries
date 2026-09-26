@@ -559,7 +559,9 @@ def _local_datetime_tuple_and_context_from_zoneinfo(jdut, chart):
         'zm': zone_fields['zm'],
         'daylightsaving': zone_fields['daylightsaving'],
         'tzid': tzid,
-        'tzauto': False,
+        # Retain the IANA zone so chart.Time can apply historical offsets
+        # with seconds (e.g. New York LMT), not only the rounded minute fields.
+        'tzauto': True,
     }
     return (
         int(local_dt.year), int(local_dt.month), int(local_dt.day),

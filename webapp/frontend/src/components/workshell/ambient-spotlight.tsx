@@ -70,9 +70,24 @@ export function AmbientSpotlight({
 }: AmbientSpotlightProps) {
   const t = useT();
   const [value, setValue] = useState(() => initialText);
-  const [preview, setPreview] = useState<SpotlightPreview>(EMPTY_PREVIEW);
+  const [previewState, setPreviewState] = useState<{ text: string; result: SpotlightPreview }>({
+    text: "",
+    result: EMPTY_PREVIEW,
+  });
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const committingRef = useRef(false);
+  const preview = previewState.text === value.trim() ? previewState.result : EMPTY_PREVIEW;
+
+  useEffect(() => {
+    if (!open) return;
+    const appendEmbeddedDigit = (event: Event) => {
+      const digit = (event as CustomEvent<string>).detail;
+      if (/^[0-9]$/.test(digit)) setValue((current) => current + digit);
+    };
+    window.addEventListener("aries://spotlight-embedded-digit", appendEmbeddedDigit);
+    return () => window.removeEventListener("aries://spotlight-embedded-digit", appendEmbeddedDigit);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -85,12 +100,12 @@ export function AmbientSpotlight({
       setLoading(true);
       void spotlightPreview(text, controller.signal)
         .then((next) => {
-          if (!controller.signal.aborted) setPreview(next);
+          if (!controller.signal.aborted) setPreviewState({ text, result: next });
         })
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
           console.error("[spotlight-preview]", err);
-          setPreview(EMPTY_PREVIEW);
+          setPreviewState({ text, result: EMPTY_PREVIEW });
         })
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
@@ -105,7 +120,7 @@ export function AmbientSpotlight({
   const handleValueChange = useCallback((next: string) => {
     setValue(next);
     if (!next.trim()) {
-      setPreview(EMPTY_PREVIEW);
+      setPreviewState({ text: "", result: EMPTY_PREVIEW });
       setLoading(false);
       setCommitting(false);
     }
@@ -116,31 +131,37 @@ export function AmbientSpotlight({
     [disabledActions],
   );
 
-  const effectiveDefaultAction = useMemo(() => {
-    const defaultAction = preview.defaultAction;
-    if (
-      defaultAction &&
-      !disabledActionSet.has(defaultAction as SpotlightActionId)
-    ) {
+  const chooseDefaultAction = useCallback((result: SpotlightPreview) => {
+    const defaultAction = result.defaultAction;
+    if (defaultAction && !disabledActionSet.has(defaultAction as SpotlightActionId)) {
       return defaultAction;
     }
-    return (
-      preview.actions.find((action) => !disabledActionSet.has(action.id))?.id ?? null
-    );
-  }, [disabledActionSet, preview.actions, preview.defaultAction]);
+    return result.actions.find((action) => !disabledActionSet.has(action.id))?.id ?? null;
+  }, [disabledActionSet]);
+  const effectiveDefaultAction = chooseDefaultAction(preview);
 
   const commit = useCallback(
     async (action: "open-chart" | SpotlightActionId | null | undefined) => {
-      if (!action || !preview.canConfirm || !onCommit || committing) return;
-      if (disabledActionSet.has(action as SpotlightActionId)) return;
+      if (!onCommit || committingRef.current) return;
+      const text = value.trim();
+      if (!text) return;
+      committingRef.current = true;
       setCommitting(true);
       try {
-        await onCommit(action, preview, value);
+        // Enter may arrive before the debounced preview, or while a preview
+        // for older text is still displayed. Resolve the exact submitted text.
+        const result = previewState.text === text ? previewState.result : await spotlightPreview(text);
+        const selectedAction = action ?? chooseDefaultAction(result);
+        if (!result.canConfirm || !selectedAction || disabledActionSet.has(selectedAction as SpotlightActionId)) return;
+        await onCommit(selectedAction, result, text);
+      } catch (err) {
+        console.error("[spotlight-commit]", err);
       } finally {
+        committingRef.current = false;
         setCommitting(false);
       }
     },
-    [committing, disabledActionSet, onCommit, preview, value],
+    [chooseDefaultAction, disabledActionSet, onCommit, previewState, value],
   );
 
   const handleOpenChange = useCallback(
@@ -185,7 +206,7 @@ export function AmbientSpotlight({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              void commit(effectiveDefaultAction);
+              void commit(null);
               return;
             }
           }}
@@ -327,14 +348,33 @@ export function useAmbientSpotlightTriggers({
     };
 
     const onEmbeddedAmbientKey = (event: Event) => {
-      if (open || !ambientScopeIsClear()) return;
       const detail = (event as CustomEvent<AmbientKeyDetail>).detail;
       if (!detail || typeof detail.key !== "string") return;
+      if (open) {
+        // The map iframe can still own focus for a beat after Spotlight opens.
+        // Keep those digits in the retained input instead of discarding them.
+        if (detail.eventType === "keydown" && !detail.repeat &&
+            !detail.metaKey && !detail.ctrlKey && !detail.altKey &&
+            /^[0-9]$/.test(detail.key)) {
+          window.dispatchEvent(new CustomEvent("aries://spotlight-embedded-digit", { detail: detail.key }));
+        }
+        return;
+      }
+      if (!ambientScopeIsClear()) return;
       if (detail.eventType === "keydown") {
         if (detail.key === "Shift") {
           if (!detail.repeat) markShiftDown();
         } else {
           markShiftChord();
+          if (
+            !detail.repeat &&
+            !detail.metaKey &&
+            !detail.ctrlKey &&
+            !detail.altKey &&
+            /^[0-9]$/.test(detail.key)
+          ) {
+            onOpen(detail.key);
+          }
         }
         return;
       }

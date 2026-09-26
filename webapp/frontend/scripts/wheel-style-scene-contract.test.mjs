@@ -1970,6 +1970,33 @@ test('the Anglo cusp ruler exposes its whole band and retains its width handle',
   assert.ok(foundBand, 'the ruler must have a reachable band surface');
 });
 
+test('a Cusp ruler touching Signs has matching scene ticks and an inward-facing width handle', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const outside of [false, true]) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    const cusp = composition.rings.splice(composition.rings.findIndex(r => r.archetypeId === 'cuspRuler'), 1)[0];
+    const signs = composition.rings.findIndex(r => r.archetypeId === 'zodiac');
+    composition.rings.splice(signs + Number(!outside), 0, cusp);
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', 'single', {composition})});
+    const band = scene.elements.find(element => element.id === `wheel.composition.${cusp.instanceId}`);
+    const signBand = scene.elements.find(element => element.id === 'wheel.composition.anglo-zodiac');
+    assert.ok(band && signBand);
+    assert.ok(band.hitGeometry.innerRadius >= signBand.hitGeometry.innerRadius);
+    assert.ok(band.hitGeometry.outerRadius <= signBand.hitGeometry.outerRadius);
+    assert.equal(band.handles[0].radius, outside ? band.hitGeometry.innerRadius : band.hitGeometry.outerRadius);
+    assert.ok(outside ? band.handles[0].binding.valuePerPixel < 0
+      : band.handles[0].binding.valuePerPixel > 0);
+    assert.ok(!scene.elements.some(element => element.id === `wheel.composition.${cusp.instanceId}.boundary`));
+    const ticks = scene.elements.find(element => element.id === 'wheel.zodiac.tick.angloCuspRuler.10deg');
+    assert.ok(ticks?.hitGeometry.geometries.length);
+    const segment = ticks.hitGeometry.geometries[0];
+    const distance = point => Math.hypot(point[0] - scene.center[0], point[1] - scene.center[1]);
+    assert.ok(outside ? distance(segment.end) < distance(segment.start)
+      : distance(segment.end) > distance(segment.start));
+  }
+});
+
 test('band boundaries do not steal nearby cusp text selection', async () => {
   const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
   const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
@@ -2058,14 +2085,14 @@ test('factory band handles preserve their starting width and use solved bounds a
   assert.ok(grandfatheredWidths > 0, 'the matrix must exercise original bands below the generic minimum');
 });
 
-test('an original Anglo degree instrument without a painted track offers no width handle', async () => {
+test('an enabled original Anglo degree ruler has a width handle without reordering', async () => {
   const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
   const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
   const degree = composition.rings.find(ring => ring.archetypeId === 'degree');
   const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
     geometry: geometry('anglo', 'single', {composition}),
   });
-  assert.ok(!scene.handles.some(handle => handle.binding?.semanticId.includes(`.${degree.instanceId}.`)));
+  assert.ok(scene.handles.some(handle => handle.binding?.semanticId.includes(`.${degree.instanceId}.`)));
 });
 
 test('open exterior cusp labels keep their band editor but have no phantom boundary target', () => {

@@ -51,9 +51,9 @@ export function RetainedPaneShell({
     <button
       type="button"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center text-[color:var(--aries-text-primary)] [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "aries-desktop-focus inline-flex shrink-0 items-center justify-center text-[color:var(--aries-text-primary)] [&_svg]:pointer-events-none [&_svg]:shrink-0",
         closeAppearance === "list"
-          ? "rounded-[var(--aries-radius-ui-control-compact)] border border-transparent bg-clip-padding transition-all outline-none select-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px dark:hover:bg-muted/50"
+          ? "rounded-[var(--aries-radius-ui-control-compact)] border border-transparent bg-clip-padding transition-all select-none hover:bg-muted active:not-aria-[haspopup]:translate-y-px dark:hover:bg-muted/50"
           : "rounded-[var(--aries-radius-control-compact)] hover:bg-accent/40",
         closeSize === "small"
           ? "size-[var(--aries-control-height-small)]"

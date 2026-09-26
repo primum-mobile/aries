@@ -7,7 +7,7 @@ import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { Bell, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, Columns2, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { Bell, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, Columns2, Map as MapIcon, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings } from "lucide-react";
 import { radixPaneOwner } from "@/lib/radix-pane-state";
 import { handleChartEventsMenuAction } from "./chart-events-actions";
 import { SideBySideCharts, useSideBySideCommand } from "./side-by-side-charts";
@@ -44,7 +44,10 @@ import {
   type WheelTypographyProfile,
   wheelTypographyProfileForTheme,
 } from "@/lib/chart/wheel-render-style";
-import { registerChartExportRenderer } from "@/lib/chart/chart-export-registry";
+import {
+  registerChartExportRenderer,
+  type ChartExportRenderRequest,
+} from "@/lib/chart/chart-export-registry";
 import { ChartCopyControl } from "@/components/workshell/chart-copy-control";
 import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
 import { assembleWheelGeometryPreview } from "@/lib/chart/wheel-geometry-preset";
@@ -54,7 +57,16 @@ import {
   ASTROCART_TITLEBAR_SAFE_TOP,
   createAstrocartStyleMessage,
 } from "@/lib/chart/astrocart-style";
+import { appUiFontStack, collectUiFontFaces } from "@/lib/chart/astrocart-ui-font";
+import { STYLE_FONT_ASSETS_READY_EVENT } from "@/lib/style-lab/fonts";
 import { useT, useTFallback, useLocale, type TFunc } from "@/lib/i18n/i18n";
+import {
+  coerceDateConvention,
+  formatIsoDateDisplay,
+  formatIsoDateTimeDisplay,
+  parseDateDisplayInput,
+  type DateConvention,
+} from "@/lib/date-display";
 import { resolveListFocusDatetime } from "@/lib/list-follow-policy";
 import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
@@ -63,6 +75,8 @@ import { ChartCanvas } from "./chart-canvas";
 import type { GraphicEphemerisDisplayMode } from "./graph-ephemeris-view";
 import {
   AstrocartControls,
+  dynamicLayerDrawsProgressions,
+  dynamicLayerDrawsTransits,
   type AstrocartConfigurationChange,
   type AstrocartParanIntent,
 } from "./astrocart-controls";
@@ -74,6 +88,7 @@ import {
 import {
   localizedWorkspaceDocumentTitle,
   useWorkspaceStore,
+  type FeatureCatalogPaneState,
   type TimeLordTableId,
   type WorkspaceDocument,
 } from "@/stores/workspace-store";
@@ -113,9 +128,11 @@ import {
   type AstrocartLineMode,
   type AstrocartPdfPageFormat,
   type AstrocartPdfSelection,
+  type AstrocartPdfScope,
   type AstrocartPrintAtlas,
   type AstrocartViewState,
   type AstrocartViewStateScope,
+  type DaemonDocumentSummary,
   type ThemeState,
   type WorkspaceManifest,
 } from "@/lib/daemon/client";
@@ -241,9 +258,11 @@ const WhatsNewView = dynamic(
 );
 
 type Props = {
+  dateConvention?: DateConvention;
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
   navbar?: ModeHintRailProps | null;
+  onOpenSettings?: (tab?: SettingsTabId) => void;
 };
 
 function isTimeLordTableId(value: string | null | undefined): value is TimeLordTableId {
@@ -429,6 +448,30 @@ async function fetchAstrocartModePayload(
   };
 }
 
+async function fetchAstrocartMovingPayload(
+  documentId: string,
+  modes: readonly AstrocartLineMode[],
+  precision: AstrocartRetainedPrecision,
+  signal: AbortSignal,
+): Promise<AstrocartGeoJsonPayload> {
+  const params = new URLSearchParams({
+    modes: modes.join(","),
+    precision,
+    dynamicOnly: "true",
+  });
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrocart?${params.toString()}`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) throw new Error(`astrocart moving fetch failed: ${response.status}`);
+  const raw = await response.json() as Partial<AstrocartGeoJsonPayload>;
+  return {
+    type: "FeatureCollection",
+    features: Array.isArray(raw.features) ? raw.features : [],
+    meta: raw.meta,
+  };
+}
+
 function astrocartFeatureProperties(
   feature: unknown,
 ): Record<string, unknown> | null {
@@ -452,6 +495,12 @@ function astrocartPropertyText(
 ): string {
   const value = properties[key];
   return typeof value === "string" ? value : "";
+}
+
+function isAstrocartMovingFeature(feature: unknown): boolean {
+  const properties = astrocartFeatureProperties(feature);
+  return properties != null &&
+    astrocartPropertyText(properties, "astrocart_technique").length > 0;
 }
 
 function appendUniqueAstrocartStrings(target: string[], value: unknown): void {
@@ -547,6 +596,25 @@ function astrocartModeSpecKey(
 ): string | null {
   const value = modeSpecKeys[mode];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Mode cache identity the daemon stamped on a payload: `modeSpecKey` for a
+ * single-mode response, or the per-mode `modeSpecKeys` map of a composite. */
+function astrocartPayloadModeSpecKey(
+  payload: AstrocartGeoJsonPayload,
+  mode: AstrocartLineMode,
+): string | null {
+  const meta = payload.meta;
+  if (!meta) return null;
+  const composite = meta.modeSpecKeys;
+  if (composite && typeof composite === "object" && !Array.isArray(composite)) {
+    const value = (composite as Record<string, unknown>)[mode];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  const single = meta.modeSpecKey;
+  return typeof single === "string" && single.length > 0 && meta.mode === mode
+    ? single
+    : null;
 }
 
 function composeAstrocartModePayload(
@@ -698,26 +766,30 @@ function toggleAstrocartLineMode(
  * tree stable so activation updates the relevant leaf instead of remounting the
  * whole workspace.
  */
-export function WorkspaceContent({ chart, activeDoc, navbar }: Props) {
+export function WorkspaceContent({ chart, activeDoc, navbar, onOpenSettings, dateConvention }: Props) {
   // The header is now the global UnifiedTitleBar (rendered once by HomeClient,
   // spanning sidebar + content); the content surface only renders the chart.
   return (
-    <SurfaceArea chart={chart} activeDoc={activeDoc} navbar={navbar} />
+    <SurfaceArea dateConvention={dateConvention} chart={chart} activeDoc={activeDoc} navbar={navbar} onOpenSettings={onOpenSettings} />
   );
 }
 
 function SurfaceArea({
+  dateConvention = "current",
   chart,
   activeDoc,
   navbar,
-}: {
-  chart: ChartRenderSnapshot | null;
-  activeDoc: WorkspaceDocument | null;
-  navbar?: ModeHintRailProps | null;
-}) {
+  onOpenSettings,
+}: Props) {
+  const t = useT();
   const daemonDocuments = useDaemonWorkspaceStore((state) => state.documents);
   const [retainedAstrocartIds, setRetainedAstrocartIds] = React.useState<string[]>([]);
-  const activeAstrocartId = activeDoc?.kind === "astrocart" ? activeDoc.id : null;
+  const activeAstrocartId = activeDoc?.kind === "astrocart"
+    ? activeDoc.id
+    : daemonDocuments.find((document) =>
+        document.documentId === activeDoc?.parentDocumentId &&
+        document.launcherKind === "astrocart"
+      )?.documentId ?? null;
   React.useEffect(() => {
     const openIds = new Set(
       daemonDocuments
@@ -770,16 +842,28 @@ function SurfaceArea({
             aria-hidden={!active}
           >
             <AstrocartSurface
+              chartTitle={(astrocartTitleParts(daemonDocuments, document.documentId, dateConvention, t) ?? [document.sourceName])
+                .map((part) => typeof part === "string" ? part : part.text).join(" · ")}
               documentId={document.documentId}
               parentDocumentId={document.parentDocumentId}
               active={active}
+              layerDocumentIds={daemonDocuments
+                .filter((child) => child.parentDocumentId === document.documentId &&
+                  ["transits", "secondary", "minor", "tertiary", "solar_arc"].includes(
+                    child.featureKind ?? "",
+                  ))
+                .map((child) => child.documentId)}
+              selectedLayerDocumentId={activeDoc?.parentDocumentId === document.documentId
+                ? activeDoc.id : null}
+              navbar={active && activeDoc?.parentDocumentId === document.documentId
+                ? navbar : null}
               eclipseEvent={document.eclipseEvent ?? null}
             />
           </div>
         );
       })}
       {activeAstrocartId == null ? (
-        <ActiveSurfaceArea chart={chart} activeDoc={activeDoc} navbar={navbar} />
+        <ActiveSurfaceArea chart={chart} activeDoc={activeDoc} navbar={navbar} onOpenSettings={onOpenSettings} />
       ) : null}
     </div>
   );
@@ -789,11 +873,8 @@ function ActiveSurfaceArea({
   chart,
   activeDoc,
   navbar,
-}: {
-  chart: ChartRenderSnapshot | null;
-  activeDoc: WorkspaceDocument | null;
-  navbar?: ModeHintRailProps | null;
-}) {
+  onOpenSettings,
+}: Props) {
   const openAscensionalTransitsPane = useWorkspaceStore(
     (s) => s.openAscensionalTransitsPane,
   );
@@ -971,6 +1052,7 @@ function ActiveSurfaceArea({
           documentId={activeDoc.id}
           parentDocumentId={activeDoc.parentDocumentId}
           tableId={activeDoc.tableId}
+          onOpenAsteroidSettings={onOpenSettings ? () => onOpenSettings("asteroids") : undefined}
         />
       </WorkspaceDocumentSurface>
     );
@@ -1095,20 +1177,15 @@ function WorkspaceDocumentSurface({ children }: { children: React.ReactNode }) {
 /**
  * Branded splash for an empty workspace — the web port of wx drawSplash
  * (morin.py:21558) / CentralChartHost._paint_splash (workspace_shell.py:4831).
- * wx shows Res/Morinus.jpg, the "ARIES" wordmark, and the info lines
+ * The empty workspace shows the splash artwork, the "ARIES" wordmark, and the info lines
  * (mtexts 'FreeSoft' / 'Description') centred in the chart pane whenever no
  * chart is open (e.g. after closing the last document). This mirrors that
- * behaviour instead of the bare "No chart open" text. The photo is served by
- * the daemon at /Res/Morinus.jpg (same mount that serves the astrocart assets).
+ * behaviour instead of the bare "No chart open" text.
  */
 function EmptyWorkspace() {
   const t = useT();
   const deferredUpdate = useUpdateNotificationStore((state) => state.deferred);
   const requestUpdateOffer = useUpdateNotificationStore((state) => state.requestOffer);
-  // Served same-origin from the frontend's public/ (copied from Res/Morinus.jpg)
-  // — loading it cross-origin from the daemon (:8765) failed to render in the
-  // Tauri webview even though the daemon returns 200.
-  const splashSrc = `/aries-splash.jpg`;
   const [splash, setSplash] = React.useState<AppSplashPayload>({
     title: "ARIES",
     subtitle: "Aries dev",
@@ -1153,13 +1230,22 @@ function EmptyWorkspace() {
   return (
     <div className="relative flex h-full w-full flex-1 min-h-0 items-center justify-center bg-transparent">
       <div className="flex flex-col items-center px-8 text-center text-[color:var(--aries-text-primary)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={splashSrc}
-          alt=""
-          aria-hidden
-          className="mb-[10px] max-h-[min(40vh,335px)] w-auto select-none object-contain"
-          draggable={false}
+        <div
+          aria-hidden="true"
+          className="mb-[10px] shrink-0 select-none"
+          style={{
+            width: "min(40vh, 335px)",
+            height: "min(40vh, 335px)",
+            backgroundColor: "var(--aries-text-primary)",
+            WebkitMaskImage: 'url("/aries-splash-chart-only.svg")',
+            maskImage: 'url("/aries-splash-chart-only.svg")',
+            WebkitMaskRepeat: "no-repeat",
+            maskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+            maskPosition: "center",
+            WebkitMaskSize: "contain",
+            maskSize: "contain",
+          }}
         />
         {/* "ARIES" wordmark — wx shears the A 19deg from its lower edge, then
             positions RIES from measured text width plus a small kern. */}
@@ -1205,14 +1291,22 @@ function EmptyWorkspace() {
 }
 
 const AstrocartSurface = React.memo(function AstrocartSurface({
+  chartTitle,
   documentId,
   parentDocumentId,
   active,
+  layerDocumentIds,
+  selectedLayerDocumentId,
+  navbar,
   eclipseEvent,
 }: {
+  chartTitle: string;
   documentId: string;
   parentDocumentId: string | null;
   active: boolean;
+  layerDocumentIds: string[];
+  selectedLayerDocumentId: string | null;
+  navbar?: ModeHintRailProps | null;
   // Solar-eclipse shadow-path overlay request, set when the doc was opened
   // via "Show Eclipse Path on Map" (wx morin.show_eclipse_path_on_map ->
   // AstrocartPanel.set_eclipse_event, morin.py:16211-16227 /
@@ -1236,6 +1330,10 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     active ? state.lastOptionsChange : null,
   );
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const navbarRef = React.useRef(navbar);
+  React.useLayoutEffect(() => {
+    navbarRef.current = navbar;
+  }, [navbar]);
   const printAtlasRequestSequenceRef = React.useRef(0);
   const printAtlasRequestsRef =
     React.useRef(new Map<string, AstrocartPrintAtlasRequest>());
@@ -1269,6 +1367,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const latestDisplayStyleRef = React.useRef<unknown>(null);
   const displayStyleRequestRef = React.useRef<AbortController | null>(null);
   const handledSessionChangeSeqRef = React.useRef(lastSessionChange?.seq ?? 0);
+  const linkedDocumentsKey = layerDocumentIds.join(":");
   const pendingSessionRefreshRef = React.useRef(false);
   const handledOptionsChangeSeqRef = React.useRef(lastOptionsChange?.seq ?? 0);
   const activeLineModesRef = React.useRef<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
@@ -1292,6 +1391,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const emptyModeDataCacheRef =
     React.useRef<AstrocartEmptyModeCacheEntry | null>(null);
   const emptyMetaRequestRef = React.useRef<AstrocartMetaRequest | null>(null);
+  const movingLayerRequestRef = React.useRef<AbortController | null>(null);
   const modeDataDocumentRef = React.useRef(documentId);
   const lastRenderedDataGenerationRef = React.useRef<string | null>(null);
   const lastRenderedDataSignatureRef = React.useRef<string | null>(null);
@@ -1315,6 +1415,22 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const [lineModes, setLineModes] = React.useState<AstrocartLineMode[]>(ASTROCART_DEFAULT_LINE_MODES);
   const [natalLayerVisible, setNatalLayerVisible] = React.useState(true);
   const [dynamicLayerVisible, setDynamicLayerVisible] = React.useState(true);
+  const [hiddenLayerIds, setHiddenLayerIds] = React.useState<string[]>([]);
+  const [linkedCursorState, setLinkedCursorState] = React.useState<{
+    key: string;
+    cursors: Record<string, string>;
+  }>(() => ({ key: linkedDocumentsKey, cursors: {} }));
+  const linkedCursorIsoByDocumentId = linkedCursorState.key === linkedDocumentsKey
+    ? linkedCursorState.cursors : {};
+  const [navbarDock, setNavbarDock] = React.useState<AstrocartNavbarDock | null>(null);
+  const sentUiFontKeyRef = React.useRef<string | null>(null);
+  const viewportCaptureRequestsRef = React.useRef(new Map<string, {
+    resolve: (capture: { bytes: Uint8Array; width: number; height: number }) => void;
+    reject: (error: Error) => void;
+    timer: number;
+  }>());
+  const [uiFontAssetsRevision, setUiFontAssetsRevision] = React.useState(0);
+  const [steppingLayerCursor, setSteppingLayerCursor] = React.useState(false);
   const [viewStateReadyFor, setViewStateReadyFor] = React.useState<string | null>(null);
   const astrocartControlsPane = useWorkspaceStore((state) => state.astrocartControlsPane);
   const openAstrocartControlsPane = useWorkspaceStore(
@@ -1323,6 +1439,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   const closeAstrocartControlsPane = useWorkspaceStore(
     (state) => state.closeAstrocartControlsPane,
   );
+  const featureCatalogPane = useWorkspaceStore((state) => state.featureCatalogPane);
+  const closeFeatureCatalogPane = useWorkspaceStore((state) => state.closeFeatureCatalogPane);
   const sidebarOpen = useFrameLayoutStore((state) => state.sidebarOpen);
   const sidebarWidth = useFrameLayoutStore((state) => state.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((state) => state.rightPaneWidth);
@@ -1359,23 +1477,33 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   // were completed for the previous iframe document.
   const mapInstanceKey = `${documentId}:${url ?? "pending"}:${iframeLoadRevision}`;
   const dataGenerationKey =
-    `${mapInstanceKey}:${lineModesKey}:${sessionRevision}:${configurationRevision}`;
+    `${mapInstanceKey}:${linkedDocumentsKey}:${lineModesKey}:${sessionRevision}:${configurationRevision}`;
   const viewStateKey = mapInstanceKey;
   const iframeReady = !!url && readyUrl === url;
   const viewStateReady = iframeReady && viewStateReadyFor === viewStateKey;
+  React.useEffect(() => {
+    if (!iframeReady) return;
+    iframeRef.current?.contentWindow?.postMessage({
+      type: "aries.setKeyboardNavigation",
+      enabled: active && !!selectedLayerDocumentId && !!navbar?.onNavigateHint,
+    }, "*");
+  }, [active, iframeReady, mapInstanceKey, navbar?.onNavigateHint, selectedLayerDocumentId]);
   const linesPushed = linesPushedFor === dataGenerationKey;
   const controlsOpen =
     active && astrocartControlsPane?.documentId === documentId;
-  const controlsPanePolicy = rightPaneWidthPolicy("astrocart-controls");
-  const effectiveControlsPaneWidth = rightPanePriorityLayout(
+  const activePaneKind = active && featureCatalogPane
+    ? "feature-catalog"
+    : controlsOpen ? "astrocart-controls" : null;
+  const activePanePolicy = rightPaneWidthPolicy(activePaneKind);
+  const effectivePaneWidth = rightPanePriorityLayout(
     sidebarOpen,
     sidebarWidth,
     rightPaneWidth,
-    "astrocart-controls",
+    activePaneKind,
   ).rightPaneWidth;
-  const controlsPaneTrack = useCoherentRightPaneTrack(
-    controlsOpen,
-    effectiveControlsPaneWidth,
+  const paneTrack = useCoherentRightPaneTrack(
+    activePaneKind !== null,
+    effectivePaneWidth,
   );
   // View-only Astrocartography documents are not themselves rebuilt by a
   // global house-system change, even though their reference geometry depends
@@ -1390,11 +1518,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     lastOptionsChange.refreshedDocumentIds.some(
       (id) => id === documentId || id === parentDocumentId,
     )
-      ? lastOptionsChange.seq
-      : 0;
+      ? `${lastOptionsChange.seq}:${linkedDocumentsKey}:${sessionRevision}`
+      : `${linkedDocumentsKey}:${sessionRevision}`;
+
   const settlePrintAtlasRequest = React.useCallback((
     requestId: string,
     atlas: AstrocartPrintAtlas | null,
+    failure?: string,
   ) => {
     const request = printAtlasRequestsRef.current.get(requestId);
     if (!request) return;
@@ -1402,20 +1532,22 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     window.clearTimeout(request.timeoutId);
     request.signal.removeEventListener("abort", request.abortListener);
     request.controller.abort();
-    request.resolve(
-      atlas &&
+    const current =
       mapHostActiveRef.current &&
       activeDataContextRef.current?.dataGenerationKey ===
-        request.dataGenerationKey
-        ? atlas
-        : null,
-    );
+        request.dataGenerationKey;
+    const reason = failure ?? (atlas && !current ? "map changed during capture" : null);
+    if (reason && !request.signal.aborted) {
+      console.error("[acg-print] atlas capture unavailable:", reason);
+    }
+    request.resolve(atlas && current ? atlas : null);
   }, []);
 
   const requestPrintAtlas = React.useCallback(async (
     pageFormat: AstrocartPdfPageFormat,
     selection: AstrocartPdfSelection,
     signal: AbortSignal,
+    scope: AstrocartPdfScope,
   ): Promise<AstrocartPrintAtlas | null> => {
     const targetWindow = iframeRef.current?.contentWindow;
     if (!active || !iframeReady || !targetWindow || signal.aborted) {
@@ -1452,7 +1584,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       const timeoutId = window.setTimeout(
         () => {
           cancelChild();
-          settlePrintAtlasRequest(requestId, null);
+          settlePrintAtlasRequest(requestId, null, "capture timed out");
         },
         240_000,
       );
@@ -1480,25 +1612,30 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           captureContext.dataGenerationKey &&
         astrocartConfigurationRef.current?.specKey === captureSpecKey
       );
-      const payloadMatchesCapture = (
+      const STALE_CAPTURE = "map changed during capture";
+      /** Null when the payload belongs to this capture, else the mismatch. */
+      const captureMismatch = (
         payload: AstrocartGeoJsonPayload,
         mode: AstrocartLineMode | null,
-      ) => {
-        if (
-          payload.meta?.precision !== "precise" ||
-          payload.meta.specKey !== captureSpecKey
-        ) {
-          return false;
+      ): string | null => {
+        const label = mode ?? "overlay";
+        if (payload.meta?.precision !== "precise") {
+          return `${label} geometry is not precise`;
         }
-        if (mode == null) return true;
+        if (payload.meta.specKey !== captureSpecKey) {
+          return `${label} spec key does not match the capture`;
+        }
+        if (mode == null) return null;
         const expectedModeSpecKey = astrocartModeSpecKey(
           captureContext.modeSpecKeys,
           mode,
         );
-        return (
-          expectedModeSpecKey != null &&
-          payload.meta.modeSpecKey === expectedModeSpecKey
-        );
+        if (expectedModeSpecKey == null) {
+          return `${mode} has no canonical mode spec key`;
+        }
+        return astrocartPayloadModeSpecKey(payload, mode) === expectedModeSpecKey
+          ? null
+          : `${mode} mode spec key does not match the capture`;
       };
 
       void (async () => {
@@ -1515,18 +1652,18 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               "precise",
               controller.signal,
             );
-            if (
-              !requestIsCurrent() ||
-              !payloadMatchesCapture(payload, null)
-            ) {
-              settlePrintAtlasRequest(requestId, null);
+            const mismatch = requestIsCurrent()
+              ? captureMismatch(payload, null)
+              : STALE_CAPTURE;
+            if (mismatch) {
+              settlePrintAtlasRequest(requestId, null, mismatch);
               return;
             }
             preciseEmptyModePayload = payload;
           }
           for (const mode of captureContext.lineModes) {
             if (!requestIsCurrent()) {
-              settlePrintAtlasRequest(requestId, null);
+              settlePrintAtlasRequest(requestId, null, STALE_CAPTURE);
               return;
             }
             const payload = await fetchAstrocartModePayload(
@@ -1535,11 +1672,11 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               "precise",
               controller.signal,
             );
-            if (
-              !requestIsCurrent() ||
-              !payloadMatchesCapture(payload, mode)
-            ) {
-              settlePrintAtlasRequest(requestId, null);
+            const mismatch = requestIsCurrent()
+              ? captureMismatch(payload, mode)
+              : STALE_CAPTURE;
+            if (mismatch) {
+              settlePrintAtlasRequest(requestId, null, mismatch);
               return;
             }
             preciseModeCache.set(mode, {
@@ -1553,7 +1690,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             });
           }
           if (!requestIsCurrent()) {
-            settlePrintAtlasRequest(requestId, null);
+            settlePrintAtlasRequest(requestId, null, STALE_CAPTURE);
             return;
           }
           const fallbackMeta =
@@ -1570,13 +1707,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             captureConfiguration,
             preciseEmptyModePayload,
           );
-          if (
-            !composed.complete ||
-            composed.payload.meta?.precision !== "precise" ||
-            composed.payload.meta.specKey !== captureSpecKey ||
-            !requestIsCurrent()
-          ) {
-            settlePrintAtlasRequest(requestId, null);
+          const composedMismatch = !requestIsCurrent()
+            ? STALE_CAPTURE
+            : !composed.complete
+              ? "composed geometry is incomplete"
+              : captureMismatch(composed.payload, null);
+          if (composedMismatch) {
+            settlePrintAtlasRequest(requestId, null, composedMismatch);
             return;
           }
           capturePosted = true;
@@ -1584,14 +1721,16 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
             type: "aries.capturePrintAtlas",
             requestId,
             pageFormat,
+            scope,
             selection,
             geojson: composed.payload,
           }, "*");
         } catch (err) {
-          if (!isAbortError(err, controller.signal)) {
-            console.error("[acg-print]", err);
-          }
-          settlePrintAtlasRequest(requestId, null);
+          settlePrintAtlasRequest(
+            requestId,
+            null,
+            isAbortError(err, controller.signal) ? undefined : String(err),
+          );
         }
       })();
     });
@@ -1649,8 +1788,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     const layers = {
       natal: natalVisible,
       dynamic: dynamicVisible,
-      transit: dynamicVisible && enabledDynamicLayers.some((layer) => layer.technique === "transit"),
-      progression: dynamicVisible && enabledDynamicLayers.some((layer) => layer.technique !== "transit"),
+      transit: dynamicVisible && enabledDynamicLayers.some(dynamicLayerDrawsTransits),
+      progression: dynamicVisible && enabledDynamicLayers.some(dynamicLayerDrawsProgressions),
     };
     const overlays = {
       ...(previousOverlays ?? {}),
@@ -1791,7 +1930,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       }
       emptyMetaRequestRef.current?.controller.abort();
     };
-  }, [documentId, sessionRevision]);
+  }, [documentId, linkedDocumentsKey, sessionRevision]);
 
   React.useEffect(() => {
     activeLineModesRef.current = lineModes;
@@ -1823,8 +1962,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     const change = lastSessionChange;
     if (change && handledSessionChangeSeqRef.current !== change.seq) {
       handledSessionChangeSeqRef.current = change.seq;
-      if (change.changeReason !== "display-overlay") {
-        const relevantIds = [documentId, parentDocumentId].filter(
+      // Linked chart key repeats use the navigate POST's published cursor.
+      // The direct step event below updates only their moving map geometry.
+      const linkedSelfStep = change.changeReason === "step" &&
+        change.rebuiltChildIds.length === 0 &&
+        layerDocumentIds.includes(change.docId ?? "");
+      if (change.changeReason !== "display-overlay" && !linkedSelfStep) {
+        const relevantIds = [documentId, parentDocumentId, ...layerDocumentIds].filter(
           (value): value is string => typeof value === "string" && value.length > 0,
         );
         const relevant =
@@ -1840,7 +1984,145 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     if (!active || !pendingSessionRefreshRef.current) return;
     pendingSessionRefreshRef.current = false;
     queueMicrotask(() => setSessionRevision((revision) => revision + 1));
-  }, [active, documentId, lastSessionChange, parentDocumentId]);
+  }, [active, documentId, lastSessionChange, parentDocumentId, linkedDocumentsKey]);
+
+  React.useEffect(() => {
+    if (layerDocumentIds.length === 0) return;
+    const belongsToMap = (event: Event) =>
+      layerDocumentIds.includes((event as CustomEvent<{ documentId: string }>).detail?.documentId);
+    let requestedVersion = 0;
+    let completedVersion = 0;
+    let refreshFrame: number | null = null;
+    let disposed = false;
+    let settled = true;
+    const onStepStart = (event: Event) => {
+      if (!active || !belongsToMap(event)) return;
+      settled = false;
+      setSteppingLayerCursor(true);
+      for (const request of modeDataRequestsRef.current.values()) request.controller.abort();
+      modeDataRequestsRef.current.clear();
+      emptyMetaRequestRef.current?.controller.abort();
+      emptyMetaRequestRef.current = null;
+    };
+    const scheduleMovingRefresh = () => {
+      if (disposed || !active || !viewStateReady || linesPushedFor !== dataGenerationKey ||
+          movingLayerRequestRef.current || refreshFrame !== null ||
+          requestedVersion <= completedVersion) return;
+      // Let the stepped chart publish first. At most one moving-line request
+      // runs while a hold is open; subsequent committed cursors coalesce here.
+      refreshFrame = window.requestAnimationFrame(() => {
+        refreshFrame = null;
+        if (disposed || movingLayerRequestRef.current) return;
+        const launchedVersion = requestedVersion;
+        const controller = new AbortController();
+        movingLayerRequestRef.current = controller;
+        const modes = [...activeLineModesRef.current];
+        const precision = settled ? ASTROCART_RETAINED_TERMINAL_PRECISION : "preview";
+        void fetchAstrocartMovingPayload(documentId, modes, precision, controller.signal)
+        .then((payload) => {
+          if (controller.signal.aborted || movingLayerRequestRef.current !== controller ||
+              !mapHostActiveRef.current || activeDataContextRef.current?.dataGenerationKey !== dataGenerationKey ||
+              (settled && launchedVersion !== requestedVersion)) return;
+          const movingByMode = new Map<string, unknown[]>();
+          for (const feature of payload.features) {
+            const mode = astrocartPropertyText(astrocartFeatureProperties(feature) ?? {}, "astrocart_mode");
+            const features = movingByMode.get(mode) ?? [];
+            features.push(feature);
+            movingByMode.set(mode, features);
+          }
+          for (const [mode, entry] of modeDataCacheRef.current) {
+            if (entry.sessionRevision !== sessionRevision) continue;
+            modeDataCacheRef.current.set(mode, {
+              ...entry,
+              payload: {
+                ...entry.payload,
+                features: [
+                  ...entry.payload.features.filter((feature) => !isAstrocartMovingFeature(feature)),
+                  ...(movingByMode.get(mode) ?? []),
+                ],
+                meta: { ...entry.payload.meta, dynamicLayers: payload.meta?.dynamicLayers },
+              },
+            });
+          }
+          const emptyEntry = emptyModeDataCacheRef.current;
+          if (emptyEntry?.sessionRevision === sessionRevision) {
+            emptyModeDataCacheRef.current = {
+              ...emptyEntry,
+              payload: {
+                ...emptyEntry.payload,
+                features: [
+                  ...emptyEntry.payload.features.filter((feature) => !isAstrocartMovingFeature(feature)),
+                  ...(movingByMode.get("standard") ?? []),
+                ],
+                meta: { ...emptyEntry.payload.meta, dynamicLayers: payload.meta?.dynamicLayers },
+              },
+            };
+          }
+          const nextCursors: Record<string, string> = {};
+          for (const layer of Array.isArray(payload.meta?.dynamicLayers) ? payload.meta.dynamicLayers : []) {
+            if (typeof layer !== "object" || layer == null || Array.isArray(layer)) continue;
+            const value = layer as Record<string, unknown>;
+            if (typeof value.source_document_id === "string" && typeof value.cursor_iso === "string") {
+              nextCursors[value.source_document_id] = value.cursor_iso;
+            }
+          }
+          setLinkedCursorState((current) => {
+            const keys = Object.keys(nextCursors);
+            return current.key === linkedDocumentsKey &&
+              keys.length === Object.keys(current.cursors).length &&
+              keys.every((key) => current.cursors[key] === nextCursors[key])
+              ? current : { key: linkedDocumentsKey, cursors: nextCursors };
+          });
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "aries.setDynamicData", payload }, "*",
+          );
+        })
+        .catch((error) => {
+          if (!isAbortError(error, controller.signal)) console.error("[acg:moving]", error);
+        })
+        .finally(() => {
+          if (movingLayerRequestRef.current === controller) movingLayerRequestRef.current = null;
+          completedVersion = launchedVersion;
+          scheduleMovingRefresh();
+        });
+      });
+    };
+    const onStepPublished = (event: Event) => {
+      if (!active || !belongsToMap(event)) return;
+      settled = !(event as CustomEvent<{ burstOpen?: boolean }>).detail?.burstOpen;
+      requestedVersion += 1;
+      scheduleMovingRefresh();
+    };
+    const onStepSettle = (event: Event) => {
+      if (!belongsToMap(event)) return;
+      setSteppingLayerCursor(false);
+      if (!active) {
+        pendingSessionRefreshRef.current = true;
+        return;
+      }
+      if (!viewStateReady || linesPushedFor !== dataGenerationKey) {
+        setSessionRevision((revision) => revision + 1);
+        return;
+      }
+      if (!settled) {
+        settled = true;
+        requestedVersion += 1;
+        scheduleMovingRefresh();
+      }
+    };
+    window.addEventListener("aries:chart-step-start", onStepStart);
+    window.addEventListener("aries:chart-step-published", onStepPublished);
+    window.addEventListener("aries:chart-step-settle", onStepSettle);
+    return () => {
+      disposed = true;
+      window.removeEventListener("aries:chart-step-start", onStepStart);
+      window.removeEventListener("aries:chart-step-published", onStepPublished);
+      window.removeEventListener("aries:chart-step-settle", onStepSettle);
+      if (refreshFrame !== null) window.cancelAnimationFrame(refreshFrame);
+      movingLayerRequestRef.current?.abort();
+      movingLayerRequestRef.current = null;
+    };
+  }, [active, dataGenerationKey, documentId, linkedDocumentsKey, linesPushedFor, sessionRevision, viewStateReady]);
 
   React.useEffect(() => {
     const change = lastOptionsChange;
@@ -1974,6 +2256,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         setDynamicLayerVisible(
           restoredViewState?.overlays?.layers?.dynamic ?? true,
         );
+        setHiddenLayerIds(restoredViewState?.overlays?.filters?.hiddenLayerIds ?? []);
         const restoredModes = normalizeAstrocartLineModes(restoredViewState?.lineModes);
         activeLineModesRef.current = restoredModes;
         setLineModes(restoredModes);
@@ -2024,13 +2307,26 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       })
       .then((payload) => {
         if (controller.signal.aborted || iframeRef.current?.contentWindow !== targetWindow) return;
-        const styleMessage = createAstrocartStyleMessage(payload);
+        const styleMessage = createAstrocartStyleMessage(payload, {
+          fontUi: appUiFontStack(),
+        });
         // A request that crossed a preset transition must not install the
         // previous full renderer after the new direct light/dark paint.
         if (styleMessage.payload.mode !== bootTheme) return;
         latestDisplayStyleRef.current = styleMessage.payload;
         targetWindow.postMessage(styleMessage, "*");
         completedDisplayStyleKeyRef.current = styleKey;
+        // The style names the app's UI font; hand the map the faces it names
+        // once per map instance, font stack and uploaded-font revision.
+        const fontUi = styleMessage.payload.chrome.fontUi;
+        const fontKey = `${mapInstanceKey}:${uiFontAssetsRevision}:${fontUi}`;
+        if (sentUiFontKeyRef.current !== fontKey) {
+          sentUiFontKeyRef.current = fontKey;
+          void collectUiFontFaces(fontUi).then((faces) => {
+            if (iframeRef.current?.contentWindow !== targetWindow || !faces.length) return;
+            targetWindow.postMessage({ type: "aries.setUiFontFaces", payload: { faces } }, "*");
+          }).catch((error: unknown) => console.error("[acg-ui-font]", error));
+        }
       })
       .catch((err) => {
         if (isAbortError(err, controller.signal)) return;
@@ -2042,7 +2338,49 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         displayStyleRequestRef.current = null;
       }
     };
-  }, [active, bootTheme, displayStyleRevision, documentId, iframeReady, mapInstanceKey, themeStyleKey, url]);
+  }, [active, bootTheme, displayStyleRevision, documentId, iframeReady, mapInstanceKey, themeStyleKey, uiFontAssetsRevision, url]);
+
+  // Copy chart as PNG (titlebar copy icon / menu) copies this map's live
+  // viewport, from the map tab and from any layer tab stepping it.
+  const layerDocumentIdsKey = layerDocumentIds.join(",");
+  React.useEffect(() => {
+    if (!active) return undefined;
+    const requests = viewportCaptureRequestsRef.current;
+    const renderViewport = async (request: ChartExportRenderRequest) => {
+      const targetWindow = iframeRef.current?.contentWindow;
+      if (!targetWindow) throw new Error("map viewport unavailable");
+      const requestId = `viewport-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const capture = await new Promise<{ bytes: Uint8Array; width: number; height: number }>(
+        (resolve, reject) => {
+          const timer = window.setTimeout(() => {
+            requests.delete(requestId);
+            reject(new Error("map viewport capture timed out"));
+          }, 10_000);
+          requests.set(requestId, { resolve, reject, timer });
+          targetWindow.postMessage({ type: "aries.captureViewport", requestId }, "*");
+        },
+      );
+      return request.output === "bytes"
+        ? { pngBytes: capture.bytes, width: capture.width, height: capture.height }
+        : { pngBase64: pngBytesToBase64(capture.bytes), width: capture.width, height: capture.height };
+    };
+    const ids = [documentId, ...layerDocumentIdsKey.split(",").filter(Boolean)];
+    const unregister = ids.map((id) => registerChartExportRenderer(id, renderViewport));
+    return () => {
+      for (const release of unregister) release();
+    };
+  }, [active, documentId, layerDocumentIdsKey]);
+
+  React.useEffect(() => {
+    // Uploaded (Style Lab) UI fonts register after startup; resend the style
+    // so the map picks up the face once its bytes exist.
+    const onFontAssetsReady = () => {
+      completedDisplayStyleKeyRef.current = null;
+      setUiFontAssetsRevision((revision) => revision + 1);
+    };
+    document.addEventListener(STYLE_FONT_ASSETS_READY_EVENT, onFontAssetsReady);
+    return () => document.removeEventListener(STYLE_FONT_ASSETS_READY_EVENT, onFontAssetsReady);
+  }, []);
 
   React.useEffect(() => {
     if (!active || !viewStateReady) return;
@@ -2266,8 +2604,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     const layers = {
       ...(overlays.layers ?? {}),
       dynamic,
-      transit: dynamic && enabledLayers.some((layer) => layer.technique === "transit"),
-      progression: dynamic && enabledLayers.some((layer) => layer.technique !== "transit"),
+      transit: dynamic && enabledLayers.some(dynamicLayerDrawsTransits),
+      progression: dynamic && enabledLayers.some(dynamicLayerDrawsProgressions),
     };
     const nextViewState: AstrocartViewState = {
       ...current,
@@ -2284,6 +2622,83 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     );
     persistViewState(nextViewState, true, "global");
   }, [persistViewState, viewStateKey]);
+
+  const previousLayerDocumentIdsRef = React.useRef<string[]>(layerDocumentIds);
+  React.useEffect(() => {
+    if (!active || !viewStateReady) return;
+    const previous = previousLayerDocumentIdsRef.current;
+    previousLayerDocumentIdsRef.current = layerDocumentIds;
+    if (layerDocumentIds.some((id) => !previous.includes(id))) {
+      handleAstrocartDynamicLayerVisibility(true);
+    }
+    const removed = previous.filter((id) => !layerDocumentIds.includes(id));
+    if (removed.length === 0) return;
+    const current = latestViewStateRef.current;
+    const hiddenLayerIds = current?.overlays?.filters?.hiddenLayerIds?.filter(
+      (id) => !removed.includes(id),
+    );
+    if (!current || hiddenLayerIds?.length === current.overlays?.filters?.hiddenLayerIds?.length) return;
+    const nextViewState: AstrocartViewState = {
+      ...current,
+      overlays: {
+        ...current.overlays,
+        filters: { ...current.overlays?.filters, hiddenLayerIds },
+      },
+    };
+    latestViewStateRef.current = nextViewState;
+    setHiddenLayerIds(hiddenLayerIds ?? []);
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "aries.setVisibilityFilters", filters: { hiddenLayerIds } },
+      "*",
+    );
+    persistViewState(nextViewState, true, "all");
+  }, [active, handleAstrocartDynamicLayerVisibility, linkedDocumentsKey,
+    persistViewState, viewStateReady]);
+
+  const handleAstrocartLinkedLayerVisibility = React.useCallback((
+    sourceDocumentId: string,
+    visible: boolean,
+  ) => {
+    const current = latestViewStateRef.current ?? {};
+    const overlays = current.overlays ?? {};
+    const hidden = new Set(overlays.filters?.hiddenLayerIds ?? []);
+    if (visible) hidden.delete(sourceDocumentId);
+    else hidden.add(sourceDocumentId);
+    const hiddenLayerIds = [...hidden];
+    const nextViewState: AstrocartViewState = {
+      ...current,
+      overlays: {
+        ...overlays,
+        filters: { ...overlays.filters, hiddenLayerIds },
+      },
+    };
+    latestViewStateRef.current = nextViewState;
+    setHiddenLayerIds(hiddenLayerIds);
+    viewStateIntentRevisionRef.current += 1;
+    lastVisibilitySignatureRef.current = null;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "aries.setVisibilityFilters", filters: { hiddenLayerIds } },
+      "*",
+    );
+    persistViewState(nextViewState, true, "all");
+  }, [persistViewState]);
+
+  const lastSelectedLayerDocumentIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!active || !viewStateReady) return;
+    if (lastSelectedLayerDocumentIdRef.current === selectedLayerDocumentId) return;
+    lastSelectedLayerDocumentIdRef.current = selectedLayerDocumentId;
+    if (!selectedLayerDocumentId) return;
+    if (latestViewStateRef.current?.overlays?.layers?.dynamic === false) {
+      handleAstrocartDynamicLayerVisibility(true);
+    }
+    if (latestViewStateRef.current?.overlays?.filters?.hiddenLayerIds?.includes(
+      selectedLayerDocumentId,
+    )) {
+      handleAstrocartLinkedLayerVisibility(selectedLayerDocumentId, true);
+    }
+  }, [active, handleAstrocartDynamicLayerVisibility,
+    handleAstrocartLinkedLayerVisibility, selectedLayerDocumentId, viewStateReady]);
 
   const handleAstrocartStandardViewReset = React.useCallback(() => {
     const standardModes = [...ASTROCART_DEFAULT_LINE_MODES];
@@ -2481,11 +2896,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           modeSpecKeysRef.current,
           mode,
         );
-        const receivedModeSpecKey = payload.meta?.modeSpecKey;
-        if (
-          expectedModeSpecKey != null &&
-          typeof receivedModeSpecKey === "string"
-        ) {
+        const receivedModeSpecKey = astrocartPayloadModeSpecKey(payload, mode);
+        if (expectedModeSpecKey != null && receivedModeSpecKey != null) {
           return expectedModeSpecKey === receivedModeSpecKey;
         }
       }
@@ -2548,12 +2960,9 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       };
       const responseModeSpecKey = (
         payload: AstrocartGeoJsonPayload,
-      ): string | null => {
-        const value = payload.meta?.modeSpecKey;
-        return typeof value === "string" && value.length > 0
-          ? value
-          : request.modeSpecKey;
-      };
+      ): string | null => (
+        astrocartPayloadModeSpecKey(payload, mode) ?? request.modeSpecKey
+      );
 
       void (async () => {
         try {
@@ -2808,6 +3217,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               reason?: string;
               eventType?: "keydown" | "keyup";
               key?: string;
+              shiftKey?: boolean;
               metaKey?: boolean;
               ctrlKey?: boolean;
               altKey?: boolean;
@@ -2815,6 +3225,10 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               requestId?: string;
               ok?: boolean;
               atlas?: AstrocartPrintAtlas;
+              data?: ArrayBuffer;
+              width?: number;
+              height?: number;
+              error?: string;
             };
           }
         | undefined;
@@ -2832,7 +3246,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       if (payload.type === "print-atlas" && payload.requestId) {
         const atlas = payload.ok === true &&
           Array.isArray(payload.atlas?.pages) &&
-          payload.atlas.pages.length >= 2 &&
+          payload.atlas.pages.length >= 1 &&
           payload.atlas.pages.every((page) =>
             typeof page.dataUrl === "string" &&
             page.dataUrl.startsWith("data:image/png;base64,") &&
@@ -2840,17 +3254,68 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           )
           ? payload.atlas
           : null;
-        settlePrintAtlasRequest(payload.requestId, atlas);
+        settlePrintAtlasRequest(
+          payload.requestId,
+          atlas,
+          atlas
+            ? undefined
+            : payload.error || (payload.ok === true
+              ? "map returned an invalid atlas"
+              : "map could not render the atlas"),
+        );
         return;
       }
       if (payload.type === "ruler" && typeof payload.enabled === "boolean") {
         setRulerEnabled(payload.enabled);
         return;
       }
+      if (payload.type === "viewport-capture" && payload.requestId) {
+        const pending = viewportCaptureRequestsRef.current.get(payload.requestId);
+        if (!pending) return;
+        viewportCaptureRequestsRef.current.delete(payload.requestId);
+        window.clearTimeout(pending.timer);
+        if (payload.ok && payload.data instanceof ArrayBuffer) {
+          pending.resolve({
+            bytes: new Uint8Array(payload.data),
+            width: Number(payload.width) || 0,
+            height: Number(payload.height) || 0,
+          });
+        } else {
+          pending.reject(new Error(payload.error || "map viewport capture failed"));
+        }
+        return;
+      }
+      if (payload.type === "top-controls-rect") {
+        const dock = astrocartNavbarDockFromPayload(payload);
+        if (dock) setNavbarDock(dock);
+        return;
+      }
       if (payload.type === "ambient-key") {
         window.dispatchEvent(
           new CustomEvent("aries://embedded-ambient-key", { detail: payload }),
         );
+        return;
+      }
+      if (payload.type === "navigation-key" || payload.type === "navigation-blur") {
+        const navigation = navbarRef.current;
+        if (!active || !selectedLayerDocumentId || !navigation) return;
+        if (payload.type === "navigation-blur") {
+          for (const key of ["left", "right", "up", "down"] as const) {
+            navigation.onNavigateHintEnd?.(key);
+          }
+          return;
+        }
+        if (payload.key !== "left" && payload.key !== "right" &&
+            payload.key !== "up" && payload.key !== "down") return;
+        if (payload.ctrlKey || payload.metaKey) return;
+        if (payload.eventType === "keydown") {
+          navigation.onNavigateHint?.(payload.key, {
+            shift: payload.shiftKey,
+            alt: payload.altKey,
+          });
+        } else if (payload.eventType === "keyup") {
+          navigation.onNavigateHintEnd?.(payload.key);
+        }
         return;
       }
       if (payload.type === "shortcut") {
@@ -2955,6 +3420,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     persistViewState,
     queueAstrocartParanIntent,
     settlePrintAtlasRequest,
+    selectedLayerDocumentId,
     url,
     viewStateKey,
   ]);
@@ -2963,13 +3429,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     <div
       className={cn(
         "right-pane-split relative grid flex-1 min-h-0 bg-transparent",
-        controlsPaneTrack.transitioning &&
+        paneTrack.transitioning &&
           "transition-[grid-template-columns] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
       )}
-      onTransitionEnd={controlsPaneTrack.onTransitionEnd}
+      onTransitionEnd={paneTrack.onTransitionEnd}
       style={{
-        "--right-pane-width": `${controlsPaneTrack.width}px`,
-        gridTemplateColumns: controlsPaneTrack.open
+        "--right-pane-width": `${paneTrack.width}px`,
+        gridTemplateColumns: paneTrack.open
           ? "minmax(0, 1fr) min(var(--right-pane-width), 50vw)"
           : "minmax(0, 1fr) 0px",
       } as React.CSSProperties}
@@ -3050,34 +3516,54 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
                 : "text-muted-foreground hover:bg-muted",
             )}
           >
-            <SlidersHorizontal aria-hidden className="size-3.5" />
+            <MapIcon aria-hidden className="size-3.5" />
           </button>
         </div>
+        {navbar ? (
+          <ModeHintRail
+            {...navbar}
+            cursorDatetime={steppingLayerCursor && selectedLayerDocumentId
+              ? linkedCursorIsoByDocumentId[selectedLayerDocumentId] ?? navbar.cursorDatetime
+              : navbar.cursorDatetime ?? (
+                  selectedLayerDocumentId
+                    ? linkedCursorIsoByDocumentId[selectedLayerDocumentId]
+                    : null
+                )}
+            hasChart
+            autoHideMs={0}
+            placement="top"
+            appearance="astrocart"
+            astrocartDock={navbarDock}
+            onToggleComparison={undefined}
+          />
+        ) : null}
       </div>
 
-      {controlsOpen ? (
+      {activePaneKind ? (
         <RightPaneSash
-          width={effectiveControlsPaneWidth}
-          minWidth={controlsPanePolicy.minContentWidth}
-          onResizeStart={controlsPaneTrack.stopTransition}
-          onCollapse={closeAstrocartControlsPane}
+          width={effectivePaneWidth}
+          minWidth={activePanePolicy.minContentWidth}
+          onResizeStart={paneTrack.stopTransition}
+          onCollapse={activePaneKind === "feature-catalog" ? closeFeatureCatalogPane : closeAstrocartControlsPane}
         />
       ) : null}
       <aside
-        hidden={!controlsOpen}
-        aria-hidden={!controlsOpen}
+        hidden={!activePaneKind}
+        aria-hidden={!activePaneKind}
         data-aries-surface="panel"
-        data-right-pane-module="astrocart-controls"
-        data-right-pane-role={controlsPanePolicy.role}
+        data-right-pane-module={activePaneKind ?? undefined}
+        data-right-pane-role={activePaneKind ? activePanePolicy.role : undefined}
         className="box-border min-w-0 overflow-hidden border-l border-[color:var(--aries-titlebar-seam-rule)] bg-[var(--aries-panel-background)] pt-[var(--titlebar-pane-pad-top)] text-[color:var(--aries-panel-text)] [&>*]:bg-transparent"
         style={
           {
-            "--right-pane-min-content-width": `${controlsPanePolicy.minContentWidth}px`,
-            "--right-pane-preferred-width": `${controlsPanePolicy.preferredWidth}px`,
+            "--right-pane-min-content-width": `${activePanePolicy.minContentWidth}px`,
+            "--right-pane-preferred-width": `${activePanePolicy.preferredWidth}px`,
           } as React.CSSProperties
         }
       >
-        <AstrocartControls
+        <div hidden={!controlsOpen} className="h-full">
+          <AstrocartControls
+            chartTitle={chartTitle}
           documentId={documentId}
           active={active}
           visible={controlsOpen}
@@ -3087,6 +3573,9 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           lineModes={lineModes}
           natalLayerVisible={natalLayerVisible}
           dynamicLayerVisible={dynamicLayerVisible}
+          hiddenLayerIds={hiddenLayerIds}
+          linkedCursorIsoByDocumentId={linkedCursorIsoByDocumentId}
+          selectedLayerDocumentId={selectedLayerDocumentId}
           mapViewReady={viewStateReady}
           distanceUnits={distanceUnits}
           distanceUnitsFailed={distanceUnitsFailed}
@@ -3097,9 +3586,14 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           onCanonicalChange={handleAstrocartConfigurationChange}
           onNatalLayerVisibilityChange={handleAstrocartNatalLayerVisibility}
           onDynamicLayerVisibilityChange={handleAstrocartDynamicLayerVisibility}
+          onLinkedLayerVisibilityChange={handleAstrocartLinkedLayerVisibility}
           onStandardViewReset={handleAstrocartStandardViewReset}
           onRequestPrintAtlas={requestPrintAtlas}
-        />
+          />
+        </div>
+        {featureCatalogPane && active ? (
+          <FeatureCatalogPaneContent pane={featureCatalogPane} onClose={closeFeatureCatalogPane} />
+        ) : null}
       </aside>
     </div>
   );
@@ -3127,6 +3621,7 @@ export function UnifiedTitleBar({
   isMenuCommandEnabled,
   canCopyChart = false,
   onCopyChart,
+  dateConvention = "current",
 }: {
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
@@ -3134,9 +3629,8 @@ export function UnifiedTitleBar({
   // Full-bleed surfaces (astrocart map) want the title controls floating over
   // the content with no opaque bar — the wx WebView panel fills under the title
   // region (astrocartframe._titlebar_safe_top) and shows no separate bar. When
-  // overlay, the bar is absolutely positioned, its shell background is dropped,
-  // and the centred title text is hidden (only the traffic-light drag
-  // region + control buttons remain over the map).
+  // overlay, the bar is absolutely positioned and its shell background is
+  // dropped; the centred title sits on its own backplate over the map.
   overlay?: boolean;
   onOpenSettings?: (tab?: SettingsTabId) => void;
   onOpenStyleLab?: () => void;
@@ -3144,6 +3638,7 @@ export function UnifiedTitleBar({
   isMenuCommandEnabled: (command: string) => boolean;
   canCopyChart?: boolean;
   onCopyChart?: () => void | Promise<boolean>;
+  dateConvention?: DateConvention;
 }) {
   const toggleSidebar = useFrameLayoutStore((s) => s.toggleSidebar);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
@@ -3162,7 +3657,14 @@ export function UnifiedTitleBar({
   const captionActionsRef = useRef<HTMLDivElement>(null);
   const sideBySideCommand = useSideBySideCommand();
   const t = useT();
-  const parts = buildTitleParts(chart, activeDoc, t);
+  const daemonDocuments = useDaemonWorkspaceStore((s) => s.documents);
+  // The map (from its own tab or a layer tab stepping it) is titled by its
+  // radix: name · Astrocartography · birth date/time, not a layer cursor.
+  const mapTitleParts = React.useMemo(
+    () => astrocartTitleParts(daemonDocuments, activeDoc?.id ?? null, dateConvention, t),
+    [activeDoc?.id, daemonDocuments, dateConvention, t],
+  );
+  const parts = mapTitleParts ?? buildTitleParts(chart, activeDoc, t);
   const transparentBackplate = overlay || isChartBearingSurfaceDocument(activeDoc);
   // Mark the native platform explicitly: macOS reserves the leading traffic
   // lights, while Windows reserves the measured trailing caption controls.
@@ -3254,14 +3756,15 @@ export function UnifiedTitleBar({
         data-tauri-drag-region
         className="relative z-[42] col-start-2 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-center px-[var(--aries-titlebar-title-padding-x)] text-[length:var(--aries-font-size-titlebar)] font-normal leading-none tracking-normal text-[color:var(--aries-titlebar-text)]"
       >
-        {overlay ? null : (
+        <div className="flex min-w-0 max-w-full">
           <ChartCopyControl
+            label={mapTitleParts ? t("astrocart.copyMapAsPng") : undefined}
             enabled={canCopyChart && onCopyChart != null}
             onCopy={onCopyChart}
           >
             <TitleText parts={parts} />
           </ChartCopyControl>
-        )}
+        </div>
       </div>
       {/* Right cluster — chart options, search and right-pane toggles. */}
       <div
@@ -3315,6 +3818,33 @@ type TitlePart = string | { text: string; glyph?: boolean; title?: string };
 
 function cleanDocumentTitle(doc: WorkspaceDocument | null, t?: TFunc): string {
   return doc ? localizedWorkspaceDocumentTitle(doc, t) : "";
+}
+
+/** Title for the Astrocart map surface: the map's radix name, the view name
+ * and the radix birth date/time. Null when the active document is not the map
+ * or one of its layer tabs. */
+export function astrocartTitleParts(
+  documents: readonly DaemonDocumentSummary[],
+  activeDocumentId: string | null,
+  dateConvention: DateConvention,
+  t: TFunc,
+): TitlePart[] | null {
+  if (!activeDocumentId) return null;
+  const byId = new Map(documents.map((document) => [document.documentId, document]));
+  let map = byId.get(activeDocumentId);
+  if (map && map.launcherKind !== "astrocart" && map.parentDocumentId) {
+    map = byId.get(map.parentDocumentId);
+  }
+  if (!map || map.launcherKind !== "astrocart") return null;
+  const radix = map.parentDocumentId ? byId.get(map.parentDocumentId) : undefined;
+  const parts: TitlePart[] = [
+    radix?.sourceName || map.sourceName,
+    t("toolbar.astrocartography"),
+  ];
+  if (radix?.displayDatetime) {
+    parts.push(formatIsoDateTimeDisplay(radix.displayDatetime, dateConvention));
+  }
+  return parts;
 }
 
 export function buildTitleParts(
@@ -3458,9 +3988,81 @@ type NavigationHintGroup = {
 
 export type KeyHintPlacement = "top" | "bottom";
 
+function pngBytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
+/** The Astrocart map toolbar the time navbar docks under (map.html report). */
+export type AstrocartNavbarDock = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  limit: number;
+  edge: number;
+  gap: number;
+  controlSize: number;
+  radius: string;
+  background: string;
+  border: string;
+};
+
+function astrocartNavbarDockFromPayload(payload: Record<string, unknown>): AstrocartNavbarDock | null {
+  const numbers = ["left", "right", "top", "bottom", "limit", "edge", "gap", "controlSize"] as const;
+  const strings = ["radius", "background", "border"] as const;
+  if (!numbers.every((key) => Number.isFinite(payload[key]))) return null;
+  if (!strings.every((key) => typeof payload[key] === "string")) return null;
+  return {
+    left: payload.left as number,
+    right: payload.right as number,
+    top: payload.top as number,
+    bottom: payload.bottom as number,
+    limit: payload.limit as number,
+    edge: payload.edge as number,
+    gap: payload.gap as number,
+    controlSize: payload.controlSize as number,
+    radius: payload.radius as string,
+    background: payload.background as string,
+    border: payload.border as string,
+  };
+}
+
+function astrocartNavbarDockStyle(
+  dock: AstrocartNavbarDock,
+  naturalWidth: number,
+): React.CSSProperties {
+  // The navbar is the toolbar's next item, laid out like flex-wrap: in the row
+  // one toolbar gap after the last box while its natural width fits before the
+  // Legend, otherwise on a second row under the toolbar's left edge. It keeps
+  // the toolbar's box height, radius, fill and outline, is never squeezed, and
+  // CSS fades whatever still exceeds the room (only on very narrow panes).
+  const rowLeft = dock.right + dock.gap;
+  const fitsRow = naturalWidth > 0 && naturalWidth <= dock.limit - rowLeft;
+  const left = fitsRow ? rowLeft : dock.left;
+  const top = fitsRow ? dock.top : dock.bottom + dock.gap;
+  const room = (fitsRow ? dock.limit : dock.edge) - left;
+  return {
+    "--aries-navbar-dock-top": `${top}px`,
+    "--aries-navbar-dock-left": `${left}px`,
+    "--aries-navbar-dock-room": `${Math.max(0, room)}px`,
+    "--aries-navbar-dock-height": `${dock.controlSize}px`,
+    "--aries-navbar-dock-radius": dock.radius,
+    "--aries-navbar-dock-bg": dock.background,
+    "--aries-navbar-dock-border": dock.border,
+  } as React.CSSProperties;
+}
+
 export type ModeHintRailProps = {
   visible: boolean;
   placement?: KeyHintPlacement;
+  appearance?: "astrocart";
+  /** Map toolbar geometry/style the Astrocart navbar docks under. */
+  astrocartDock?: AstrocartNavbarDock | null;
+  bottomOffset?: string;
   revealToken?: number;
   autoHideMs?: number;
   overlay: boolean;
@@ -3477,6 +4079,9 @@ export type ModeHintRailProps = {
   supplementaryFeatureKind: WorkspaceDocument["supplementaryFeatureKind"] | null | undefined;
   harmonicNumber?: number | null;
   harmonicProjectionMode?: "harmonic" | "varga" | null;
+  cursorDatetime?: string | null;
+  dateConvention?: string;
+  onSetCursorMoment?: (moment: string) => Promise<boolean>;
   modeHintLabel?: string | null;
   modeHintTitle?: string | null;
   onToggleModeHint?: () => void;
@@ -3498,6 +4103,9 @@ const STEP_HINT_HOLD_REPEAT_MS = 95;
 export const ModeHintRail = React.memo(function ModeHintRail({
   visible,
   placement = "top",
+  appearance,
+  astrocartDock,
+  bottomOffset,
   revealToken = 0,
   autoHideMs = 0,
   overlay,
@@ -3514,6 +4122,9 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   supplementaryFeatureKind,
   harmonicNumber,
   harmonicProjectionMode,
+  cursorDatetime,
+  dateConvention,
+  onSetCursorMoment,
   modeHintLabel,
   modeHintTitle,
   onToggleModeHint,
@@ -3620,6 +4231,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
       placement,
     ));
   }, [placement]);
+  const docked = appearance === "astrocart" && astrocartDock != null;
   const {
     overlayRef,
     handlePointerDown: handleOverlayPointerDown,
@@ -3630,11 +4242,24 @@ export const ModeHintRail = React.memo(function ModeHintRail({
     handleDoubleClick: handleOverlayDoubleClick,
   } = useDraggableOverlay({
     disabled: !active,
+    anchored: docked,
     resetKey: placement,
     isBlockedTarget: isInteractivePointerTarget,
     onInteraction: onHintInteraction,
     onPositionSettled: handlePositionSettled,
   });
+  // Docked layout needs the bar's natural (max-content) width to decide row
+  // vs. wrap; the mask/clip never change layout, so offsetWidth is intrinsic.
+  const [dockedNaturalWidth, setDockedNaturalWidth] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const element = overlayRef.current;
+    if (!docked || !element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setDockedNaturalWidth(element.offsetWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [docked, overlayRef]);
   const handleModeHintClick = React.useCallback(() => {
     onHintInteraction?.();
     if (showCustomModeHint) onToggleModeHint?.();
@@ -3669,8 +4294,15 @@ export const ModeHintRail = React.memo(function ModeHintRail({
       className={cn(
         "aries-mode-hint",
         placement === "bottom" ? "aries-mode-hint--bottom" : "aries-mode-hint--top",
+        appearance === "astrocart" && "aries-mode-hint--astrocart",
+        docked && "aries-mode-hint--docked",
         !active && "aries-mode-hint--hidden",
       )}
+      style={
+        docked && astrocartDock
+          ? astrocartNavbarDockStyle(astrocartDock, dockedNaturalWidth)
+          : placement === "bottom" && bottomOffset ? { bottom: bottomOffset } : undefined
+      }
       role="group"
       aria-label={kind === "ephemeris" ? t("toolbar.timeNavigationControls") : t("toolbar.chartNavbar")}
       aria-hidden={!active}
@@ -3882,9 +4514,268 @@ export const ModeHintRail = React.memo(function ModeHintRail({
           ))}
         </div>
       ) : null}
+      {appearance === "astrocart" && cursorDatetime && onSetCursorMoment ? (
+        <AstrocartCursorDateTime
+          cursorDatetime={cursorDatetime}
+          dateConvention={dateConvention}
+          onSetMoment={onSetCursorMoment}
+        />
+      ) : null}
     </div>
   );
 });
+
+function AstrocartCursorDateTime({
+  cursorDatetime,
+  dateConvention,
+  onSetMoment,
+}: {
+  cursorDatetime: string;
+  dateConvention?: string;
+  onSetMoment: (moment: string) => Promise<boolean>;
+}) {
+  const t = useT();
+  const convention = coerceDateConvention(dateConvention);
+  const cursorDate = cursorDatetime.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+  // Native date controls use the proleptic Gregorian calendar. Keep a valid
+  // Julian cursor visible in the text field, and let Spotlight validate edits.
+  const nativePickerDate = cursorDate
+    ? parseDateDisplayInput(cursorDate, "current") ?? ""
+    : "";
+  const dateLabel = cursorDate ? formatIsoDateDisplay(cursorDate, convention) : cursorDatetime;
+  const [draft, setDraft] = React.useState(dateLabel);
+  const [editing, setEditing] = React.useState(false);
+  const [invalid, setInvalid] = React.useState(false);
+  const [pendingDate, setPendingDate] = React.useState<string | null>(null);
+  const pickerRef = React.useRef<HTMLInputElement>(null);
+  const skipBlurCommitRef = React.useRef(false);
+  const pickerPointerRef = React.useRef(false);
+  const effectivePendingDate = pendingDate === cursorDate ? null : pendingDate;
+  const displayedDraft = editing || effectivePendingDate ? draft : dateLabel;
+
+  const setDate = (nextDate: string) => {
+    setDraft(formatIsoDateDisplay(nextDate, convention));
+    setInvalid(false);
+    setEditing(false);
+    if (nextDate === cursorDate) return;
+    setPendingDate(nextDate);
+    void onSetMoment(nextDate).then((accepted) => {
+      if (accepted) return;
+      setPendingDate(null);
+      setDraft(dateLabel);
+    }).catch(() => {
+      setPendingDate(null);
+      setDraft(dateLabel);
+    });
+  };
+  const commitDraft = () => {
+    const nextDate = astrocartDateInputIso(draft, convention);
+    if (!nextDate) {
+      setInvalid(true);
+      return false;
+    }
+    setDate(nextDate);
+    return true;
+  };
+
+  return (
+    <span className="aries-mode-hint-date">
+      <input
+        className="aries-mode-hint-date-input"
+        data-aries-control-appearance="local"
+        type="text"
+        inputMode="numeric"
+        value={displayedDraft}
+        aria-label={t("astrocart.config.mapDateTime")}
+        aria-invalid={invalid}
+        onFocus={(event) => {
+          setDraft(displayedDraft);
+          setEditing(true);
+          event.currentTarget.select();
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setInvalid(false);
+        }}
+        onBlur={() => {
+          if (pickerPointerRef.current) {
+            pickerPointerRef.current = false;
+            setDraft(dateLabel);
+            setEditing(false);
+            return;
+          }
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
+            return;
+          }
+          if (editing && !commitDraft()) {
+            setDraft(dateLabel);
+            setInvalid(false);
+            setEditing(false);
+          }
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (commitDraft()) {
+              skipBlurCommitRef.current = true;
+              event.currentTarget.blur();
+            }
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(dateLabel);
+            setInvalid(false);
+            setEditing(false);
+            skipBlurCommitRef.current = true;
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="aries-mode-hint-date-picker"
+        aria-label={t("editor.calendar")}
+        title={t("editor.calendar")}
+        onPointerDown={() => { pickerPointerRef.current = true; }}
+        onClick={() => {
+          pickerPointerRef.current = false;
+          const picker = pickerRef.current;
+          if (!picker) return;
+          try {
+            if (picker.showPicker) picker.showPicker();
+            else picker.click();
+          } catch {
+            picker.click();
+          }
+        }}
+      >
+        <CalendarDays aria-hidden />
+      </button>
+      <input
+        ref={pickerRef}
+        className="aries-mode-hint-native-date"
+        data-aries-control-appearance="local"
+        type="date"
+        tabIndex={-1}
+        aria-hidden
+        value={effectivePendingDate
+          ? parseDateDisplayInput(effectivePendingDate, "current") ?? ""
+          : nativePickerDate}
+        onChange={(event) => {
+          if (event.target.value) setDate(event.target.value);
+        }}
+      />
+      <AstrocartCursorTime cursorDatetime={cursorDatetime} onSetMoment={onSetMoment} />
+    </span>
+  );
+}
+
+function AstrocartCursorTime({
+  cursorDatetime,
+  onSetMoment,
+}: {
+  cursorDatetime: string;
+  onSetMoment: (moment: string) => Promise<boolean>;
+}) {
+  const t = useT();
+  const rawCursorTime = cursorDatetime.match(/[T ](\d{2}:\d{2}(?::\d{2})?)/)?.[1] ?? "";
+  const cursorTime = rawCursorTime && rawCursorTime.length === 5
+    ? `${rawCursorTime}:00`
+    : rawCursorTime;
+  const [draft, setDraft] = React.useState(cursorTime);
+  const [editing, setEditing] = React.useState(false);
+  const [invalid, setInvalid] = React.useState(false);
+  const [pendingTime, setPendingTime] = React.useState<string | null>(null);
+  const skipBlurCommitRef = React.useRef(false);
+  const effectivePendingTime = pendingTime === cursorTime ? null : pendingTime;
+  const displayedDraft = editing || effectivePendingTime ? draft : cursorTime;
+
+  const commitDraft = () => {
+    const match = draft.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match || Number(match[1]) > 23 || Number(match[2]) > 59 || Number(match[3] ?? 0) > 59) {
+      setInvalid(true);
+      return false;
+    }
+    const nextTime = `${match[1].padStart(2, "0")}:${match[2]}:${match[3] ?? "00"}`;
+    setDraft(nextTime);
+    setInvalid(false);
+    setEditing(false);
+    if (nextTime === cursorTime) return true;
+    setPendingTime(nextTime);
+    void onSetMoment(nextTime).then((accepted) => {
+      if (accepted) return;
+      setPendingTime(null);
+      setDraft(cursorTime);
+    }).catch(() => {
+      setPendingTime(null);
+      setDraft(cursorTime);
+    });
+    return true;
+  };
+
+  return (
+    <input
+      className="aries-mode-hint-date-input aries-mode-hint-time-input"
+      data-aries-control-appearance="local"
+      type="text"
+      inputMode="numeric"
+      value={displayedDraft}
+      aria-label={t("inspector.time")}
+      aria-invalid={invalid}
+      onFocus={(event) => {
+        setDraft(displayedDraft);
+        setEditing(true);
+        event.currentTarget.select();
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={() => {
+        if (skipBlurCommitRef.current) {
+          skipBlurCommitRef.current = false;
+          return;
+        }
+        if (editing && !commitDraft()) {
+          setDraft(cursorTime);
+          setInvalid(false);
+          setEditing(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (commitDraft()) {
+            skipBlurCommitRef.current = true;
+            event.currentTarget.blur();
+          }
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          setDraft(cursorTime);
+          setInvalid(false);
+          setEditing(false);
+          skipBlurCommitRef.current = true;
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+function astrocartDateInputIso(value: string, convention: "current" | "dmy"): string | null {
+  const text = value.trim();
+  const current = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  const european = convention === "dmy"
+    ? text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/)
+    : null;
+  const year = current?.[1] ?? european?.[3];
+  const month = current?.[2] ?? european?.[2];
+  const day = current?.[3] ?? european?.[1];
+  if (!year || !month || !day) return null;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
 
 function canToggleSingleBiwheel({
   kind,
@@ -3940,6 +4831,8 @@ function StepHintArrowButton({
   const holdIntervalRef = React.useRef<number | null>(null);
   const holdActiveRef = React.useRef(false);
   const suppressNextClickRef = React.useRef(false);
+  const buttonRef = React.useRef<HTMLButtonElement | null>(null);
+  const capturedPointerIdRef = React.useRef<number | null>(null);
   const clearHold = React.useCallback(() => {
     if (holdDelayRef.current != null) {
       window.clearTimeout(holdDelayRef.current);
@@ -3961,6 +4854,11 @@ function StepHintArrowButton({
     const wasHolding = holdActiveRef.current;
     holdActiveRef.current = false;
     clearHold();
+    const pointerId = capturedPointerIdRef.current;
+    capturedPointerIdRef.current = null;
+    if (pointerId !== null && buttonRef.current?.hasPointerCapture(pointerId)) {
+      buttonRef.current.releasePointerCapture(pointerId);
+    }
     if (wasHolding) {
       onEnd(navigationKey);
       onPointerEnter?.();
@@ -3973,6 +4871,12 @@ function StepHintArrowButton({
       suppressNextClickRef.current = true;
       holdActiveRef.current = true;
       clearHold();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        capturedPointerIdRef.current = event.pointerId;
+      } catch {
+        capturedPointerIdRef.current = null;
+      }
       onPointerEnter?.();
       fireStep();
       holdKeepAliveRef.current = window.setInterval(
@@ -4005,6 +4909,10 @@ function StepHintArrowButton({
     clearHold();
     if (wasHolding) onEnd(navigationKey);
   }, [clearHold, navigationKey, onEnd]);
+  React.useEffect(() => {
+    window.addEventListener("blur", stopHold);
+    return () => window.removeEventListener("blur", stopHold);
+  }, [stopHold]);
   const ArrowIcon = navigationKey === "left"
     ? ChevronLeft
     : navigationKey === "right"
@@ -4017,15 +4925,21 @@ function StepHintArrowButton({
       <TooltipTrigger
         render={
           <button
+            ref={buttonRef}
             type="button"
             className="aries-step-arrow-button"
             onClick={handleClick}
             onPointerDown={handlePointerDown}
             onPointerUp={stopHold}
             onPointerCancel={stopHold}
-            onPointerLeave={stopHold}
+            onPointerLeave={() => {
+              if (capturedPointerIdRef.current === null) stopHold();
+            }}
             onPointerEnter={onPointerEnter}
-            onBlur={stopHold}
+            onBlur={() => {
+              if (capturedPointerIdRef.current === null) stopHold();
+            }}
+            onLostPointerCapture={stopHold}
             aria-label={label}
             title={label}
           />
@@ -4945,6 +5859,28 @@ export function ChartSurface({
  * open. When BOTH inspector and notes are open they share the column as a
  * draggable vertical split; when only one is open it fills the column.
  */
+function FeatureCatalogPaneContent({
+  pane,
+  onClose,
+}: {
+  pane: FeatureCatalogPaneState;
+  onClose: () => void;
+}) {
+  return (
+    <RightInspectorPaneFrame kind="feature-catalog">
+      {pane.content === "help" ? (
+        <HelpView key={pane.openSeq} onClose={onClose} />
+      ) : pane.content === "whats-new" ? (
+        <WhatsNewView key={pane.openSeq} version={pane.version ?? ""} notes={pane.notes ?? ""} onClose={onClose} />
+      ) : pane.content === "license" || pane.content === "notices" ? (
+        <LegalDocumentView key={pane.openSeq} document={pane.content} onClose={onClose} />
+      ) : (
+        <FeatureCatalogView key={pane.openSeq} onClose={onClose} />
+      )}
+    </RightInspectorPaneFrame>
+  );
+}
+
 function RightPaneStack({
   chart,
   activeDoc,
@@ -5190,35 +6126,7 @@ function RightPaneStack({
   }, [aspectListLiveContextDocument, aspectListPaneIdentity]);
 
   if (featureCatalogPane) {
-    return (
-      <RightInspectorPaneFrame kind="feature-catalog">
-        {featureCatalogPane.content === "help" ? (
-          <HelpView
-            key={featureCatalogPane.openSeq}
-            onClose={closeFeatureCatalogPane}
-          />
-        ) : featureCatalogPane.content === "whats-new" ? (
-          <WhatsNewView
-            key={featureCatalogPane.openSeq}
-            version={featureCatalogPane.version ?? ""}
-            notes={featureCatalogPane.notes ?? ""}
-            onClose={closeFeatureCatalogPane}
-          />
-        ) : featureCatalogPane.content === "license" ||
-          featureCatalogPane.content === "notices" ? (
-          <LegalDocumentView
-            key={featureCatalogPane.openSeq}
-            document={featureCatalogPane.content}
-            onClose={closeFeatureCatalogPane}
-          />
-        ) : (
-          <FeatureCatalogView
-            key={featureCatalogPane.openSeq}
-            onClose={closeFeatureCatalogPane}
-          />
-        )}
-      </RightInspectorPaneFrame>
-    );
+    return <FeatureCatalogPaneContent pane={featureCatalogPane} onClose={closeFeatureCatalogPane} />;
   }
 
   if (calendarPane) {

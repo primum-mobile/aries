@@ -285,14 +285,26 @@ class Time:
 	def __init__(self, year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place, full = True, tzid='', tzauto=False): #zt is zonetime, zh is zonehour, zm is zoneminute, full means to calculate everything e.g. FixedStars, MidPoints, ...
 		self.tzid = tzid or ''
 		self.tzauto = bool(tzauto)
-		if self.tzauto and (not bc) and cal == Time.GREGORIAN and zt == Time.ZONE:
-			resolved_zone = geonames.Geonames.resolve_zone_fields(year, month, day, hour, minute, second, place, self.tzid)
+		zone_offset_seconds = None
+		if self.tzauto and (not bc) and zt == Time.ZONE:
+			zone_year, zone_month, zone_day = year, month, day
+			if cal == Time.JULIAN:
+				local_jd = astrology.swe_julday(year, month, day, 0.0, astrology.SE_JUL_CAL)
+				zone_year, zone_month, zone_day, _ = astrology.swe_revjul(local_jd, astrology.SE_GREG_CAL)
+			resolved_zone = geonames.Geonames.resolve_zone_fields(zone_year, zone_month, zone_day, hour, minute, second, place, self.tzid)
 			if resolved_zone is not None:
-				plus = resolved_zone['plus']
-				zh = resolved_zone['zh']
-				zm = resolved_zone['zm']
-				daylightsaving = resolved_zone['daylightsaving']
 				self.tzid = resolved_zone['tzid']
+				local_dt = self._resolved_zone_local_datetime(
+					zone_year, zone_month, zone_day, hour, minute, second, self.tzid,
+					prefer_dst=daylightsaving,
+				)
+				if local_dt is not None and local_dt.utcoffset() is not None:
+					zone_fields = self._zone_fields_from_local_datetime(local_dt)
+					plus = zone_fields['plus']
+					zh = zone_fields['zh']
+					zm = zone_fields['zm']
+					daylightsaving = zone_fields['daylightsaving']
+					zone_offset_seconds = local_dt.utcoffset().total_seconds()
 
 		self.year = year
 		self.month = month
@@ -330,6 +342,14 @@ class Time:
 				self.time-=ztime
 			else:
 				self.time+=ztime
+			if zone_offset_seconds is not None:
+				# Historical IANA local-mean-time offsets can include seconds.  The
+				# exposed hour/minute fields are for display and persistence; the JD
+				# must use the exact offset of this local civil instant.
+				represented_seconds = (1 if self.plus else -1) * (zh * 3600 + zm * 60)
+				if self.daylightsaving:
+					represented_seconds += 3600
+				self.time -= (zone_offset_seconds - represented_seconds) / 3600.0
 		elif zt == Time.LOCALMEAN:#LMT
 			t = (place.deglon+place.minlon/60.0)*4.0 #long * 4min
 			if place.east:
@@ -2035,27 +2055,33 @@ class Chart:
 
 
 	def recalc(self):
-		del self.houses
-		del self.planets
+		# Build the replacement off the live object.  Workspace snapshots and
+		# directions can read this chart while an options refresh is running;
+		# deleting eager fields on the live object exposes a half-built chart.
+		replacement = type(self).__new__(type(self))
+		replacement.__dict__ = self.__dict__.copy()
+		del replacement.houses
+		del replacement.planets
 
-		del self.fortune
-		del self.fixstars
-		del self.midpoints
-		del self.riseset
-		del self.zodpars
+		del replacement.fortune
+		del replacement.fixstars
+		del replacement.midpoints
+		del replacement.riseset
+		del replacement.zodpars
 # ###########################################
 # Roberto change  V 7.3.0
-		del self.firdaria
+		del replacement.firdaria
 # ###########################################		
-		del self.antiscia
-		del self.antzodpars
-		del self.syzygy
-		del self.almutens
-		del self.parts
-		del self.cpd
-		del self.cpd2
+		del replacement.antiscia
+		del replacement.antzodpars
+		del replacement.syzygy
+		del replacement.almutens
+		del replacement.parts
+		del replacement.cpd
+		del replacement.cpd2
 
-		self.create()
+		replacement.create()
+		self.__dict__ = replacement.__dict__
 
 
 	def recalcAlmutens(self):

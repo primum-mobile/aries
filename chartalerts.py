@@ -59,7 +59,9 @@ def exact_asc_conjunction_hits(radix, moving_chart, planet_ids=None, orb=EXACT_A
 
 
 def selected_step_alert_metrics(radix, moving_chart, options, orb=EXACT_ASC_CONJUNCTION_ORB):
-	if radix is None or moving_chart is None or not getattr(options, 'stepalerts_enabled', True):
+	if (radix is None or moving_chart is None
+			or getattr(options, 'step_alerts_suspended', False)
+			or not getattr(options, 'stepalerts_enabled', True)):
 		return {}
 
 	hits = {}

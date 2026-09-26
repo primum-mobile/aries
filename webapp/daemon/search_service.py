@@ -1772,7 +1772,11 @@ class TransitSearchService:
             "displaySegments": self._object_segments(obj),
             "fixedstarCode": getattr(obj, "fixedstar_code", None),
             "asteroidNumber": getattr(obj, "asteroid_number", None),
-            "techniqueRoles": searchcatalog.ASTEROID_SEARCH_ROLES if obj.id.startswith("asteroid:") else None,
+            "techniqueRoles": (
+                searchcatalog.ASTEROID_SEARCH_ROLES if obj.id.startswith("asteroid:")
+                else searchcatalog.HOUSE_CUSP_SEARCH_ROLES if obj.family == searchcatalog.SearchObject.FAMILY_HOUSE_CUSP
+                else None
+            ),
         }
 
     @staticmethod
@@ -2182,10 +2186,13 @@ class TransitSearchService:
         return [
             oid
             for oid in catalog.builtin_significator_ids
-            if oid not in ("planet:chiron", "point:syzygy", "point:eclipse") and not oid.startswith("asteroid:")
+            if oid not in ("planet:chiron", "point:syzygy", "point:eclipse", "angle:dsc", "angle:ic") and not oid.startswith("asteroid:")
             and (
                 catalog.get(oid) is None
-                or catalog.get(oid).family != searchcatalog.SearchObject.FAMILY_FIXED_STAR
+                or catalog.get(oid).family not in (
+                    searchcatalog.SearchObject.FAMILY_FIXED_STAR,
+                    searchcatalog.SearchObject.FAMILY_HOUSE_CUSP,
+                )
             )
         ]
 

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 function normalizeSourceText(value) {
   return value.replace(/\r\n?/g, "\n");
@@ -17,6 +18,12 @@ const source = normalizeSourceText(
     ),
     "utf8",
   ),
+);
+const homeSource = normalizeSourceText(
+  await readFile(new URL("../src/components/workshell/home-client.tsx", import.meta.url), "utf8"),
+);
+const mapSource = normalizeSourceText(
+  await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8"),
 );
 
 function sourceBetween(start, end) {
@@ -62,6 +69,55 @@ test("retained map geometry terminates at interactive precision", () => {
   );
 });
 
+test("a held child step advances moving map lines before the final settle", () => {
+  assert.match(
+    homeSource,
+    /workspaceNavigateKey\(targetDocId, k, shift, alt, repeat, !mapTarget\)/,
+  );
+  assert.match(homeSource, /if \(mapTarget && res\.stepped\) \{[\s\S]*?aries:chart-step-published/);
+  assert.match(homeSource, /if \(mapTarget\) \{[\s\S]*?aries:chart-step-settle/);
+  const movingLifecycle = sourceBetween(
+    "let requestedVersion = 0;",
+    "  React.useEffect(() => {\n    const change = lastOptionsChange;",
+  );
+  assert.match(movingLifecycle, /addEventListener\("aries:chart-step-published", onStepPublished\)/);
+  assert.match(movingLifecycle, /movingLayerRequestRef\.current \|\| refreshFrame !== null/);
+  assert.match(movingLifecycle, /settled && launchedVersion !== requestedVersion/);
+  assert.match(movingLifecycle, /const precision = settled \? ASTROCART_RETAINED_TERMINAL_PRECISION : "preview"/);
+  assert.match(movingLifecycle, /const onStepPublished = [\s\S]*?settled = ![\s\S]*?burstOpen[\s\S]*?requestedVersion \+= 1;[\s\S]*?scheduleMovingRefresh\(\)/);
+  assert.match(movingLifecycle, /const onStepSettle = [\s\S]*?if \(!settled\) \{[\s\S]*?settled = true;[\s\S]*?requestedVersion \+= 1/);
+});
+
+test("focused map forwards linked-chart arrow press and release without stealing plain map arrows", () => {
+  const start = mapSource.indexOf("  let chartKeyboardNavigationEnabled = false;");
+  const end = mapSource.indexOf("  window.addEventListener('keydown', (event) => routeChartNavigationKey", start);
+  assert.ok(start >= 0 && end > start);
+  const messages = [];
+  const event = {
+    key: "ArrowRight", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
+    target: { tagName: "CANVAS", isContentEditable: false },
+    prevented: false, stopped: false,
+    preventDefault() { this.prevented = true; },
+    stopPropagation() { this.stopped = true; },
+  };
+  const context = {
+    window: { parent: {} },
+    postToParent: (message) => messages.push(message),
+    event,
+  };
+  runInNewContext(`${mapSource.slice(start, end)}\nrouteChartNavigationKey(event, 'keydown');`, context);
+  assert.equal(event.prevented, false);
+  assert.equal(messages.length, 0);
+  runInNewContext("chartKeyboardNavigationEnabled = true; routeChartNavigationKey(event, 'keydown'); routeChartNavigationKey(event, 'keyup');", context);
+  assert.equal(event.prevented, true);
+  assert.equal(event.stopped, true);
+  assert.deepEqual(messages.map((message) => [message.eventType, message.key]), [
+    ["keydown", "right"], ["keyup", "right"],
+  ]);
+  assert.match(source, /payload\.type === "navigation-key"[\s\S]*?navigation\.onNavigateHint\?\.\(payload\.key/);
+  assert.match(source, /payload\.type === "navigation-key"[\s\S]*?navigation\.onNavigateHintEnd\?\.\(payload\.key\)/);
+});
+
 test("print capture fetches precise modes sequentially into request-local state", () => {
   const printLifecycle = sourceBetween(
     "const requestPrintAtlas = React.useCallback",
@@ -87,7 +143,7 @@ test("print capture fetches precise modes sequentially into request-local state"
   assert.match(printLifecycle, /payload\.meta\.specKey !== captureSpecKey/);
   assert.match(
     printLifecycle,
-    /payload\.meta\.modeSpecKey === expectedModeSpecKey/,
+    /astrocartPayloadModeSpecKey\(payload, mode\) === expectedModeSpecKey/,
   );
   assert.ok(
     printLifecycle.indexOf("printAtlasRequestsRef.current.set") <

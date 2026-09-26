@@ -158,6 +158,8 @@ export type DaemonWorkspaceState = {
   _applyRetainedListDisplay: (display: RetainedListDisplay) => void;
   /** Push a navigate-POST snapshot for an immediate step paint (no second GET). */
   pushSteppedSnapshot: (docId: string, snapshot: ChartRenderSnapshot) => void;
+  /** Commit the daemon's map-child cursor once its held-key burst has closed. */
+  commitMapStepCursor: (docId: string, displayDatetime: string | null, tabSuffix: string | null) => void;
   /** Push a command-return snapshot for an immediate open/activate paint. */
   pushCommandSnapshot: (docId: string, snapshot: ChartRenderSnapshot) => void;
   _setConnection: (connection: "connecting" | "open" | "closed") => void;
@@ -415,6 +417,19 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
         seq: (state.steppedSnapshot?.seq ?? 0) + 1,
       },
     }));
+  },
+  commitMapStepCursor: (docId, displayDatetime, tabSuffix) => {
+    invalidateDocumentSnapshots([docId]);
+    set((state) => {
+      if (!state.documents.some((doc) => doc.documentId === docId)) return state;
+      return {
+        documents: state.documents.map((doc) => doc.documentId === docId
+          ? { ...doc, displayDatetime, tabSuffix }
+          : doc),
+        steppedSnapshot: state.steppedSnapshot?.docId === docId ? null : state.steppedSnapshot,
+        commandSnapshot: state.commandSnapshot?.docId === docId ? null : state.commandSnapshot,
+      };
+    });
   },
   pushCommandSnapshot: (docId, snapshot) => {
     const normalizedSnapshot = rememberDocumentSnapshot(docId, snapshot);

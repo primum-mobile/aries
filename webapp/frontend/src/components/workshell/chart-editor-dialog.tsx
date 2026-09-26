@@ -13,6 +13,7 @@ import { ChartEditorWindowHost } from "./chart-editor-window-host";
 import { flushEditorNotes, notifyEditorNotesChanged } from "@/lib/shell/chart-editor-window";
 import { Button } from "@/components/ui/button";
 import {
+  executeWorkspaceContextMenuAction,
   editorApply,
   editorApplyCursor,
   editorBuild,
@@ -212,6 +213,7 @@ function toFields(s: FormState): EditorFields {
  * and on submit applies back to the cursor chart (POST /api/editor/apply-cursor)
  * instead of writing a .jsonl record. */
 export type EditTarget = {
+  eventOwnerDocumentId?: string;
   name: string;
   source?: string;
   cursorDocId?: string;
@@ -300,7 +302,7 @@ function EditorLoader({
   // already shipped the seed fields in editTarget.cursorSeed, so there is no
   // record fetch — the form is ready as soon as meta loads.
   const cursorMode = Boolean(editTarget?.cursorDocId && editTarget?.cursorSeed?.usesSessionCursor);
-  const [recordLoaded, setRecordLoaded] = React.useState(!editTarget);
+  const [recordLoaded, setRecordLoaded] = React.useState(!editTarget || Boolean(editTarget.eventOwnerDocumentId));
 
   React.useEffect(() => {
     const ctrl = new AbortController();
@@ -314,7 +316,7 @@ function EditorLoader({
   }, []);
 
   React.useEffect(() => {
-    if (!editTarget) return;
+    if (!editTarget || editTarget.eventOwnerDocumentId) return;
     const ctrl = new AbortController();
     const load = async () => {
       await beforeLoad();
@@ -368,12 +370,13 @@ function EditorLoader({
       nativeWindow={nativeWindow}
       active={active}
       meta={meta}
-      seed={record ?? (cursorMode ? editTarget?.cursorSeed?.fields : null) ?? meta.defaults}
-      isEdit={Boolean(editTarget)}
+      seed={editTarget?.eventOwnerDocumentId ? { ...meta.defaults, name: "", type: "transit" } : record ?? (cursorMode ? editTarget?.cursorSeed?.fields : null) ?? meta.defaults}
+      isEdit={Boolean(editTarget) && !editTarget?.eventOwnerDocumentId}
+      eventOwnerDocumentId={editTarget?.eventOwnerDocumentId ?? null}
       seedCollection={recordCollection}
       cursorDocId={cursorMode ? (editTarget?.cursorDocId ?? null) : null}
       radixDocId={cursorMode ? null : (editTarget?.radixDocId ?? null)}
-      lockChartType={cursorMode ? Boolean(editTarget?.cursorSeed?.lockChartType) : false}
+      lockChartType={editTarget?.eventOwnerDocumentId ? true : cursorMode ? Boolean(editTarget?.cursorSeed?.lockChartType) : false}
       timeContextHint={cursorMode ? (editTarget?.cursorSeed?.timeContextHint ?? "") : ""}
       onOpenChange={onOpenChange}
       onSaved={onSaved}
@@ -390,6 +393,7 @@ function EditorBody({
   seedCollection,
   cursorDocId,
   radixDocId,
+  eventOwnerDocumentId,
   lockChartType,
   timeContextHint,
   onOpenChange,
@@ -411,6 +415,7 @@ function EditorBody({
   // The edited chart is OPEN as this radix document → submit applies IN PLACE
   // + auto-saves to its bound collection (wx onData), no close/reopen flash.
   radixDocId: string | null;
+  eventOwnerDocumentId: string | null;
   // The Type combo is disabled when editing a transit/SR session cursor
   // (lock_chart_type, personaldatadlg.py:759).
   lockChartType: boolean;
@@ -425,6 +430,7 @@ function EditorBody({
   // Seeded once from the daemon (canonical defaults in CREATE, the loaded record
   // in EDIT — incl. its id, threaded through save so it overwrites); remounted
   // fresh on every open.
+  const [newEventId] = React.useState(() => crypto.randomUUID());
   const [s, setS] = React.useState<FormState>(() => stateFromDefaults(seed));
   const seedAutoCalendar = automaticCalendarForDate(
     stateFromDefaults(seed),
@@ -595,7 +601,13 @@ function EditorBody({
       // bad date with a 400 + readable message — surfaced below as saveError.
       setSaving(true);
       try {
-        if (cursorDocId) {
+        if (eventOwnerDocumentId) {
+          await executeWorkspaceContextMenuAction("workspace.create_event", {
+            documentId: eventOwnerDocumentId, eventId: newEventId, fields: toFields(s),
+          });
+          await notesChanged();
+          onOpenChange(false);
+        } else if (cursorDocId) {
           // Session-cursor edit (morin.py:14855): re-derive the cursor chart on
           // the canonical Binding -> Deriver -> Chart path; no .jsonl write. The
           // daemon broadcasts session.changed/documents.changed, so the open
@@ -627,7 +639,7 @@ function EditorBody({
         setSaving(false);
       }
     },
-    [s, collectionPath, cursorDocId, radixDocId, onSaved, onOpenChange, notesChanged, t],
+    [s, collectionPath, cursorDocId, radixDocId, eventOwnerDocumentId, newEventId, onSaved, onOpenChange, notesChanged, t],
   );
 
   const zoneIsZone = s.zt === "zone";
@@ -639,7 +651,7 @@ function EditorBody({
     <form onSubmit={onSubmit} className={nativeWindow ? "flex h-full min-h-0 flex-col" : "flex max-h-[min(var(--aries-dialog-viewport-height),var(--aries-dialog-content-height-workspace))] flex-col"}>
       <header data-slot="dialog-header" data-tauri-drag-region="" className="flex shrink-0 select-none items-baseline justify-between border-b border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-section-padding-y)]">
         <h2 data-tauri-drag-region="" className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
-          {cursorDocId ? t("editor.titleCursor") : isEdit ? t("editor.titleEdit") : t("editor.titleNew")}
+          {eventOwnerDocumentId ? t("chartEvents.save") : cursorDocId ? t("editor.titleCursor") : isEdit ? t("editor.titleEdit") : t("editor.titleNew")}
         </h2>
       </header>
 
@@ -652,8 +664,9 @@ function EditorBody({
         </p>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 content-start gap-[var(--aries-form-section-gap)] overflow-y-auto px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)] sm:grid-cols-[minmax(0,1fr)_minmax(var(--aries-form-aside-width),1fr)]">
-        <Group title={t("editor.groupIdentity")} className="sm:col-span-2">
+      <div className={"grid min-h-0 flex-1 content-start gap-[var(--aries-form-section-gap)] overflow-y-auto px-[var(--aries-pane-wide-inset)] py-[var(--aries-dialog-padding)] " +
+        (nativeWindow ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(var(--aries-form-aside-width),1fr)]")}>
+        <Group title={t("editor.groupIdentity")} className={nativeWindow ? "col-span-2" : "sm:col-span-2"}>
           <Row label={t("editor.name")}>
             <input
               data-aries-control-appearance="local"
@@ -691,13 +704,13 @@ function EditorBody({
         <div className="flex min-w-0 flex-col gap-[var(--aries-form-section-gap)]">
           <Group title={t("editor.groupTime")}>
             <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-form-row-gap)] gap-y-[var(--aries-form-field-gap)]">
-              <NumField label={t("editor.year")} value={s.year} maxLength={4} onChange={(v) => set("year", v)} />
-              <NumField label={t("editor.month")} value={s.month} maxLength={2} onChange={(v) => set("month", v)} />
-              <NumField label={t("editor.day")} value={s.day} maxLength={2} onChange={(v) => set("day", v)} />
+              <NumField label={t("editor.year")} value={s.year} maxLength={4} widthDigits={4} onChange={(v) => set("year", v)} />
+              <NumField label={t("editor.month")} value={s.month} maxLength={2} widthDigits={4} onChange={(v) => set("month", v)} />
+              <NumField label={t("editor.day")} value={s.day} maxLength={2} widthDigits={4} onChange={(v) => set("day", v)} />
               <div className="flex h-[var(--aries-control-height-small)] items-center"><Checkbox checked={s.bc} onChange={(v) => set("bc", v)} label={t("editor.bc")} /></div>
-              <NumField label={t("editor.hour")} value={s.hour} maxLength={2} onChange={(v) => set("hour", v)} />
-              <NumField label={t("editor.min")} value={s.minute} maxLength={2} onChange={(v) => set("minute", v)} />
-              <NumField label={t("editor.sec")} value={s.second} maxLength={2} onChange={(v) => set("second", v)} />
+              <NumField label={t("editor.hour")} value={s.hour} maxLength={2} widthDigits={4} onChange={(v) => set("hour", v)} />
+              <NumField label={t("editor.min")} value={s.minute} maxLength={2} widthDigits={4} onChange={(v) => set("minute", v)} />
+              <NumField label={t("editor.sec")} value={s.second} maxLength={2} widthDigits={4} onChange={(v) => set("second", v)} />
             </div>
           </Group>
           <Group title={t("editor.groupZone")}>
@@ -824,11 +837,11 @@ function EditorBody({
                 ))}
               </ul>
             ) : null}
-            <div className="grid grid-cols-[auto_repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-form-field-gap)] gap-y-[var(--aries-form-field-gap)]">
+            <div className="grid grid-cols-[auto_repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-control-gap)] gap-y-[var(--aries-form-field-gap)]">
               <span className="flex h-[var(--aries-control-height-small)] items-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.long")}</span>
-              <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} onChange={(v) => set("lonDeg", v)} />
-              <NumField label={t("editor.min")} value={s.lonMin} maxLength={2} onChange={(v) => set("lonMin", v)} />
-              <NumField label={t("editor.sec")} value={s.lonSec} maxLength={2} onChange={(v) => set("lonSec", v)} />
+              <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} widthDigits={3} onChange={(v) => set("lonDeg", v)} />
+              <NumField label={t("editor.min")} value={s.lonMin} maxLength={2} widthDigits={3} onChange={(v) => set("lonMin", v)} />
+              <NumField label={t("editor.sec")} value={s.lonSec} maxLength={2} widthDigits={3} onChange={(v) => set("lonSec", v)} />
               <RadioPair
                 value={s.east ? "e" : "w"}
                 options={[
@@ -839,9 +852,9 @@ function EditorBody({
                 inline
               />
               <span className="flex h-[var(--aries-control-height-small)] items-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.lat")}</span>
-              <NumField label={t("editor.deg")} hideLabel value={s.latDeg} maxLength={2} onChange={(v) => set("latDeg", v)} />
-              <NumField label={t("editor.min")} hideLabel value={s.latMin} maxLength={2} onChange={(v) => set("latMin", v)} />
-              <NumField label={t("editor.sec")} hideLabel value={s.latSec} maxLength={2} onChange={(v) => set("latSec", v)} />
+              <NumField label={t("editor.deg")} hideLabel value={s.latDeg} maxLength={2} widthDigits={3} onChange={(v) => set("latDeg", v)} />
+              <NumField label={t("editor.min")} hideLabel value={s.latMin} maxLength={2} widthDigits={3} onChange={(v) => set("latMin", v)} />
+              <NumField label={t("editor.sec")} hideLabel value={s.latSec} maxLength={2} widthDigits={3} onChange={(v) => set("latSec", v)} />
               <RadioPair
                 value={s.north ? "n" : "s"}
                 options={[
@@ -899,7 +912,7 @@ function EditorBody({
       <footer className="flex shrink-0 items-center justify-between gap-[var(--aries-form-row-gap)] border-t border-border/40 px-[var(--aries-pane-wide-inset)] py-[var(--aries-form-row-gap)]">
         {/* Cursor/radix edits target the open daemon document directly; only
             create-from-editor needs a collection target picker. */}
-        {cursorDocId || radixDocId ? (
+        {eventOwnerDocumentId ? <span /> : cursorDocId || radixDocId ? (
           <span className="text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
             {cursorDocId ? t("editor.sessionCursor") : t("editor.openChart")}
           </span>
@@ -1025,6 +1038,7 @@ function NumField({
   label,
   value,
   maxLength,
+  widthDigits = maxLength,
   onChange,
   disabled,
   hideLabel = false,
@@ -1032,6 +1046,7 @@ function NumField({
   label: string;
   value: string;
   maxLength: number;
+  widthDigits?: number;
   hideLabel?: boolean;
   onChange: (v: string) => void;
   disabled?: boolean;
@@ -1046,6 +1061,7 @@ function NumField({
         maxLength={maxLength}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ""))}
+        style={{ maxWidth: `calc(${widthDigits}ch + var(--aries-control-padding-x-compact) + var(--aries-control-padding-x-compact) + 2px)` }}
         className={fieldCls("w-full tabular-nums")}
       />
     </label>

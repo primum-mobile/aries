@@ -1188,6 +1188,8 @@ def _aspect_color(options, aspect_id: Any) -> Any:
 
 def _aspect_color_role(options, aspect_id: Any) -> Optional[str]:
     resolved = _aspect_color(options, aspect_id)
+    if aspect_id in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL):
+        return _PEREGRIN_COLOR_ROLE
     role = aspect_color_role(
         options,
         aspect_id,

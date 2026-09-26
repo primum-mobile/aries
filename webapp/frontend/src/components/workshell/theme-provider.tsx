@@ -27,6 +27,8 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { syncThemeStateFromStorage, useThemeStore } from "@/stores/theme-store";
+import { useColorSettingsPreviewStore } from "@/stores/color-settings-preview-store";
+import { settingsColorPreviewMatchesTheme, withSettingsColorPreview } from "@/lib/chart/palette";
 import { replaceThemeTokens, styleRevisionKey } from "@/lib/theme/style-state.mjs";
 import { revealMainWindow } from "@/lib/shell/main-window";
 import { useLicenseStateStore } from "@/stores/license-state-store";
@@ -59,6 +61,8 @@ function pendingLegacyStyleMigration(): { raw: string; values: Record<string, un
   }
 }
 
+let installedMaterialSignature: string | null = null;
+
 function applyThemeToRoot(appearance: WindowThemeAppearance): void {
   const root = document.documentElement;
   const { appTokens, chartPalette, mode } = appearance;
@@ -74,21 +78,21 @@ function applyThemeToRoot(appearance: WindowThemeAppearance): void {
   root.dataset.styleRevision = String(appearance.styleRevision);
   root.dataset.styleHash = appearance.styleHash;
   root.dataset.presentationCursor = appearance.presentationCursor ? "glow" : "system";
-  try {
-    installAppMaterialStyleSheet(
-      compileThemeAppMaterials(
-        appearance.appAuthoring,
-        appTokens,
-      ),
-    );
-  } catch (error) {
-    // Daemon profiles are validated before ThemeState publication. A stale
-    // browser cache still degrades to the semantic solid palette instead of
-    // leaving the retained app shell partially styled.
-    console.error("[app-material-theme]", error);
-    installAppMaterialStyleSheet(
-      compileThemeAppMaterials({}, appTokens),
-    );
+  const materialSignature = JSON.stringify([appearance.appAuthoring, appTokens]);
+  if (installedMaterialSignature !== materialSignature) {
+    try {
+      installAppMaterialStyleSheet(
+        compileThemeAppMaterials(
+          appearance.appAuthoring,
+          appTokens,
+        ),
+      );
+    } catch (error) {
+      // A stale browser cache degrades to the semantic solid palette.
+      console.error("[app-material-theme]", error);
+      installAppMaterialStyleSheet(compileThemeAppMaterials({}, appTokens));
+    }
+    installedMaterialSignature = materialSignature;
   }
   root.dataset.themeReady = "ready";
 }
@@ -121,6 +125,13 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
     (state) => state.resolvedOverrides,
   );
   const styleLabRevision = useChartStyleEditorStore((state) => state.revision);
+  const settingsColorPreview = useColorSettingsPreviewStore((state) => state.color);
+
+  useEffect(() => {
+    if (mainWindow && settingsColorPreviewMatchesTheme(theme, settingsColorPreview)) {
+      useColorSettingsPreviewStore.getState().setColor(null);
+    }
+  }, [mainWindow, settingsColorPreview, theme]);
 
   useEffect(() => {
     if (resolveShellHost().kind !== "tauri") return;
@@ -313,7 +324,10 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
           },
         } satisfies LiveThemePreview
       : undefined;
-    const appearance = resolveWindowThemeAppearance(theme, preview);
+    const appearance = resolveWindowThemeAppearance(
+      withSettingsColorPreview(theme, settingsColorPreview) ?? theme,
+      preview,
+    );
     applyThemeToRoot(appearance);
     // Do not push yesterday's boot cache into already-mounted companions while
     // the main window is still reconciling its daemon theme and working draft.
@@ -330,6 +344,7 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
     styleLabCssOverrides,
     styleLabRevision,
     styleLabSemanticOverrides,
+    settingsColorPreview,
     theme,
   ]);
 

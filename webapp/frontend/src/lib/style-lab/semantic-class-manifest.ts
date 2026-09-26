@@ -871,6 +871,11 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.single.outer.asteroid", { requiredFeatures: ["outerRing.asteroid"] }), fontRole: "text", colorTarget: "palette-role",
   }),
+  "secondaryRing.asteroid.motion": define({
+    labelKey: "styleLab.class.asteroidMotion", groupId: "secondaryRing", layer: "outer-label",
+    primitive: "text", capabilities: C.text,
+    applicability: applicability("classic.single.outer.asteroid", { requiredFeatures: ["outerRing.asteroid", "motionMarkers"] }), fontRole: "text", colorTarget: "palette-role",
+  }),
   "secondaryRing.midpoint.leader": define({
     labelKey: "styleLab.class.midpointLeader", groupId: "secondaryRing", layer: "dynamic",
     primitive: "line", capabilities: C.polyline,

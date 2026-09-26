@@ -4276,6 +4276,12 @@ export type OptionsColors = {
 
 export type OptionsDisplay = {
   astrocart_distance_units?: "metric" | "miles";
+  /** ACG line thickness; "thin" is the renderer's native width. */
+  astrocart_line_weight?: "thin" | "medium" | "bold";
+  /** ACG line labels: planet names, or Morinus planet glyphs. */
+  astrocart_line_labels?: "names" | "glyphs";
+  /** Local Space line labels show the bearing in degrees. */
+  astrocart_local_space_bearings?: boolean;
   wheel_preset_id?: string;
   wheel_compositions?: WheelCompositions;
   houses: boolean;
@@ -4337,6 +4343,7 @@ export type OptionsDisplay = {
   exclusive_aspects_on_click_show_minor: boolean; // options.py:150
   exclusive_aspects_on_click_traditional: boolean; // options.py:151
   positions: boolean; // show positions (options.py:116)
+  positionsminutes: boolean;
   intables: boolean; // show in tables (options.py:117)
   usetradfixstarnamespdlist: boolean; // trad fixstar names in PD list (options.py:168)
   theme: number; // wheel LAYOUT 0–4 (catalog.themeLayouts — DISTINCT from colour theme)
@@ -4462,12 +4469,14 @@ export type ThemeState = {
       string,
       number | string | readonly number[] | ChartStyleFontRef
     >;
+    wheelColorRoleAliases?: Record<string, string>;
     appAuthoring: Record<string, number | string | readonly number[]>;
     chartData: {
       planets?: string[];
       aspects?: string[];
       signColors?: string[];
       usePlanetColors?: boolean;
+      useZodiacElementColors?: boolean;
     };
   };
 };
@@ -4658,6 +4667,7 @@ export type OptionsAsteroids = {
   maxSelected: number;
   conjunctionOrb: number;
   oppositionOrb: number;
+  outerRingAll: boolean;
 };
 
 // Relationship-chart settings (compositeoptsdlg + synastry launcher radio).
@@ -5049,6 +5059,7 @@ export type SidebarListPreferencesPayload = {
     focusedFilterIds: string[];
     focusMatchMode: "or" | "and";
     rxFocusEnabled: boolean;
+    includeHouseCusps: boolean;
     secondaryRingEnabledByMode: Record<string, boolean>;
     filterDrawerOpen: boolean;
   };
@@ -5966,6 +5977,12 @@ export type WorkspaceContextMenuNode =
       disabled?: boolean;
       actionId?: string;
       payload?: Record<string, unknown>;
+      trailingToggle?: {
+        labelKey: string;
+        checked: boolean;
+        actionId: string;
+        payload: Record<string, unknown>;
+      };
     }
   | {
       type: "submenu";
@@ -6391,6 +6408,7 @@ export type AspectListRow = {
     glyph: string;
     glyphFont: "morinus" | "text" | string;
     name: string;
+    exportSymbolText?: string;
     color?: string | null;
     colorRole?: string | null;
   };
@@ -6781,6 +6799,8 @@ export async function workspaceOpen(
     planetType?: number | null;
     binding?: SupplementaryBindingPayload | null;
     reuseExisting?: boolean;
+    /** Map-owned technique tab under an Astrocart document ("lewis_ccg"). */
+    astrocartTechnique?: "lewis_ccg" | null;
   },
   signal?: AbortSignal,
 ): Promise<WorkspaceOpenResult> {
@@ -6798,7 +6818,21 @@ export async function workspaceOpen(
       planetType: params.planetType ?? null,
       binding: params.binding ?? null,
       reuseExisting: params.reuseExisting ?? false,
+      astrocartTechnique: params.astrocartTechnique ?? null,
     },
+    signal,
+  );
+}
+
+/** Set a Lewis CCG tab's progressed-angles reading; returns its map spec. */
+export async function setAstrocartLayerOptions(
+  layerDocumentId: string,
+  options: { progressedAnglesRa: boolean },
+  signal?: AbortSignal,
+): Promise<AstrocartConfigurationPayload> {
+  return workspacePost<AstrocartConfigurationPayload>(
+    `/api/workspace/document/${encodeURIComponent(layerDocumentId)}/astrocart-layer-options`,
+    options,
     signal,
   );
 }
@@ -6901,6 +6935,7 @@ export type AstrocartViewState = {
       kinds?: string[] | null;
       aspects?: string[] | null;
       techniques?: string[] | null;
+      hiddenLayerIds?: string[];
     };
   };
   legend?: {
@@ -6966,7 +7001,8 @@ export type AstrocartDynamicTechnique =
   | "secondary_progression"
   | "minor_progression"
   | "tertiary_progression"
-  | "solar_arc";
+  | "solar_arc"
+  | "lewis_ccg";
 
 export type AstrocartDynamicLayer = {
   technique: AstrocartDynamicTechnique;
@@ -6974,6 +7010,9 @@ export type AstrocartDynamicLayer = {
   cursorIso: string | null;
   movingActorIds: string[];
   enabled: boolean;
+  sourceDocumentId?: string;
+  /** Lewis CCG only: read against progressed angles (Sun arc in RA). */
+  progressedAnglesRa?: boolean;
 };
 
 export type AstrocartMapSpec = {
@@ -6984,6 +7023,7 @@ export type AstrocartMapSpec = {
   selectedAngleKinds: AstrocartAngleKind[];
   paran: {
     enabled: boolean;
+    followLines: boolean;
     participantIds: string[];
   };
   zenithEnabled: boolean;
@@ -7050,6 +7090,7 @@ export async function storeAstrocartConfiguration(
 }
 
 export type AstrocartPdfPageFormat = "A4" | "A3";
+export type AstrocartPdfScope = "world" | "current";
 
 export type AstrocartPdfSelection = {
   pointIds: string[];
@@ -8189,6 +8230,7 @@ export type WorkspaceNavigateKeyResult = {
   stepped: boolean;
   appliedSteps?: number;
   displayDatetime: string | null;
+  tabSuffix?: string | null;
   documents?: DaemonDocumentSummary[];
   /** The freshly-rendered chart for the stepped doc (``step_fast`` overlay mode),
    * attached so the skin paints from the POST result and skips the second
@@ -8211,11 +8253,12 @@ export async function workspaceNavigateKey(
   shift: boolean,
   alt: boolean,
   repeat = 1,
+  includeSnapshot = true,
   signal?: AbortSignal,
 ): Promise<WorkspaceNavigateKeyResult> {
   return workspacePost<WorkspaceNavigateKeyResult>(
     "/api/workspace/navigate-key",
-    { docId, key, shift, alt, repeat },
+    { docId, key, shift, alt, repeat, includeSnapshot },
     signal,
     "native-preferred",
   );

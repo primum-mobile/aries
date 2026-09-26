@@ -97,5 +97,6 @@ test('the global side switch persists only editor state in both mounted lists', 
   assert.ok(progression.includes('onChange: (pointFilterSide) => persistSecondaryPreferences(documentId, { pointFilterSide })'));
   const drawer = await readFile(new URL('../src/components/workshell/transit-list-filter-drawer.tsx', import.meta.url), 'utf8');
   assert.ok(drawer.includes('disabled={!item[side]}'));
-  assert.ok(progression.includes('disabled={!item[pointFilterSide]}'));
+  assert.ok(progression.includes('houseCuspItems.filter((cusp) => cusp[pointFilterSide]).map((cusp) => cusp.id)'));
+  assert.ok(progression.includes('disabled={ids.length === 0}'));
 });

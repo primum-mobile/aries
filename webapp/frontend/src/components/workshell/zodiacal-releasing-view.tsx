@@ -289,6 +289,8 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
       titleSize="large"
       toolbar={
         <TextExportActions
+          sourceName={sourceName}
+          fileStem="zodiacal_releasing"
           buildDocument={() =>
             buildTableExportDocument(payload, payload.rows, {
               fileStem: "zodiacal_releasing",

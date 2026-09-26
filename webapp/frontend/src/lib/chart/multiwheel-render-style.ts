@@ -790,7 +790,7 @@ function drawChartBand(
   const bodies = chartBodies(chart, palette);
   const showPositions = Boolean(chart.options.showPositions) &&
     chart.options.multiwheelShowPositions !== false;
-  const showMinutes = showPositions && chart.options.multiwheelShowMinutes !== false;
+  const showMinutes = showPositions && chart.options.showPositionMinutes !== false && chart.options.multiwheelShowMinutes !== false;
   const degreeSize = clamp(layout.positionSize * 1.20, 10, 12);
   const signSize = clamp(layout.positionSize * 1.24, 10, 13);
   const minuteSize = clamp(layout.positionSize * 0.94, 8, 10);

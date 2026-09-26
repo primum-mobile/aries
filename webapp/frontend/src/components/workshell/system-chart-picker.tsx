@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -942,20 +943,23 @@ export function SystemChartPicker({
   const canSynastry = !onPickRow && mode === "open-radix" && selectedRows.length === 2;
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+    <div data-aries-surface="popover" className="flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] text-[color:var(--aries-popover-text)]">
       {persistenceError ? <div role="alert" className="px-[var(--aries-pane-content-padding)] text-destructive">{t("picker.preferencesFailed")}</div> : null}
       {view === "list" ? (
         <>
-          <header className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-pane-content-padding)]">
-            <div className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-dialog-title)] leading-none">
+          <header data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
+            <h1 data-tauri-drag-region="" className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
               {directory || t("picker.chartCollections")}
-            </div>
+            </h1>
             <Button
               variant="outline"
               className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-wide)] text-[length:var(--aries-font-size-large)] font-normal"
               onClick={() => setView("search")}
             >
               {t("picker.search")}
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={closePicker} aria-label={t("settings.close")}>
+              <X />
             </Button>
           </header>
           <div className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] px-[var(--aries-pane-wide-inset)] pb-[var(--aries-pane-header-padding-y)]">
@@ -1221,6 +1225,7 @@ export function SystemChartPicker({
       ) : (
         <ChartSearchPanel
           onBack={() => setView("list")}
+          onClose={closePicker}
           onOpenRows={(targets) => openRows(targets, false, true)}
         />
       )}
@@ -1292,7 +1297,7 @@ function CollectionNameDialog({
           onConfirm();
         }}
       >
-        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-large)] font-medium">
+        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-dialog-title)] font-medium">
           {kind === "new"
             ? t("picker.newCollectionTitle")
             : t("picker.renameCollectionTitle")}
@@ -1355,7 +1360,7 @@ function RenameChartDialog({
           onConfirm();
         }}
       >
-        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-large)] font-medium">{t("picker.renameChartTitle")}</div>
+        <div className="mb-[var(--aries-pane-title-gap)] text-[length:var(--aries-font-size-dialog-title)] font-medium">{t("picker.renameChartTitle")}</div>
         <Input
           autoFocus
           value={value}
@@ -1398,7 +1403,7 @@ function DeleteChartsDialog({
         data-aries-surface="overlay"
         className="w-full max-w-[var(--aries-dialog-width-confirm)] rounded-[var(--aries-radius-dialog)] border border-border bg-background p-[var(--aries-dialog-padding)] shadow-xl"
       >
-        <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-large)] font-medium">{title}</div>
+        <div className="mb-[var(--aries-dialog-header-gap)] text-[length:var(--aries-font-size-dialog-title)] font-medium">{title}</div>
         <p className="text-[length:var(--aries-font-size-reading)] leading-[var(--aries-font-line-height-reading)] text-muted-foreground">{body}</p>
         <div className="mt-[var(--aries-dialog-gap)] flex justify-end gap-[var(--aries-dialog-footer-gap)]">
           <Button type="button" variant="outline" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={onCancel} disabled={busy}>
@@ -1518,9 +1523,11 @@ function PickerRow({
 
 function ChartSearchPanel({
   onBack,
+  onClose,
   onOpenRows,
 }: {
   onBack: () => void;
+  onClose: () => void;
   onOpenRows: (targets: ChartPickerRow[]) => Promise<void>;
 }) {
   const t = useT();
@@ -1638,13 +1645,13 @@ function ChartSearchPanel({
 
   return (
     <>
-      <header className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] border-b border-border px-[var(--aries-pane-content-padding)] py-[var(--aries-form-group-gap)]">
+      <header data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
         <Button variant="outline" size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-medium)]" onClick={onBack}>
           <ArrowLeft className="mr-[var(--aries-control-gap-compact)] size-[var(--aries-control-icon-size)]" />
           {t("picker.back")}
         </Button>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[length:var(--aries-font-size-large)] font-semibold leading-5">
+        <div data-tauri-drag-region="" className="min-w-0 flex-1">
+          <h1 data-tauri-drag-region="" className="truncate text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
             {t("picker.chartCollectionSearch")}
           </h1>
           <p className="truncate text-[length:var(--aries-font-size-small)] leading-4 text-[color:var(--aries-text-muted)]">
@@ -1654,6 +1661,23 @@ function ChartSearchPanel({
               : ""}
           </p>
         </div>
+        <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog || !hydrated}>
+          {t("picker.search")}
+        </Button>
+        <Button
+          size="sm"
+          className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-compact)]"
+          onClick={() => void openResult()}
+          disabled={!selectedRow}
+        >
+          {t("picker.open")}
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t("settings.close")}>
+          <X />
+        </Button>
+      </header>
+
+      <div className="flex shrink-0 items-center justify-end gap-[var(--aries-pane-title-gap)] border-b border-border/40 px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)]">
         <label className="flex items-center gap-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-muted-foreground">
           {t("picker.stationDays")}
           <Input
@@ -1666,18 +1690,7 @@ function ChartSearchPanel({
           aria-pressed={includeAsteroids} onClick={() => setIncludeAsteroids((enabled) => !enabled)}>
           {t("chartmenu.asteroids")}
         </Button>
-        <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog || !hydrated}>
-          {t("picker.search")}
-        </Button>
-        <Button
-          size="sm"
-          className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-compact)]"
-          onClick={() => void openResult()}
-          disabled={!selectedRow}
-        >
-          {t("picker.open")}
-        </Button>
-      </header>
+      </div>
 
       <section className="grid shrink-0 gap-[var(--aries-form-field-gap)] border-b border-border bg-muted/10 px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)]">
         <ClauseDrawer

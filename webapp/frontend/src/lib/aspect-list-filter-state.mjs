@@ -4,11 +4,14 @@
 /** Ordinary bodies and points share one Focus facet. OR includes a row when
  * either endpoint is focused; AND includes only relationships whose two
  * ordinary endpoints both belong to the focused set. Motion is a separate
- * narrowing facet. Secondary-ring families remain calculation inputs, but only
- * the active family owned by the directional receiving chart can enter the
- * visible projection. */
+ * narrowing facet. Cusps and the active secondary-ring family are independent
+ * Include choices over the retained calculation universe. */
 export function isAspectListSecondaryRingFilterId(filterId) {
   return filterId.startsWith("outer:");
+}
+
+export function isAspectListInclusionFilterId(filterId) {
+  return filterId === "house-cusps" || isAspectListSecondaryRingFilterId(filterId);
 }
 
 export function defaultAspectListSecondaryRingIncluded(mode) {
@@ -32,7 +35,9 @@ export function isAspectListRowIncluded(
   rxFocusEnabled = false,
   focusMatchMode = "or",
   endpointFilterIds = null,
+  includeHouseCusps = true,
 ) {
+  if (filterIds.includes("house-cusps") && !includeHouseCusps) return false;
   const secondaryRingIds = filterIds.filter(
     isAspectListSecondaryRingFilterId,
   );
@@ -46,7 +51,7 @@ export function isAspectListRowIncluded(
   if (focusedIds.size === 0) return !rxFocusEnabled || rxMatches;
 
   const ordinaryFilterIds = filterIds.filter(
-    (id) => !isAspectListSecondaryRingFilterId(id),
+    (id) => !isAspectListInclusionFilterId(id),
   );
   const useAnd = focusMatchMode === "and" && focusedIds.size >= 2;
   const endpointGroups =
@@ -54,7 +59,7 @@ export function isAspectListRowIncluded(
   const focusedPointMatches = useAnd
     ? endpointGroups.length === 2
       && endpointGroups
-        .map((ids) => ids.filter((id) => !isAspectListSecondaryRingFilterId(id)))
+        .map((ids) => ids.filter((id) => !isAspectListInclusionFilterId(id)))
         .every(
           (ids) => ids.length > 0 && ids.some((id) => focusedIds.has(id)),
         )

@@ -21,6 +21,13 @@ export type StyleLabFontAsset = {
 export const STYLE_FONT_ASSETS_READY_EVENT = "aries-style-font-assets-ready";
 
 const loadedFontAssets = new Map<string, Promise<string>>();
+// Registered faces by CSS family, so embedded surfaces on another origin (the
+// Astrocart map iframe) can receive the same font bytes the app renders with.
+const loadedFontBlobs = new Map<string, Blob>();
+
+export function styleLabFontBlob(cssFamily: string): Blob | undefined {
+  return loadedFontBlobs.get(cssFamily);
+}
 
 async function checked(response: Response): Promise<Response> {
   if (response.ok) return response;
@@ -74,6 +81,7 @@ export async function loadStyleLabFontFace(
     const face = new FontFace(cssFamily, `url(${JSON.stringify(url)})`);
     await face.load();
     document.fonts.add(face);
+    loadedFontBlobs.set(cssFamily, blob);
     return JSON.stringify(cssFamily);
   } finally {
     URL.revokeObjectURL(url);

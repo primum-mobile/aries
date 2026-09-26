@@ -558,12 +558,14 @@ function RadioRow<T extends string | number>({
   value,
   disabled,
   disabledValues,
+  wrapLabels = false,
   onChange,
 }: {
   options: readonly { value: T; label: string }[];
   value: T;
   disabled?: boolean;
   disabledValues?: readonly T[];
+  wrapLabels?: boolean;
   onChange: (v: T) => void;
 }) {
   return (
@@ -584,7 +586,7 @@ function RadioRow<T extends string | number>({
             <span
               aria-hidden
               className={cn(
-                "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border",
+              "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border",
                 value === o.value ? "border-primary" : "border-border",
               )}
             >
@@ -592,7 +594,7 @@ function RadioRow<T extends string | number>({
                 <span className="h-1.5 w-1.5 rounded-full bg-primary" />
               ) : null}
             </span>
-            <span className="truncate">{o.label}</span>
+            <span className={wrapLabels ? "whitespace-normal" : "truncate"}>{o.label}</span>
           </button>
         );
       })}
@@ -837,13 +839,15 @@ function FixStarPdPicker({
   );
 }
 
-function EnginePresetPicker({
+function EngineSelection({
   settings,
   presetGlobalState,
+  dock,
   onPatch,
 }: {
   settings: OptionsPrimaryDirections;
   presetGlobalState?: PresetGlobalState;
+  dock: "right" | "bottom";
   onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
@@ -876,85 +880,102 @@ function EnginePresetPicker({
 
 
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <SectionLabel>{t("primdir.enginePreset")}</SectionLabel>
-        {activePreset == null ? (
-          <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.custom")}</span>
-        ) : null}
+    <div className={cn("min-w-0", dock === "bottom" && "col-span-2")}>
+      <div className={cn("grid gap-[var(--aries-pane-content-padding)] rounded border border-border/70 p-2", dock === "bottom" ? "grid-cols-2" : "grid-cols-1")}>
+        <div className="min-w-0">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <SectionLabel>{t("primdir.enginePreset")}</SectionLabel>
+            {activePreset == null ? (
+              <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.custom")}</span>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            {PRIMARY_DIRECTION_PRESETS.map((preset) => {
+              const selected = preset.id === activePreset?.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  title={t(PRESET_DESC_KEYS[preset.id] ?? preset.description)}
+                  aria-pressed={selected}
+                  disabled={busy}
+                  onClick={() => {
+                    const patch = presetResolvedPatch(preset, settings);
+                    const globalPatch = presetResolvedOptionsPatch(preset);
+                    if (userPresets?.selectedId) void perform({ action: "clear" }, patch, globalPatch);
+                    else onPatch(patch, globalPatch);
+                  }}
+                  className={cn(
+                    "flex min-h-7 w-full items-center gap-2 rounded border border-border/70 px-2 py-1 text-left text-[length:var(--aries-font-size-small)] hover:bg-muted",
+                    selected && "border-primary/70 bg-muted text-foreground",
+                  )}
+                >
+                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                    {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="font-medium">{t(PRESET_LABEL_KEYS[preset.id] ?? preset.label)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 flex min-w-0 items-center gap-1">
+            {naming ? (
+              <Input autoFocus maxLength={80} value={name} disabled={busy}
+                className="h-7 min-w-0 flex-1 text-[length:var(--aries-font-size-small)]"
+                placeholder={t("pdPreset.name")} aria-label={t("pdPreset.name")}
+                onChange={event => setName(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === "Enter") { event.preventDefault(); save(); }
+                  if (event.key === "Escape") { event.preventDefault(); setNaming(false); }
+                }} />
+            ) : (
+              <select data-aries-surface="control" aria-label={t("pdPreset.title")}
+                className="h-7 min-w-0 flex-1 rounded border border-border bg-transparent px-2 text-[length:var(--aries-font-size-small)]"
+                value={userPresets?.selectedId ?? ""} disabled={busy || !userPresets}
+                onChange={event => void perform(event.target.value ? { action: "select", id: event.target.value } : { action: "clear" })}>
+                <option value="">{t("pdPreset.title")}</option>
+                {userPresets?.presets.map(preset => <option key={preset.id} value={preset.id}>
+                  {preset.name}{preset.id === userPresets.selectedId && userPresets.dirty ? " *" : ""}
+                </option>)}
+              </select>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-1">
+            <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2"
+              disabled={busy || !userPresets || (naming && !name.trim())} onClick={save}>
+              <Save className="h-3.5 w-3.5" aria-hidden="true" />{t("settings.save")}
+            </Button>
+            {naming ? (
+              <Button type="button" size="icon-xs" variant="ghost" disabled={busy}
+                title={t("settings.cancel")} aria-label={t("settings.cancel")} onClick={() => setNaming(false)}>
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            ) : <>
+              <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets}
+                title={t("pdPreset.saveAs")} aria-label={t("pdPreset.saveAs")} onClick={startNaming}>
+                <CopyPlus className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+              <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets?.selectedId}
+                title={t("pdPreset.delete")} aria-label={t("pdPreset.delete")}
+                onClick={() => { if (userPresets?.selectedId) void perform({ action: "delete", id: userPresets.selectedId }); }}>
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </>}
+          </div>
+          {failed && <p role="alert" className="mt-1 text-[length:var(--aries-font-size-small)] text-destructive">{t("pdPreset.error")}</p>}
+        </div>
+        <div className="min-w-0">
+          <SectionLabel>{t("primdir.houseSystem")}</SectionLabel>
+          <RadioRow
+            options={PD_SYSTEMS.map((o, i) => ({ value: o.value, label: t(PD_SYSTEM_LABEL_KEYS[i]) }))}
+            value={settings.primarydir}
+            wrapLabels
+            onChange={(v) =>
+              onPatch(v === 1 ? { primarydir: v, subprimarydir: 1 } : { primarydir: v })
+            }
+          />
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-1 rounded border border-border/70 bg-muted/20 p-1">
-        {PRIMARY_DIRECTION_PRESETS.map((preset) => {
-          const selected = preset.id === activePreset?.id;
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              title={t(PRESET_DESC_KEYS[preset.id] ?? preset.description)}
-              aria-pressed={selected}
-              disabled={busy}
-              onClick={() => {
-                const patch = presetResolvedPatch(preset, settings);
-                const globalPatch = presetResolvedOptionsPatch(preset);
-                if (userPresets?.selectedId) void perform({ action: "clear" }, patch, globalPatch);
-                else onPatch(patch, globalPatch);
-              }}
-              className={cn(
-                "flex h-7 min-w-0 items-center justify-center gap-1 rounded px-2 text-[length:var(--aries-font-size-small)] leading-none hover:bg-muted",
-                selected && "bg-muted text-foreground",
-              )}
-            >
-              <span className="h-3.5 w-3.5 shrink-0">
-                {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-              </span>
-              <span className="min-w-0 truncate font-medium">{t(PRESET_LABEL_KEYS[preset.id] ?? preset.label)}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-1 flex min-w-0 items-center gap-1">
-        {naming ? (
-          <Input autoFocus maxLength={80} value={name} disabled={busy}
-            className="h-7 min-w-0 flex-1 text-[length:var(--aries-font-size-small)]"
-            placeholder={t("pdPreset.name")} aria-label={t("pdPreset.name")}
-            onChange={event => setName(event.target.value)}
-            onKeyDown={event => {
-              if (event.key === "Enter") { event.preventDefault(); save(); }
-              if (event.key === "Escape") { event.preventDefault(); setNaming(false); }
-            }} />
-        ) : (
-          <select data-aries-surface="control" aria-label={t("pdPreset.title")}
-            className="h-7 min-w-0 flex-1 rounded border border-border bg-transparent px-2 text-[length:var(--aries-font-size-small)]"
-            value={userPresets?.selectedId ?? ""} disabled={busy || !userPresets}
-            onChange={event => void perform(event.target.value ? { action: "select", id: event.target.value } : { action: "clear" })}>
-            <option value="">{t("pdPreset.title")}</option>
-            {userPresets?.presets.map(preset => <option key={preset.id} value={preset.id}>
-              {preset.name}{preset.id === userPresets.selectedId && userPresets.dirty ? " *" : ""}
-            </option>)}
-          </select>
-        )}
-        <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2"
-          disabled={busy || !userPresets || (naming && !name.trim())} onClick={save}>
-          <Save className="h-3.5 w-3.5" aria-hidden="true" />{t("settings.save")}
-        </Button>
-        {naming ? (
-          <Button type="button" size="icon-xs" variant="ghost" disabled={busy}
-            title={t("settings.cancel")} aria-label={t("settings.cancel")} onClick={() => setNaming(false)}>
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        ) : <>
-          <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets}
-            title={t("pdPreset.saveAs")} aria-label={t("pdPreset.saveAs")} onClick={startNaming}>
-            <CopyPlus className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-          <Button type="button" size="icon-xs" variant="ghost" disabled={busy || !userPresets?.selectedId}
-            title={t("pdPreset.delete")} aria-label={t("pdPreset.delete")}
-            onClick={() => { if (userPresets?.selectedId) void perform({ action: "delete", id: userPresets.selectedId }); }}>
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        </>}
-      </div>
-      {failed && <p role="alert" className="mt-1 text-[length:var(--aries-font-size-small)] text-destructive">{t("pdPreset.error")}</p>}
     </div>
   );
 }
@@ -1056,24 +1077,10 @@ export function PrimDirSettingsBody({
 
       {paneDock && onPaneDockChange ? <Separator /> : null}
 
-      <EnginePresetPicker settings={s} presetGlobalState={presetGlobalState} onPatch={onPatch} />
+      <EngineSelection settings={s} presetGlobalState={presetGlobalState} dock={dock} onPatch={onPatch} />
 
       {/* Keys block */}
       <KeysBlock settings={s} onPatch={onPatch} />
-
-      <Separator />
-
-      {/* House system */}
-      <div>
-        <SectionLabel>{t("primdir.houseSystem")}</SectionLabel>
-        <RadioRow
-          options={PD_SYSTEMS.map((o, i) => ({ value: o.value, label: t(PD_SYSTEM_LABEL_KEYS[i]) }))}
-          value={s.primarydir}
-          onChange={(v) =>
-            onPatch(v === 1 ? { primarydir: v, subprimarydir: 1 } : { primarydir: v })
-          }
-        />
-      </div>
 
       <Separator />
 

@@ -567,6 +567,18 @@ def _gst_deg(jd_ut: float) -> float:
     return float(astrology.swe_sidtime(jd_ut)) * 15.0
 
 
+def _frame_jd(jd_ut: float, frame_jd_ut: float | None) -> float:
+    return float(jd_ut if frame_jd_ut is None else frame_jd_ut)
+
+
+def _frame_theta0(
+    jd_ut: float,
+    frame_jd_ut: float | None,
+    frame_offset_deg: float = 0.0,
+) -> float:
+    return (_gst_deg(_frame_jd(jd_ut, frame_jd_ut)) + float(frame_offset_deg)) % 360.0
+
+
 def _normalize_aspect_angle(value: float) -> float:
     """Return an undirected aspect separation in the closed 0°..180° range."""
     if isinstance(value, bool):
@@ -1102,6 +1114,9 @@ def compute_parans(
     lat_range: tuple[float, float] = PARAN_LAT_RANGE_DEFAULT,
     iflag: int = astrology.SEFLG_SWIEPH,
     scan_step_deg: float = PARAN_SCAN_STEP_DEG,
+    *,
+    frame_jd_ut: float | None = None,
+    frame_offset_deg: float = 0.0,
 ) -> tuple[ACGParan, ...]:
     """Latitudes where two bodies are simultaneously on their angles.
 
@@ -1111,8 +1126,11 @@ def compute_parans(
             MC × ASC,  MC × DSC,  IC × ASC,  IC × DSC
         Horizon × horizon (numerical):
             ASC × ASC, ASC × DSC, DSC × ASC, DSC × DSC
+
+    ``frame_jd_ut`` and ``frame_offset_deg`` orient the Earth; see
+    ``compute_acg``.
     """
-    theta0 = _gst_deg(jd_ut)
+    theta0 = _frame_theta0(jd_ut, frame_jd_ut, frame_offset_deg)
     resolved = tuple(_coerce_point(p) for p in points)
     equ: dict[str, tuple[float, float]] = {}
     for pt in resolved:
@@ -1236,6 +1254,8 @@ def _compute_ordinary_acg(
         [float, float, float], tuple[float, float]
     ] | None = None,
     zenith_resolver: Callable[[ACGPoint], tuple[float, float]] | None = None,
+    frame_jd_ut: float | None = None,
+    frame_offset_deg: float = 0.0,
 ) -> ACGResult:
     if step_deg <= 0:
         raise ValueError("step_deg must be positive")
@@ -1243,7 +1263,7 @@ def _compute_ordinary_acg(
     if lat_min >= lat_max:
         raise ValueError("lat_range must be (min, max) with min < max")
 
-    theta0 = _gst_deg(jd_ut)
+    theta0 = _frame_theta0(jd_ut, frame_jd_ut, frame_offset_deg)
     kinds_set = set(kinds)
     aspect_specs = _normalize_aspect_specs(aspects)
     selected_aspect_targets = (
@@ -1363,7 +1383,14 @@ def _compute_ordinary_acg(
     # system. In particular, zodiacal longitude lines do not reinterpret
     # paran latitudes using latitude-suppressed coordinates.
     parans = (
-        compute_parans(jd_ut, resolved_points, iflag=iflag, scan_step_deg=paran_scan_step_deg)
+        compute_parans(
+            jd_ut,
+            resolved_points,
+            iflag=iflag,
+            scan_step_deg=paran_scan_step_deg,
+            frame_jd_ut=frame_jd_ut,
+            frame_offset_deg=frame_offset_deg,
+        )
         if include_parans else ()
     )
 
@@ -1395,12 +1422,24 @@ def compute_acg(
     include_zenith_markers: bool = False,
     aspects: Iterable[ACGAspectSpec | str] | None = (),
     aspect_targets: Iterable[str] | str | None = ALL_KINDS,
+    *,
+    frame_jd_ut: float | None = None,
+    frame_offset_deg: float = 0.0,
 ) -> ACGResult:
     """Compute ordinary in-mundo ACG lines at the chart instant.
 
     Aspect loci, when selected, follow the professional in-mundo convention:
     apply the aspect as ``RA ± aspect`` while preserving the source point's
     actual declination, then solve only each selected target angle locus.
+
+    ``jd_ut`` is the instant whose sky resolves the points. ``frame_jd_ut``,
+    when given, is the instant whose Greenwich sidereal time orients the
+    Earth. Cyclocartography (Lewis, US 4,304,554) draws transiting and
+    progressed bodies in the radix frame: the local sidereal time at every
+    place equals its value at birth, so the lines are the loci where a moving
+    body stands on the relocated natal angles. ``frame_offset_deg`` advances
+    that sidereal time uniformly (Lewis's progressed-angles reading: the natal
+    RAMC advanced by the progressed Sun's arc in right ascension).
     """
     return _compute_ordinary_acg(
         jd_ut,
@@ -1417,6 +1456,8 @@ def compute_acg(
         aspect_targets,
         line_system=LINE_SYSTEM_IN_MUNDO,
         resolver=lambda point: resolve_equatorial(point, jd_ut, iflag),
+        frame_jd_ut=frame_jd_ut,
+        frame_offset_deg=frame_offset_deg,
     )
 
 
@@ -1433,13 +1474,17 @@ def compute_zodiacal_acg(
     include_zenith_markers: bool = False,
     aspects: Iterable[ACGAspectSpec | str] | None = (),
     aspect_targets: Iterable[str] | str | None = ALL_KINDS,
+    *,
+    frame_jd_ut: float | None = None,
+    frame_offset_deg: float = 0.0,
 ) -> ACGResult:
     """Compute chart-time zodiacal ACG lines.
 
     Each point is resolved to tropical ecliptic longitude, its ecliptic
     latitude is suppressed, and the longitude is rotated to equatorial
     coordinates with true obliquity. Geographic lines remain anchored to this
-    chart instant's GST. Parans, when requested, remain physical in-mundo
+    chart instant's GST, or ``frame_jd_ut``'s GST when a moving layer is drawn
+    in the radix frame. Parans, when requested, remain physical in-mundo
     simultaneous angularity and are declared as such on the result.
     """
     eps = _true_obliquity_deg(jd_ut)
@@ -1484,6 +1529,8 @@ def compute_zodiacal_acg(
         aspect_basis_resolver=_resolve_ecliptic,
         aspect_branch_resolver=_resolve_aspect_branch,
         zenith_resolver=lambda point: resolve_equatorial(point, jd_ut, iflag),
+        frame_jd_ut=frame_jd_ut,
+        frame_offset_deg=frame_offset_deg,
     )
 
 
@@ -1501,6 +1548,9 @@ def compute_geodetic_acg(
     include_zenith_markers: bool = False,
     aspects: Iterable[ACGAspectSpec | str] | None = (),
     aspect_targets: Iterable[str] | str | None = ALL_KINDS,
+    *,
+    frame_jd_ut: float | None = None,
+    frame_offset_deg: float = 0.0,
 ) -> ACGResult:
     """Geodetic zodiacal-offset astrocartography lines.
 
@@ -1520,7 +1570,7 @@ def compute_geodetic_acg(
         raise ValueError("lat_range must be (min, max) with min < max")
 
     eps = _true_obliquity_deg(jd_ut)
-    physical_theta0 = _gst_deg(jd_ut)
+    physical_theta0 = _frame_theta0(jd_ut, frame_jd_ut, frame_offset_deg)
     kinds_set = set(kinds)
     aspect_specs = _normalize_aspect_specs(aspects)
     selected_aspect_targets = (
@@ -1618,7 +1668,14 @@ def compute_geodetic_acg(
     # Parans are latitude crossings and remain the same latitude set across
     # standard/geodetic longitude-line modes.
     parans = (
-        compute_parans(jd_ut, resolved_points, iflag=iflag, scan_step_deg=paran_scan_step_deg)
+        compute_parans(
+            jd_ut,
+            resolved_points,
+            iflag=iflag,
+            scan_step_deg=paran_scan_step_deg,
+            frame_jd_ut=frame_jd_ut,
+            frame_offset_deg=frame_offset_deg,
+        )
         if include_parans else ()
     )
     normalized_meridian = _norm_lon(meridian_lon)

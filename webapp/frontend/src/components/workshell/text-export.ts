@@ -19,6 +19,14 @@ export function exportFileBaseName(title: string, fallback = "aries-export"): st
   return raw.replace(/[\\/:*?"<>|]+/g, "_") || fallback;
 }
 
+/** Keep the chart holder in every report name, alongside its report/date stem. */
+export function chartExportFileStem(sourceName: string | undefined, reportStem: string): string {
+  const source = exportFileBaseName(sourceName ?? "", "");
+  const report = exportFileBaseName(reportStem);
+  if (!source || report.toLowerCase().startsWith(source.toLowerCase())) return report;
+  return exportFileBaseName(`${source} ${report}`);
+}
+
 export function ensureFilenameExtension(filename: string, extension: string): string {
   const cleanExtension = extension.replace(/^\./, "") || "txt";
   return filename.toLowerCase().endsWith(`.${cleanExtension.toLowerCase()}`)

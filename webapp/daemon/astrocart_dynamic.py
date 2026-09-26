@@ -8,12 +8,20 @@ point set.  A transit/progression is first built through
 ``supplementary_service`` and only the explicitly selected, technique-capable
 actors are copied from that derived chart. Their tropical ecliptic coordinates
 and the supplementary chart's canonical equatorial coordinates are then held
-fixed while Astrocart solves terrestrial angle geometry at the real target
-instant.
+fixed while Astrocart solves terrestrial angle geometry in the radix frame.
 
-That last distinction is essential for progressions: a secondary progression
-chart has a symbolic ephemeris Julian day near the radix, but its map belongs
-to the requested real-world date and therefore must use that date's GST.
+Radix frame (Cyclocartography, Jim Lewis, US 4,304,554): the Earth keeps
+the radix Greenwich sidereal time, so every moving line is the locus where a
+transiting/progressed body stands on the natal angles relocated to that
+place. Only the bodies move; the lines drift with planetary motion, never with
+the target instant's time of day. A moment chart with its own angles (a
+return, an event) is a separate map, not a moving layer.
+
+Lewis CCG is the one map-owned technique: it never calls the supplementary
+builder or global progression options. The Sun, Moon, Mercury, Venus and Mars
+are secondary-progressed by "one day's actual motion per year"; every other
+selected body is transiting. An optional progressed-angles reading advances
+the radix frame by the progressed Sun's arc in right ascension.
 """
 
 from __future__ import annotations
@@ -56,12 +64,24 @@ DYNAMIC_ROLE = {
         astrocart_spec.ROLE_TERTIARY_PROGRESSION_ACTOR
     ),
     astrocart_spec.TECHNIQUE_SOLAR_ARC: astrocart_spec.ROLE_SOLAR_ARC_ACTOR,
+    astrocart_spec.TECHNIQUE_LEWIS_CCG: astrocart_spec.ROLE_TRANSIT_ACTOR,
 }
 
 ASTROCART_LAYER_TRANSIT = "transit"
 ASTROCART_LAYER_PROGRESSION = "progression"
 ASTROCART_DYNAMIC_SOURCE = "canonical_supplementary"
 ASTROCART_TRANSIT_GEOMETRY_SOURCE = "map_ephemeris"
+ASTROCART_LEWIS_CCG_SOURCE = "lewis_ccg"
+LEWIS_CCG_PUBLIC_KIND = "lewis-ccg"
+# US 4,304,554: "the Sun, the Moon, Mercury, Venus, and Mars are progressed".
+LEWIS_CCG_PROGRESSED_BODY_IDS = frozenset((
+    astrology.SE_SUN,
+    astrology.SE_MOON,
+    astrology.SE_MERCURY,
+    astrology.SE_VENUS,
+    astrology.SE_MARS,
+))
+TROPICAL_YEAR_DAYS = 365.24219
 
 
 @dataclass(frozen=True)
@@ -73,10 +93,14 @@ class DynamicAstrocartResult:
     layer_kind: str
     layer_id: str
     target_jd_ut: float
+    frame_jd_ut: float
     source_chart_jd_ut: float
     actor_points: tuple[astrocart.ACGPoint, ...]
     skipped_actor_ids: tuple[str, ...]
     acg_result: astrocart.ACGResult
+    # Lewis CCG mixes progressed and transiting actors in one layer.
+    progressed_actor_ids: frozenset[str] = frozenset()
+    frame_offset_deg: float = 0.0
 
     @property
     def selected_actor_ids(self) -> tuple[str, ...]:
@@ -90,19 +114,22 @@ class DynamicAstrocartResult:
     def to_geojson(self) -> dict[str, Any]:
         """Return layer-filterable GeoJSON without changing ACG geometry."""
         payload = self.acg_result.to_geojson()
-        geometry_source = (
-            ASTROCART_TRANSIT_GEOMETRY_SOURCE
-            if self.layer.technique == astrocart_spec.TECHNIQUE_TRANSIT
-            else ASTROCART_DYNAMIC_SOURCE
-        )
+        if self.layer.technique == astrocart_spec.TECHNIQUE_TRANSIT:
+            geometry_source = ASTROCART_TRANSIT_GEOMETRY_SOURCE
+        elif self.layer.technique == astrocart_spec.TECHNIQUE_LEWIS_CCG:
+            geometry_source = ASTROCART_LEWIS_CCG_SOURCE
+        else:
+            geometry_source = ASTROCART_DYNAMIC_SOURCE
         feature_metadata = {
             "astrocart_layer": self.layer_kind,
             "astrocart_technique": self.layer.technique,
             "astrocart_layer_id": self.layer_id,
+            "astrocart_source_document_id": self.layer.source_document_id,
             "astrocart_cursor_iso": self.layer.cursor_iso,
             "astrocart_source": geometry_source,
             "astrocart_source_kind": self.public_kind,
             "astrocart_target_jd_ut": self.target_jd_ut,
+            "astrocart_frame_jd_ut": self.frame_jd_ut,
             "astrocart_source_chart_jd_ut": self.source_chart_jd_ut,
         }
         for feature in payload.get("features", ()):
@@ -111,21 +138,41 @@ class DynamicAstrocartResult:
             properties = feature.setdefault("properties", {})
             if isinstance(properties, dict):
                 properties.update(feature_metadata)
+                if self.layer.technique == astrocart_spec.TECHNIQUE_LEWIS_CCG:
+                    # Each CCG line keeps its own motion kind so the map's
+                    # transit/progression visibility and labels stay truthful.
+                    progressed = properties.get("point") in self.progressed_actor_ids
+                    properties["astrocart_layer"] = (
+                        ASTROCART_LAYER_PROGRESSION if progressed
+                        else ASTROCART_LAYER_TRANSIT
+                    )
+                    properties["astrocart_technique"] = (
+                        astrocart_spec.TECHNIQUE_SECONDARY_PROGRESSION if progressed
+                        else astrocart_spec.TECHNIQUE_TRANSIT
+                    )
 
         metadata = payload.setdefault("metadata", {})
         if isinstance(metadata, dict):
             metadata["dynamic_layer"] = {
                 "id": self.layer_id,
+                "source_document_id": self.layer.source_document_id,
                 "layer": self.layer_kind,
                 "technique": self.layer.technique,
                 "cursor_iso": self.layer.cursor_iso,
                 "source": geometry_source,
                 "source_kind": self.public_kind,
                 "target_jd_ut": self.target_jd_ut,
+                "frame_jd_ut": self.frame_jd_ut,
                 "source_chart_jd_ut": self.source_chart_jd_ut,
                 "actor_ids": list(self.selected_actor_ids),
                 "skipped_actor_ids": list(self.skipped_actor_ids),
             }
+            if self.layer.technique == astrocart_spec.TECHNIQUE_LEWIS_CCG:
+                metadata["dynamic_layer"].update({
+                    "progressed_actor_ids": sorted(self.progressed_actor_ids),
+                    "progressed_angles": self.layer.progressed_angles,
+                    "frame_offset_deg": self.frame_offset_deg,
+                })
         return payload
 
 
@@ -353,6 +400,9 @@ def _stable_layer_id(
     layer: astrocart_spec.AstrocartDynamicLayer,
     actor_ids: Iterable[str],
 ) -> str:
+    if layer.source_document_id:
+        digest = sha256(layer.source_document_id.encode("utf-8")).hexdigest()[:16]
+        return f"{_layer_kind(layer.technique)}:{layer.technique}:{digest}"
     identity = json.dumps(
         {
             "technique": layer.technique,
@@ -386,6 +436,7 @@ def compute_dynamic_layer(
     paran_scan_step_deg: float = astrocart.PARAN_SCAN_STEP_DEG,
     geodetic_meridian_lon: float | None = None,
     supplementary_builder: Any | None = None,
+    source_chart: Any | None = None,
 ) -> DynamicAstrocartResult | None:
     """Compute one enabled, normalized moving Astrocart layer.
 
@@ -399,7 +450,7 @@ def compute_dynamic_layer(
         not layer.enabled
         or layer.cursor_iso is None
         or not layer.selected_actor_ids
-        or layer.technique not in DYNAMIC_PUBLIC_KIND
+        or layer.technique not in DYNAMIC_ROLE
     ):
         return None
     if coordinate_system not in astrocart_spec.COORDINATE_SYSTEMS:
@@ -420,19 +471,48 @@ def compute_dynamic_layer(
     except (AttributeError, TypeError, ValueError, OverflowError):
         return None
 
-    builder = supplementary_builder or canonical_supplementary_service
+    try:
+        frame_jd_ut = float(radix.time.jd)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+    if layer.technique == astrocart_spec.TECHNIQUE_LEWIS_CCG:
+        return _compute_lewis_ccg_layer(
+            layer,
+            capable_records,
+            requested,
+            cursor=cursor,
+            frame_jd_ut=frame_jd_ut,
+            coordinate_system=coordinate_system,
+            geodetic_meridian_lon=geodetic_meridian_lon,
+            compute_kwargs={
+                "kinds": tuple(kinds),
+                "lat_range": lat_range,
+                "step_deg": step_deg,
+                "iflag": iflag,
+                "include_parans": bool(include_parans),
+                "horizon_error_meters": horizon_error_meters,
+                "paran_scan_step_deg": paran_scan_step_deg,
+                "include_zenith_markers": bool(include_zenith_markers),
+            },
+        )
+
     public_kind = DYNAMIC_PUBLIC_KIND[layer.technique]
-    supplementary = builder.build_result(
-        radix=radix,
-        kind=public_kind,
-        when=cursor.build_when,
-        binding_payload=cursor.binding_payload,
-    )
-    derived_chart = (
-        supplementary.get("chart")
-        if isinstance(supplementary, dict)
-        else getattr(supplementary, "chart", None)
-    )
+    if source_chart is None:
+        builder = supplementary_builder or canonical_supplementary_service
+        supplementary = builder.build_result(
+            radix=radix,
+            kind=public_kind,
+            when=cursor.build_when,
+            binding_payload=cursor.binding_payload,
+        )
+        derived_chart = (
+            supplementary.get("chart")
+            if isinstance(supplementary, dict)
+            else getattr(supplementary, "chart", None)
+        )
+    else:
+        derived_chart = source_chart
     if derived_chart is None:
         raise RuntimeError(
             f"Canonical supplementary builder returned no chart for {public_kind!r}"
@@ -462,6 +542,7 @@ def compute_dynamic_layer(
         "horizon_error_meters": horizon_error_meters,
         "paran_scan_step_deg": paran_scan_step_deg,
         "include_zenith_markers": bool(include_zenith_markers),
+        "frame_jd_ut": frame_jd_ut,
     }
     if geodetic_meridian_lon is not None:
         acg_result = astrocart.compute_geodetic_acg(
@@ -493,10 +574,133 @@ def compute_dynamic_layer(
         layer_kind=_layer_kind(layer.technique),
         layer_id=_stable_layer_id(layer, layer.selected_actor_ids),
         target_jd_ut=cursor.target_jd_ut,
+        frame_jd_ut=frame_jd_ut,
         source_chart_jd_ut=source_chart_jd_ut,
         actor_points=actor_tuple,
         skipped_actor_ids=tuple(sorted(unavailable)),
         acg_result=acg_result,
+    )
+
+
+def _lewis_ccg_progressed_jd(radix_jd_ut: float, target_jd_ut: float) -> float:
+    """Secondary progression: one day of actual motion per year of life."""
+    return radix_jd_ut + (target_jd_ut - radix_jd_ut) / TROPICAL_YEAR_DAYS
+
+
+def _is_lewis_ccg_progressed(record: astrocart_spec.AstrocartPointRecord) -> bool:
+    motion_ref = record.motion_reference
+    if str(motion_ref.get("kind") or "") != "ephemerisBody":
+        return False
+    try:
+        return int(motion_ref["bodyId"]) in LEWIS_CCG_PROGRESSED_BODY_IDS
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _ephemeris_actor(
+    record: astrocart_spec.AstrocartPointRecord,
+    jd_ut: float,
+    iflag: int,
+) -> astrocart.ACGPoint | None:
+    """Freeze a catalog body's geocentric position at ``jd_ut``."""
+    source_point = record.acg_point
+    try:
+        ecliptic = astrocart.resolve_ecliptic(source_point, jd_ut, iflag)
+        equatorial = astrocart.resolve_equatorial(source_point, jd_ut, iflag)
+    except Exception:
+        return None
+    return astrocart.ACGPoint(
+        id=record.semantic_id,
+        label=record.label,
+        kind=source_point.kind,
+        ecliptic=ecliptic,
+        color_hex=source_point.color_hex,
+        equatorial=equatorial,
+    )
+
+
+def _lewis_ccg_frame_offset(radix_jd_ut: float, progressed_jd_ut: float, iflag: int) -> float:
+    """Progressed Sun's arc in right ascension (Lewis's progressed angles)."""
+    sun = astrocart.ACGPoint(id="lewis-ccg-sun", label="Sun", body_id=astrology.SE_SUN)
+    natal_ra, _dec = astrocart.resolve_equatorial(sun, radix_jd_ut, iflag)
+    progressed_ra, _dec = astrocart.resolve_equatorial(sun, progressed_jd_ut, iflag)
+    return ((progressed_ra - natal_ra + 180.0) % 360.0) - 180.0
+
+
+def _compute_lewis_ccg_layer(
+    layer: astrocart_spec.AstrocartDynamicLayer,
+    capable_records: tuple[astrocart_spec.AstrocartPointRecord, ...],
+    requested: set[str],
+    *,
+    cursor: _CursorContext,
+    frame_jd_ut: float,
+    coordinate_system: str,
+    geodetic_meridian_lon: float | None,
+    compute_kwargs: dict[str, Any],
+) -> DynamicAstrocartResult | None:
+    iflag = int(compute_kwargs["iflag"])
+    target_jd_ut = cursor.target_jd_ut
+    progressed_jd_ut = _lewis_ccg_progressed_jd(frame_jd_ut, target_jd_ut)
+    actor_points: list[astrocart.ACGPoint] = []
+    progressed_ids: set[str] = set()
+    unavailable: set[str] = set(requested)
+    for record in capable_records:
+        progressed = _is_lewis_ccg_progressed(record)
+        point = _ephemeris_actor(
+            record,
+            progressed_jd_ut if progressed else target_jd_ut,
+            iflag,
+        )
+        if point is None:
+            continue
+        actor_points.append(point)
+        unavailable.discard(record.semantic_id)
+        if progressed:
+            progressed_ids.add(record.semantic_id)
+    if not actor_points:
+        return None
+
+    frame_offset_deg = (
+        _lewis_ccg_frame_offset(frame_jd_ut, progressed_jd_ut, iflag)
+        if layer.progressed_angles
+        else 0.0
+    )
+    points = tuple(actor_points)
+    if geodetic_meridian_lon is not None:
+        acg_result = astrocart.compute_geodetic_acg(
+            target_jd_ut,
+            points=points,
+            meridian_lon=float(geodetic_meridian_lon),
+            frame_jd_ut=frame_jd_ut,
+            frame_offset_deg=frame_offset_deg,
+            **compute_kwargs,
+        )
+    else:
+        compute = (
+            astrocart.compute_zodiacal_acg
+            if coordinate_system == astrocart_spec.COORDINATE_ZODIACAL
+            else astrocart.compute_acg
+        )
+        acg_result = compute(
+            target_jd_ut,
+            points=points,
+            frame_jd_ut=frame_jd_ut,
+            frame_offset_deg=frame_offset_deg,
+            **compute_kwargs,
+        )
+    return DynamicAstrocartResult(
+        layer=layer,
+        public_kind=LEWIS_CCG_PUBLIC_KIND,
+        layer_kind=ASTROCART_LAYER_TRANSIT,
+        layer_id=_stable_layer_id(layer, layer.selected_actor_ids),
+        target_jd_ut=target_jd_ut,
+        frame_jd_ut=frame_jd_ut,
+        source_chart_jd_ut=progressed_jd_ut,
+        actor_points=points,
+        skipped_actor_ids=tuple(sorted(unavailable)),
+        acg_result=acg_result,
+        progressed_actor_ids=frozenset(progressed_ids),
+        frame_offset_deg=frame_offset_deg,
     )
 
 

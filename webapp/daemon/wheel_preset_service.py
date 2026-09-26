@@ -189,6 +189,8 @@ class WheelPresetStore:
                     raise WheelPresetError('factory wheel presets cannot be replaced')
                 preset['overrides'] = _overrides(preset['overrides'])
                 preset['composition'] = _composition(layout, preset['composition'])
+                if 'visibility' in preset:
+                    self._validate_visibility({layout: preset['visibility']})
                 if 'themeVisibility' in preset:
                     self._validate_visibility({layout: preset['themeVisibility']})
             for layout, identity in normalized['selected'].items():
@@ -229,8 +231,19 @@ class WheelPresetStore:
         draft = deepcopy(state['workingCopies'].get(identity) or {
             'overrides': preset['overrides'], 'composition': preset['composition']})
         draft['sourcePresetId'] = identity
+        # A named wheel saves its switches as well as its structure. Keep
+        # factory/theme display switches independent, but let a named wheel's
+        # Save and Revert controls react to visibility-only edits.
+        visibility_dirty = False
+        if identity.startswith('user.'):
+            saved_flags = {ring['archetypeId']: ring['enabled'] for ring in preset['composition']['rings']}
+            saved_flags.update(preset.get('visibility', {}))
+            visible = cls._visible_composition(state, layout, draft['composition'])
+            visibility_dirty = any(saved_flags.get(ring['archetypeId']) != ring['enabled']
+                                   for ring in visible['rings'])
         draft['dirty'] = (draft['overrides'] != preset['overrides']
-                          or _shape(draft['composition']) != _shape(preset['composition']))
+                          or _shape(draft['composition']) != _shape(preset['composition'])
+                          or visibility_dirty)
         return draft
 
     @staticmethod
@@ -319,13 +332,14 @@ class WheelPresetStore:
                     parked = self._draft(state, layout)
                     state['workingCopies'][identity] = {key: parked[key] for key in ('overrides', 'composition')}
                     state['workingCopies'][identity]['visibility'] = deepcopy(state['visibility'].get(layout, {}))
-                if self._preset(state, preset_id)['layout'] != layout:
+                target_preset = self._preset(state, preset_id)
+                if target_preset['layout'] != layout:
                     raise WheelPresetError('preset layout mismatch')
                 state['selected'][layout] = preset_id
-                theme_visibility = state['workingCopies'].get(preset_id, {}).get(
-                    'visibility', self._preset(state, preset_id).get('themeVisibility'))
-                if theme_visibility is not None:
-                    state['visibility'][layout] = deepcopy(theme_visibility)
+                preset_visibility = state['workingCopies'].get(preset_id, {}).get(
+                    'visibility', target_preset.get('visibility', target_preset.get('themeVisibility')))
+                if preset_visibility is not None:
+                    state['visibility'][layout] = deepcopy(preset_visibility)
             elif action == 'patch':
                 draft = self._draft(state, layout)
                 if overrides is not None:
@@ -381,7 +395,9 @@ class WheelPresetStore:
                 target = f'user.{uuid.uuid4().hex}' if name else target_identity
                 state['presets'][target] = {'id': target, 'name': name.strip() if name else source['name'],
                                             'layout': layout, 'factory': False, 'overrides': draft['overrides'],
-                                            'composition': draft['composition']}
+                                            'composition': draft['composition'],
+                                            'visibility': {ring['archetypeId']: ring['enabled'] for ring in
+                                                           self._visible_composition(state, layout, draft['composition'])['rings']}}
                 state['selected'][layout] = target
                 state['workingCopies'].pop(target, None)
                 if identity != target:
@@ -392,7 +408,8 @@ class WheelPresetStore:
                     state['workingCopies'].pop(identity, None)
             elif action == 'revert':
                 state['workingCopies'].pop(identity, None)
-                visibility = self._preset(state, identity).get('themeVisibility')
+                source = self._preset(state, identity)
+                visibility = source.get('visibility', source.get('themeVisibility'))
                 if visibility is not None:
                     state['visibility'][layout] = deepcopy(visibility)
             elif action == 'restore-factory':

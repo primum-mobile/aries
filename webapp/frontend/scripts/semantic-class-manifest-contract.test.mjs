@@ -67,7 +67,7 @@ const expectedIds = [
   "secondaryRing.leaderLane",
   "secondaryRing.labelLane",
   ...["leader", "label"].map((component) => `secondaryRing.fixedStar.${component}`),
-  ...["leader", "label"].map((component) => `secondaryRing.asteroid.${component}`),
+  ...["leader", "label", "motion"].map((component) => `secondaryRing.asteroid.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.midpoint.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.antiscia.${component}`),
   ...["leader", "glyph", "text"].map((component) => `secondaryRing.contraAntiscia.${component}`),
@@ -90,7 +90,7 @@ const expectedIds = [
 
 test("wheel-v2 exposes the exact complete semantic class tree", () => {
   assert.equal(manifest.WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION, "wheel-v2");
-  assert.equal(expectedIds.length, 121);
+  assert.equal(expectedIds.length, 122);
   assert.deepEqual(
     [...manifest.WHEEL_SEMANTIC_CLASS_IDS].sort(),
     [...expectedIds].sort(),

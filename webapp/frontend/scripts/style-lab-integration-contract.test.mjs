@@ -540,7 +540,7 @@ test("app materials paint visible document and retained-pane surfaces", () => {
   );
   assert.match(
     workspaceContent,
-    /data-right-pane-module="astrocart-controls"[\s\S]*\[&>\*\]:bg-transparent/,
+    /data-right-pane-module=\{activePaneKind \?\? undefined\}[\s\S]*\[&>\*\]:bg-transparent/,
   );
   assert.match(notesPanel, /data-aries-surface="panel"/);
   assert.match(transitSearchView, /data-aries-surface="panel"/);
@@ -631,7 +631,7 @@ test("workspace Style Lab previews linked app colors and materials on the real s
   assert.match(themeProvider, /styleLabBaseTheme\.appTokens/);
   assert.match(themeProvider, /styleLabCssOverrides/);
   assert.match(themeProvider, /APP_AUTHORING_OVERRIDE_PREFIX/);
-  assert.match(themeProvider, /resolveWindowThemeAppearance\(theme, preview\)/);
+  assert.match(themeProvider, /resolveWindowThemeAppearance\(\s*withSettingsColorPreview\(theme, settingsColorPreview\) \?\? theme,\s*preview,/);
   assert.match(themeProvider, /applyThemeToRoot\(appearance\)/);
   assert.match(themeProvider, /compileThemeAppMaterials\(\s*appearance\.appAuthoring,/);
   const windowTheme = readFileSync(resolve(frontendRoot, "src/lib/shell/theme-window-sync.ts"), "utf8");

@@ -182,6 +182,7 @@ class Options:
 		self.def_houses = self.houses = True
 		self.def_showouterhouselines = self.showouterhouselines = True
 		self.def_positions = self.positions = False
+		self.def_positionsminutes = self.positionsminutes = True
 		self.def_intables = self.intables = False
 		self.def_bw = self.bw = False
 		self.def_theme = self.theme = 0
@@ -263,14 +264,14 @@ class Options:
 		self.def_synodicmode = self.synodicmode = self.SYNODIC_MODE_ALL
 		self.def_solarconditionmode = self.solarconditionmode = self.SOLAR_CONDITION_MODE_MORIN
 		self.def_showeclipseoverlay = self.showeclipseoverlay = True
-		self.def_astrocart_localspace_additive = self.astrocart_localspace_additive = True
+		self.def_astrocart_localspace_additive = self.astrocart_localspace_additive = False
 		self.def_astrocart_show_ecliptic = self.astrocart_show_ecliptic = False
-		self.def_astrocart_show_equator = self.astrocart_show_equator = False
+		self.def_astrocart_show_equator = self.astrocart_show_equator = True
 		self.def_astrocart_show_asc_circle = self.astrocart_show_asc_circle = False
 		self.def_astrocart_show_mc_circle = self.astrocart_show_mc_circle = False
 		self.def_astrocart_show_house_lines = self.astrocart_show_house_lines = False
 		self.def_astrocart_show_zodiac_lines = self.astrocart_show_zodiac_lines = False
-		self.def_astrocart_show_country_labels = self.astrocart_show_country_labels = True
+		self.def_astrocart_show_country_labels = self.astrocart_show_country_labels = False
 		self.def_astrocart_terrain_relief = self.astrocart_terrain_relief = False
 		self.def_showfixstarsnodes = self.showfixstarsnodes = False
 		self.def_showfixstarshcs = self.showfixstarshcs = False
@@ -669,6 +670,7 @@ class Options:
 		self.asteroids = self.def_asteroids[:]
 		self.def_asteroid_orb_conjunction = self.asteroid_orb_conjunction = 1.5
 		self.def_asteroid_orb_opposition = self.asteroid_orb_opposition = 1.5
+		self.def_asteroid_outer_ring_all = self.asteroid_outer_ring_all = False
 
 		#Profections
 		self.def_zodprof = self.zodprof = True
@@ -824,8 +826,20 @@ class Options:
 		self.def_workspace_sidebar_collapsed_sections = self.workspace_sidebar_collapsed_sections[:]
 		self.astrocartography_preferences = {
 			'schemaVersion': 1,
-			'spec': {},
-			'view': {},
+			'spec': {
+				'paran': {'followLines': True},
+				'zenithEnabled': True,
+				'localSpace': {'oppositionEnabled': True},
+			},
+			'view': {
+				'lineLabels': 'glyphs',
+				'projection': 'globe',
+				'overlays': {
+					'zeniths': True,
+					'localSpaceOppositions': True,
+				},
+				'legend': {'collapsed': True, 'userSet': True},
+			},
 		}
 		self.def_astrocartography_preferences = copy.deepcopy(
 			self.astrocartography_preferences
@@ -841,6 +855,7 @@ class Options:
 				'focusedFilterIds': [],
 				'focusMatchMode': 'or',
 				'rxFocusEnabled': False,
+				'includeHouseCusps': True,
 				'secondaryRingEnabledByMode': {},
 				'filterDrawerOpen': False,
 			},
@@ -1510,6 +1525,7 @@ class Options:
 				'focusedFilterIds': focused_filter_ids,
 				'focusMatchMode': focus_match_mode,
 				'rxFocusEnabled': bool(aspect.get('rxFocusEnabled', False)),
+				'includeHouseCusps': bool(aspect.get('includeHouseCusps', True)),
 				'secondaryRingEnabledByMode': secondary_ring_enabled_by_mode,
 				'filterDrawerOpen': bool(aspect.get('filterDrawerOpen', False)),
 			},
@@ -1652,6 +1668,7 @@ class Options:
 		self.houses = self.def_houses
 		self.showouterhouselines = self.def_showouterhouselines
 		self.positions = self.def_positions
+		self.positionsminutes = self.def_positionsminutes
 		self.intables = self.def_intables
 		self.bw = self.def_bw
 		self.theme = self.def_theme
@@ -1946,6 +1963,7 @@ class Options:
 		self.asteroids = self.def_asteroids[:]
 		self.asteroid_orb_conjunction = self.def_asteroid_orb_conjunction
 		self.asteroid_orb_opposition = self.def_asteroid_orb_opposition
+		self.asteroid_outer_ring_all = self.def_asteroid_outer_ring_all
 
 		#Profections
 		self.zodprof = self.def_zodprof
@@ -2385,6 +2403,10 @@ class Options:
 				self.png_watermark_text = value.strip() if isinstance(value, str) else self.def_png_watermark_text
 			except EOFError:
 				self.png_watermark_text = self.def_png_watermark_text
+			try:
+				self.positionsminutes = bool(pickle.load(f))
+			except EOFError:
+				self.positionsminutes = self.def_positionsminutes
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -2867,6 +2889,10 @@ class Options:
 				pickle.load(f), self.def_asteroid_orb_conjunction)
 			self.asteroid_orb_opposition = self._normalized_asteroid_orb(
 				pickle.load(f), self.def_asteroid_orb_opposition)
+			try:
+				self.asteroid_outer_ring_all = bool(pickle.load(f))
+			except EOFError:
+				self.asteroid_outer_ring_all = self.def_asteroid_outer_ring_all
 			f.close()
 		except (IOError, EOFError, TypeError, ValueError):
 			self.asteroids = self.def_asteroids[:]
@@ -2875,6 +2901,7 @@ class Options:
 				self.def_asteroid_orb_conjunction,
 			)
 			self.asteroid_orb_opposition = self.def_asteroid_orb_opposition
+			self.asteroid_outer_ring_all = self.def_asteroid_outer_ring_all
 
 		try:
 			optfile = self.profectionsopt
@@ -3491,6 +3518,7 @@ class Options:
 			pickle.dump(bool(self.showouterminutes), f)
 			pickle.dump(str(self.png_watermark_style), f)
 			pickle.dump(str(self.png_watermark_text), f)
+			pickle.dump(bool(self.positionsminutes), f)
 			f.close()
 			return True
 		except IOError:
@@ -3949,6 +3977,7 @@ class Options:
 				self.asteroid_orb_opposition,
 				self.def_asteroid_orb_opposition,
 			), f)
+			pickle.dump(bool(self.asteroid_outer_ring_all), f)
 			f.close()
 			return True
 		except IOError:

@@ -215,8 +215,10 @@ test("chart rail pointer and keyboard activation both close their navigation bur
   );
   assert.match(buttonSource, /onPointerUp=\{stopHold\}/);
   assert.match(buttonSource, /onPointerCancel=\{stopHold\}/);
-  assert.match(buttonSource, /onPointerLeave=\{stopHold\}/);
-  assert.match(buttonSource, /onBlur=\{stopHold\}/);
+  assert.match(buttonSource, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(buttonSource, /onLostPointerCapture=\{stopHold\}/);
+  assert.match(buttonSource, /onPointerLeave=\{\(\) => \{[\s\S]*capturedPointerIdRef\.current === null\) stopHold\(\)/);
+  assert.match(buttonSource, /onBlur=\{\(\) => \{[\s\S]*capturedPointerIdRef\.current === null\) stopHold\(\)/);
   assert.match(
     buttonSource,
     /React\.useEffect\(\(\) => \(\) => \{[\s\S]*if \(wasHolding\) onEnd\(navigationKey\);/,

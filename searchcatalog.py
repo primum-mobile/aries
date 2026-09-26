@@ -45,11 +45,25 @@ ASTEROID_SEARCH_ROLES = {
 	'heliacal_phases': {'promittor': 'unsupported(visibility_model_pending)', 'significator': 'unsupported(event_has_no_receiver)'},
 }
 
+HOUSE_CUSP_SEARCH_ROLES = {
+	'transits': {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	'converse_transits': {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	'secondary_directions': {'promittor': 'unsupported(progressed_cusp_adapter_pending)', 'significator': 'supported'},
+	'mundane_weather': {'promittor': 'unsupported(not_ephemeris_body)', 'significator': 'unsupported(not_ephemeris_body)'},
+	'sign_changes': {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'unsupported(event_has_no_receiver)'},
+	'lunations': {'promittor': 'unsupported(luminary_event)', 'significator': 'supported'},
+	'eclipses': {'promittor': 'unsupported(luminary_event)', 'significator': 'supported'},
+	'primary_directions': {'promittor': 'unsupported(pd_cusp_adapter_pending)', 'significator': 'unsupported(pd_cusp_adapter_pending)'},
+	'profections': {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	'heliacal_phases': {'promittor': 'unsupported(visibility_model_pending)', 'significator': 'unsupported(event_has_no_receiver)'},
+}
+
 
 class SearchObject(object):
 	FAMILY_PLANET = 'planet'
 	FAMILY_NODE = 'node'
 	FAMILY_ANGLE = 'angle'
+	FAMILY_HOUSE_CUSP = 'house_cusp'
 	FAMILY_FORTUNE = 'fortune'
 	FAMILY_SYZYGY = 'syzygy'
 	FAMILY_ECLIPSE = 'eclipse'
@@ -59,6 +73,7 @@ class SearchObject(object):
 
 	SOURCE_PLANET = 'planet'
 	SOURCE_ANGLE = 'angle'
+	SOURCE_HOUSE_CUSP = 'house_cusp'
 	SOURCE_FORTUNE = 'fortune'
 	SOURCE_SYZYGY = 'syzygy'
 	SOURCE_ECLIPSE = 'eclipse'
@@ -105,6 +120,7 @@ TRANSIT_POINT_ROLES = {
 	SearchObject.FAMILY_PLANET: {'promittor': 'supported', 'significator': 'supported'},
 	SearchObject.FAMILY_NODE: {'promittor': 'supported', 'significator': 'supported'},
 	SearchObject.FAMILY_ANGLE: {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
+	SearchObject.FAMILY_HOUSE_CUSP: {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
 	SearchObject.FAMILY_FORTUNE: {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
 	SearchObject.FAMILY_FIXED_STAR: {'promittor': 'unsupported(fixed_transit_target)', 'significator': 'supported'},
 	SearchObject.FAMILY_SYZYGY: {'promittor': 'unsupported(prenatal_event_target)', 'significator': 'supported'},
@@ -151,6 +167,7 @@ class SearchCatalog(object):
 		self._add_planetary_objects()
 		self._add_asteroid_objects()
 		self._add_fixed_points()
+		self._add_house_cusps()
 		self._add_fixed_stars()
 		self._add_arabic_parts()
 		self._add_custom_points()
@@ -287,6 +304,14 @@ class SearchCatalog(object):
 					can_significator=True
 				)
 			)
+			self._add_object(SearchObject(
+				'angle:dsc',
+				mtexts.txts['Dsc'],
+				SearchObject.FAMILY_ANGLE,
+				SearchObject.SOURCE_ANGLE,
+				util.normalize(float(asc_lon) + 180.0),
+				can_significator=True,
+			))
 
 		if mc_lon is not None:
 			self._add_object(
@@ -300,6 +325,14 @@ class SearchCatalog(object):
 					can_significator=True
 				)
 			)
+			self._add_object(SearchObject(
+				'angle:ic',
+				mtexts.txts['IC'],
+				SearchObject.FAMILY_ANGLE,
+				SearchObject.SOURCE_ANGLE,
+				util.normalize(float(mc_lon) + 180.0),
+				can_significator=True,
+			))
 
 		if lof_lon is not None:
 			self._add_object(
@@ -342,6 +375,24 @@ class SearchCatalog(object):
 				)
 			)
 
+
+	def _add_house_cusps(self):
+		cusps = getattr(getattr(self.chart, 'houses', None), 'cusps', ()) or ()
+		for number in (2, 3, 5, 6, 8, 9, 11, 12):
+			if number >= len(cusps):
+				continue
+			try:
+				longitude = float(cusps[number])
+			except (TypeError, ValueError):
+				continue
+			self._add_object(SearchObject(
+				'house-cusp:%d' % number,
+				str(mtexts.txts.get('HC%d' % number, number)),
+				SearchObject.FAMILY_HOUSE_CUSP,
+				SearchObject.SOURCE_HOUSE_CUSP,
+				longitude,
+				can_significator=True,
+			))
 
 	def _add_fixed_stars(self):
 		for idx, star in enumerate(getattr(getattr(self.chart, 'fixstars', None), 'data', ()) or ()):

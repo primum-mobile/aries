@@ -386,7 +386,8 @@ class Transits:
 
 						if typ != Transit.SIGN:
 							tr.aspect = a
-						tr.house = chrt.houses.getHousePos(planet1.data[planets.Planet.LONG], chrt.options)
+						if not getattr(chrt, '_suppress_house_positions', False):
+							tr.house = chrt.houses.getHousePos(planet1.data[planets.Planet.LONG], chrt.options)
 						tr.day = time1.day
 						tr.time = time1.time
 

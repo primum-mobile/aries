@@ -9,6 +9,7 @@ import { WheelPresetControls } from "./wheel-preset-controls";
 import { useShallow } from "zustand/react/shallow";
 import { flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
 import { wheelTypographyProfileForTheme } from "@/lib/chart/wheel-render-style";
+import { settingsColorPreviewMatchesTheme } from "@/lib/chart/palette";
 import * as React from "react";
 
 import { ArrowDown, ArrowUp } from "lucide-react";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, FloatingDialogContent, NativeDialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createAstrocartStyleMessage } from "@/lib/chart/astrocart-style";
+import { appUiFontStack } from "@/lib/chart/astrocart-ui-font";
 import {
   applyThemePreset,
   corpusDisciplinesCached,
@@ -61,6 +63,9 @@ import {
   type RGB,
 } from "@/lib/daemon/client";
 import { PrimDirSettingsBody, PD_PLANET_GLYPHS } from "./primdir-settings";
+import { StyleLabColorPicker } from "./style-lab-color-picker";
+import { SETTINGS_COLOR_PREVIEW, useColorSettingsPreviewStore, type SettingsColorPreview, type SettingsColorPreviewEvent } from "@/stores/color-settings-preview-store";
+import { resolveShellHost } from "@/lib/shell-host";
 import { useAstrocartMapUrl } from "@/hooks/use-astrocart-map-url";
 import { downloadTextContent } from "./text-export";
 import { useThemeStore } from "@/stores/theme-store";
@@ -73,7 +78,7 @@ import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
 // ---------------------------------------------------------------------------
 // Settings / Appearance surface — a thin skin over the daemon options catalog.
 // The daemon owns enum catalogs, glyph chars, color fields, and validation;
-// React owns the desktop grouping and wx-parity row order for the visible tabs.
+// React owns the desktop grouping and row order for the visible tabs.
 // Driven by GET/POST /api/options + POST /api/options/theme.
 // ---------------------------------------------------------------------------
 
@@ -137,7 +142,7 @@ const SUPPORTED_SETTINGS_TAB_IDS = [
   "appearance", "interpretation", "astrocartography", "colors", "export", "houses", "ayanamsha",
   "location", "planets", "orbs", "dignities", "speculum", "fixstars", "asteroids",
   "mansions", "almutens", "primarydirections", "revolutions", "supplementary",
-  "timelords", "eclipses", "relationship", "stepalerts", "languages",
+  "timelords", "eclipses", "relationship", "languages",
 ] as const;
 
 export type SettingsTabId = (typeof SUPPORTED_SETTINGS_TAB_IDS)[number];
@@ -185,10 +190,10 @@ function SettingsBody({
   const applyThemeState = useThemeStore((state) => state.applyThemeState);
   const syncLocale = useSyncLocale();
   const [selectedTab, setSelectedTab] = React.useState(initialTab);
-  const [prevInitialTab, setPrevInitialTab] = React.useState(initialTab);
-  if (initialTab !== prevInitialTab) {
-    setPrevInitialTab(initialTab);
-    setSelectedTab(initialTab);
+  const [tabIntent, setTabIntent] = React.useState({ initialTab, active });
+  if (initialTab !== tabIntent.initialTab || active !== tabIntent.active) {
+    setTabIntent({ initialTab, active });
+    if (initialTab !== tabIntent.initialTab || active) setSelectedTab(initialTab);
   }
   const tabs = opts?.settingsRegistry.tabs.filter((tab) => isSettingsTabId(tab.id)) ?? [];
   const optionsLoaded = React.useRef(false);
@@ -196,6 +201,9 @@ function SettingsBody({
     optionsLoaded.current = true;
     setOpts(next);
     applyThemeState(next.themeState);
+    if (settingsColorPreviewMatchesTheme(next.themeState, useColorSettingsPreviewStore.getState().color)) {
+      useColorSettingsPreviewStore.getState().setColor(null);
+    }
     syncLocale(next.languages.langid);
   }, [applyThemeState, syncLocale]);
   const patchQueueRef = React.useRef<OptionsPatch[]>([]);
@@ -222,6 +230,7 @@ function SettingsBody({
     patchDrainRef.current = true;
     let latest: OptionsPayload | null = null;
     let failed = false;
+    let failedColors = false;
     try {
       while (patchQueueRef.current.length > 0) {
         const patch = patchQueueRef.current.shift()!;
@@ -232,12 +241,14 @@ function SettingsBody({
           presetRepliesRef.current.get(patch)?.(true);
         } catch (err) {
           failed = true;
+          failedColors ||= Boolean(patch.colors);
           presetRepliesRef.current.get(patch)?.(false);
           console.error("[options-patch]", err);
         }
       }
     } finally {
       patchDrainRef.current = false;
+      if (failedColors) clearSettingsColorPreview();
       if (failed) {
         const epoch = patchEpochRef.current;
         fetchOptions().then((next) => {
@@ -290,7 +301,15 @@ function SettingsBody({
       && patch.asteroids.selectedNumbers !== undefined;
     const queued = patchQueueRef.current;
     const last = queued[queued.length - 1];
-    if (selectionOnly && last?.asteroids?.selectedNumbers !== undefined
+    if (Object.keys(patch).length === 1 && patch.colors
+      && last?.colors && Object.keys(last).length === 1) {
+      // A picker or opacity drag may emit many values while one daemon write
+      // is active. Keep one latest trailing paint transaction and preserve
+      // edits to different color fields in that same burst.
+      queued[queued.length - 1] = {
+        colors: { ...last.colors, ...patch.colors },
+      };
+    } else if (selectionOnly && last?.asteroids?.selectedNumbers !== undefined
       && Object.keys(last).length === 1 && Object.keys(last.asteroids).length === 1) {
       queued[queued.length - 1] = patch;
     } else {
@@ -301,6 +320,7 @@ function SettingsBody({
   }, [drainPatches]);
 
   const applyPreset = React.useCallback((name: string) => {
+    clearSettingsColorPreview();
     useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
     flushWheelGeometry().then(() => onEndThemePreview?.()).then(() => applyThemePreset(name))
       .then((next) => {
@@ -514,31 +534,96 @@ function hexToRgb(hex: string): RGB {
   ];
 }
 
-/** Clean color swatch — a native <input type=color> masked behind a flat,
- * rounded swatch trigger so the picker UI is the platform one but the chrome is
- * ours. onCommit fires on change (debouncing is handled by optimistic patch). */
 function Swatch({
   value,
+  label,
+  attr,
+  index,
   onCommit,
 }: {
   value: RGB | null;
+  label: string;
+  attr: SettingsColorPreview["attr"];
+  index?: number;
   onCommit: (rgb: RGB) => void;
 }) {
+  const hex = rgbToHex(value);
+  const [syncedHex, setSyncedHex] = React.useState(hex);
+  const [liveHex, setLiveHex] = React.useState<string | null>(null);
+  const gestureActive = React.useRef(false);
+  const latestRgb = React.useRef<RGB | null>(null);
+  if (hex !== syncedHex) {
+    setSyncedHex(hex);
+    setLiveHex(null);
+  }
+  const changed = (next: string) => {
+    const rgb = hexToRgb(next);
+    latestRgb.current = rgb;
+    setLiveHex(next);
+    previewSettingsColor({ attr, index, rgb });
+    if (!gestureActive.current) onCommit(rgb);
+  };
   return (
-    <label className="relative block h-[var(--aries-control-icon-size-default)] w-[var(--aries-control-height-small)] cursor-pointer overflow-hidden rounded-[var(--aries-radius-xs)] border border-border/60">
-      <span
-        aria-hidden
-        className="absolute inset-0"
-        style={{ backgroundColor: `rgb(${(value ?? [0, 0, 0]).join(",")})` }}
-      />
-      <input
-        type="color"
-        value={rgbToHex(value)}
-        onChange={(e) => onCommit(hexToRgb(e.target.value))}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-      />
-    </label>
+    <StyleLabColorPicker
+      value={liveHex ?? hex}
+      label={label}
+      className="!h-[var(--aries-control-icon-size-default)] !w-[var(--aries-control-height-small)]"
+      onGestureStart={() => { gestureActive.current = true; latestRgb.current = null; }}
+      onGestureEnd={() => {
+        gestureActive.current = false;
+        if (latestRgb.current) onCommit(latestRgb.current);
+      }}
+      onChange={changed}
+    />
   );
+}
+
+let opacityPreviewFrame: number | null = null;
+let opacityPreviewValue = 0;
+let colorPreviewFrame: number | null = null;
+let colorPreviewValue: SettingsColorPreview | null = null;
+let previewSequence = 0;
+
+function emitSettingsColorPreview(payload: SettingsColorPreviewEvent): void {
+  void import("@tauri-apps/api/event").then(({ emitTo }) =>
+    emitTo("main", SETTINGS_COLOR_PREVIEW, payload)
+  ).catch((error) => console.error("[settings-color-preview]", error));
+}
+
+function previewSettingsColor(color: Omit<SettingsColorPreview, "revision">): void {
+  const next = { ...color, revision: ++previewSequence };
+  colorPreviewValue = next;
+  if (colorPreviewFrame !== null) return;
+  colorPreviewFrame = requestAnimationFrame(() => {
+    colorPreviewFrame = null;
+    const color = colorPreviewValue && { ...colorPreviewValue, revision: ++previewSequence };
+    useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
+    useColorSettingsPreviewStore.getState().setColor(color);
+    if (resolveShellHost().kind === "tauri") {
+      emitSettingsColorPreview({ kind: "color", color, sequence: color?.revision ?? ++previewSequence });
+    }
+  });
+}
+
+function clearSettingsColorPreview(): void {
+  if (colorPreviewFrame !== null) cancelAnimationFrame(colorPreviewFrame);
+  colorPreviewFrame = null;
+  colorPreviewValue = null;
+  useColorSettingsPreviewStore.getState().setColor(null);
+  if (resolveShellHost().kind === "tauri") {
+    emitSettingsColorPreview({ kind: "color", color: null, sequence: ++previewSequence });
+  }
+}
+
+function previewZodiacFieldOpacity(value: number): void {
+  useColorSettingsPreviewStore.getState().setZodiacFieldOpacity(value);
+  if (resolveShellHost().kind !== "tauri") return;
+  opacityPreviewValue = value;
+  if (opacityPreviewFrame !== null) return;
+  opacityPreviewFrame = requestAnimationFrame(() => {
+    opacityPreviewFrame = null;
+    emitSettingsColorPreview({ kind: "opacity", value: opacityPreviewValue, sequence: ++previewSequence });
+  });
 }
 
 function Toggle({
@@ -649,8 +734,8 @@ function Glyph({ ch }: { ch: string }) {
   );
 }
 
-/** Generic numeric slider rendered from catalog SliderFieldMeta. Commits on
- * release (onMouseUp/onKeyUp + change), showing the live value alongside. */
+/** Generic numeric slider rendered from catalog SliderFieldMeta. Most rows
+ * commit on release; color opacity commits during the gesture. */
 function Slider({
   value,
   min,
@@ -658,6 +743,8 @@ function Slider({
   step,
   disabled = false,
   suffix = "",
+  live = false,
+  onPreview,
   onCommit,
 }: {
   value: number;
@@ -666,9 +753,26 @@ function Slider({
   step: number;
   disabled?: boolean;
   suffix?: string;
+  live?: boolean;
+  onPreview?: (n: number) => void;
   onCommit: (n: number) => void;
 }) {
   const [local, setLocal] = React.useState(value);
+  const [previousValue, setPreviousValue] = React.useState(value);
+  const [gestureActive, setGestureActive] = React.useState(false);
+  const currentValue = React.useRef(value);
+  const lastCommitted = React.useRef(value);
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    if (!gestureActive) {
+      setLocal(value);
+    }
+  }
+  const commitLive = () => {
+    if (!live || currentValue.current === lastCommitted.current) return;
+    lastCommitted.current = currentValue.current;
+    onCommit(currentValue.current);
+  };
   return (
     <span className="flex items-center gap-[var(--aries-form-field-gap)]">
       <input
@@ -678,12 +782,22 @@ function Slider({
         step={step}
         value={local}
         disabled={disabled}
-        onChange={(e) => setLocal(Number(e.target.value))}
+        onPointerDown={() => setGestureActive(true)}
+        onPointerUp={() => { setGestureActive(false); commitLive(); }}
+        onPointerCancel={() => { setGestureActive(false); commitLive(); }}
+        onBlur={() => { setGestureActive(false); commitLive(); }}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          currentValue.current = next;
+          setLocal(next);
+          if (live) onPreview?.(next);
+        }}
         onMouseUp={() => {
-          if (local !== value) onCommit(local);
+          if (!live && local !== value) onCommit(local);
         }}
         onKeyUp={() => {
-          if (local !== value) onCommit(local);
+          if (live) commitLive();
+          else if (local !== value) onCommit(local);
         }}
         className="h-1 w-[120px] cursor-pointer accent-foreground/70 disabled:cursor-default disabled:opacity-40"
       />
@@ -695,7 +809,7 @@ function Slider({
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1 — Colors  (colorsdlg.ColorsDlg: preset + 4 notebook pages)
+// Tab 1 — Colors
 // ---------------------------------------------------------------------------
 
 type TabProps = {
@@ -1549,12 +1663,13 @@ function ColorsTab({
                 </Row>
                 <Row label={<SubLabel>{t("settings.zodiacElementFieldOpacity")}</SubLabel>}>
                   <Slider
-                    key={`zodiac-field-opacity:${c.zodiacelementfieldopacity}`}
                     value={Math.round(c.zodiacelementfieldopacity * 100)}
                     min={0}
                     max={100}
-                    step={5}
+                    step={1}
                     suffix="%"
+                    live
+                    onPreview={(value) => previewZodiacFieldOpacity(value / 100)}
                     disabled={!c.usezodiacelementfieldcolors}
                     onCommit={(value) => setNumber("zodiacelementfieldopacity", value / 100)}
                   />
@@ -1563,7 +1678,7 @@ function ColorsTab({
             ) : null}
             {fields.map((f) => (
               <Row key={f.attr} label={f.label}>
-                <Swatch value={c[f.attr] as RGB | null} onCommit={(rgb) => setColor(f.attr, rgb)} />
+                <Swatch value={c[f.attr] as RGB | null} label={f.label} attr={f.attr} onCommit={(rgb) => setColor(f.attr, rgb)} />
               </Row>
             ))}
           </React.Fragment>
@@ -1586,6 +1701,9 @@ function ColorsTab({
         >
           <Swatch
             value={c.clrindividual[p.index] ?? null}
+            label={p.label}
+            attr="clrindividual"
+            index={p.index}
             onCommit={(rgb) => setListColor("clrindividual", p.index, rgb)}
           />
         </Row>
@@ -1602,7 +1720,7 @@ function ColorsTab({
             </span>
           }
         >
-          <Swatch value={c.clraspect[i] ?? null} onCommit={(rgb) => setListColor("clraspect", i, rgb)} />
+          <Swatch value={c.clraspect[i] ?? null} label={label} attr="clraspect" index={i} onCommit={(rgb) => setListColor("clraspect", i, rgb)} />
         </Row>
       ))}
     </div>
@@ -1927,6 +2045,13 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
       </Row>
       <Row label={t("settings.chartPositionLabels")}>
         <Toggle checked={d.positions} onChange={(v) => setBool("positions", v)} />
+      </Row>
+      <Row label={<SubLabel>{t("settings.chartPositionMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.positions && d.positionsminutes}
+          disabled={!d.positions}
+          onChange={(v) => setBool("positionsminutes", v)}
+        />
       </Row>
       <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60">
         {t("settings.chartPositionLabelsHelp")}
@@ -3211,7 +3336,7 @@ function DefaultLocationMapSheet({
       })
       .then((payload) => {
         if (controller.signal.aborted || iframeRef.current?.contentWindow !== win) return;
-        win.postMessage(createAstrocartStyleMessage(payload), "*");
+        win.postMessage(createAstrocartStyleMessage(payload, { fontUi: appUiFontStack() }), "*");
       })
       .catch((err) => {
         if (!controller.signal.aborted) console.error("[defloc-map-style]", err);

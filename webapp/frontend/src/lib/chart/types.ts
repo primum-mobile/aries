@@ -392,6 +392,7 @@ export interface Chart {
     showHouses?: boolean;
     showOuterHouseLines?: boolean;
     showPositions?: boolean;
+    showPositionMinutes?: boolean;
     showOuterPositions?: boolean;
     showOuterMinutes?: boolean;
     showInformation?: boolean;

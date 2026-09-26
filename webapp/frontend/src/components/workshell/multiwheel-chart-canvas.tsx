@@ -23,6 +23,8 @@ import {
   applyProfileColorsToSnapshot,
   readPaletteFromTheme,
   readPaletteProfileOverrides,
+  settingsColorPreviewChartToken,
+  withSettingsColorPreview,
 } from "@/lib/chart/palette";
 import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
 import { perfNow, recordChartPerf } from "@/lib/chart/perf";
@@ -37,6 +39,7 @@ import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { cn } from "@/lib/utils";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { useColorSettingsPreviewStore, withZodiacFieldOpacityPreview } from "@/stores/color-settings-preview-store";
 import { hoverRegionKey, useWorkspaceStore, type HoverRegion } from "@/stores/workspace-store";
 
 function multiwheelHitToHover(hit: MultiwheelHitRegion): HoverRegion {
@@ -115,16 +118,30 @@ export function MultiwheelChartCanvas({
   const setInspectorActiveRegion = useWorkspaceStore((state) => state.setInspectorActiveRegion);
   const inspectorOpen = useFrameLayoutStore((state) => state.inspectorOpen);
   const appTheme = useThemeStore((state) => state.theme);
+  const zodiacFieldOpacityPreview = useColorSettingsPreviewStore((state) => state.zodiacFieldOpacity);
+  const settingsColorPreview = useColorSettingsPreviewStore((state) => (
+    settingsColorPreviewChartToken(state.color) === "--morinus-table" ? null
+      : settingsColorPreviewChartToken(state.color) ? state.color : null
+  ));
   const geometryProfile = useChartStyleEditorStore((state) => state.geometryProfile);
   const geometryOverrides = useChartStyleEditorStore((state) => state.geometryOverrides);
   const syncedGeometryOverrides = useChartStyleEditorStore((state) => state.syncedGeometryOverrides);
   const geometryBaseRevision = useChartStyleEditorStore((state) => state.wheelPresetState?.revision ?? -1);
   const gestureActive = useChartStyleEditorStore((state) => state.gestureStart != null);
   const editorRevision = useChartStyleEditorStore((state) => state.revision);
-  const theme = inheritAppTheme ? appTheme : null;
+  const theme = useMemo(
+    () => withSettingsColorPreview(
+      inheritAppTheme ? appTheme : null,
+      inheritAppTheme ? settingsColorPreview : null,
+    ),
+    [appTheme, inheritAppTheme, settingsColorPreview],
+  );
   const renderSnapshot = useMemo(
-    () => applyProfileColorsToSnapshot(chart, theme),
-    [chart, theme],
+    () => withZodiacFieldOpacityPreview(
+      applyProfileColorsToSnapshot(chart, theme),
+      inheritAppTheme ? zodiacFieldOpacityPreview : null,
+    ),
+    [chart, theme, inheritAppTheme, zodiacFieldOpacityPreview],
   );
   const palette = useMemo(() => ({
     ...readPaletteFromTheme(theme),

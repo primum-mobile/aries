@@ -34,6 +34,8 @@ type ActiveOverlayDrag = Readonly<{
 
 type UseDraggableOverlayOptions = Readonly<{
   disabled?: boolean;
+  /** Laid out by an anchor: no drag, no container clamping, zero offset. */
+  anchored?: boolean;
   inset?: number;
   resetKey?: string;
   isBlockedTarget?: (target: EventTarget | null) => boolean;
@@ -83,6 +85,7 @@ export function clampOverlayOffset(
  */
 export function useDraggableOverlay({
   disabled = false,
+  anchored = false,
   inset = 8,
   resetKey = "",
   isBlockedTarget,
@@ -159,6 +162,7 @@ export function useDraggableOverlay({
   ) => {
     if (
       disabled ||
+      anchored ||
       event.button !== 0 ||
       !event.isPrimary ||
       isBlockedTarget?.(event.target)
@@ -190,7 +194,7 @@ export function useDraggableOverlay({
     } catch {
       // Synthetic test events may not represent a capturable pointer.
     }
-  }, [disabled, flushPendingOffset, inset, isBlockedTarget, onInteraction]);
+  }, [anchored, disabled, flushPendingOffset, inset, isBlockedTarget, onInteraction]);
 
   const handlePointerMove = React.useCallback((
     event: React.PointerEvent<HTMLDivElement>,
@@ -233,12 +237,14 @@ export function useDraggableOverlay({
 
   React.useEffect(() => {
     resetPosition();
-  }, [resetKey, resetPosition]);
+  }, [anchored, resetKey, resetPosition]);
 
   React.useEffect(() => {
     const element = overlayRef.current;
     const container = element?.parentElement;
-    if (!element || !container) return;
+    // Anchored overlays are laid out by their anchor; clamping one into a
+    // shrinking container would displace it and keep that offset.
+    if (anchored || !element || !container) return;
 
     const keepInsideContainer = () => {
       if (activeDragRef.current || element.getClientRects().length === 0) return;
@@ -266,7 +272,7 @@ export function useDraggableOverlay({
       observer?.disconnect();
       window.removeEventListener("resize", keepInsideContainer);
     };
-  }, [applyOffset, inset, onPositionSettled]);
+  }, [anchored, applyOffset, inset, onPositionSettled]);
 
   React.useEffect(() => () => {
     if (animationFrameRef.current !== null) {

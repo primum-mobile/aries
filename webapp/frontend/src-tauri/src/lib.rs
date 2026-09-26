@@ -308,6 +308,8 @@ struct MainWindowFrameState {
 const CHART_PICKER_WINDOW: &str = "chart-picker";
 const SETTINGS_WINDOW: &str = "settings";
 const CHART_EDITOR_WINDOW: &str = "chart-editor";
+const CHART_EDITOR_MIN_WIDTH: f64 = 600.0;
+const CHART_EDITOR_MIN_HEIGHT: f64 = 480.0;
 const CHART_PICKER_INITIAL_WIDTH: f64 = 552.0;
 const CHART_PICKER_MIN_WIDTH: f64 = 276.0;
 const DAEMON_READY_TIMEOUT_SECS: u64 = 60;
@@ -1337,25 +1339,41 @@ fn build_chart_picker_window(
     app: &tauri::AppHandle,
     path: &str,
     title: &str,
-    visible: bool,
     theme: Option<&str>,
     background: Option<Vec<u8>>,
 ) -> Result<(), String> {
     let native_theme = chart_picker_theme(theme);
-    WebviewWindowBuilder::new(app, CHART_PICKER_WINDOW, WebviewUrl::App(path.into()))
+    let builder = WebviewWindowBuilder::new(app, CHART_PICKER_WINDOW, WebviewUrl::App(path.into()))
         .title(title)
         .inner_size(CHART_PICKER_INITIAL_WIDTH, 660.0)
         .min_inner_size(CHART_PICKER_MIN_WIDTH, 480.0)
         .resizable(true)
-        .decorations(true)
+        .decorations(false)
+        .shadow(true)
+        .skip_taskbar(true)
         .theme(Some(native_theme))
         .background_color(chart_picker_background(native_theme, background))
         .center()
-        .focused(visible)
-        .visible(visible)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .focused(false)
+        .visible(false);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .decorations(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+    builder.build().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn show_chart_picker_window(window: WebviewWindow<Wry>) -> Result<(), String> {
+    let scheduled_window = window.clone();
+    window
+        .run_on_main_thread(move || {
+            if let Err(error) = prepare_and_show_tool_window(&scheduled_window) {
+                log::error!("failed to show chart picker: {error}");
+            }
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn emit_chart_picker_window_perf(
@@ -1399,12 +1417,15 @@ fn open_chart_picker_window_impl(
             window.navigate(target_url).map_err(|e| e.to_string())?;
             navigated = true;
         }
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        show_chart_picker_window(window)?;
         emit_chart_picker_window_perf(app, "open", started_at, navigated, false, true);
         Ok(())
     } else {
-        build_chart_picker_window(app, path, title, true, theme, background)?;
+        build_chart_picker_window(app, path, title, theme, background)?;
+        show_chart_picker_window(
+            app.get_webview_window(CHART_PICKER_WINDOW)
+                .ok_or("missing chart picker window")?,
+        )?;
         emit_chart_picker_window_perf(app, "open", started_at, false, true, true);
         Ok(())
     }
@@ -1426,7 +1447,7 @@ fn prewarm_chart_picker_window_impl(
         emit_chart_picker_window_perf(app, "prewarm", started_at, false, false, false);
         return Ok(());
     }
-    build_chart_picker_window(app, path, title, false, theme, background)?;
+    build_chart_picker_window(app, path, title, theme, background)?;
     emit_chart_picker_window_perf(app, "prewarm", started_at, false, true, false);
     Ok(())
 }
@@ -1523,7 +1544,12 @@ fn build_native_menu_from_manifest(
             &PredefinedMenuItem::cut(handle, None)?,
             &PredefinedMenuItem::copy(handle, None)?,
             &PredefinedMenuItem::paste(handle, None)?,
-            &PredefinedMenuItem::select_all(handle, None)?,
+            // Keep Select All in Edit without reserving Cmd+A at the native
+            // menu layer. The webview handles Cmd+A in editable fields and
+            // routes it to Astrocartography elsewhere.
+            &MenuItemBuilder::with_id("menu.edit.select-all", "Select All")
+                .enabled(true)
+                .build(handle)?,
         ],
     )?;
     let window_menu = Submenu::with_id_and_items(
@@ -2081,21 +2107,26 @@ fn get_tool_window_intent(app: tauri::AppHandle, window: WebviewWindow<Wry>) -> 
     tool_window_intent(&app, window.label())
 }
 
-fn build_tool_window(app: &tauri::AppHandle, label: &str, path: &str, title: &str, width: f64, height: f64) -> Result<(), String> {
+fn build_tool_window(
+    app: &tauri::AppHandle,
+    label: &str,
+    path: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+    min_width: f64,
+    min_height: f64,
+) -> Result<(), String> {
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err("invalid tool window dimensions".into());
     }
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
-        .title(title).inner_size(width, height).min_inner_size(width, height)
+        .title(title).inner_size(width, height)
+        .min_inner_size(min_width.min(width), min_height.min(height))
         .decorations(false).shadow(true).resizable(true).skip_taskbar(true)
         .center().visible(false).focused(false);
     // Retained tools must receive open requests even after a long hidden spell.
     let builder = builder.background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
-    // AppKit addChildWindow orders the child on screen even when the builder
-    // requests visible(false). Attach only at the explicit ready/show boundary.
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.parent(&app.get_webview_window("main").ok_or("missing main window")?)
-        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
     let builder = builder.decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
@@ -2114,7 +2145,10 @@ async fn open_chart_editor_window(
 ) -> Result<(), String> {
     if prewarm.unwrap_or(false) {
         if app.get_webview_window(CHART_EDITOR_WINDOW).is_none() {
-            build_tool_window(&app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height)?;
+            build_tool_window(
+                &app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height,
+                CHART_EDITOR_MIN_WIDTH, CHART_EDITOR_MIN_HEIGHT,
+            )?;
         }
         return Ok(());
     }
@@ -2123,7 +2157,10 @@ async fn open_chart_editor_window(
         window.set_title(&title).map_err(|e| e.to_string())?;
         return window.emit("aries://chart-editor-context", intent).map_err(|e| e.to_string());
     }
-    build_tool_window(&app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height)
+    build_tool_window(
+        &app, CHART_EDITOR_WINDOW, "/chart-editor", &title, width, height,
+        CHART_EDITOR_MIN_WIDTH, CHART_EDITOR_MIN_HEIGHT,
+    )
 }
 
 fn show_ready_tool_window(app: &tauri::AppHandle, label: &'static str, generation: u64) -> Result<(), String> {
@@ -2170,7 +2207,9 @@ async fn open_settings_window(
     }
     if prewarm.unwrap_or(false) {
         if app.get_webview_window(SETTINGS_WINDOW).is_none() {
-            build_tool_window(&app, SETTINGS_WINDOW, "/settings", &title, width, height)?;
+            build_tool_window(
+                &app, SETTINGS_WINDOW, "/settings", &title, width, height, width, height,
+            )?;
         }
         return Ok(());
     }
@@ -2179,7 +2218,9 @@ async fn open_settings_window(
         window.set_title(&title).map_err(|e| e.to_string())?;
         return window.emit("aries://settings-open", intent).map_err(|e| e.to_string());
     }
-    build_tool_window(&app, SETTINGS_WINDOW, "/settings", &title, width, height)
+    build_tool_window(
+        &app, SETTINGS_WINDOW, "/settings", &title, width, height, width, height,
+    )
 }
 
 #[tauri::command]
@@ -2197,21 +2238,14 @@ fn prepare_and_show_tool_window(window: &WebviewWindow<Wry>) -> Result<(), Strin
         if ptr.is_null() {
             return Err("tool NSWindow pointer is null".into());
         }
-        // Called on the AppKit main thread. Settings retains its own localized
-        // close button and native drag region, without a second titlebar UI.
+        // Called on the AppKit main thread. Tool windows use their own close
+        // button and drag region, without a second native titlebar UI.
         unsafe {
             let native: &NSWindow = &*ptr.cast();
             for kind in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
                 if let Some(button) = native.standardWindowButton(kind) {
                     button.as_super().as_super().setHidden(true);
                 }
-            }
-            if native.parentWindow().is_none() {
-                let main = window.app_handle().get_webview_window("main").ok_or("missing main window")?;
-                let parent_ptr = main.ns_window().map_err(|e| e.to_string())?;
-                if parent_ptr.is_null() { return Err("main NSWindow pointer is null".into()); }
-                let parent: &NSWindow = &*parent_ptr.cast();
-                parent.addChildWindow_ordered(native, objc2_app_kit::NSWindowOrderingMode::Above);
             }
         }
     }
@@ -2224,19 +2258,6 @@ fn hide_tool_window(window: &WebviewWindow<Wry>, generation: u64) -> Result<(), 
     window.run_on_main_thread(move || {
         let intent = tool_window_intent(hidden.app_handle(), hidden.label());
         if intent.generation != generation || intent.open { return; }
-        #[cfg(target_os = "macos")]
-        if let Ok(ptr) = hidden.ns_window() {
-            if !ptr.is_null() {
-                // Hidden retained chrome must not follow its parent's ordering
-                // or restoration. Reattach on the next explicit ready/show.
-                unsafe {
-                    let native: &objc2_app_kit::NSWindow = &*ptr.cast();
-                    if let Some(parent) = native.parentWindow() {
-                        parent.removeChildWindow(native);
-                    }
-                }
-            }
-        }
         if let Err(error) = hidden.hide() {
             log::error!("failed to hide {}: {error}", hidden.label());
         }
@@ -2296,6 +2317,9 @@ fn should_emit_native_menu_command(app: &AppHandle, id: &str) -> bool {
 }
 
 fn native_menu_command_for_event<'a>(app: &AppHandle, id: &'a str) -> Option<&'a str> {
+    if id == "menu.edit.select-all" {
+        return Some(id);
+    }
     if id == APP_ABOUT_MENU_ID {
         return Some(ARIES_ABOUT_COMMAND_ID);
     }
@@ -2657,6 +2681,20 @@ pub fn run() {
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
             if let Some(command_id) = native_menu_command_for_event(app, id) {
+                if command_id == "menu.edit.select-all" {
+                    // Native menus do not forward this click as a key event.
+                    // Apply Select All in the focused webview, including a
+                    // same-origin map iframe when it owns keyboard focus.
+                    for label in ["main", SETTINGS_WINDOW, CHART_EDITOR_WINDOW] {
+                        if let Some(window) = app.get_webview_window(label) {
+                            if window.is_focused().unwrap_or(false) {
+                                let _ = window.eval("(document.activeElement instanceof HTMLIFrameElement ? document.activeElement.contentDocument : document)?.execCommand('selectAll')");
+                                break;
+                            }
+                        }
+                    }
+                    return;
+                }
                 if command_id == "workspace.close-active"
                     && app.get_webview_window(CHART_EDITOR_WINDOW)
                         .is_some_and(|window| window.is_focused().unwrap_or(false))

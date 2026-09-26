@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { TransitSearchAspect } from "@/lib/daemon/client";
 import { PointAspectFilters } from "./point-aspect-filters";
 import { pointRoleSelectAllIds, type PointRoleSide } from "@/lib/point-role-selection";
+import { useT } from "@/lib/i18n/i18n";
 
 export type TransitFilterItem = {
   id: string;
@@ -32,12 +33,13 @@ export function TransitListFilterDrawer({ label, items, side, onSideChange, from
   onToggleAspect: (id: string) => void;
   onSelectAspects: (ids: string[] | null) => void;
 }) {
+  const t = useT();
   const selectedIds = side === "from" ? fromIds : toIds;
   const selected = React.useMemo(() => new Set(selectedIds), [selectedIds]);
   const groups = React.useMemo(() => {
     const grouped = new Map<string, TransitFilterItem[]>();
     for (const item of items) {
-      const groupId = ["part", "fixed_star", "asteroid"].includes(item.groupId) ? item.groupId : "points";
+      const groupId = ["part", "fixed_star", "asteroid", "house_cusp"].includes(item.groupId) ? item.groupId : "points";
       const group = grouped.get(groupId) ?? [];
       group.push(item);
       grouped.set(groupId, group);
@@ -73,12 +75,14 @@ export function TransitListFilterDrawer({ label, items, side, onSideChange, from
           const pressed = allSelected ? true : anySelected ? "mixed" : false;
           return (
             <div key={groupId} className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {groupId === "fixed_star" ? (
+              {groupId === "fixed_star" || groupId === "house_cusp" ? (
                 <Button type="button" size="xs" variant={anySelected ? "default" : "outline"}
                   aria-pressed={pressed} disabled={available.length === 0}
                   onClick={() => onToggle(available.map((item) => item.id))}
+                  title={groupId === "house_cusp" ? t("styleLab.variant.cusps") : group}
+                  aria-label={groupId === "house_cusp" ? t("styleLab.variant.cusps") : group}
                   className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]">
-                  {group}
+                  {groupId === "house_cusp" ? t("styleLab.variant.cusps") : group}
                 </Button>
               ) : (
                 <>

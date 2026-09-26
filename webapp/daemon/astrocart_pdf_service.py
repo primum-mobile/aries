@@ -814,24 +814,75 @@ def _renderer_style(
     return result
 
 
-def _css_color(value: Any, fallback: str) -> colors.Color:
-    text = str(value or fallback).strip()
-    if text.lower().startswith("rgba(") and text.endswith(")"):
-        parts = [part.strip() for part in text[5:-1].split(",")]
-        if len(parts) == 4:
+def _unit(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _css_channel(token: str) -> float:
+    token = token.strip()
+    if token.endswith("%"):
+        return _unit(float(token[:-1]) / 100.0)
+    return _unit(float(token) / 255.0)
+
+
+def _css_alpha(token: str) -> float:
+    token = token.strip()
+    if token.endswith("%"):
+        return _unit(float(token[:-1]) / 100.0)
+    return _unit(float(token))
+
+
+def _parse_css_color(text: str) -> colors.Color | None:
+    """Parse the CSS colours style profiles emit: #rgb[a]/#rrggbb[aa] and
+    rgb()/rgba() in legacy comma or modern space syntax with optional
+    ``/ alpha`` (number or percentage)."""
+    text = text.strip()
+    lowered = text.lower()
+    if lowered.startswith("#"):
+        digits = lowered[1:]
+        if len(digits) in (3, 4):
+            digits = "".join(char * 2 for char in digits)
+        if len(digits) not in (6, 8):
+            return None
+        try:
+            channels = [int(digits[index:index + 2], 16) for index in range(0, len(digits), 2)]
+        except ValueError:
+            return None
+        alpha = channels[3] / 255.0 if len(channels) == 4 else 1.0
+        return colors.Color(
+            channels[0] / 255.0, channels[1] / 255.0, channels[2] / 255.0, alpha=alpha,
+        )
+    for prefix in ("rgba(", "rgb("):
+        if lowered.startswith(prefix) and lowered.endswith(")"):
+            body = text[len(prefix):-1]
+            alpha_token = None
+            if "/" in body:
+                body, alpha_token = body.split("/", 1)
+            parts = [part for part in body.replace(",", " ").split() if part]
+            if alpha_token is None and len(parts) == 4:
+                alpha_token = parts.pop()
+            if len(parts) != 3:
+                return None
             try:
                 return colors.Color(
-                    max(0.0, min(1.0, float(parts[0]) / 255.0)),
-                    max(0.0, min(1.0, float(parts[1]) / 255.0)),
-                    max(0.0, min(1.0, float(parts[2]) / 255.0)),
-                    alpha=max(0.0, min(1.0, float(parts[3]))),
+                    _css_channel(parts[0]),
+                    _css_channel(parts[1]),
+                    _css_channel(parts[2]),
+                    alpha=_css_alpha(alpha_token) if alpha_token is not None else 1.0,
                 )
-            except (TypeError, ValueError):
-                pass
-    try:
-        return colors.HexColor(text)
-    except (TypeError, ValueError):
-        return colors.HexColor(fallback)
+            except ValueError:
+                return None
+    return None
+
+
+def _css_color(value: Any, fallback: str) -> colors.Color:
+    # A colour the parser can't read degrades to the fallback (then black);
+    # it must never abort the export.
+    return (
+        _parse_css_color(str(value or ""))
+        or _parse_css_color(fallback)
+        or colors.black
+    )
 
 
 def _luminance(color: colors.Color) -> float:
@@ -1755,8 +1806,13 @@ def _draw_map_background(
             mask="auto",
         )
     else:
-        pdf.setFillColor(colors.HexColor("#fafafa"))
+        pdf.setFillColor(colors.HexColor("#e1f1f4"))
         pdf.rect(box.x, box.y, box.width, box.height, stroke=0, fill=1)
+        outlines = _world_outlines(str(_resource_path(_WORLD_RESOURCE)))
+        land = _path_for_lines(pdf, outlines, box)
+        if land is not None:
+            pdf.setFillColor(colors.HexColor("#eee7cf"))
+            pdf.drawPath(land, stroke=0, fill=1)
         _draw_graticule(pdf, box, border_color, scale)
         _draw_world_outlines(pdf, box, border_color, scale)
 
@@ -2353,6 +2409,22 @@ def _book_map_box(
     )
 
 
+def _draw_book_frame(pdf: canvas.Canvas, box: _MapBox, scale: float) -> None:
+    """A sharp double neatline, kept vector at every paper size."""
+    pdf.saveState()
+    pdf.setStrokeColor(colors.HexColor("#262c30"))
+    pdf.setLineWidth(0.8 * scale)
+    pdf.rect(box.x, box.y, box.width, box.height, stroke=1, fill=0)
+    gap = 2.5 * scale
+    pdf.setLineWidth(0.3 * scale)
+    pdf.rect(
+        box.x - gap, box.y - gap,
+        box.width + 2 * gap, box.height + 2 * gap,
+        stroke=1, fill=0,
+    )
+    pdf.restoreState()
+
+
 def _draw_book_header(
     pdf: canvas.Canvas,
     *,
@@ -2547,7 +2619,7 @@ def _draw_book_footer(
 ) -> None:
     margin = 12.0 * scale
     baseline = margin - 1.0 * scale
-    pdf.setFillColor(colors.HexColor("#666b70"))
+    pdf.setFillColor(colors.HexColor("#343a3e"))
     pdf.setFont(regular_font, 4.8 * scale)
     pdf.drawString(
         margin,
@@ -2622,9 +2694,7 @@ def _draw_atlas_page(
         anchor="c",
         mask="auto",
     )
-    pdf.setStrokeColor(colors.HexColor("#70757a"))
-    pdf.setLineWidth(max(0.35, 0.4 * scale))
-    pdf.rect(box.x, box.y, box.width, box.height, stroke=1, fill=0)
+    _draw_book_frame(pdf, box, scale)
     if page.role == "detail" and page.bounds is not None:
         _draw_sheet_locator(
             pdf,
@@ -2713,16 +2783,7 @@ def render_astrocart_pdf_bytes(
 
     if atlas_pages:
         page_count = len(atlas_pages)
-        atlas_title = " · ".join(
-            dict.fromkeys(
-                value
-                for value in (
-                    str(client_name or "").strip(),
-                    document_title,
-                )
-                if value
-            )
-        )
+        atlas_title = document_title
         for index, atlas_page in enumerate(atlas_pages, 1):
             _draw_atlas_page(
                 pdf,
@@ -2827,16 +2888,7 @@ def render_astrocart_pdf_bytes(
             scale,
         )
     pdf.restoreState()
-    pdf.setStrokeColor(colors.HexColor("#70757a"))
-    pdf.setLineWidth(max(0.35, 0.4 * scale))
-    pdf.rect(
-        map_box.x,
-        map_box.y,
-        map_box.width,
-        map_box.height,
-        stroke=1,
-        fill=0,
-    )
+    _draw_book_frame(pdf, map_box, scale)
     client_label = str(labels.get("client") or "").strip()
     date_label = str(labels.get("date") or "").strip()
     detail = " · ".join(

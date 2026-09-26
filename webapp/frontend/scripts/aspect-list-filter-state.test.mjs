@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   defaultAspectListSecondaryRingIncluded,
+  isAspectListInclusionFilterId,
   isAspectListPhaseIncluded,
   isAspectListRowIncluded,
   isAspectListSecondaryRingFilterId,
@@ -69,6 +70,21 @@ test("the active secondary-ring family is admitted under its contextual toggle",
     ),
     false,
   );
+});
+
+test("house cusps are an independent Include choice, not an exclusive Focus point", () => {
+  const cuspRow = ["planet:sun", "house-cusps"];
+  const included = (focused, includeHouseCusps) => isAspectListRowIncluded(
+    cuspRow, focused, noSecondaryRing, false, [], false, "or",
+    [["planet:sun"], ["house-cusps"]], includeHouseCusps,
+  );
+  assert.equal(isAspectListInclusionFilterId("house-cusps"), true);
+  assert.equal(isAspectListInclusionFilterId("planet:sun"), false);
+  assert.equal(included(new Set(), true), true);
+  assert.equal(included(new Set(), false), false);
+  assert.equal(included(new Set(["planet:sun"]), true), true);
+  assert.equal(included(new Set(["planet:moon"]), true), false);
+  assert.equal(included(new Set(["house-cusps"]), true), false);
 });
 
 test("one focused point includes every current row involving that endpoint", () => {

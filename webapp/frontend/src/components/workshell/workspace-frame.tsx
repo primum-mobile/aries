@@ -6,6 +6,7 @@
 import * as React from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import type { DateConvention } from "@/lib/date-display";
 import { AppSidebar } from "@/components/workshell/app-sidebar";
 import { SidebarSash } from "@/components/workshell/sidebar-sash";
 import {
@@ -40,6 +41,7 @@ type WorkspaceFrameProps = {
   onMenuCommand: (command: string) => void | Promise<boolean>;
   isMenuCommandEnabled: (command: string) => boolean;
   onRevealKeyHints?: (placement: KeyHintPlacement) => void;
+  dateConvention?: DateConvention;
   children: React.ReactNode;
 };
 
@@ -58,6 +60,7 @@ export function WorkspaceFrame({
   onMenuCommand,
   isMenuCommandEnabled,
   onRevealKeyHints,
+  dateConvention,
   children,
 }: WorkspaceFrameProps) {
   // First-paint settle guard. The frame renders at the default sidebar width,
@@ -121,7 +124,13 @@ export function WorkspaceFrame({
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
-  const fullBleed = activeDocument?.kind === "astrocart";
+  const activeAstrocartDocumentId = activeDocument?.kind === "astrocart"
+    ? activeDocument.id
+    : documents.find((document) =>
+        document.id === activeDocument?.parentDocumentId &&
+        document.kind === "astrocart"
+      )?.id ?? null;
+  const fullBleed = activeAstrocartDocumentId !== null;
   const canCopyChart = Boolean(
     activeDocument &&
       activeDocument.kind !== "directions" &&
@@ -133,7 +142,6 @@ export function WorkspaceFrame({
     () => onMenuCommand("menu.copy-chart-png"),
     [onMenuCommand],
   );
-  const activeAstrocartDocumentId = fullBleed ? activeDocument.id : null;
   const activeRightPane = activeRightPaneModule({
     inspectorOpen,
     notesOpen,
@@ -240,6 +248,7 @@ export function WorkspaceFrame({
         isMenuCommandEnabled={isMenuCommandEnabled}
         canCopyChart={canCopyChart}
         onCopyChart={handleCopyChart}
+        dateConvention={dateConvention}
       />
       <SidebarProvider
         open={sidebarOpen}

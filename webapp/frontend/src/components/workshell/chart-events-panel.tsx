@@ -4,19 +4,22 @@
 "use client";
 
 import * as React from "react";
+import { FolderOpen, Pencil, Plus, ArrowDownWideNarrow } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from "@/components/ui/resizable";
 import { Input } from "@/components/ui/input";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useT } from "@/lib/i18n/i18n";
-import { executeWorkspaceContextMenuAction, type WorkspaceOpenResult } from "@/lib/daemon/client";
+import { executeWorkspaceContextMenuAction, fetchEditorCursorSeed, type WorkspaceOpenResult } from "@/lib/daemon/client";
 import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { recordChartPerf, perfNow } from "@/lib/chart/perf";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { EMPTY_EVENT_VIEW, filteredChartEvents, rankedEventTags, useChartEventsStore, type EventTag, type SavedChartEvent } from "@/stores/chart-events-store";
 import { ChartEventNote } from "./chart-event-note";
-import { useEventNotesStore } from "@/stores/event-notes-store";
+import { eventNoteKey, useEventNotesStore } from "@/stores/event-notes-store";
 import { EventTagEditor, EventTagPill } from "./chart-event-tags";
 import { ListSegmentedControl } from "./list-controls";
 import { RetainedPaneShell } from "./retained-pane-shell";
@@ -35,6 +38,10 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   const rowHeight = useListRowHeight("symbolic");
   const [viewportHeight, setViewportHeight] = React.useState(600);
   const [selected, setSelected] = React.useState<SavedChartEvent | null>(null);
+  const [selectedEventKey, setSelectedEventKey] = React.useState<string | null>(null);
+  const [deleting, setDeleting] = React.useState<SavedChartEvent | null>(null);
+  const cancelDeleteRef = React.useRef<HTMLButtonElement>(null);
+  const deleteReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const [renaming, setRenaming] = React.useState<SavedChartEvent | null>(null);
   const [selectedTag, setSelectedTag] = React.useState<EventTag | null>(null);
   const [renamingTag, setRenamingTag] = React.useState<EventTag | null>(null);
@@ -96,6 +103,10 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
     };
   }, [documentId]);
 
+  React.useLayoutEffect(() => {
+    if (!view.sortPending && scrollerRef.current && view.scrollTop === 0) scrollerRef.current.scrollTop = 0;
+  }, [view.sortPending, view.scrollTop]);
+
   React.useEffect(() => {
     if (!view.loaded || recordedPaint.current) return;
     const frame = requestAnimationFrame(() => {
@@ -114,12 +125,28 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
     canExtendBackward: false, canExtendForward: !view.loading && !view.stale && !view.error && view.rows.length < view.total,
     onExtend: extend, recheckToken: view.loading });
 
-  const openEvent = async (row: SavedChartEvent) => {
+  const openEvent = async (row: SavedChartEvent, edit = false) => {
     if (pending) return;
     setPending(true);
     try {
       const result = await executeWorkspaceContextMenuAction("workspace.open_event", { documentId, eventId: row.id });
       applyImmediateWorkspaceCommandResult(result as unknown as WorkspaceOpenResult, documentId);
+      if (edit) {
+        const key = eventNoteKey({ recordId: view.recordId, eventId: row.id, name: row.name });
+        await useEventNotesStore.getState().flush(key);
+        const note = useEventNotesStore.getState().notes[key];
+        if (note && note.text !== note.saved) {
+          useChartEventsStore.getState().patch(documentId, { error: note.error ?? "notes.statusError" });
+          return;
+        }
+        const eventDocumentId = String(result.documentId);
+        const seed = await fetchEditorCursorSeed(eventDocumentId);
+        if (!seed.usesSessionCursor) {
+          useChartEventsStore.getState().patch(documentId, { error: "chartEvents.editSourceRequired" });
+          return;
+        }
+        useWorkspaceStore.getState().eventEditorRequester?.(eventDocumentId, seed);
+      }
       useChartEventsStore.getState().patch(documentId, { error: null });
     } catch (error) {
       console.error("[chart-events-open]", error);
@@ -134,7 +161,11 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
       await executeWorkspaceContextMenuAction(remove ? "workspace.remove_event" : "workspace.rename_event", {
         documentId, eventId: row.id, name,
       });
-      setRenaming(null);
+      setRenaming((current) => current?.id === row.id ? null : current);
+      if (remove) {
+        setDeleting(null);
+        setSelectedEventKey(null);
+      }
       useChartEventsStore.getState().patch(documentId, { error: null });
       useChartEventsStore.getState().invalidate([documentId]);
     } catch (error) {
@@ -160,8 +191,14 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   const keys = buildStableRowKeys(visibleRows, (row) => row.id);
   const setTagContext = (tag: EventTag) => { setSelectedTag(tag); setSelected(null); };
   const filters = (patch: Partial<typeof view>) => useChartEventsStore.getState().patch(documentId, patch);
+  const confirmRemove = (row: SavedChartEvent) => {
+    deleteReturnFocusRef.current = scrollerRef.current?.querySelector<HTMLElement>(`[data-event-row="${CSS.escape(row.id)}"]`) ?? null;
+    filters({ error: null });
+    setDeleting(row);
+  };
 
   return (
+    <>
     <ContextMenu onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedTag(null); } }}>
     <ContextMenuTrigger render={<div className="h-full min-h-0" />}>
     <RetainedPaneShell title={t("chartEvents.title")} sourceName={view.sourceName}
@@ -178,12 +215,38 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
             aria-expanded={view.tagsOpen} aria-controls={tagDrawerId}
             aria-pressed={view.tagIds.length > 0 || view.untagged}
             onClick={() => filters({ tagsOpen: !view.tagsOpen })}>{t("chartEvents.tags")}</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs"
+              aria-label={t("chartEvents.sort")} title={t("chartEvents.sort")} />}>
+              <ArrowDownWideNarrow aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup value={view.sort}>
+                {(["date", "added"] as const).map((sort) => <DropdownMenuRadioItem key={sort} value={sort} closeOnClick
+                  onClick={() => useChartEventsStore.getState().sort(documentId, sort, view.descending)}>
+                  {t(sort === "date" ? "chartEvents.date" : "chartEvents.dateAdded")}
+                </DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup value={view.descending ? "newest" : "oldest"}>
+                {([false, true] as const).map((descending) => <DropdownMenuRadioItem key={String(descending)}
+                  value={descending ? "newest" : "oldest"} closeOnClick
+                  onClick={() => useChartEventsStore.getState().sort(documentId, view.sort, descending)}>
+                  {t(descending ? "chartEvents.newestFirst" : "chartEvents.oldestFirst")}
+                </DropdownMenuRadioItem>)}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button type="button" variant="ghost" size="icon-xs" className="ml-auto"
+            aria-label={t("chartEvents.save")} title={t("chartEvents.save")}
+            onClick={() => useWorkspaceStore.getState().eventEditorRequester?.(documentId)}>
+            <Plus aria-hidden="true" />
+          </Button>
         </div>
-        {renaming || renamingTag ? (
+        {renamingTag ? (
           <form className={LIST_PANE_CLASSES.controlRow} onSubmit={(event) => {
             event.preventDefault();
             if (renamingTag) void changeTag(false);
-            else if (renaming) void changeEvent(renaming, false);
           }}>
             <Input autoFocus value={name} aria-label={t(renamingTag ? "chartEvents.tags" : "chartEvents.name")}
               onChange={(event) => setName(event.target.value)}
@@ -229,19 +292,71 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                   {visibleRows.map((row, index) => (
                     <React.Fragment key={keys[index]}>
                     <SidebarListRow data-event-row={row.id} className={`${LIST_ROW_CLASSES.hover} border-b-0`}
-                      onClick={() => void openEvent(row)} onContextMenu={(event) => {
+                      data-state={selectedEventKey === `${documentId}:${row.id}` ? "selected" : undefined}
+                      tabIndex={-1}
+                      onClick={(event) => { setSelectedEventKey(`${documentId}:${row.id}`); event.currentTarget.focus(); }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Backspace" || event.repeat || pending || deleting
+                          || selectedEventKey !== `${documentId}:${row.id}`
+                          || (event.target as HTMLElement).closest('input, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [data-aries-surface="popover"]')) return;
+                        event.preventDefault(); event.stopPropagation(); confirmRemove(row);
+                      }}
+                      onDoubleClick={() => void openEvent(row)} onContextMenu={(event) => {
                         if ((event.target as HTMLElement).closest("[data-event-tag]")) return;
+                        setSelectedEventKey(`${documentId}:${row.id}`);
                         setSelectedTag(null); setSelected(row);
                       }}>
                       <SidebarListCell className="whitespace-normal">
-                        <button type="button" className="whitespace-normal text-left [overflow-wrap:anywhere]" disabled={pending} onClick={(event) => {
-                          event.stopPropagation(); void openEvent(row);
+                        <div className="relative">
+                        <button type="button" className={`whitespace-normal text-left [overflow-wrap:anywhere] ${renaming?.id === row.id ? "invisible" : ""}`}
+                          tabIndex={renaming?.id === row.id ? -1 : undefined} aria-hidden={renaming?.id === row.id || undefined} onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedEventKey(`${documentId}:${row.id}`);
+                        }} onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          setRenamingTag(null); setRenaming(row); setName(row.name);
+                        }} onKeyDown={(event) => {
+                          if (event.key === "Enter") { event.preventDefault(); void openEvent(row); }
                         }}>{row.name}</button>
-                        <div><EventTagEditor documentId={documentId} event={row} catalog={catalog}
+                        {renaming?.id === row.id ? <textarea autoFocus rows={1} value={name} readOnly={pending}
+                          data-aries-control-appearance="local" aria-label={t("chartEvents.name")}
+                          className="absolute inset-0 h-full w-full resize-none appearance-none rounded-none border-0 bg-transparent p-0 text-inherit shadow-none outline-none whitespace-pre-wrap [overflow-wrap:anywhere]"
+                          onFocus={(event) => event.currentTarget.select()}
+                          onChange={(event) => setName(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onBlur={() => setRenaming((current) => current?.id === row.id ? null : current)}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.nativeEvent.isComposing) return;
+                            if (event.key === "Escape") { event.preventDefault(); setRenaming(null); }
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              if (name.trim() && !pending) void changeEvent(row, false);
+                            }
+                          }} /> : null}
+                        </div>
+                        <div onDoubleClick={(event) => event.stopPropagation()}><EventTagEditor documentId={documentId} event={row} catalog={catalog}
                           onTagContext={setTagContext} onEditing={setEditingEvent} /></div>
                       </SidebarListCell>
                       <SidebarListDateCell title={row.datetime}>{row.date}</SidebarListDateCell>
-                      <SidebarListTimeCell title={row.datetime}>{row.time}</SidebarListTimeCell>
+                      <SidebarListTimeCell title={row.datetime}>
+                        <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]">
+                          {row.time}
+                          <Button type="button" variant="ghost" size="icon-xs" disabled={pending}
+                            aria-label={t("chartEvents.open")} title={t("chartEvents.open")}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation(); setSelectedEventKey(`${documentId}:${row.id}`); void openEvent(row);
+                            }}><FolderOpen /></Button>
+                          <Button type="button" variant="ghost" size="icon-xs" disabled={pending}
+                            aria-label={t("chartEvents.edit")} title={t("chartEvents.edit")}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation(); setSelectedEventKey(`${documentId}:${row.id}`); void openEvent(row, true);
+                            }}><Pencil /></Button>
+                        </span>
+                      </SidebarListTimeCell>
                     </SidebarListRow>
                     <SidebarListRow data-event-row={row.id} className="[--aries-list-hover-bg:transparent]">
                       <SidebarListCell colSpan={3} className="whitespace-normal">
@@ -252,7 +367,7 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                     </React.Fragment>
                   ))}
                   {virtual.after > 0 ? <SidebarListSpacerRow colSpan={3} height={virtual.after} /> : null}
-                  {filtered.length === 0 ? <SidebarListRow><SidebarListCell colSpan={3}>
+                  {filtered.length === 0 ? <SidebarListRow><SidebarListCell colSpan={3} className="whitespace-normal [overflow-wrap:anywhere]">
                     {(view.loading || view.rows.length < view.total) ? t("chartEvents.loading") : filtering ? t("chartEvents.noMatches") : t("chartEvents.empty")}
                   </SidebarListCell></SidebarListRow> : null}
                 </SidebarListBody>
@@ -270,15 +385,30 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
             <ContextMenuItem disabled={pending} onClick={() => void changeTag(true)}>{t("chartEvents.deleteTag")}</ContextMenuItem>
           </> : <>
           <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) void openEvent(selected); }}>{t("chartEvents.open")}</ContextMenuItem>
+          <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) void openEvent(selected, true); }}>{t("chartEvents.edit")}</ContextMenuItem>
           <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) onNoteEditing(selected.id, true); }}>{t("notes.title")}</ContextMenuItem>
           <ContextMenuItem disabled={!selected || pending} onClick={() => {
             if (selected) { setRenamingTag(null); setRenaming(selected); setName(selected.name); }
           }}>{t("chartEvents.rename")}</ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) void changeEvent(selected, true); }}>{t("chartEvents.remove")}</ContextMenuItem>
+          <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) confirmRemove(selected); }}>{t("chartEvents.remove")}</ContextMenuItem>
           </>}
         </ContextMenuContent>
       </ContextMenu>
+      <Dialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open && !pending) setDeleting(null); }}>
+        <DialogContent size="sm" showCloseButton={false} initialFocus={cancelDeleteRef} finalFocus={deleteReturnFocusRef}>
+          <DialogHeader>
+            <DialogTitle>{t("chartEvents.deleteConfirm", { name: deleting?.name ?? "" })}</DialogTitle>
+            <DialogDescription>{t("chartEvents.deleteDescription")}</DialogDescription>
+          </DialogHeader>
+          {view.error ? <div role="alert" className="text-destructive">{t(view.error)}</div> : null}
+          <DialogFooter>
+            <Button ref={cancelDeleteRef} variant="outline" disabled={pending} onClick={() => setDeleting(null)}>{t("chartEvents.cancel")}</Button>
+            <Button variant="destructive" disabled={pending} onClick={() => { if (deleting) void changeEvent(deleting, true); }}>{t("calendar.delete")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

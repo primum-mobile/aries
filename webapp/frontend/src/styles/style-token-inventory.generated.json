@@ -6,14 +6,14 @@
     "legacyOverlay": "src/styles/style-tokens.ts"
   },
   "counts": {
-    "tokens": 1508,
+    "tokens": 1515,
     "cssTokens": 1491,
-    "cssDeclarations": 1576,
-    "runtimeOnlyTokens": 7,
+    "cssDeclarations": 1585,
+    "runtimeOnlyTokens": 14,
     "externalTokens": 10,
     "public": 1106,
     "derived": 198,
-    "runtime": 204
+    "runtime": 211
   },
   "legacyMigration": {
     "authority": "legacy-preview-v1",
@@ -231,7 +231,7 @@
     },
     {
       "id": "app.navbar",
-      "tokenCount": 25
+      "tokenCount": 32
     },
     {
       "id": "app.mode-hint",
@@ -9757,6 +9757,7 @@
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/workspace-frame.tsx",
         "src/lib/chart/chart-export-registry.ts",
+        "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
         "src/lib/shell/chart-picker-window.ts",
         "src/lib/theme/app-material-runtime.ts"
@@ -9915,6 +9916,8 @@
         "src/components/workshell/app-theme-controls.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
+        "src/components/workshell/chart-events-panel.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/feature-catalog-view.tsx",
@@ -9978,6 +9981,7 @@
         "src/components/workshell/aspect-matrix-view.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-events-panel.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/directions-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
@@ -10070,6 +10074,7 @@
         "src/components/ui/button.tsx",
         "src/components/ui/input-group.tsx",
         "src/components/ui/input.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/inspector-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/primdir-settings.tsx",
@@ -10134,6 +10139,7 @@
         }
       ],
       "consumerFiles": [
+        "src/app/globals.css",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/time-lord-table-view.tsx"
@@ -10264,6 +10270,7 @@
         "src/components/workshell/aspect-list-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
         "src/components/workshell/directions-view.tsx",
+        "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/synodic-cycle-list-view.tsx",
@@ -10524,6 +10531,7 @@
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/ambient-spotlight.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/mundane-chart-view.tsx",
@@ -10572,6 +10580,7 @@
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/eclipses-view.tsx",
         "src/components/workshell/home-client.tsx",
         "src/components/workshell/license-management-panel.tsx",
@@ -13889,7 +13898,9 @@
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/astrolog-sphere-view.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
+        "src/components/workshell/chart-context-menu.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/chart-hover-flag.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/decennials-view.tsx",
@@ -14069,6 +14080,7 @@
         "src/components/workshell/notes-panel.tsx",
         "src/components/workshell/strip-view.tsx",
         "src/components/workshell/theme-provider.tsx",
+        "src/lib/chart/astrocart-ui-font.ts",
         "src/lib/chart/chart-fonts.ts",
         "src/lib/chart/strip-render-style.ts",
         "src/lib/chart/wheel-render-style.ts"
@@ -14170,8 +14182,7 @@
       ],
       "consumerFiles": [
         "src/components/workshell/chart-editor-dialog.tsx",
-        "src/components/workshell/license-management-panel.tsx",
-        "src/components/workshell/system-chart-picker.tsx"
+        "src/components/workshell/license-management-panel.tsx"
       ],
       "bounds": {
         "min": 4,
@@ -15753,6 +15764,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/components/workshell/chart-event-note.tsx",
         "src/components/workshell/directions-view.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-head-label.tsx"
@@ -16410,7 +16422,8 @@
         }
       ],
       "consumerFiles": [
-        "src/app/globals.css"
+        "src/app/globals.css",
+        "src/components/workshell/chart-event-note.tsx"
       ]
     },
     {
@@ -16928,6 +16941,7 @@
       ],
       "consumerFiles": [
         "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/text-export-actions.tsx"
       ],
       "bounds": {
@@ -16993,7 +17007,8 @@
         "src/app/globals.css",
         "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/chart-context-menu.tsx"
       ],
       "bounds": {
         "min": 10,
@@ -17027,7 +17042,8 @@
       ],
       "consumerFiles": [
         "src/components/ui/context-menu.tsx",
-        "src/components/ui/dropdown-menu.tsx"
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/chart-context-menu.tsx"
       ]
     },
     {
@@ -17393,7 +17409,7 @@
       "scope": "component",
       "type": "number",
       "unit": "vh",
-      "default": "76vh",
+      "default": "100vh",
       "dependencies": [],
       "selectors": [
         ":root"
@@ -17401,7 +17417,7 @@
       "declarations": [
         {
           "selector": ":root",
-          "value": "76vh"
+          "value": "100vh"
         }
       ],
       "consumerFiles": [
@@ -17586,12 +17602,17 @@
         "--aries-navbar-scale"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "clamp(\n    var(--aries-navbar-arrow-width-min),\n    calc(var(--aries-navbar-arrow-width) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-arrow-width)\n  )"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "var(--aries-navbar-arrow-width-min)"
         }
       ],
       "consumerFiles": [
@@ -17611,15 +17632,27 @@
       "unit": "",
       "default": "var(--aries-navbar-bg)",
       "dependencies": [
-        "--aries-navbar-bg"
+        "--aries-background",
+        "--aries-navbar-bg",
+        "--aries-navbar-dock-bg"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart",
+        ".aries-mode-hint--astrocart.aries-mode-hint--docked"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "var(--aries-navbar-bg)"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "color-mix(in srgb, var(--aries-background) 88%, transparent)"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart.aries-mode-hint--docked",
+          "value": "var(--aries-navbar-dock-bg)"
         }
       ],
       "consumerFiles": [
@@ -17639,17 +17672,29 @@
       "unit": "px",
       "default": "clamp(\n    var(--aries-navbar-control-height-min),\n    calc(var(--aries-navbar-control-height) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-control-height)\n  )",
       "dependencies": [
+        "--aries-control-height-micro",
         "--aries-navbar-control-height",
         "--aries-navbar-control-height-min",
+        "--aries-navbar-dock-height",
         "--aries-navbar-scale"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart",
+        ".aries-mode-hint--astrocart.aries-mode-hint--docked"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "clamp(\n    var(--aries-navbar-control-height-min),\n    calc(var(--aries-navbar-control-height) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-control-height)\n  )"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "var(--aries-control-height-micro)"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart.aries-mode-hint--docked",
+          "value": "calc(var(--aries-navbar-dock-height) - 6px)"
         }
       ],
       "consumerFiles": [
@@ -17695,17 +17740,23 @@
       "unit": "px",
       "default": "clamp(\n    var(--aries-navbar-font-size-min),\n    calc(var(--aries-navbar-font-size) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-font-size)\n  )",
       "dependencies": [
+        "--aries-font-size-small",
         "--aries-navbar-font-size",
         "--aries-navbar-font-size-min",
         "--aries-navbar-scale"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "clamp(\n    var(--aries-navbar-font-size-min),\n    calc(var(--aries-navbar-font-size) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-font-size)\n  )"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "var(--aries-font-size-small)"
         }
       ],
       "consumerFiles": [
@@ -17730,12 +17781,17 @@
         "--aries-navbar-scale"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "clamp(\n    var(--aries-navbar-icon-size-min),\n    calc(var(--aries-navbar-icon-size) * var(--aries-navbar-scale, 1)),\n    var(--aries-navbar-icon-size)\n  )"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "var(--aries-navbar-icon-size-min)"
         }
       ],
       "consumerFiles": [
@@ -17755,15 +17811,27 @@
       "unit": "",
       "default": "var(--aries-navbar-border)",
       "dependencies": [
-        "--aries-navbar-border"
+        "--aries-navbar-border",
+        "--aries-navbar-dock-border",
+        "--aries-navbar-text"
       ],
       "selectors": [
-        ".aries-mode-hint"
+        ".aries-mode-hint",
+        ".aries-mode-hint--astrocart",
+        ".aries-mode-hint--astrocart.aries-mode-hint--docked"
       ],
       "declarations": [
         {
           "selector": ".aries-mode-hint",
           "value": "var(--aries-navbar-border)"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart",
+          "value": "color-mix(in srgb, var(--aries-navbar-text) 12%, transparent)"
+        },
+        {
+          "selector": ".aries-mode-hint--astrocart.aries-mode-hint--docked",
+          "value": "var(--aries-navbar-dock-border)"
         }
       ],
       "consumerFiles": [
@@ -20042,6 +20110,167 @@
       }
     },
     {
+      "id": "--aries-navbar-dock-bg",
+      "name": "--aries-navbar-dock-bg",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-fill",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "transparent",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-border",
+      "name": "--aries-navbar-dock-border",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-stroke",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "color",
+      "unit": "",
+      "default": "transparent",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-height",
+      "name": "--aries-navbar-dock-height",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-height",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "28px",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-left",
+      "name": "--aries-navbar-dock-left",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-left",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-radius",
+      "name": "--aries-navbar-dock-radius",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-radius",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-room",
+      "name": "--aries-navbar-dock-room",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-room",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
+      "id": "--aries-navbar-dock-top",
+      "name": "--aries-navbar-dock-top",
+      "family": "app.navbar",
+      "class": "runtime",
+      "role": "measured-map-toolbar-top",
+      "owner": "astrocart-navbar-dock",
+      "provider": "react-inline",
+      "scope": "component",
+      "type": "number",
+      "unit": "px",
+      "default": "0px",
+      "dependencies": [],
+      "selectors": [],
+      "declarations": [],
+      "consumerFiles": [
+        "src/app/globals.css",
+        "src/components/workshell/workspace-content.tsx"
+      ],
+      "runtimeProviderFiles": [
+        "src/components/workshell/workspace-content.tsx"
+      ]
+    },
+    {
       "id": "--aries-navbar-font-size",
       "name": "--aries-navbar-font-size",
       "family": "app.navbar",
@@ -20991,6 +21220,8 @@
         }
       ],
       "consumerFiles": [
+        "src/components/workshell/chart-event-note.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/list-controls.tsx"
       ],
       "bounds": {
@@ -21100,6 +21331,7 @@
       ],
       "consumerFiles": [
         "src/components/workshell/aspect-list-panel.tsx",
+        "src/components/workshell/chart-events-panel.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/side-by-side-charts.tsx",
         "src/components/workshell/transit-list-filter-drawer.tsx",
@@ -21138,6 +21370,7 @@
         "src/components/workshell/astrocart-controls.tsx",
         "src/components/workshell/calendar-prototype-view.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-events-panel.tsx",
         "src/components/workshell/generic-table-view.tsx",
         "src/components/workshell/list-controls.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
@@ -21471,8 +21704,10 @@
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/system-chart-picker.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ]
     },
@@ -21506,8 +21741,10 @@
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/settings-dialog.tsx",
         "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/system-chart-picker.tsx",
         "src/lib/theme/app-material-runtime.ts"
       ]
     },
@@ -21745,6 +21982,7 @@
         "src/components/ui/command.tsx",
         "src/components/ui/context-menu.tsx",
         "src/components/ui/dropdown-menu.tsx",
+        "src/components/workshell/chart-context-menu.tsx",
         "src/components/workshell/settings-dialog.tsx"
       ]
     },
@@ -21777,9 +22015,11 @@
         "src/components/ui/dropdown-menu.tsx",
         "src/components/ui/tooltip.tsx",
         "src/components/workshell/app-theme-preview.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/chart-style-panel.tsx",
         "src/components/workshell/settings-dialog.tsx",
-        "src/components/workshell/style-lab-color-picker.tsx"
+        "src/components/workshell/style-lab-color-picker.tsx",
+        "src/components/workshell/system-chart-picker.tsx"
       ]
     },
     {
@@ -21901,6 +22141,7 @@
         "src/components/ui/button.tsx",
         "src/components/workshell/appearance-panel.tsx",
         "src/components/workshell/chart-editor-dialog.tsx",
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/license-management-panel.tsx",
         "src/components/workshell/retained-pane-shell.tsx",
         "src/components/workshell/system-chart-picker.tsx"
@@ -23687,6 +23928,7 @@
       ],
       "consumerFiles": [
         "src/app/globals.css",
+        "src/lib/chart/palette.ts",
         "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "sidebarText",
@@ -27330,6 +27572,7 @@
         "src/components/workshell/save-to-collection-dialog.tsx",
         "src/components/workshell/sectioned-table-view.tsx",
         "src/components/workshell/surveil-studies-dialog.tsx",
+        "src/lib/chart/palette.ts",
         "src/lib/theme/app-material-runtime.ts"
       ],
       "legacyId": "surface",
@@ -28566,6 +28809,7 @@
         "src/components/workshell/time-lord-table-view.tsx",
         "src/components/workshell/workspace-content.tsx",
         "src/components/workshell/zodiacal-releasing-view.tsx",
+        "src/lib/chart/palette.ts",
         "src/lib/chart/strip-render-style.ts",
         "src/lib/theme/app-material-runtime.ts"
       ],
@@ -41878,6 +42122,7 @@
       "selectors": [],
       "declarations": [],
       "consumerFiles": [
+        "src/components/workshell/chart-event-tags.tsx",
         "src/components/workshell/side-by-side-charts.tsx"
       ]
     },
@@ -44994,7 +45239,11 @@
           "value": "rgb(0 0 0)"
         }
       ],
-      "consumerFiles": []
+      "consumerFiles": [
+        "src/components/workshell/chart-canvas.tsx",
+        "src/components/workshell/multiwheel-chart-canvas.tsx",
+        "src/lib/chart/palette.ts"
+      ]
     },
     {
       "id": "--morinus-text-bright",

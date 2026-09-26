@@ -232,6 +232,8 @@ export function TimeLordPaneView({
       closePosition="leading"
       toolbar={
         <TextExportActions
+          sourceName={sourceName}
+          fileStem={fileStem}
           buildDocument={() =>
             buildTableExportDocument(payload, payload.rows, { fileStem, title })
           }

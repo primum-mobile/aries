@@ -49,6 +49,39 @@ function contains(region: ChartHitRegion, x: number, y: number) {
   return x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height;
 }
 
+test("asteroid rings paint the supplied retrograde marker", () => {
+  for (const mode of ["asteroids", "hybrid_hits"] as const) {
+    const snapshot = fixture(0, true);
+    snapshot.comparisonChart = undefined;
+    snapshot.outerRingMode = mode;
+    snapshot.outerRingItems = { [mode]: [
+      { id: "eros", family: "asteroid", longitude: 75, label: "Eros", motion: "R", degText: "4", minText: "00" },
+      { id: "juno", family: "asteroid", longitude: 120, label: "Juno" },
+    ] };
+    const painted = render(snapshot);
+    const marker = painted.texts.filter((item) => item.text.trim() === "R");
+    const label = painted.texts.find((item) => item.text === "Eros");
+    const position = painted.texts.find((item) => item.text.includes("4°"));
+    expect(marker).toHaveLength(1);
+    expect(label).toBeDefined();
+    expect(position).toBeDefined();
+    expect(marker[0].x).toBeGreaterThanOrEqual(
+      position!.x + measure(position!.text, position!.opts)[0] - 0.5,
+    );
+    expect(marker[0].opts.size).toBeGreaterThanOrEqual(label!.opts.size!);
+    expect(marker[0].opts.fill).toBe(DEFAULT_WHEEL_RENDER_STYLE.palette.textBright);
+    expect(painted.regions.some((region) => region.kind === "style_target"
+      && region.classId === "secondaryRing.asteroid.motion")).toBe(true);
+
+    const edgeSnapshot = structuredClone(snapshot);
+    edgeSnapshot.outerRingItems![mode]![0].label = "Astrowizard with a deliberately long outer label";
+    edgeSnapshot.outerRingItems![mode]![0].segments = [
+      { kind: "text", text: edgeSnapshot.outerRingItems![mode]![0].label },
+    ];
+    expect(render(edgeSnapshot).texts.filter((item) => item.text.trim() === "R")).toHaveLength(1);
+  }
+});
+
 type Box = { x: number; y: number; w: number; h: number };
 function segmentCrossesBox(a: number[], b: number[], box: Box) {
   let enter = 0, leave = 1;

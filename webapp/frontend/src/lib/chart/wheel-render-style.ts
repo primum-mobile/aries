@@ -537,6 +537,7 @@ export const WHEEL_AUTHORING_TYPOGRAPHY_CLASSES = [
   "aspects.interchart.glyph",
   "secondaryRing.fixedStar.label",
   "secondaryRing.asteroid.label",
+  "secondaryRing.asteroid.motion",
   "secondaryRing.midpoint.glyph",
   "secondaryRing.midpoint.text",
   "secondaryRing.antiscia.glyph",
@@ -655,6 +656,7 @@ const WHEEL_SECONDARY_RING_CLASS_IDS = deepFreeze({
   asteroid: {
     leader: "secondaryRing.asteroid.leader",
     label: "secondaryRing.asteroid.label",
+    motion: "secondaryRing.asteroid.motion",
   },
   midpoint: {
     leader: "secondaryRing.midpoint.leader",
@@ -5164,6 +5166,10 @@ export function resolveWheelTypographyMetrics(
     ),
     "secondaryRing.arabicPart.label": direct(
       "secondaryRing.arabicPart.label",
+      outerLabelSize,
+    ),
+    "secondaryRing.asteroid.motion": direct(
+      "secondaryRing.asteroid.motion",
       outerLabelSize,
     ),
     "secondaryRing.parallelTransit.glyph": direct(

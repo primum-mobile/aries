@@ -95,6 +95,17 @@ def _column(column_id: str, label: str, *, align: str = "left", kind: str = "tex
     return {"id": column_id, "label": label, "align": align, "kind": kind}
 
 
+def _object_house_cell(chrt, lon: float) -> Cell:
+    """House membership for a longitude in the chart's selected zodiac."""
+    try:
+        house = int(chrt.houses.getHousePos(util.normalize(float(lon)), None)) + 1
+        if 1 <= house <= 12:
+            return _text(house, align="center", sort_value=house)
+    except (AttributeError, TypeError, ValueError):
+        pass
+    return _text("—", align="center")
+
+
 def _text(
     value: Any = "",
     *,
@@ -3151,7 +3162,7 @@ def _positions(chrt, options) -> dict[str, Any]:
     if house_rows:
         sections.append({"id": "houses", "columns": cols, "rows": house_rows})
     flat_rows = ascmc_rows + planet_rows + house_rows
-    title = _txt("TMPositions", "Speculum").split("\t", 1)[0].replace("&", "")
+    title = _txt("Positions", "Speculum").split("\t", 1)[0].replace("&", "")
     payload = _base_payload(
         "positions", chrt, options, cols, flat_rows or _empty(),
         title=title,
@@ -3642,8 +3653,8 @@ def _arabic_almuten_cell(degwinner, chrt, options) -> Cell:
 
 
 def _arabic_parts(chrt, options) -> dict[str, Any]:
-    # 9-column flat layout faithful to arabicpartswnd.py:682-684,1035-1145:
-    # #, Name, Formula (glyph runs), Longitude (+sign), Dodecatemorion (+sign),
+    # Arabic Parts layout with House beside Longitude:
+    # #, Name, Formula (glyph runs), Longitude (+sign), House, Dodecatemorion (+sign),
     # Declination, Almuten (colored winner runs), Diurnal, M/F.
     import arabicparts
     cols = [
@@ -3651,6 +3662,7 @@ def _arabic_parts(chrt, options) -> dict[str, Any]:
         _column("name", _txt("Name", "Name")),
         _column("formula", _txt("Formula", "Formula"), align="center", kind="glyph"),
         _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"),
+        _column("house", _txt("House", "House"), align="center"),
         _column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"),
         _column("decl", _txt("Declination", "Declination"), align="center"),
         _column("almuten", _txt("Almuten", "Almuten"), align="center", kind="glyph"),
@@ -3670,6 +3682,7 @@ def _arabic_parts(chrt, options) -> dict[str, Any]:
             _runs((common.common.fortune, True), (" " + _txt("LotOfFortune", "Lot of Fortune"), False)),
             _arabic_lof_formula_cell(chrt, options),
             _lon_cell(lof_lon, chrt, options),
+            _object_house_cell(chrt, lof_lon),
             _dodecatemorion_lon_cell(lof_lon, chrt, options),
             _arabic_decl_cell(lof_lon, chrt),
             _arabic_almuten_cell(lof_alm, chrt, options),
@@ -3723,6 +3736,7 @@ def _arabic_parts(chrt, options) -> dict[str, Any]:
                 _text(name),
                 _arabic_formula_cell(src, chrt, options) if src is not None else _text(""),
                 _lon_cell(lon, chrt, options),
+                _object_house_cell(chrt, lon),
                 _dodecatemorion_lon_cell(lon, chrt, options),
                 _arabic_decl_cell(lon, chrt),
                 _arabic_almuten_cell(degw, chrt, options),
@@ -3818,6 +3832,7 @@ def _midpoints(chrt, options) -> dict[str, Any]:
     cols = [
         _column("pair", "", align="center", kind="glyph"),
         _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"),
+        _column("house", _txt("House", "House"), align="center"),
     ]
 
     panels: list[tuple[int, list[tuple[int, Any]]]] = []
@@ -3878,7 +3893,7 @@ def _midpoints(chrt, options) -> dict[str, Any]:
                 ],
                 "align": "center",
             }
-            row = _row(f"mid:{idx}", [pair_cell, _lon_cell(mid.m, chrt, options)])
+            row = _row(f"mid:{idx}", [pair_cell, _lon_cell(mid.m, chrt, options), _object_house_cell(chrt, mid.m)])
             section_rows.append(row)
             flat_rows.append(row)
         # wx draws the panel header box even when every row is filtered.
@@ -3912,7 +3927,7 @@ def _mundane_positions(chrt, options) -> dict[str, Any]:
     #   1) Planet grid: glyph (per-planet color) + House% via swe_house_pos
     #      (munposwnd.drawline:310-341), intables-gated outers/nodes
     #      (munposwnd.py:167).
-    #   2) Optional Mundane Fortuna 4-col block (lon+sign / lat / RA / decl),
+    #   2) Optional Mundane Fortuna block (lon+sign / house / lat / RA / decl),
     #      gated on not intables or (intables and showlof) (munposwnd.py:173,269).
     grid_cols = [
         _column("body", _txt("Bodies", "Body"), align="center", kind="glyph"),
@@ -3945,6 +3960,7 @@ def _mundane_positions(chrt, options) -> dict[str, Any]:
     munf_cols = [
         _column("name", "", align="left"),
         _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"),
+        _column("house", _txt("House", "House"), align="center"),
         _column("lat", _txt("Latitude", "Latitude"), align="center"),
         _column("ra", _txt("Rectascension", "RA"), align="center"),
         _column("decl", _txt("Declination", "Declination"), align="center"),
@@ -3968,6 +3984,7 @@ def _mundane_positions(chrt, options) -> dict[str, Any]:
             munf_rows.append(_row("mlof", [
                 _text(_txt("MLoF", "Mundane Fortuna")),
                 _lon_cell(mf[0], chrt, options),
+                _object_house_cell(chrt, mf[0]),
                 _text(_dms(mf[1], signed=True), align="center"),
                 _text(_ra(mf[2], options), align="center"),
                 _text(_dms(mf[3], signed=True), align="center"),
@@ -3988,23 +4005,23 @@ def _mundane_positions(chrt, options) -> dict[str, Any]:
 
 
 def _antiscia(chrt, options) -> dict[str, Any]:
-    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph"), _column("ant_lon", _txt("Antiscion", "Antiscion"), align="center", kind="glyph"), _column("contra_lon", _txt("Contraantiscion", "Contraantiscion"), align="center", kind="glyph")]
+    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph"), _column("ant_lon", _txt("Antiscion", "Antiscion"), align="center", kind="glyph"), _column("ant_house", _txt("House", "House"), align="center"), _column("contra_lon", _txt("Contraantiscion", "Contraantiscion"), align="center", kind="glyph"), _column("contra_house", _txt("House", "House"), align="center")]
     rows = []
     ant = getattr(getattr(chrt, "antiscia", None), "plantiscia", []) or []
     contra = getattr(getattr(chrt, "antiscia", None), "plcontraant", []) or []
     for idx, item in enumerate(ant):
         pid = idx if idx <= astrology.SE_MEAN_NODE else idx
         contra_item = contra[idx] if idx < len(contra) else None
-        rows.append(_row(f"ant:{idx}", [_glyph(_planet_glyph(pid)), _lon_cell(item.lon, chrt, options), _lon_cell(contra_item.lon, chrt, options) if contra_item else _text("-")]))
+        rows.append(_row(f"ant:{idx}", [_glyph(_planet_glyph(pid)), _lon_cell(item.lon, chrt, options), _object_house_cell(chrt, item.lon), _lon_cell(contra_item.lon, chrt, options) if contra_item else _text("-"), _object_house_cell(chrt, contra_item.lon) if contra_item else _text("—")]))
     return _base_payload("antiscia", chrt, options, cols, rows or _empty(), title="Antiscia", source="morin.py:16870-16871; antisciawnd.py:16-206")
 
 
 def _zodpars(chrt, options) -> dict[str, Any]:
-    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph"), _column("parallel", _txt("Parallel", "Parallel"), align="center", kind="glyph"), _column("contra", _txt("ContraParallel", "ContraParallel"), align="center", kind="glyph")]
+    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph"), _column("parallel", _txt("Parallel", "Parallel"), align="center", kind="glyph"), _column("parallel_house", _txt("House", "House"), align="center"), _column("contra", _txt("ContraParallel", "ContraParallel"), align="center", kind="glyph"), _column("contra_house", _txt("House", "House"), align="center")]
     rows = []
     for idx, pts in enumerate(getattr(getattr(chrt, "zodpars", None), "pars", []) or []):
         p = getattr(pts, "pts", ())
-        rows.append(_row(f"zod:{idx}", [_glyph(_planet_glyph(idx)), _lon_cell(p[0][0], chrt, options) if len(p) > 0 else _text("-"), _lon_cell(p[1][0], chrt, options) if len(p) > 1 else _text("-")]))
+        rows.append(_row(f"zod:{idx}", [_glyph(_planet_glyph(idx)), _lon_cell(p[0][0], chrt, options) if len(p) > 0 else _text("-"), _object_house_cell(chrt, p[0][0]) if len(p) > 0 else _text("—"), _lon_cell(p[1][0], chrt, options) if len(p) > 1 else _text("-"), _object_house_cell(chrt, p[1][0]) if len(p) > 1 else _text("—")]))
     return _base_payload("zodpars", chrt, options, cols, rows or _empty(), title=_txt("ZodPars", "Zodiacal Parallels"), source="morin.py:16872-16873; zodparswnd.py:17-214")
 
 
@@ -4473,7 +4490,7 @@ def _almuten_topical(chrt, options, binding: dict[str, Any] | None = None) -> di
 def _fixed_stars(chrt, options) -> dict[str, Any]:
     if len(getattr(options, "fixstars", []) or []) == 0:
         return _unavailable("fixed_stars", chrt, title="Fixed Stars", source="morin.py:15883-15896; fixstarswnd.py:15-312", reason=_txt("NoSelFixStars", "No selected fixed stars"))
-    cols = [_column("idx", "#", align="right"), _column("name", _txt("Name", "Name")), _column("nomencl", _txt("Nomencl", "Nomencl")), _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"), _column("lat", _txt("Latitude", "Latitude"), align="center"), _column("ra", _txt("Rectascension", "RA"), align="center"), _column("decl", _txt("Declination", "Declination"), align="center")]
+    cols = [_column("idx", "#", align="right"), _column("name", _txt("Name", "Name")), _column("nomencl", _txt("Nomencl", "Nomencl")), _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"), _column("house", _txt("House", "House"), align="center"), _column("lat", _txt("Latitude", "Latitude"), align="center"), _column("ra", _txt("Rectascension", "RA"), align="center"), _column("decl", _txt("Declination", "Declination"), align="center")]
     rows = []
     for idx, fs in enumerate(getattr(getattr(chrt, "fixstars", None), "data", []) or []):
         name = astrology.display_fixstar_name(fs[1], options, fs[0])
@@ -4482,6 +4499,7 @@ def _fixed_stars(chrt, options) -> dict[str, Any]:
             _text(name),
             _text(fs[1]),
             _lon_cell(fs[2], chrt, options),
+            _object_house_cell(chrt, fs[2]),
             _text(_dms(fs[3], signed=True), sort_value=float(fs[3])),
             _text(_ra(fs[4], options), sort_value=float(fs[4])),
             _text(_dms(fs[5], signed=True), sort_value=float(fs[5])),
@@ -4632,7 +4650,7 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
                 lof_color = _rgb_hex(getattr(options, "clrperegrin", None))
         except Exception:
             lof_color = _rgb_hex(getattr(options, "clrperegrin", None))
-        entry = {"id": f"col:{len(col_axis)}", "glyph": common.common.fortune, "glyphFont": "morinus", "label": _txt("FortunaeF", "Fortune")}
+        entry = {"id": f"col:{len(col_axis)}", "glyph": common.common.fortune, "glyphFont": "morinus", "label": _txt("Fortune", "Fortune")}
         _set_semantic_color(entry, lof_color, _fortune_color_role(chrt, options, lof_color))
         col_axis.append(entry)
         col_lons.append(chrt.fortune.fortune[fortune.Fortune.LON])
@@ -4879,11 +4897,14 @@ def _fixed_star_parallels(chrt, options) -> dict[str, Any]:
 
 
 def _asteroids(chrt, options) -> dict[str, Any]:
-    cols = [_column("name", _txt("Name", "Name")), _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"), _column("lat", _txt("Latitude", "Latitude"), align="center"), _column("ra", _txt("Rectascension", "RA"), align="center"), _column("decl", _txt("Declination", "Declination"), align="center")]
+    cols = [_column("name", _txt("Name", "Name")), _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"), _column("house", _txt("House", "House"), align="center"), _column("lat", _txt("Latitude", "Latitude"), align="center"), _column("ra", _txt("Rectascension", "RA"), align="center"), _column("decl", _txt("Declination", "Declination"), align="center")]
     rows = []
     for idx, ast in enumerate(getattr(getattr(chrt, "asteroids", None), "asteroids", []) or []):
         data = getattr(ast, "data", ())
-        rows.append(_row(f"asteroid:{idx}", [_text(getattr(ast, "name", "")), _lon_cell(data[0], chrt, options) if len(data) > 0 else _text("-"), _text(_dms(data[1], signed=True) if len(data) > 1 else "-"), _text(_ra(data[2], options) if len(data) > 2 else "-"), _text(_dms(data[3], signed=True) if len(data) > 3 else "-")]))
+        name = str(getattr(ast, "name", ""))
+        if getattr(ast, "available", True) and float(getattr(ast, "speed", 0.0)) < 0.0:
+            name += " R"
+        rows.append(_row(f"asteroid:{idx}", [_text(name), _lon_cell(data[0], chrt, options) if len(data) > 0 else _text("-"), _object_house_cell(chrt, data[0]) if len(data) > 0 else _text("—"), _text(_dms(data[1], signed=True) if len(data) > 1 else "-"), _text(_ra(data[2], options) if len(data) > 2 else "-"), _text(_dms(data[3], signed=True) if len(data) > 3 else "-")]))
     return _base_payload("asteroids", chrt, options, cols, rows or _empty(), title="Asteroids", source="morin.py:17188-17190; asteroidswnd.py:13-294")
 
 
@@ -5559,7 +5580,7 @@ def _strip(chrt, options) -> dict[str, Any]:
 
     if not getattr(options, "intables", False) or getattr(options, "showlof", True):
         _push(planets.Planets.PLANETS_NUM - 1, chrt.fortune.fortune[fortune.Fortune.LON],
-              common.common.fortune, "morinus", _txt("StripLoF", "Lot of Fortune"),
+              common.common.fortune, "morinus", _txt("SurveilLotOfFortune", "Lot of Fortune"),
               is_fortune=True)
 
     if getattr(options, "showvertex", False):
@@ -5609,7 +5630,7 @@ def _strip(chrt, options) -> dict[str, Any]:
     # within-sign degree, matching pdf_export_spec intent, stripwnd.py:228-292).
     cols = [
         _column("body", _txt("Bodies", "Body"), align="center", kind="glyph"),
-        _column("sign", _txt("Sign", "Sign"), align="center", kind="glyph"),
+        _column("sign", _txt("TopicalSign", "Sign"), align="center", kind="glyph"),
         _column("degree", _txt("Strip", "Position in sign"), align="right"),
     ]
     flat: list[Row] = []
@@ -5661,7 +5682,7 @@ def _sidereal_lon_cell(value: float, options) -> Cell:
 def _dodecatemoria(chrt, options) -> dict[str, Any]:
     # Standalone Dodecatemoria table — port of DodecatemoriaWnd
     # (dodecatemoriawnd.py:152-372). Rows: 12 planets + Lot of Fortune + Asc + MC.
-    # Columns: Body (glyph) | Dodecatemorion longitude (sign glyph) | Latitude.
+    # Columns: Body (glyph) | Dodecatemorion longitude (sign glyph) | House.
     # Data comes from chrt.antiscia.pldodecatemoria[].lon, .lofdodec, .ascmcdodec.
     source = "morin.py:14244,14632,17585-17599; dodecatemoriawnd.py:17-372; antiscia.py:69-153"
     ants = getattr(chrt, "antiscia", None)
@@ -5676,7 +5697,7 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
     cols = [
         _column("body", _txt("Bodies", "Body"), align="center", kind="glyph"),
         _column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"),
-        _column("lat", _txt("Latitude", "Latitude"), align="center"),
+        _column("house", _txt("House", "House"), align="center"),
     ]
 
     # DodecatemoriaWnd.drawline maps row index -> object glyph + colour
@@ -5721,7 +5742,6 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
         except Exception:
             continue
         lon = getattr(point, "lon", 0.0)
-        lat = getattr(point, "lat", 0.0) if j in (10, 11) else 0.0
         body_cell = _glyph(common.common.Planets[j])
         color = _planet_dodec_color(j)
         role_body_id = j - 1 if j >= len(common.common.Planets) - 1 else j
@@ -5734,7 +5754,7 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
         rows.append(_row(f"planet:{j}", [
             body_cell,
             _sidereal_lon_cell(lon, options),
-            _text(_dms(lat, signed=True)),
+            _object_house_cell(chrt, lon),
         ]))
 
     # Lot of Fortune (dodecatemoriawnd.py:153 fortune glyph, j==12, lofdodec).
@@ -5744,7 +5764,7 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
             rows.append(_row("fortune", [
                 _glyph(common.common.fortune),
                 _sidereal_lon_cell(getattr(lof, "lon", 0.0), options),
-                _text(_dms(getattr(lof, "lat", 0.0), signed=True)),
+                _object_house_cell(chrt, getattr(lof, "lon", 0.0)),
             ]))
 
     # Asc / MC (dodecatemoriawnd.py:153 '0'/'1' -> ascmcdodec[0]/[1], AscMC=True
@@ -5756,7 +5776,7 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
         rows.append(_row(f"ascmc:{k}", [
             _text(ascmc_labels[k], align="center"),
             _sidereal_lon_cell(getattr(pt, "lon", 0.0), options),
-            _text(_dms(getattr(pt, "lat", 0.0), signed=True)),
+            _object_house_cell(chrt, getattr(pt, "lon", 0.0)),
         ]))
 
     payload = _base_payload(
@@ -6262,7 +6282,7 @@ def _fixedstar_angle_directions(chrt, options, binding: dict[str, Any] | None = 
     if getattr(getattr(chrt, "time", None), "bc", False):
         return _unavailable(
             "fixedstar_angle_directions", chrt,
-            title=_txt("TMFixStarAngleDirs", "Angular Directions of Fixed Stars"),
+            title=_txt("FixStarAngleDirs", "Angular Directions of Fixed Stars"),
             source=source,
             reason=_txt("NotAvailable", "Not available for BC charts."),
         )
@@ -6283,14 +6303,14 @@ def _fixedstar_angle_directions(chrt, options, binding: dict[str, Any] | None = 
     except Exception as exc:
         return _unavailable(
             "fixedstar_angle_directions", chrt,
-            title=_txt("TMFixStarAngleDirs", "Angular Directions of Fixed Stars"),
+            title=_txt("FixStarAngleDirs", "Angular Directions of Fixed Stars"),
             source=source,
             reason=_txt("FixedStarAngleDirsUnavailable", "Fixed-star angle directions unavailable: %s") % exc,
         )
     if not rows_raw:
         return _unavailable(
             "fixedstar_angle_directions", chrt,
-            title=_txt("TMFixStarAngleDirs", "Angular Directions of Fixed Stars"),
+            title=_txt("FixStarAngleDirs", "Angular Directions of Fixed Stars"),
             source=source,
             reason=_txt("NoSelFixStars", "No selected fixed stars."),
         )
@@ -6299,7 +6319,7 @@ def _fixedstar_angle_directions(chrt, options, binding: dict[str, Any] | None = 
         _column("age", _txt("Age", "Age"), align="right"),
         _column("prom", _txt("Promissor", "Promissor"), align="left"),
         _column("dc", _txt("DC", "D/C"), align="center"),
-        _column("sig", _txt("Significator", "Significator"), align="center"),
+        _column("sig", _txt("SZSignificator", "Significator"), align="center"),
         _column("arc", _txt("Arc", "Arc"), align="right"),
         _column("date", _txt("Date", "Date"), align="center"),
     ]
@@ -6328,7 +6348,7 @@ def _fixedstar_angle_directions(chrt, options, binding: dict[str, Any] | None = 
 
     payload = _base_payload(
         "fixedstar_angle_directions", chrt, options, cols, rows or _empty(),
-        title=_txt("TMFixStarAngleDirs", "Angular Directions of Fixed Stars"),
+        title=_txt("FixStarAngleDirs", "Angular Directions of Fixed Stars"),
         source=source,
         notes=[_txt("DirRangeNote", "Range: %s") % range_token, _txt("DirDirectionNote", "Direction: %s") % direction_token],
     )

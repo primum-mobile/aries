@@ -80,6 +80,27 @@ test('cancelled refinement cannot publish; caches retain live styles and replace
   api.cancel();
 });
 
+test('moving lines reuse unchanged static meshes without starting a new refinement worker', () => {
+  const workers = [];
+  const api = refinement({ createWorker() {
+    const worker = { terminate() {}, postMessage() {} };
+    workers.push(worker); return worker;
+  }, publish() {} });
+  const staticLine = horizon();
+  const secondStaticLine = horizon({ rotation: 30 });
+  const initial = { features: [staticLine, ray(), secondStaticLine] };
+  api.request(initial, viewport([0, 0], 18));
+  const refinedStatic = { type: 'LineString', coordinates: [[2, 2], [3, 3]] };
+  const refinedSecond = { type: 'LineString', coordinates: [[4, 4], [5, 5]] };
+  workers[0].onmessage({ data: { geometries: [refinedStatic, null, refinedSecond] } });
+  const next = { features: [staticLine, secondStaticLine, ray({ bearing: 90 })] };
+  api.retainUnchanged(next);
+  assert.equal(workers.length, 1);
+  assert.equal(api.getData(next).features[0].geometry, refinedStatic);
+  assert.equal(api.getData(next).features[1].geometry, refinedSecond);
+  assert.equal(api.getData(next).features[2], next.features[2]);
+});
+
 test('the actual worker loads the browser GeographicLib bundle without a DOM', async () => {
   const fs = await import('node:fs');
   const vm = await import('node:vm');

@@ -2792,7 +2792,7 @@ _CATALOG = json.loads(r'''{
       "scope": "app",
       "type": "number",
       "unit": "vh",
-      "default": "76vh",
+      "default": "100vh",
       "bounds": {
         "min": 40,
         "max": 95,

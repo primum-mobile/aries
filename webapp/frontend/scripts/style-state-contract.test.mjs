@@ -40,6 +40,7 @@ test("legacy cached ThemeState receives compatible style identity", () => {
     chartPalette: {},
     chartData: {},
     wheelAuthoring: {},
+    wheelColorRoleAliases: {},
     appAuthoring: {},
   });
 });
@@ -105,8 +106,8 @@ test("theme appearance and independent wheel presets reach live canvas and expor
   );
   assert.match(canvas, /effectiveTheme\?\.profileOverrides\?\.wheelAuthoring/);
   assert.match(canvas, /snapshotWheelPresetRevision < expectedWheelPresetRevision/);
-  assert.match(canvas, /if \(!wheelThemeTransitionPending && effectiveTheme !== candidateTheme\) \{/);
-  assert.match(canvas, /setEffectiveTheme\(candidateTheme\);/);
+  assert.match(canvas, /if \(!wheelThemeTransitionPending && settledTheme !== candidateTheme\) \{/);
+  assert.match(canvas, /setSettledTheme\(candidateTheme\);/);
   assert.match(canvas, /resolveWheelPresetAuthoringOverrides\(wheelPresetInput\)/);
   assert.match(canvas, /resolveWheelGeometryPresetStyle\(/);
   assert.match(chartExport, /resolveWheelGeometryPresetStyle\(/);
@@ -194,6 +195,7 @@ test("cached startup palette is applied during parsing and removed when absent f
     style: {
       setProperty: (key, value) => values.set(key, value),
       removeProperty: key => values.delete(key),
+      getPropertyValue: key => values.get(key) ?? "",
     },
   };
   const cached = { ...legacyTheme, appTokens: { "--aries-background": "old", "--aries-old-override": "red" } };

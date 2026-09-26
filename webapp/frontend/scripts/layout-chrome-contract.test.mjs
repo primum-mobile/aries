@@ -1404,6 +1404,32 @@ test("Search Rx projects event motion independently for both roles", () => {
   assert.deepEqual(project(rows, { ...form, promittorMotion: "d" }).map((row) => row.key), ["SR", "SD", "", "S"]);
 });
 
+test("Search retains Celestial Weather asteroid pairs in either catalog order", () => {
+  const source = readSource("src/components/workshell/transit-search-view.tsx");
+  const ast = ts.createSourceFile("search.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "stringValue", "numberValue"]);
+  const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
+  const javascript = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const project = new Function("SEARCH_LUNAR_TECHNIQUES", "SEARCH_NON_ASPECT_TECHNIQUES",
+    `${javascript}; return projectTransitSearchRows;`)(new Set(["lunations", "eclipses"]), new Set(["heliacal_phases"]));
+  const form = {
+    fromDate: "2024-01-01", toDate: "2024-12-31", techniques: ["mundane_weather"],
+    promittorIds: ["asteroid:20"], significatorIds: ["asteroid:17"],
+    aspects: ["conjunction"], promittorMotion: "", significatorMotion: "",
+  };
+  const row = {
+    eventDate: "2024-04-01", technique: "mundane_weather", aspect: "conjunction",
+    promittorId: "asteroid:17", significatorId: "asteroid:20",
+    promittorMarker: "", significatorMarker: "", promDisplay: {}, sigDisplay: {}, metadata: {},
+  };
+  assert.deepEqual(project([row], form), [row]);
+  assert.deepEqual(project([row], { ...form, promittorIds: ["asteroid:17"], significatorIds: ["asteroid:20"] }), [row]);
+  assert.deepEqual(project([row], { ...form, significatorIds: ["asteroid:10433"] }), []);
+  assert.deepEqual(project([{ ...row, technique: "transits" }], { ...form, techniques: ["transits"] }), []);
+});
+
 test("Search presents the additional minor aspects as an attached second row", () => {
   const source = readSource("src/components/workshell/transit-search-view.tsx");
   assert.match(source, /grid grid-cols-6 overflow-hidden rounded-md border border-border/);

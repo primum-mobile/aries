@@ -5,14 +5,14 @@ import {useEffect, useMemo, useRef} from 'react';
 import type {ChartEditorProps} from './chart-editor-dialog';
 import {useT} from '@/lib/i18n/i18n';
 import {EDITOR_REQUEST, EDITOR_REPLY, EDITOR_CLOSED, flushEditorNotes, notifyEditorNotesChanged,
-  type EditorWindowRequest, type EditorWindowContext} from '@/lib/shell/chart-editor-window';
+  EDITOR_WINDOW_WIDTH, EDITOR_WINDOW_MAX_HEIGHT, type EditorWindowRequest, type EditorWindowContext} from '@/lib/shell/chart-editor-window';
 
 /** Keep workspace callbacks here; the native form calls the same daemon editor APIs. */
 export function ChartEditorWindowHost(props: ChartEditorProps) {
   const latest = useRef(props);
   useEffect(() => { latest.current = props; });
   const t = useT();
-  const title = t(props.editTarget?.cursorDocId ? 'editor.titleCursor' : props.editTarget ? 'editor.titleEdit' : 'editor.titleNew');
+  const title = t(props.editTarget?.eventOwnerDocumentId ? 'chartEvents.save' : props.editTarget?.cursorDocId ? 'editor.titleCursor' : props.editTarget ? 'editor.titleEdit' : 'editor.titleNew');
   const context = useMemo<EditorWindowContext>(() => ({id: crypto.randomUUID(), editTarget: props.editTarget ?? null}), [props.editTarget, props.open]);
   const contextRef = useRef(context);
   useEffect(() => { contextRef.current = context; }, [context]);
@@ -55,10 +55,12 @@ export function ChartEditorWindowHost(props: ChartEditorProps) {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;width:min(var(--aries-dialog-viewport-width),calc(100vw - var(--aries-dialog-viewport-inset)),var(--aries-dialog-width-lg));height:min(var(--aries-dialog-viewport-height),var(--aries-dialog-content-height-workspace))';
       document.body.append(probe);
-      const {width, height} = probe.getBoundingClientRect();
+      const {height} = probe.getBoundingClientRect();
       probe.remove();
       const {invoke} = await import('@tauri-apps/api/core');
-      if (!disposed) await invoke('open_chart_editor_window', {title, width, height, context});
+      if (!disposed) await invoke('open_chart_editor_window', {
+        title, width: EDITOR_WINDOW_WIDTH, height: Math.min(height, EDITOR_WINDOW_MAX_HEIGHT), context,
+      });
     }).catch(error => console.error('[chart-editor-window]', error));
     return () => { disposed = true; };
   }, [context, title, props.open]);

@@ -988,9 +988,16 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ("1", str(mtexts.txts.get('Bonatus', 'Bonatus'))),
                 ("0", str(mtexts.txts.get('AlBiruni', 'Al-Biruni'))),
             ])),
-            _quick_check("quick.options.stepalerts:stepalerts_enabled", "Step conjunction alerts"),
         ]),
         *_mirrored_options_submenus(),
+        {
+            "type": "item",
+            "id": "menu.options.default-location",
+            "label": "Default Location",
+            "labelKey": "settings.tabDefaultLocation",
+            "enabled": True,
+            "status": "live",
+        },
         _quick_submenu("menu.options.quick.other", "Other options", [
             _quick_submenu("menu.options.quick.mansions-zodiac", "Lunar Mansions zodiac", _quick_radio("quick.options.mansions", [
                 ("auto", "Follow chart zodiac"),

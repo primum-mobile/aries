@@ -321,6 +321,15 @@ class ChartSession(object):
 			return None
 		display_dt = self._normalize_display_datetime(display_datetime)
 		time_obj = getattr(chrt, 'time', None)
+		if display_dt == (
+			getattr(time_obj, 'origyear', None),
+			getattr(time_obj, 'origmonth', None),
+			getattr(time_obj, 'origday', None),
+			getattr(time_obj, 'hour', None),
+			getattr(time_obj, 'minute', None),
+			getattr(time_obj, 'second', None),
+		):
+			return float(time_obj.jd)
 		if (
 			display_dt is not None and
 			getattr(time_obj, 'zt', chart.Time.ZONE) == chart.Time.GREENWICH and

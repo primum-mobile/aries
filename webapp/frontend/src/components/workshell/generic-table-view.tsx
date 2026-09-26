@@ -4,6 +4,7 @@
 "use client";
 
 import * as React from "react";
+import { Settings } from "lucide-react";
 
 import {
   fetchGenericTablePayload,
@@ -35,8 +36,9 @@ import {
   useListLayoutPreset,
 } from "./list-column-layout";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
-import { buildTableExportDocument } from "./table-pdf-export";
+import { buildTableExportDocument, tableExportBaseName } from "./table-pdf-export";
 import { TextExportActions } from "./text-export-actions";
+import { PaneToolbarButton } from "./list-controls";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import {
   compactListAngleText,
@@ -52,9 +54,10 @@ type Props = {
   documentId: string;
   parentDocumentId?: string | null;
   tableId: string;
+  onOpenAsteroidSettings?: () => void;
 };
 
-export function GenericTableView({ documentId, parentDocumentId, tableId }: Props) {
+export function GenericTableView({ documentId, parentDocumentId, tableId, onOpenAsteroidSettings }: Props) {
   const t = useT();
   const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
     getCachedGenericTablePayload(tableId, documentId),
@@ -156,13 +159,30 @@ export function GenericTableView({ documentId, parentDocumentId, tableId }: Prop
             </span>
           ) : null}
         </div>
-        <TextExportActions
-          buildDocument={() =>
-            buildTableExportDocument(payload, sortedRows, {
-              columnIndexes: flatLayout ? displayColumnOrder : undefined,
-            })
-          }
-        />
+        <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
+          {tableId === "asteroids" && onOpenAsteroidSettings ? (
+            <PaneToolbarButton
+              type="button"
+              square
+              appearance="ghost"
+              onClick={onOpenAsteroidSettings}
+              aria-label={t("table.asteroidSettings")}
+              title={t("table.asteroidSettings")}
+              className="border-transparent hover:border-transparent"
+            >
+              <Settings className="size-[var(--aries-control-icon-size)]" strokeWidth={1.5} />
+            </PaneToolbarButton>
+          ) : null}
+          <TextExportActions
+            sourceName={payload.sourceName}
+            fileStem={tableExportBaseName(payload.title)}
+            buildDocument={() =>
+              buildTableExportDocument(payload, sortedRows, {
+                columnIndexes: flatLayout ? displayColumnOrder : undefined,
+              })
+            }
+          />
+        </div>
       </div>
       {payload.capabilities?.timeLord === true ? (
         <TimeLordTableView documentId={documentId} payload={payload} onBindingChange={updateTableBinding} />

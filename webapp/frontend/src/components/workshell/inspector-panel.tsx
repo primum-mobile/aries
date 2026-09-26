@@ -91,6 +91,7 @@ const INSPECTOR_STRONG_COLOR = "text-[color:var(--aries-inspector-strong-color)]
 const INSPECTOR_VALUE_COLOR = "text-[color:var(--aries-inspector-value-color)]";
 const INSPECTOR_READING_COLOR = "text-[color:var(--aries-inspector-reading-color)]";
 const INSPECTOR_LABEL_COLOR = "text-[color:var(--aries-inspector-label-color)]";
+const INSPECTOR_ROW_LABEL = "w-[var(--aries-inspector-label-width)] shrink-0 truncate";
 const INSPECTOR_MUTED_COLOR = "text-[color:var(--aries-inspector-muted-color)]";
 const INSPECTOR_INTERACTIVE_COLOR = "text-[color:var(--aries-inspector-interactive-color)]";
 const INSPECTOR_TERTIARY_COLOR = "text-[color:var(--aries-inspector-tertiary-color)]";
@@ -1232,7 +1233,7 @@ function DignityRow({ item }: { item: InspectorDignityItem }) {
   if (item.kind === "triplicity_lords") {
     return (
       <div className={cn("flex min-w-0 items-center gap-[var(--aries-inspector-heading-gap)]", TEXT_BASE)}>
-        <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label}</span>
+        <span className={cn(INSPECTOR_ROW_LABEL, INSPECTOR_LABEL_COLOR)} title={item.label}>{item.label}</span>
         <span className="flex min-w-0 items-center gap-[var(--aries-control-gap)]" aria-label={item.value_text}>
           {item.lords.map((lord, index) => (
             <span
@@ -1255,7 +1256,7 @@ function DignityRow({ item }: { item: InspectorDignityItem }) {
   if (item.kind === "mutual_reception") {
     return (
       <div className={cn("flex items-center gap-[var(--aries-control-gap-compact)]", TEXT_BASE)}>
-        <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label ?? ""}</span>
+        <span className={cn(INSPECTOR_ROW_LABEL, INSPECTOR_LABEL_COLOR)} title={item.label ?? undefined}>{item.label ?? ""}</span>
         <span
           style={{
             fontFamily: "'AriesMorinus'",
@@ -1281,7 +1282,7 @@ function DignityRow({ item }: { item: InspectorDignityItem }) {
   const colour = semanticChartColor(item.colour_role, rgb(item.colour));
   return (
     <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-inspector-heading-gap)]", TEXT_BASE)}>
-      <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{item.label}</span>
+      <span className={cn(INSPECTOR_ROW_LABEL, INSPECTOR_LABEL_COLOR)} title={item.label}>{item.label}</span>
       <span className={cn("min-w-0", item.bold && "font-semibold")} style={{ color: colour ?? undefined, ...INSPECTOR_WRAP_STYLE }}>
         {item.value}
       </span>
@@ -1313,7 +1314,7 @@ function DetailRow({
   const value = text.slice(idx + 1).trim();
   return (
     <div className={cn("flex min-w-0 items-baseline gap-[var(--aries-inspector-heading-gap)]", TEXT_SMALL)}>
-      <span className={cn("w-[var(--aries-inspector-label-width)] shrink-0", INSPECTOR_LABEL_COLOR)}>{label}</span>
+      <span className={cn(INSPECTOR_ROW_LABEL, INSPECTOR_LABEL_COLOR)} title={label}>{label}</span>
       <span className={cn("min-w-0 tabular-nums", INSPECTOR_VALUE_COLOR)} style={INSPECTOR_WRAP_STYLE}>{value}</span>
       {status ? (
         <>

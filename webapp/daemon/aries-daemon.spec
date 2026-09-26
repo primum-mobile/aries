@@ -14,7 +14,7 @@ SWEASTROLOGY_NAME = f"sweastrology{sysconfig.get_config_var('EXT_SUFFIX')}"
 TRANSIT_KERNEL_NAME = f"_transit_kernel{sysconfig.get_config_var('EXT_SUFFIX')}"
 SWEASTROLOGY = next(
     (
-        candidate
+        candidate.resolve()
         for candidate in (
             REPO_ROOT / SWEASTROLOGY_NAME,
             REPO_ROOT / "SWEP" / "src" / SWEASTROLOGY_NAME,

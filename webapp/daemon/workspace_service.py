@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import datetime
 import json
 import math
@@ -74,13 +74,18 @@ from engine.workspace_session_controller import (
 )
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.astrocart_service import (
+    ASTROCART_LINE_LABELS,
+    ASTROCART_LINE_WEIGHTS,
     ASTROCART_MODE_ORDER,
     ASTROCART_MODES,
     ASTROCART_MODE_LOCAL_SPACE,
     ASTROCART_MODE_STANDARD,
     astrocart_service,
+    normalized_astrocart_line_labels,
+    normalized_astrocart_line_weight,
+    normalized_astrocart_local_space_bearings,
 )
-from webapp.daemon import astrocart_spec
+from webapp.daemon import astrocart_dynamic, astrocart_spec
 from webapp.daemon.ephemeris_service import ephemeris_service
 from webapp.daemon.event_time import (
     EVENT_TABLE_TIME_UT,
@@ -110,6 +115,9 @@ import posfordate  # per-method progression rate / method normalization (posford
 # real datetime (radix + N symbolic years), derived from the chart — not the
 # progressed ephemeris orig date. Mirrors engine/supplementary_adapter.py:190.
 _PROGRESSION_FEATURE_KINDS = ('secondary', 'solar_arc', 'minor', 'tertiary')
+# Session marks for a map-owned technique tab under an Astrocart document.
+ASTROCART_TECHNIQUE_SESSION_KEY = 'astrocart_technique'
+ASTROCART_PROGRESSED_ANGLES_SESSION_KEY = 'astrocart_progressed_angles'
 _SYMBOLIC_CURSOR_FEATURE_KINDS = (*_PROGRESSION_FEATURE_KINDS, 'profections')
 _ASTROCART_PREFERENCES_SAVE_LOCK = threading.Lock()
 
@@ -1027,6 +1035,8 @@ class WorkspaceService:
         if session.get('saved_event_name'):
             # User-authored event names take precedence over chart-type labels.
             title_key = None
+        elif session.get(ASTROCART_TECHNIQUE_SESSION_KEY) == astrocart_spec.TECHNIQUE_LEWIS_CCG:
+            title_key = "astrocart.dynamic.lewis_ccg"
         elif session.get("launcher_kind") == "ascensional_transits":
             title_key = "toolbar.ascensionalTransits"
         elif feature_kind == 'converse_transits':
@@ -2243,11 +2253,12 @@ class WorkspaceService:
                 idx = int(region.get("houseIndex"))
             except Exception:
                 idx = 0
-            return (
-                mtexts.txts.get("HouseCuspIndexedFmt", "House %d cusp") % idx
-                if idx > 0
-                else mtexts.txts.get("HouseCuspLabel", "House cusp")
-            )
+            if idx in (1, 4, 7, 10):
+                angle_key = {1: "Asc", 4: "IC", 7: "Dsc", 10: "MC"}[idx]
+                return mtexts.txts.get(angle_key, angle_key)
+            if 1 <= idx <= 12:
+                return str(mtexts.txts.get("HC%d" % idx, idx))
+            return mtexts.txts.get("HouseCuspLabel", "House cusp")
         if kind == "secondary_ring":
             label = str(region.get("label") or "").strip()
             if label:
@@ -2295,10 +2306,14 @@ class WorkspaceService:
         with self._lock:
             if action_id == "workspace.save_event":
                 return self.chart_events.save(str(payload.get("documentId") or ""))
+            if action_id == "workspace.create_event":
+                return self.chart_events.create(str(payload.get("documentId") or ""),
+                    payload.get("fields") or {}, payload.get("eventId"))
             if action_id == "workspace.list_events":
                 return self.chart_events.list(str(payload.get("documentId") or ""),
                     offset=payload.get("offset", 0), limit=payload.get("limit", 128),
-                    query=payload.get("query", ""))
+                    query=payload.get("query", ""), sort=payload.get("sort", "date"),
+                    descending=bool(payload.get("descending", False)))
             if action_id == "workspace.set_event_tags":
                 return self.chart_events.set_tags(str(payload.get("documentId") or ""), str(payload.get("eventId") or ""),
                     tag_ids=payload.get("tagIds", []), name=payload.get("name"))
@@ -2505,6 +2520,20 @@ class WorkspaceService:
                     result.get("refreshedDocumentIds"),
                     result.get("refreshMode"),
                     list_data_changed=result.get("listDataChanged", True),
+                    retained_list_target=result.get("retainedListTarget"),
+                )
+                return result
+
+            if action_id == "options.set_asteroid_outer_ring_all":
+                show_all = bool(payload.get("value", False))
+                patch = {"asteroids": {"outerRingAll": show_all}}
+                if show_all:
+                    patch["display"] = {"showfixstars": morinus_options.Options.ASTEROIDS}
+                result = options_service.set_options(patch)
+                self.broadcast_options_changed(
+                    result.get("refreshedDocumentIds"),
+                    result.get("refreshMode"),
+                    list_data_changed=result.get("listDataChanged", False),
                     retained_list_target=result.get("retainedListTarget"),
                 )
                 return result
@@ -2862,6 +2891,15 @@ class WorkspaceService:
                     "value": str(mode),
                     "actionId": "options.set_showfixstars",
                     "payload": {"mode": int(mode)},
+                    **({
+                        "labelKey": "chartmenu.asteroids",
+                        "trailingToggle": {
+                            "labelKey": "chartmenu.allActiveAsteroids",
+                            "checked": bool(getattr(opts, "asteroid_outer_ring_all", False)),
+                            "actionId": "options.set_asteroid_outer_ring_all",
+                            "payload": {"value": not bool(getattr(opts, "asteroid_outer_ring_all", False))},
+                        },
+                    } if mode == morinus_options.Options.ASTEROIDS else {}),
                 }
                 for label, mode in _OVERLAY_MENU_ITEMS
             ],
@@ -6453,6 +6491,7 @@ class WorkspaceService:
         session_label: Optional[str] = None,
         reuse_existing: bool = False,
         include_perf: bool = False,
+        astrocart_technique: Optional[str] = None,
     ) -> dict:
         """morin.py:9526 _open_workspace_session via the controller.
 
@@ -6511,18 +6550,39 @@ class WorkspaceService:
                 mark_phase("root_controller_open", phase_started_at)
             else:
                 phase_started_at = time.perf_counter()
-                document = self._open_child(
-                    parent_document_id=parent_document_id,
-                    feature_kind=feature_kind,
-                    when_iso=when_iso,
-                    planet_type=planet_type,
-                    binding_payload=binding_payload,
-                    comparison_chart=comparison_chart,
-                    comparison_layout=comparison_layout,
-                    session_label=session_label,
-                    reuse_existing=reuse_existing,
-                    perf=perf,
+                map_technique = self._astrocart_layer_technique_for_open(
+                    parent_document_id,
+                    feature_kind,
+                    astrocart_technique,
                 )
+                document = (
+                    self._find_reusable_astrocart_layer_document(
+                        parent_document_id,
+                        map_technique,
+                    )
+                    if map_technique is not None and reuse_existing
+                    else None
+                )
+                if document is None:
+                    document = self._open_child(
+                        parent_document_id=parent_document_id,
+                        feature_kind=feature_kind,
+                        when_iso=when_iso,
+                        planet_type=planet_type,
+                        binding_payload=binding_payload,
+                        comparison_chart=comparison_chart,
+                        comparison_layout=comparison_layout,
+                        session_label=session_label,
+                        reuse_existing=reuse_existing and map_technique is None,
+                        perf=perf,
+                    )
+                    if document is not None and map_technique is not None:
+                        # Stamp before the first snapshot/tree broadcast so the
+                        # map never draws this tab as plain transits.
+                        child_session = self._controller.session(document.document_id)
+                        if child_session is not None:
+                            child_session[ASTROCART_TECHNIQUE_SESSION_KEY] = map_technique
+                            child_session[ASTROCART_PROGRESSED_ANGLES_SESSION_KEY] = False
                 mark_phase("child_open", phase_started_at)
             phase_started_at = time.perf_counter()
             self._save_restore_open_charts_state()
@@ -6731,6 +6791,10 @@ class WorkspaceService:
             session = self._controller.session(document.document_id) or {}
             if session.get("launcher_kind") == "ascensional_transits":
                 continue
+            if session.get(ASTROCART_TECHNIQUE_SESSION_KEY):
+                # Map-owned technique tabs (Lewis CCG) never answer a generic
+                # launcher recall for their stepping kind.
+                continue
             if session.get("supplementary_feature_kind") != engine_feature_kind:
                 continue
             if engine_feature_kind == "planetary_return":
@@ -6917,6 +6981,9 @@ class WorkspaceService:
         parent_session = self._controller.session(parent_document_id)
         if parent_session is None:
             raise ValueError(f"unknown parent document {parent_document_id!r}")
+        parent_session = self._controller._chart_context_parent(parent_session)
+        if parent_session is None:
+            raise ValueError("parent has no chart context")
         parent_cs = parent_session.get('chart_session')
         radix = None
         if parent_cs is not None:
@@ -7428,8 +7495,75 @@ class WorkspaceService:
             return {"dynamicLayers": []}
         layers = payload.get("dynamicLayers", payload.get("dynamic_layers", []))
         return {
-            "dynamicLayers": copy.deepcopy(layers) if isinstance(layers, list) else [],
+            "dynamicLayers": [
+                copy.deepcopy(layer)
+                for layer in layers
+                if isinstance(layer, dict) and not layer.get("sourceDocumentId")
+            ] if isinstance(layers, list) else [],
         }
+
+    def _astrocart_chart_layers_locked(
+        self,
+        document_id: str,
+        catalog: astrocart_spec.AstrocartPointCatalog,
+    ) -> tuple[tuple[astrocart_spec.AstrocartDynamicLayer, ...], dict[str, object]]:
+        """Project chart children of this map without copying their time state."""
+        techniques = {
+            "transits": astrocart_spec.TECHNIQUE_TRANSIT,
+            "secondary": astrocart_spec.TECHNIQUE_SECONDARY_PROGRESSION,
+            "minor": astrocart_spec.TECHNIQUE_MINOR_PROGRESSION,
+            "tertiary": astrocart_spec.TECHNIQUE_TERTIARY_PROGRESSION,
+            "solar_arc": astrocart_spec.TECHNIQUE_SOLAR_ARC,
+        }
+        layers = []
+        charts: dict[str, object] = {}
+        controller = getattr(self, "_controller", None)
+        documents = getattr(controller, "documents", None)
+        if not callable(documents):
+            return (), charts
+        for document in documents():
+            if document.parent_document_id != document_id:
+                continue
+            child_id = document.document_id
+            session = self._controller.session(child_id) or {}
+            technique = (
+                session.get(ASTROCART_TECHNIQUE_SESSION_KEY)
+                or techniques.get(session.get("supplementary_feature_kind"))
+            )
+            cs = session.get("chart_session")
+            if technique is None or cs is None or getattr(cs, "chart", None) is None:
+                continue
+            cursor = self._session_authoritative_datetime(session)
+            if cursor is None:
+                continue
+            role = astrocart_dynamic.DYNAMIC_ROLE[technique]
+            actors = tuple(
+                record.semantic_id
+                for record in catalog.records
+                if record.capability(role).supported
+            )
+            if not actors:
+                continue
+            layers.append(astrocart_spec.AstrocartDynamicLayer(
+                technique=technique,
+                cursor_iso=cursor.isoformat(timespec="seconds"),
+                selected_actor_ids=actors,
+                enabled=True,
+                source_document_id=child_id,
+                progressed_angles=bool(
+                    session.get(ASTROCART_PROGRESSED_ANGLES_SESSION_KEY, False)
+                ),
+            ))
+            charts[child_id] = cs.chart
+        return tuple(layers), charts
+
+    def _astrocart_effective_spec_locked(self, document_id: str, radix):
+        catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+        chart_layers, charts = self._astrocart_chart_layers_locked(document_id, catalog)
+        return catalog, replace(
+            spec,
+            dynamic_layers=(*spec.dynamic_layers, *chart_layers),
+        ), charts
 
     @staticmethod
     def _astrocart_merge_unavailable_point_preferences(
@@ -7471,6 +7605,13 @@ class WorkspaceService:
             ("paran", "participantIds"),
             ("aspects", "actorIds"),
         ):
+            if path == ("paran", "participantIds") and (
+                isinstance(merged.get("paran"), dict)
+                and merged["paran"].get("followLines") is True
+            ):
+                # The selected lines are the durable preference in this mode;
+                # participants are derived again for each radix's catalog.
+                continue
             selected = values_at(merged, path)
             unavailable = [
                 point_id
@@ -7489,6 +7630,12 @@ class WorkspaceService:
         projection = state.get("projection")
         if state.get("distanceUnits") in ("metric", "miles"):
             result["distanceUnits"] = state["distanceUnits"]
+        if state.get("lineWeight") in ASTROCART_LINE_WEIGHTS:
+            result["lineWeight"] = state["lineWeight"]
+        if state.get("lineLabels") in ASTROCART_LINE_LABELS:
+            result["lineLabels"] = state["lineLabels"]
+        if isinstance(state.get("localSpaceBearings"), bool):
+            result["localSpaceBearings"] = state["localSpaceBearings"]
         if projection in ("globe", "mercator"):
             result["projection"] = projection
         if "lineModes" in state:
@@ -7586,10 +7733,16 @@ class WorkspaceService:
             if transient_layers:
                 transient_overlays["layers"] = transient_layers
         filters = overlays.get("filters")
-        if isinstance(filters, dict) and "techniques" in filters:
-            transient_overlays["filters"] = {
-                "techniques": copy.deepcopy(filters["techniques"]),
-            }
+        if isinstance(filters, dict):
+            transient_filters = {}
+            if "techniques" in filters:
+                transient_filters["techniques"] = copy.deepcopy(filters["techniques"])
+            if isinstance(filters.get("hiddenLayerIds"), list):
+                transient_filters["hiddenLayerIds"] = [
+                    item for item in filters["hiddenLayerIds"] if isinstance(item, str)
+                ]
+            if transient_filters:
+                transient_overlays["filters"] = transient_filters
         if transient_overlays:
             result["overlays"] = transient_overlays
         return result
@@ -7686,12 +7839,66 @@ class WorkspaceService:
         )
         return catalog, normalized
 
+    def _astrocart_layer_technique_for_open(
+        self,
+        parent_document_id: str,
+        feature_kind: Optional[str],
+        astrocart_technique: Optional[str],
+    ) -> Optional[str]:
+        """Validate a map-owned technique tab request (Lewis CCG only)."""
+        if not astrocart_technique:
+            return None
+        technique = str(astrocart_technique).strip().lower()
+        if technique != astrocart_spec.TECHNIQUE_LEWIS_CCG:
+            raise ValueError(f"unsupported Astrocart layer technique {astrocart_technique!r}")
+        parent_session = self._controller.session(parent_document_id) or {}
+        if parent_session.get("launcher_kind") != "astrocart":
+            raise ValueError("Lewis CCG tabs open only under an Astrocart map")
+        if feature_kind not in ("secondary-progression", "secondary"):
+            # The tab only supplies the real-date cursor and its stepping
+            # increments; the map computes Lewis's recipe itself.
+            raise ValueError("Lewis CCG tabs step through a secondary-progression session")
+        return technique
+
+    def _find_reusable_astrocart_layer_document(
+        self,
+        parent_document_id: str,
+        technique: str,
+    ):
+        for document in self._controller.documents():
+            if document.parent_document_id != parent_document_id:
+                continue
+            session = self._controller.session(document.document_id) or {}
+            if session.get(ASTROCART_TECHNIQUE_SESSION_KEY) == technique:
+                self._controller.activate_document(document.document_id)
+                return document
+        return None
+
+    def set_astrocart_layer_options(
+        self,
+        layer_document_id: str,
+        *,
+        progressed_angles: bool,
+    ) -> dict:
+        """Lewis CCG tab option: read against progressed angles (Sun arc in RA)."""
+        with self._lock:
+            session = self._controller.session(layer_document_id)
+            if session is None:
+                raise ValueError(f"unknown document {layer_document_id!r}")
+            if session.get(ASTROCART_TECHNIQUE_SESSION_KEY) != astrocart_spec.TECHNIQUE_LEWIS_CCG:
+                raise ValueError("progressed angles apply only to Lewis CCG tabs")
+            map_document_id = session.get("parent_document_id")
+            if not map_document_id:
+                raise ValueError("Lewis CCG tab has no Astrocart map")
+            session[ASTROCART_PROGRESSED_ANGLES_SESSION_KEY] = bool(progressed_angles)
+        return self.astrocart_spec_for_document(str(map_document_id))
+
     def astrocart_spec_for_document(self, document_id: str) -> dict:
         """Authoritative retained ACG configuration for a workspace map."""
         with self._lock:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
-            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+            catalog, spec, _ = self._astrocart_effective_spec_locked(document_id, radix)
             transit_cursor = self._astrocart_default_transit_cursor_locked(parent_id, radix)
         return astrocart_service.configuration_payload_for_chart(
             radix,
@@ -7735,6 +7942,8 @@ class WorkspaceService:
                 radix,
                 incoming=spec_payload,
             )
+            chart_layers, _ = self._astrocart_chart_layers_locked(document_id, catalog)
+            spec = replace(spec, dynamic_layers=(*spec.dynamic_layers, *chart_layers))
             transit_cursor = self._astrocart_default_transit_cursor_locked(parent_id, radix)
             static_changed = (
                 self._astrocart_preferences_locked()["spec"] != previous_static
@@ -7754,6 +7963,7 @@ class WorkspaceService:
         mode: Optional[str] = None,
         modes: Optional[list[str]] = None,
         precision: Optional[str] = None,
+        dynamic_only: bool = False,
     ) -> dict:
         """ACG lines for the live chart backing an astrocart document.
 
@@ -7770,7 +7980,17 @@ class WorkspaceService:
             parent_id = self._timed_chart_parent_document_id(document_id)
             radix = self._parent_radix(parent_id)
             source_name = self._chart_label(radix, "Radix")
-            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+            catalog, spec, charts = self._astrocart_effective_spec_locked(document_id, radix)
+        if dynamic_only:
+            return astrocart_service.moving_layers_geojson_for_chart_modes(
+                radix,
+                source_name=source_name,
+                modes=modes or [],
+                precision=precision,
+                spec=spec,
+                catalog=catalog,
+                dynamic_source_charts=charts,
+            )
         if modes is not None:
             return astrocart_service.lines_geojson_for_chart_modes(
                 radix,
@@ -7779,6 +7999,7 @@ class WorkspaceService:
                 precision=precision,
                 spec=spec,
                 catalog=catalog,
+                dynamic_source_charts=charts,
             )
         return astrocart_service.lines_geojson_for_chart(
             radix,
@@ -7787,6 +8008,7 @@ class WorkspaceService:
             precision=precision,
             spec=spec,
             catalog=catalog,
+            dynamic_source_charts=charts,
         )
 
     @staticmethod
@@ -7904,7 +8126,9 @@ class WorkspaceService:
             except ValueError as exc:
                 raise LookupError(str(exc)) from exc
             source_name = str(self._chart_label(radix, "Radix"))
-            catalog, spec = self._astrocart_spec_for_radix_locked(radix)
+            map_document = self._controller.state.find_document(document_id)
+            chart_title = str(map_document.title) if map_document is not None else source_name
+            catalog, spec, charts = self._astrocart_effective_spec_locked(document_id, radix)
             if (
                 expected_spec_key is not None
                 and spec.cache_key() != expected_spec_key
@@ -7961,6 +8185,7 @@ class WorkspaceService:
                 precision="precise",
                 spec=spec,
                 catalog=catalog,
+                dynamic_source_charts=charts,
             )
             if {item.strip().lower() for item in requested_modes} == {
                 ASTROCART_MODE_LOCAL_SPACE
@@ -7972,6 +8197,7 @@ class WorkspaceService:
                     precision="precise",
                     spec=spec,
                     catalog=catalog,
+                    dynamic_source_charts=charts,
                 )
                 geojson = {
                     **geojson,
@@ -7989,6 +8215,7 @@ class WorkspaceService:
                 precision="precise",
                 spec=spec,
                 catalog=catalog,
+                dynamic_source_charts=charts,
             )
             style = astrocart_service.display_style_for_chart(radix)
         resolved_chart_date = str(chart_date or "").strip()
@@ -8006,7 +8233,7 @@ class WorkspaceService:
             source_name,
         )
         render_options = {
-            "title": str(title or source_name),
+            "title": str(title or chart_title) if atlas is not None else str(title or source_name),
             "client_name": source_name,
             "chart_date": resolved_chart_date,
             "subtitle": str(subtitle or ""),
@@ -8108,6 +8335,49 @@ class WorkspaceService:
             if preferences["view"].get("distanceUnits", "metric") == units:
                 return False
             preferences["view"]["distanceUnits"] = units
+            self._store_astrocart_preferences_locked(preferences)
+        self._save_astrocart_preferences()
+        return True
+
+    def set_astrocart_line_weight(self, weight: str) -> bool:
+        if weight not in ASTROCART_LINE_WEIGHTS:
+            return False
+        with self._lock:
+            preferences = self._astrocart_preferences_locked()
+            current = normalized_astrocart_line_weight(
+                preferences["view"].get("lineWeight")
+            )
+            if current == weight:
+                return False
+            preferences["view"]["lineWeight"] = weight
+            self._store_astrocart_preferences_locked(preferences)
+        self._save_astrocart_preferences()
+        return True
+
+    def set_astrocart_line_labels(self, labels: str) -> bool:
+        if labels not in ASTROCART_LINE_LABELS:
+            return False
+        with self._lock:
+            preferences = self._astrocart_preferences_locked()
+            current = normalized_astrocart_line_labels(preferences["view"].get("lineLabels"))
+            if current == labels:
+                return False
+            preferences["view"]["lineLabels"] = labels
+            self._store_astrocart_preferences_locked(preferences)
+        self._save_astrocart_preferences()
+        return True
+
+    def set_astrocart_local_space_bearings(self, shown: bool) -> bool:
+        if not isinstance(shown, bool):
+            return False
+        with self._lock:
+            preferences = self._astrocart_preferences_locked()
+            current = normalized_astrocart_local_space_bearings(
+                preferences["view"].get("localSpaceBearings")
+            )
+            if current == shown:
+                return False
+            preferences["view"]["localSpaceBearings"] = shown
             self._store_astrocart_preferences_locked(preferences)
         self._save_astrocart_preferences()
         return True
@@ -9298,7 +9568,9 @@ class WorkspaceService:
                 )
                 if utc_dt is None:
                     raise ValueError("could not retain active chart UT for location update")
-                zone = moment.utc_to_place_local_zone(utc_dt, place) or {}
+                zone = moment.utc_to_place_local_zone(
+                    utc_dt, place, calendar=calendar_value,
+                ) or {}
                 local_dt = zone.get("datetime")
                 if local_dt is None:
                     raise ValueError("could not resolve local time for spotlight location")
@@ -9309,7 +9581,7 @@ class WorkspaceService:
                 zm = int(zone.get("zm", 0) or 0)
                 daylight = bool(zone.get("daylightsaving", False))
                 tzid = str(zone.get("tzid") or ctx.get("tzid") or "")
-                tzauto = False
+                tzauto = bool(zone.get("tzid"))
             newtime = chart_factory.build_time(
                 merged[0],
                 merged[1],
@@ -9328,6 +9600,7 @@ class WorkspaceService:
                 full=needs_full_chart,
                 tzid=tzid,
                 tzauto=tzauto,
+                exact_jd=float(jd) if location_only else None,
             )
             newchart = chart_factory.build_chart(
                 getattr(current_chart, 'name', ''),
@@ -9778,19 +10051,24 @@ class WorkspaceService:
         )
         if utc_dt is None:
             raise RuntimeError("could not resolve radix UTC datetime for relocation")
-        zone = moment.utc_to_place_local_zone(utc_dt, place) or {}
+        zone = moment.utc_to_place_local_zone(
+            utc_dt, place, calendar=base_chart.time.cal,
+        ) or {}
         local_dt = zone.get("datetime") or utc_dt
         y, m, d, h, mi, s = [int(v) for v in local_dt[:6]]
-        time = chart_mod.Time(
+        time = chart_factory.build_time(
             y, m, d, h, mi, s,
-            False, base_chart.time.cal, chart_mod.Time.ZONE,
-            bool(zone.get("plus", True)),
-            int(zone.get("zh", 0) or 0),
-            int(zone.get("zm", 0) or 0),
-            bool(zone.get("daylightsaving", False)),
-            place, False,
+            place=place,
+            cal=base_chart.time.cal,
+            zt=chart_mod.Time.ZONE,
+            plus=bool(zone.get("plus", True)),
+            zh=int(zone.get("zh", 0) or 0),
+            zm=int(zone.get("zm", 0) or 0),
+            daylight=bool(zone.get("daylightsaving", False)),
+            full=False,
             tzid=str(zone.get("tzid") or ""),
-            tzauto=False,
+            tzauto=bool(zone.get("tzid")),
+            exact_jd=float(base_chart.time.jd),
         )
         title = getattr(place, 'place', '') or self._astrocart_coordinates_title(place.lon, place.lat)
         relocated = chart_factory.build_chart(
@@ -14654,8 +14932,39 @@ class WorkspaceService:
         ):
             return False
         source_session["parent_document_id"] = None
-        # morin.py:10593-10598: detached nodes freeze as standalone documents and
-        # must not keep rendering against the former immediate parent.
+        # A detached supplementary chart becomes an independent radix. Keep the
+        # chart currently on screen, but remove its derivation binding and give
+        # it its own anchor and record identity.
+        cs = source_session.get("chart_session")
+        if source_session.get("supplementary_feature_kind") and cs is not None:
+            chrt = getattr(cs, "chart", None)
+            if chrt is not None:
+                chrt.htype = export_chart_json.chart_mod.Chart.RADIX
+                chrt.chart_id = ""
+                cs.radix = chrt
+                cs._initial_chart = chrt
+                cs._initial_display_datetime = cs._chart_display_datetime(chrt)
+                cs._initial_cursor_jd = cs._cursor_jd_for_chart(chrt, cs._initial_display_datetime)
+                cs.display_datetime = cs._initial_display_datetime
+                cs.cursor_jd = cs._initial_cursor_jd
+                cs.display_anchor_chart = None
+                cs.view_mode = chart_session.ChartSession.CHART
+                cs.navigation_units = ("day", "hour", "minute", "second")
+                cs.navigation_title_label = None
+                cs._stepper = None
+                source_session["chart"] = chrt
+                source_session["chart_id"] = ""
+                source_session["fpath"] = ""
+                source_session["supplementary_feature_kind"] = None
+                source_session["launcher_kind"] = None
+                source_session["supplementary_binding"] = None
+                source_session["parent_source_datetime"] = None
+                source_session["timed_event_title"] = False
+                source_session["custom_title_root"] = getattr(chrt, "name", "") or ""
+                source_session["base_title"] = getattr(chrt, "name", "") or ""
+                self._controller.set_dirty(source_document_id, edit_dirty=True, step_dirty=False)
+        # Detached nodes freeze as standalone documents and no longer render
+        # against the former immediate parent.
         source_session["comparison_chart"] = None
         self._broadcast_session_changed(source_document_id, "move")
         return True
@@ -14677,6 +14986,16 @@ class WorkspaceService:
             return False, []
         if source_session.get("parent_document_id") == target_document_id:
             return False, []
+
+        target_is_astrocart = target_session.get("launcher_kind") == "astrocart"
+        if target_is_astrocart:
+            if source_session.get("supplementary_feature_kind") not in {
+                "transits", "secondary", "minor", "tertiary", "solar_arc",
+            }:
+                return False, []
+            target_session = self._controller._chart_context_parent(target_session)
+            if target_session is None:
+                return False, []
 
         prebuilt = None
         if self._workspace_session_supports_rebinding(source_session):
@@ -14841,6 +15160,9 @@ class WorkspaceService:
         fields = seed.get("fields")
         if isinstance(fields, dict):
             context = self.note_record_context(document_id)
+            session = self._controller.session(document_id)
+            if session and session.get('saved_event_name'):
+                fields['name'] = session['saved_event_name']
             legacy = str(fields.get("notes") or "")
             notes_service.merge_legacy_note_state(
                 str(context.get("sourceName") or ""),
@@ -14927,6 +15249,8 @@ class WorkspaceService:
             prepared_fields = dict(fields)
             prepared_fields["notes"] = ""
             ok = self._controller.apply_editor_to_cursor(document_id, prepared_fields)
+            if ok:
+                self.chart_events.update_from_editor(document_id, fields.get('name'))
         if not ok:
             raise ValueError(
                 f"document {document_id!r} is not a session-cursor editor target"
@@ -15278,6 +15602,7 @@ class WorkspaceService:
         alt: bool = False,
         repeat: int = 1,
         include_perf: bool = False,
+        attach_snapshot: bool = True,
     ) -> dict:
         """Navigate one tab, or the moving charts in its multi-wheel branch.
 
@@ -15301,6 +15626,7 @@ class WorkspaceService:
                 alt=alt,
                 repeat=repeat,
                 include_perf=include_perf,
+                attach_snapshot=attach_snapshot,
             )
 
         fixed_ids: list[str] = []
@@ -15488,11 +15814,17 @@ class WorkspaceService:
             "fixedDocumentIds": fixed_ids,
         }
         if stepped:
-            result["snapshot"] = self.document_snapshot(
-                document_id,
-                overlay_render_mode=self._step_render_mode(document_id),
-                include_perf=include_perf,
-            )
+            if attach_snapshot:
+                result["snapshot"] = self.document_snapshot(
+                    document_id,
+                    overlay_render_mode=self._step_render_mode(document_id),
+                    include_perf=include_perf,
+                )
+            else:
+                with self._lock:
+                    session = self._controller.session(document_id)
+                    cs = session.get('chart_session') if session else None
+                    result["tabSuffix"] = self._tab_runtime_suffix(session, cs) if cs else None
             selected_event = next(
                 (
                     event for event in reversed(buffered_events)
@@ -15881,6 +16213,9 @@ class WorkspaceService:
                 # View-only docs (no ChartSession) can't step anyway; leave the
                 # skin to its GET fallback rather than fail the navigate.
                 pass
+        elif stepped:
+            session = self._controller.session(document_id)
+            result["tabSuffix"] = self._tab_runtime_suffix(session, cs) if session else None
         if include_perf:
             timing = result.setdefault("debugTiming", {})
             timing["totalMs"] = (

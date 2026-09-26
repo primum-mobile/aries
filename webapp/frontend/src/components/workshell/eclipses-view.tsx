@@ -723,6 +723,8 @@ export function EclipsesView({ documentId, parentDocumentId, sourceName, onClose
             </>
           ) : null}
           <TextExportActions
+            sourceName={sourceName}
+            fileStem="eclipses"
             buildDocument={() =>
               buildTableExportDocument(exportPayload, exportPayload.rows, {
                 fileStem: "eclipses",

@@ -430,12 +430,6 @@ function diffCounter(before, after, key) {
   return Math.max(0, (after?.[key] ?? 0) - (before?.[key] ?? 0));
 }
 
-function domMeasuredTime(before, after) {
-  const beforeTotal = (before?.domLabelAvgMs ?? 0) * (before?.domLabelRebuilds ?? 0);
-  const afterTotal = (after?.domLabelAvgMs ?? 0) * (after?.domLabelRebuilds ?? 0);
-  return Math.max(0, afterTotal - beforeTotal);
-}
-
 async function runInteractionSample(page, mapFrame, kind, index, measured) {
   const before = await readMapSnapshot(mapFrame);
   if (measured) {
@@ -453,8 +447,6 @@ async function runInteractionSample(page, mapFrame, kind, index, measured) {
     ? await mapFrame.evaluate(() => window.__ARIES_ASTROCART_MAP_PROBE__?.stop())
     : { rafGapsMs: [], longTasks: [] };
   const after = quiet.snapshot;
-  const domRebuildCount = diffCounter(before.perf, after.perf, "domLabelRebuilds");
-  const domTimeMs = domMeasuredTime(before.perf, after.perf);
   return {
     kind,
     index,
@@ -465,10 +457,6 @@ async function runInteractionSample(page, mapFrame, kind, index, measured) {
     mapLibreRenderCount: diffCounter(before.perf, after.perf, "renderFrames"),
     polarDrawCount: diffCounter(before.perf, after.perf, "polarOverlayDraws"),
     polarLastMs: rounded(after.perf?.polarOverlayLastMs ?? 0),
-    domLabelRebuildCount: domRebuildCount,
-    domLabelTimeMs: rounded(domTimeMs),
-    domLabelAverageMs: rounded(domRebuildCount ? domTimeMs / domRebuildCount : 0),
-    domLabelLastMs: rounded(after.perf?.domLabelLastMs ?? 0),
   };
 }
 
@@ -514,13 +502,6 @@ function summarizeInteractionSamples(samples) {
       drawsPerSample: summarize(samples.map((sample) => sample.polarDrawCount)),
       lastDrawMs: summarize(samples.map((sample) => sample.polarLastMs)),
     },
-    domLabels: {
-      rebuildCount: samples.reduce((sum, sample) => sum + sample.domLabelRebuildCount, 0),
-      measuredTotalMs: rounded(samples.reduce((sum, sample) => sum + sample.domLabelTimeMs, 0)),
-      rebuildsPerSample: summarize(samples.map((sample) => sample.domLabelRebuildCount)),
-      averageRebuildMs: summarize(samples.map((sample) => sample.domLabelAverageMs)),
-      lastRebuildMs: summarize(samples.map((sample) => sample.domLabelLastMs)),
-    },
   };
 }
 
@@ -550,7 +531,6 @@ async function measureIdle(mapFrame) {
     observationMs: idleObservationMs,
     mapLibreRenderCount: diffCounter(before.perf, after.perf, "renderFrames"),
     polarDrawCount: diffCounter(before.perf, after.perf, "polarOverlayDraws"),
-    domLabelRebuildCount: diffCounter(before.perf, after.perf, "domLabelRebuilds"),
   };
 }
 
@@ -744,12 +724,6 @@ try {
   allMetrics.polarOverlay.maxAtMeasurementEndMs = rounded(
     finalSnapshot.perf?.polarOverlayMaxMs ?? 0,
   );
-  allMetrics.domLabels.maxAtMeasurementStartMs = rounded(
-    baseline.perf?.domLabelMaxMs ?? 0,
-  );
-  allMetrics.domLabels.maxAtMeasurementEndMs = rounded(
-    finalSnapshot.perf?.domLabelMaxMs ?? 0,
-  );
 
   const failures = structuralFailures({
     baselinePerf: baseline.perf,
@@ -761,7 +735,7 @@ try {
   });
   const report = {
     schema: "aries.astrocart-map-perf",
-    schemaVersion: 2,
+    schemaVersion: 3,
     recordedAt: new Date().toISOString(),
     source: {
       commit: gitValue(["rev-parse", "HEAD"]),
@@ -825,8 +799,7 @@ try {
     + `${allMetrics.mapLibreRenderCount.total}; idle renders: ${idle.mapLibreRenderCount}`,
   );
   console.log(
-    `polar max: ${allMetrics.polarOverlay.maxAtMeasurementEndMs} ms; `
-    + `DOM label measured total: ${allMetrics.domLabels.measuredTotalMs} ms`,
+    `polar max: ${allMetrics.polarOverlay.maxAtMeasurementEndMs} ms`,
   );
   console.log(
     `visible payload: ${visibleLines?.featureCount ?? 0} features, `

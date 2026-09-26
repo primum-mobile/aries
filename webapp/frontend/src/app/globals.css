@@ -1514,7 +1514,7 @@ html {
   --aries-menu-context-popup-min-width: 144px;
   --aries-menu-quick-width: 288px;
   --aries-menu-quick-max-height: 620px;
-  --aries-menu-quick-viewport-max-height: 76vh;
+  --aries-menu-quick-viewport-max-height: 100vh;
   --aries-menu-command-max-height: 288px;
   --aries-menu-dropdown-min-width: 128px;
   --aries-menu-dropdown-submenu-min-width: 96px;
@@ -1863,6 +1863,20 @@ html[data-theme-ready="pending"] body {
      * Editing surfaces opt back in below. */
     -webkit-user-select: none;
     user-select: none;
+  }
+}
+
+/* Compact desktop chrome keeps a quiet keyboard cue inside the control edge. */
+.aries-desktop-focus:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--foreground) 28%, transparent);
+  outline-offset: -1px;
+  box-shadow: none;
+}
+
+@media (forced-colors: active) {
+  .aries-desktop-focus:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
   }
 }
 
@@ -2304,6 +2318,138 @@ html[data-theme-ready="pending"] body {
 .aries-mode-hint--bottom {
   top: auto;
   bottom: 10px;
+}
+
+.aries-mode-hint--astrocart {
+  --aries-mode-hint-bg: color-mix(in srgb, var(--aries-background) 88%, transparent);
+  --aries-mode-hint-control-height: var(--aries-control-height-micro);
+  --aries-mode-hint-font-size: var(--aries-font-size-small);
+  --aries-mode-hint-icon-size: var(--aries-navbar-icon-size-min);
+  --aries-mode-hint-arrow-width: var(--aries-navbar-arrow-width-min);
+  --aries-mode-hint-stroke: color-mix(in srgb, var(--aries-navbar-text) 12%, transparent);
+  max-width: min(calc(100% - 24px), 680px);
+  gap: var(--aries-navbar-gap-min);
+  padding: var(--aries-navbar-pad-y-min) var(--aries-navbar-pad-x-min);
+}
+
+.aries-mode-hint--astrocart.aries-mode-hint--top {
+  top: calc(var(--titlebar-h) + 44px);
+}
+
+/* Docked in the map's top toolbar row (map.html reports its geometry/style):
+   one toolbar gap after the last toolbar box, top-aligned, and the same box —
+   height, radius, fill and outline. Inner controls match the toolbar
+   buttons: 1px border + 2px padding on each side. */
+.aries-mode-hint--astrocart.aries-mode-hint--docked {
+  --aries-mode-hint-bg: var(--aries-navbar-dock-bg);
+  --aries-mode-hint-stroke: var(--aries-navbar-dock-border);
+  --aries-mode-hint-control-height: calc(var(--aries-navbar-dock-height) - 6px);
+  top: var(--aries-navbar-dock-top);
+  left: var(--aries-navbar-dock-left);
+  box-sizing: border-box;
+  height: var(--aries-navbar-dock-height);
+  padding-block: 2px;
+  border-radius: var(--aries-navbar-dock-radius);
+  transform: none;
+  /* Natural width, never wrapped or squeezed; what doesn't fit before the
+     Legend / pane edge fades out and is clipped (not hit-testable). */
+  width: max-content;
+  max-width: none;
+  cursor: default;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(var(--aries-navbar-dock-room) - 24px),
+    transparent var(--aries-navbar-dock-room)
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(var(--aries-navbar-dock-room) - 24px),
+    transparent var(--aries-navbar-dock-room)
+  );
+  clip-path: inset(0 max(0px, calc(100% - var(--aries-navbar-dock-room))) 0 0);
+}
+
+.aries-mode-hint--astrocart .aries-step-hints {
+  gap: var(--aries-navbar-gap-min);
+}
+
+.aries-mode-hint--astrocart .aries-mode-hint-button:hover,
+.aries-mode-hint--astrocart .aries-step-arrow-button:hover {
+  border-color: var(--aries-mode-hint-stroke);
+}
+
+.aries-mode-hint-date {
+  position: relative;
+  display: inline-flex;
+  height: var(--aries-mode-hint-control-height);
+  align-items: center;
+  gap: 2px;
+  border-left: 1px solid var(--aries-mode-hint-stroke);
+  padding-left: var(--aries-navbar-gap-min);
+}
+
+.aries-mode-hint-date-input {
+  width: 10.5ch;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--aries-radius-control);
+  background: transparent;
+  color: var(--aries-navbar-text);
+  font: inherit;
+  font-size: var(--aries-mode-hint-font-size);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+}
+
+.aries-mode-hint-date-input:focus-visible {
+  outline: 1px solid var(--aries-mode-hint-stroke);
+}
+
+.aries-mode-hint-date-input[aria-invalid="true"] {
+  outline: 1px solid var(--aries-destructive);
+}
+
+.aries-mode-hint-time-input {
+  width: 8.5ch;
+  border-left: 1px solid var(--aries-mode-hint-stroke);
+  border-radius: 0;
+  padding-left: var(--aries-navbar-gap-min);
+}
+
+.aries-mode-hint-date-picker {
+  display: inline-flex;
+  width: var(--aries-mode-hint-control-height);
+  height: var(--aries-mode-hint-control-height);
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--aries-radius-control);
+  background: transparent;
+  color: var(--aries-navbar-text);
+  cursor: pointer !important;
+}
+
+.aries-mode-hint-date-picker:hover,
+.aries-mode-hint-date-picker:focus-visible {
+  background: var(--aries-navbar-hover-bg);
+  outline: none;
+}
+
+.aries-mode-hint-date-picker svg {
+  width: var(--aries-mode-hint-icon-size);
+  height: var(--aries-mode-hint-icon-size);
+  stroke-width: 1.7;
+}
+
+.aries-mode-hint-native-date {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--aries-mode-hint-control-height);
+  height: var(--aries-mode-hint-control-height);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .aries-mode-hint--hidden {
@@ -2816,6 +2962,17 @@ html[data-theme-ready="pending"] body {
 .unified-titlebar {
   isolation: isolate;
   background: transparent;
+}
+
+/* The asteroid's secondary command shares the radio row without occupying
+ * its visible idle state or moving the normal selected-mode checkmark. */
+[data-asteroid-menu-row] [data-asteroid-menu-all] {
+  opacity: 0;
+  pointer-events: none;
+}
+[data-asteroid-menu-row]:is(:hover, :focus-within) [data-asteroid-menu-all] {
+  opacity: 1;
+  pointer-events: auto;
 }
 /* Tauri only: the native traffic lights overlay the bar's left edge. Keep
  * --titlebar-traffic-x/y aligned with src-tauri/tauri.conf.json. */

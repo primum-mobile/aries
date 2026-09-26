@@ -17,6 +17,8 @@ const {
   applyProfileColorsToSnapshot,
   readPaletteFromTheme,
   readPaletteProfileOverrides,
+  withSettingsColorPreview,
+  settingsColorPreviewMatchesTheme,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
 );
@@ -34,11 +36,12 @@ function chart({ individual = false } = {}) {
     fortune: { longitude: 0, color: "old-fortune" },
     vertex: { longitude: 0, color: "old-vertex" },
     syzygy: { longitude: 0, color: "old-syzygy" },
-    options: { useDignityColors: individual, signColors: ["old-sign"] },
+    options: { useDignityColors: individual, useZodiacElementColors: true, signColors: ["old-sign"] },
   };
 }
 
 const theme = {
+  appTokens: {},
   chartPalette: {
     "--morinus-body-sun": "named-profile-sun",
     "--morinus-aspect-conjunction": "named-profile-conjunction",
@@ -57,8 +60,47 @@ const theme = {
       aspects: ["profile-aspect"],
       signColors: Array.from({ length: 12 }, (_, index) => `profile-sign-${index}`),
     },
+    wheelAuthoring: {
+      "authoring.wheel.base.signs.color": [1, 2, 3],
+    },
+    wheelColorRoleAliases: {
+      "authoring.wheel.base.signs.color": "--morinus-element-fire",
+    },
   },
 };
+
+test("Settings gamut preview repaints every palette authority without changing saved theme", () => {
+  const fire = withSettingsColorPreview(theme, {
+    attr: "clrsignelementfire", rgb: [11, 22, 33], revision: 1,
+  });
+  assert.equal(fire.chartPalette["--morinus-element-fire"], "rgb(11 22 33)");
+  assert.equal(fire.profileOverrides.chartPalette["--morinus-element-fire"], "rgb(11 22 33)");
+  assert.equal(fire.profileOverrides.chartData.signColors[0], "rgb(11 22 33)");
+  assert.equal(fire.profileOverrides.chartData.signColors[4], "rgb(11 22 33)");
+  assert.deepEqual(fire.profileOverrides.wheelAuthoring["authoring.wheel.base.signs.color"], [11, 22, 33]);
+  assert.equal(theme.profileOverrides.chartData.signColors[0], "profile-sign-0");
+
+  const body = withSettingsColorPreview(theme, {
+    attr: "clrindividual", index: 12, rgb: [4, 5, 6], revision: 2,
+  });
+  assert.equal(readPaletteProfileOverrides(body).planets[12], "rgb(4 5 6)");
+  const aspect = withSettingsColorPreview(theme, {
+    attr: "clraspect", index: 0, rgb: [7, 8, 9], revision: 3,
+  });
+  assert.equal(readPaletteProfileOverrides(aspect).aspects[0], "rgb(7 8 9)");
+  const chrome = withSettingsColorPreview({ ...theme, mode: "light" }, {
+    attr: "clrbackground", rgb: [10, 20, 30], revision: 4,
+  });
+  assert.equal(chrome.mode, "dark");
+  assert.equal(chrome.appTokens["--aries-background"], "rgb(10 20 30)");
+  assert.equal(chrome.chartPalette["--morinus-background"], "rgb(10 20 30)");
+  assert.equal(settingsColorPreviewMatchesTheme(chrome, {
+    attr: "clrbackground", rgb: [10, 20, 30], revision: 4,
+  }), true);
+  assert.equal(settingsColorPreviewMatchesTheme(theme, {
+    attr: "clrbackground", rgb: [10, 20, 30], revision: 4,
+  }), false);
+});
 
 test("profile data arrays join scalar chart overrides at final palette precedence", () => {
   const palette = readPaletteProfileOverrides(theme);
@@ -194,4 +236,27 @@ test("named element roles provide a sign-color fallback when chartData is absent
     "fire", "earth", "air", "water",
     "fire", "earth", "air", "water",
   ]);
+});
+
+test("element profile colors do not override a disabled Settings glyph switch", () => {
+  const plain = chart();
+  plain.options.useZodiacElementColors = false;
+  const resolved = applyProfileColorsToSnapshot(
+    { primaryChart: plain },
+    {
+      chartPalette: {
+        "--morinus-signs": "plain-sign",
+        "--morinus-element-fire": "fire",
+      },
+      profileOverrides: {
+        appTokens: {},
+        chartPalette: {
+          "--morinus-signs": "plain-sign",
+          "--morinus-element-fire": "fire",
+        },
+        chartData: { signColors: Array.from({ length: 12 }, () => "fire") },
+      },
+    },
+  );
+  assert.deepEqual(resolved.primaryChart.options.signColors, Array(12).fill("plain-sign"));
 });

@@ -169,24 +169,7 @@ def _start_astrocart_basemap_install() -> None:
         pass
 
 
-def _start_astrocart_label_prewarm() -> None:
-    """Warm bundled world labels after health startup, off the request path."""
-    def load() -> None:
-        # Let uvicorn claim its socket first; JSON decoding then finishes long
-        # before a user can navigate to the retained map surface.
-        time.sleep(0.1)
-        try:
-            from webapp.daemon.astrocart_service import astrocart_service
-
-            astrocart_service.prewarm_city_labels()
-        except Exception:
-            pass
-
-    threading.Thread(target=load, name="astrocart-label-prewarm", daemon=True).start()
-
-
 if __name__ == "__main__":
     _start_parent_watchdog()
     _start_astrocart_basemap_install()
-    _start_astrocart_label_prewarm()
     uvicorn.run(app, host="127.0.0.1", port=_daemon_port(), log_level="info")

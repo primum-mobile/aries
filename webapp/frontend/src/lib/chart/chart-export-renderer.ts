@@ -5,7 +5,7 @@ import { CanvasDraw } from "./canvas-draw";
 import { drawPngWatermark, preparePngWatermark } from "./chart-export-watermark";
 import { morinusTextFontFromTokens } from "./chart-fonts";
 import { informationCornerClass, radixOverlayTopLeftLines } from "./chart-overlay-lines";
-import { drawSnapshotLayer, resolveChartOuterPaintEnvelopeScale, type ClickAspectState } from "./draw-chart";
+import { drawSnapshotLayer, resolveChartOuterPaintEnvelope, type ClickAspectState } from "./draw-chart";
 import {
   applyProfileColorsToSnapshot,
   readPaletteFromTheme,
@@ -37,6 +37,7 @@ import type {
 } from "./chart-export-registry";
 
 const EXPORT_LONG_EDGE = 1200;
+const PNG_EXPORT_SIDE_GUTTER = 72;
 const PNG_EXPORT_DPR = 1;
 const PDF_EXPORT_DPR = 2;
 const PDF_EXPORT_WIDTH = 900;
@@ -44,8 +45,13 @@ const PDF_EXPORT_HEIGHT = 1200;
 const PRINT_BLACK = "rgb(0 0 0)";
 const PRINT_WHITE = "rgb(255 255 255)";
 
-function exportDimensions(): { width: number; height: number } {
-  return { width: EXPORT_LONG_EDGE, height: EXPORT_LONG_EDGE };
+function exportDimensions(hasExteriorPaint: boolean): { width: number; height: number } {
+  // Exterior labels can extend past the radial wheel envelope at 3/9 o'clock.
+  // Widen only those PNGs rather than reducing the wheel and its type.
+  return {
+    width: EXPORT_LONG_EDGE + (hasExteriorPaint ? PNG_EXPORT_SIDE_GUTTER * 2 : 0),
+    height: EXPORT_LONG_EDGE,
+  };
 }
 
 function resolvedThemeTokenReader(theme: ThemeState | null): WheelCssValueReader {
@@ -670,10 +676,11 @@ export async function renderChartSurfaceExport(
   geometryPreview?: WheelGeometryPresetInput["preview"],
 ): Promise<ChartExportRenderResult> {
   if (request.kind === "png") await preparePngWatermark(request.watermarkStyle);
+  const screen = resolveScreenStyle(chart, theme, geometryPreview);
+  const outerEnvelope = resolveChartOuterPaintEnvelope(chart, screen.style);
   const size = request.kind === "pdf"
     ? { width: PDF_EXPORT_WIDTH, height: PDF_EXPORT_HEIGHT }
-    : exportDimensions();
-  const screen = resolveScreenStyle(chart, theme, geometryPreview);
+    : exportDimensions(outerEnvelope.avoidTitlebar);
   const usesPrintAppearance = request.kind === "pdf" || request.colorMode !== "screen";
   const palette = usesPrintAppearance
     ? printPalette(screen.palette, request)
@@ -684,7 +691,7 @@ export async function renderChartSurfaceExport(
     : screen.snapshot;
   const dpr = request.kind === "png" ? PNG_EXPORT_DPR : PDF_EXPORT_DPR;
   const chartSize = Math.min(size.width, size.height)
-    / resolveChartOuterPaintEnvelopeScale(snapshot, style);
+    / outerEnvelope.targetScale;
   const layers = (["fill", "geometry", "dynamic", "outer-label"] as const).map((layer) => {
     const item = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
     drawSnapshotLayer(item.draw, snapshot, layer, {

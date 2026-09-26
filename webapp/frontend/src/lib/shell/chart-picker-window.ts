@@ -12,6 +12,7 @@ export type ChartPickerWindowMode = "open-radix" | "synastry-partner";
 
 type ChartPickerWindowParams = {
   mode: ChartPickerWindowMode;
+  title: string;
   parentRadixId?: string;
   excludeNames?: string[];
 };
@@ -19,9 +20,9 @@ type ChartPickerWindowParams = {
 let prewarmPickerWindowPromise: Promise<void> | null = null;
 let prewarmPickerWindowDone = false;
 
-export function prewarmChartPickerWindowApi(): void {
+export function prewarmChartPickerWindowApi(title: string): void {
   if (!resolveShellHost().capabilities.chartPickerWindow) return;
-  void prewarmChartPickerWindow().catch((error) => {
+  void prewarmChartPickerWindow(title).catch((error) => {
     prewarmPickerWindowDone = false;
     prewarmPickerWindowPromise = null;
     if (isTransientDaemonFetchError(error)) return;
@@ -49,7 +50,7 @@ function nativeThemePayload(theme: ThemeState | null | undefined): {
   };
 }
 
-async function prewarmChartPickerWindow(): Promise<void> {
+async function prewarmChartPickerWindow(title: string): Promise<void> {
   const shellHost = resolveShellHost();
   if (!shellHost.capabilities.chartPickerWindow || prewarmPickerWindowDone) return;
   if (prewarmPickerWindowPromise) return prewarmPickerWindowPromise;
@@ -61,7 +62,7 @@ async function prewarmChartPickerWindow(): Promise<void> {
     ]);
     await shellHost.prewarmChartPickerWindow({
       path: "/chart-picker?mode=open-radix",
-      title: "Open Horoscope",
+      title,
       ...nativeThemePayload(theme),
     });
     prewarmPickerWindowDone = true;
@@ -87,6 +88,7 @@ function openBrowserPicker(path: string, title: string): boolean {
 
 export async function openChartPickerWindow({
   mode,
+  title,
   parentRadixId,
   excludeNames = [],
 }: ChartPickerWindowParams): Promise<boolean> {
@@ -96,7 +98,6 @@ export async function openChartPickerWindow({
     if (excludeNames.length) params.set("exclude", excludeNames.join("\n"));
 
     const path = `/chart-picker?${params.toString()}`;
-    const title = mode === "synastry-partner" ? "Pick Synastry Partner" : "Open Horoscope";
     const rowsStartedAt = perfNow();
     const themePromise = ensureThemeStateCached().catch((error) => {
       if (isTransientDaemonFetchError(error)) return null;

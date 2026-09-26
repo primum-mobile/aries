@@ -99,31 +99,6 @@
     opacity:0;
     visibility:hidden;
   }
-  #place-labels {
-    position:absolute; inset:0; pointer-events:none; overflow:hidden;
-    z-index:3;
-    font-size:var(--chrome-font-size); line-height:1; color:var(--chrome-soft);
-  }
-  #acg-dom-labels {
-    position:absolute; inset:0; pointer-events:none; overflow:hidden;
-    z-index:3;
-    font-size:var(--chrome-font-size); line-height:1; color:var(--chrome-text);
-  }
-  .place-label, .acg-dom-label {
-    position:absolute; transform:translate(-50%, -50%);
-    text-shadow:0 0 3px var(--popup-bg), 0 0 6px var(--popup-bg);
-    white-space:nowrap; opacity:0.82;
-  }
-  .place-label.major { font-weight:600; color:var(--chrome-text); opacity:0.92; }
-  .acg-dom-label { font-weight:600; }
-  .acg-dom-label.zenith {
-    display:flex; align-items:center; gap:var(--chrome-gap);
-  }
-  .acg-dom-label-glyph {
-    font-family:var(--chrome-font-symbols);
-    font-size:1.2em;
-    font-weight:400;
-  }
   .maplibregl-ctrl-top-left { top:var(--titlebar-safe-top); }
   .maplibregl-ctrl-group {
     background:var(--chrome-bg);
@@ -174,10 +149,6 @@
     font:700 14px/18px var(--chrome-font-ui);
     text-align:center;
   }
-  .place-dot {
-    display:inline-block; width:3px; height:3px; border-radius:50%;
-    background:currentColor; margin-right:4px; vertical-align:middle;
-  }
   #legend {
     position:absolute; top:calc(var(--titlebar-safe-top) + var(--chrome-inset)); right:var(--chrome-inset);
     z-index:7;
@@ -191,10 +162,10 @@
   #legend-toggle {
     width:100%; display:flex; align-items:center; gap:var(--chrome-inset);
     border:0; background:transparent; color:var(--chrome-soft);
-    padding:var(--chrome-padding-y) var(--chrome-padding-x); cursor:pointer;
+    height:calc(var(--chrome-control-size) - 2px);
+    padding:0 var(--chrome-padding-x); cursor:pointer;
     border-radius:var(--chrome-panel-radius);
-    font:inherit; font-size:var(--chrome-small-font-size); font-weight:600;
-    text-transform:uppercase; letter-spacing:0.08em;
+    font:inherit; font-size:var(--chrome-font-size); line-height:16px;
   }
   #legend-toggle:hover { background:var(--btn-hover-bg); }
   #legend-toggle .legend-state {
@@ -203,7 +174,6 @@
   #legend-body { padding:0 var(--chrome-padding-x) var(--chrome-padding-y); }
   #legend.collapsed { max-width:none; }
   #legend.collapsed #legend-body { display:none; }
-  #legend.collapsed #legend-toggle { padding:var(--chrome-padding-y) var(--chrome-padding-x); }
   #legend h4 { margin:0 0 var(--chrome-padding-y) 0; font-size:var(--chrome-small-font-size); font-weight:600; color:var(--chrome-soft); opacity:0.75; text-transform:uppercase; letter-spacing:0.08em; }
   #legend section + section { margin-top:var(--chrome-inset); padding-top:var(--chrome-inset); border-top:1px solid var(--chrome-rule); }
   #legend .row { display:flex; align-items:center; gap:var(--chrome-padding-y); }
@@ -247,7 +217,7 @@
   }
   #proj button, #overlays button {
     background:transparent; color:var(--chrome-dim); border:0;
-    min-height:calc(var(--chrome-control-size) - 4px);
+    min-height:calc(var(--chrome-control-size) - 6px);
     padding:max(0px, calc(var(--chrome-padding-y) - 3px)) var(--chrome-padding-x);
     cursor:pointer; border-radius:calc(var(--chrome-panel-radius) / 2);
     font: inherit; line-height:16px; letter-spacing:0;
@@ -482,8 +452,6 @@
 </head>
 <body>
 <div id="map" class="map-booting"></div>
-<div id="place-labels"></div>
-<div id="acg-dom-labels"></div>
 <div id="acg-menu" data-mode="chart">
   <button data-action="relocation" data-context="chart">Relocation chart</button>
   <button data-action="solar_return" data-context="chart">Solar revolution here</button>
@@ -515,7 +483,7 @@
       </div>
       <div class="kind-row" id="legend-local-space-row" style="display:none"><span class="ks"></span><span>Local Space — bearing from origin</span></div>
       <div class="kind-row" id="legend-paran-row" style="display:none"><span class="kp"></span><span>Paran — A × B co-angular</span></div>
-      <div class="kind-row" id="legend-local-space-opposition-row" style="display:none"><span class="kd"></span><span class="localized-kind-label"></span></div>
+      <div class="kind-row" id="legend-local-space-opposition-row" style="display:none"><span class="kd"></span><span class="glyph legend-kind-glyph"></span><span class="localized-kind-label"></span></div>
       <div class="kind-row" id="legend-aspect-row" style="display:none"><span class="kd"></span><span class="localized-kind-label"></span></div>
       <div class="kind-row" id="legend-zenith-row" style="display:none"><span class="glyph">·</span><span class="localized-kind-label"></span></div>
     </section>
@@ -862,7 +830,7 @@
     }
     const behaviorFields = [
       'showEcliptic', 'showEquator', 'showAscCircle', 'showMcCircle',
-      'showHouseLines', 'showZodiacLines',
+      'showHouseLines', 'showZodiacLines', 'lineLabelGlyphs', 'localSpaceBearings',
     ];
     if (!hasExactFields(payload.behavior, behaviorFields)) return null;
     if (behaviorFields.some((field) => typeof payload.behavior[field] !== 'boolean')) return null;
@@ -881,6 +849,8 @@
         showMcCircle: payload.behavior.showMcCircle,
         showHouseLines: payload.behavior.showHouseLines,
         showZodiacLines: payload.behavior.showZodiacLines,
+        lineLabelGlyphs: payload.behavior.lineLabelGlyphs,
+        localSpaceBearings: payload.behavior.localSpaceBearings,
       }),
     });
   }
@@ -899,6 +869,7 @@
     }
     applyPageBg(chrome.pageBg);
     applyTitlebarSafeTop(chrome.titlebarSafeTop);
+    scheduleTopControlsReport();
   }
 
   function applyPageBg(bg) {
@@ -925,23 +896,21 @@
   const PLACES_PARAM_RAW = (URL_THEME.get('places') || '').trim();
   const PLACES_MODE = PLACES_PARAM_RAW.toLowerCase();
   const PLACE_LABELS_DISABLED = ['none', 'off', '0', 'false'].includes(PLACES_MODE);
-  const PLACE_LABELS_AUTO = PLACES_MODE === 'auto';
-  const PLACE_LABELS_CITY500 = ['auto', 'city500', 'cities500', 'dynamic'].includes(PLACES_MODE);
   const PLACES_URL = (
     !PLACES_PARAM_RAW ||
     PLACE_LABELS_DISABLED ||
-    PLACE_LABELS_AUTO ||
-    PLACE_LABELS_CITY500
+    ['auto', 'city500', 'cities500', 'dynamic'].includes(PLACES_MODE)
   ) ? (URL_THEME.get('placesUrl') || URL_THEME.get('capitals') || 'places.geojson') : PLACES_PARAM_RAW;
-  const CITY_LABELS_URL = URL_THEME.get('cityLabels') || '/api/astrocart/city-labels';
-  const DAEMON_TOKEN = URL_THEME.get('token') || '';
-  // City labels have two modes:
-  // - default/wx: try places.geojson; under file:// this still fails quietly.
-  // - places=auto: preserve the provider's complete online label hierarchy,
-  //   and use bundled Aries labels only for local/minimal offline basemaps.
-  // Online label ownership and layout are a visual contract: MapLibre keeps
-  // its native collision/line placement, while DOM labels are the fallback.
-  const ACG_DOM_LABELS = true;
+  // Online labels belong to the provider style. The offline basemaps replace
+  // them with native symbol layers over bundled data: country names from the
+  // local PMTiles archive, city names from places.geojson. Both draw through
+  // the bundled Noto Sans glyph ranges (scripts/fonts/build_astrocart_glyphs.py),
+  // so every ACG, eclipse, and place label runs the same MapLibre layers,
+  // collision, and camera anchoring as the online map.
+  const LOCAL_GLYPHS_URL = `${new URL('fonts/', location.href).href}{fontstack}/{range}.pbf`;
+  const OFFLINE_PLACES_SOURCE_ID = 'offline-places';
+  const OFFLINE_WORLD_SOURCE_ID = 'offline-world';
+  const OFFLINE_WORLD_URL = 'natural-earth-admin0-110m.geojson';
   const ACG_PERF_MODE = ['1', 'true', 'on'].includes(
     (URL_THEME.get('perf') || '').trim().toLowerCase()
   );
@@ -967,22 +936,6 @@
     lastFrameMs: 0,
     maxFrameMs: 0,
     frameSamples: [],
-    domLabelRebuilds: 0,
-    domLabelSettleRebuilds: 0,
-    domLabelSkippedWhileMoving: 0,
-    domLabelBurstSettles: 0,
-    placeLabelSkippedWhileMoving: 0,
-    domLabelLastCount: 0,
-    domLabelLastMs: 0,
-    domLabelTotalMs: 0,
-    domLabelMaxMs: 0,
-    placeLabelFetches: 0,
-    placeLabelAborts: 0,
-    placeLabelLastCount: 0,
-    placeLabelLastFetchMs: 0,
-    placeLabelLastRenderMs: 0,
-    placeLabelMaxRenderMs: 0,
-    placeLabelSource: 'none',
     runtimeSceneDeferredPushes: 0,
     runtimeSceneCoherentFlushes: 0,
     polarOverlayPathCount: 0,
@@ -1015,9 +968,10 @@
   const PRINT_ATLAS_MAX_TOTAL_BYTES = 128000000;
   const PRINT_ATLAS_LOGICAL_WIDTH = 1200;
   const PRINT_ATLAS_LOGICAL_HEIGHT = 780;
-  const PRINT_ATLAS_DETAIL_ZOOM = 2.5;
-  const PRINT_ATLAS_DETAIL_COLUMNS = [-120, 0, 120];
-  const PRINT_ATLAS_DETAIL_ROWS = [79.171335, 40.979898, -40.979898, -79.171335];
+  const PRINT_ATLAS_PREFERRED_DETAIL_ZOOM = 2.5;
+  const PRINT_ATLAS_OVERLAP = 0.10;
+  const PRINT_ATLAS_SOUTH = -60;
+  const PRINT_ATLAS_NORTH = 75;
   let BASE_VECTOR_STYLE = null;
   const HIDE_LAYER_IDS = new Set([
     'natural_earth',
@@ -1076,7 +1030,55 @@
     'tunnel_link',
   ];
   const STREET_NAME_LAYER_IDS = ['highway-name-major', 'highway-name-minor'];
-  const SIMPLE_PLACE_NAME = ['coalesce', ['get', 'name_en'], ['get', 'name']];
+  // OpenMapTiles provides name_en; the Protomaps archive spells it name:en.
+  const SIMPLE_PLACE_NAME = ['coalesce', ['get', 'name_en'], ['get', 'name:en'], ['get', 'name']];
+
+  // The offline place layers reuse the provider layer ids, so
+  // applyVectorBasemapStyle(), the context menu, and label settings treat
+  // them exactly like the online labels. City tiers follow the curated
+  // places.geojson hierarchy: level first, population second.
+  function offlinePlaceSources() {
+    if (PLACE_LABELS_DISABLED) return {};
+    return {
+      [OFFLINE_PLACES_SOURCE_ID]: {
+        type: 'geojson',
+        data: new URL(PLACES_URL, location.href).href,
+      },
+    };
+  }
+
+  function offlinePlaceLabelLayers(hasCountries) {
+    if (PLACE_LABELS_DISABLED) return [];
+    const minor = ['all', ['>=', ['get', 'level'], 3], ['<', ['get', 'population'], 1500000]];
+    const visibleAtZoom = [
+      'any',
+      ['<=', ['get', 'level'], ['step', ['zoom'], 0, 2, 1, 3, 2, 4, 3, 5, 4]],
+      ['>=', ['get', 'population'], ['step', ['zoom'], 4000000, 2, 1000000, 3, 250000, 4, 100000, 5, 0]],
+    ];
+    const cityLayout = {
+      'text-field': SIMPLE_PLACE_NAME,
+      'text-font': ['Noto Sans Regular'],
+      'symbol-sort-key': ['-', ['*', ['get', 'level'], 100000000], ['get', 'population']],
+    };
+    const layers = [
+      { id: 'label_town', type: 'symbol', source: OFFLINE_PLACES_SOURCE_ID,
+        filter: ['all', minor, visibleAtZoom], layout: cityLayout },
+      { id: 'label_city', type: 'symbol', source: OFFLINE_PLACES_SOURCE_ID,
+        filter: ['all', ['!', minor], visibleAtZoom], layout: cityLayout },
+    ];
+    if (hasCountries) {
+      layers.push({
+        id: 'label_country_1', type: 'symbol', source: 'protomaps', 'source-layer': 'places',
+        filter: ['==', ['get', 'kind'], 'country'],
+        layout: {
+          'text-field': SIMPLE_PLACE_NAME,
+          'text-font': ['Noto Sans Bold'],
+          'symbol-sort-key': ['get', 'sort_key'],
+        },
+      });
+    }
+    return layers;
+  }
 
   function buildLocalPmtilesStyle(tilesUrl, isDark) {
     const s = resolvedDevSettings(isDark);
@@ -1084,12 +1086,14 @@
       version: 8,
       projection: { type: selectedProjection },
       sky: skyStyle(isDark),
+      glyphs: LOCAL_GLYPHS_URL,
       sources: {
         protomaps: {
           type: 'vector',
           url: `pmtiles://${tilesUrl}`,
           attribution: '© OpenStreetMap contributors',
         },
+        ...offlinePlaceSources(),
       },
       layers: [
         { id: 'background', type: 'background', paint: { 'background-color': s.landColor } },
@@ -1111,21 +1115,80 @@
             'line-width': s.localRegionBorderWidth,
             'line-opacity': s.localRegionBorderOpacity,
           } },
+        ...offlinePlaceLabelLayers(true),
       ],
     };
   }
 
+  // Without the PMTiles archive the bundled Natural Earth outlines still give
+  // the globe its coastlines, land, and borders.
   function buildMinimalOfflineStyle(isDark) {
     const s = resolvedDevSettings(isDark);
     return {
       version: 8,
       projection: { type: selectedProjection },
       sky: skyStyle(isDark),
-      sources: {},
+      glyphs: LOCAL_GLYPHS_URL,
+      sources: {
+        [OFFLINE_WORLD_SOURCE_ID]: {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+        ...offlinePlaceSources(),
+      },
       layers: [
-        { id: 'background', type: 'background', paint: { 'background-color': s.landColor } },
+        { id: 'ocean', type: 'background', paint: { 'background-color': s.oceanColor } },
+        { id: 'earth', type: 'fill', source: OFFLINE_WORLD_SOURCE_ID,
+          paint: { 'fill-color': s.landColor } },
+        { id: 'boundaries-country', type: 'line', source: OFFLINE_WORLD_SOURCE_ID,
+          paint: {
+            'line-color': s.borderColor,
+            'line-width': s.localCountryBorderWidth,
+            'line-opacity': s.localCountryBorderOpacity,
+          } },
+        ...offlinePlaceLabelLayers(false),
       ],
     };
+  }
+
+  function loadOfflineWorld() {
+    if (!offlineWorldPromise) {
+      offlineWorldPromise = fetch(OFFLINE_WORLD_URL, { cache: 'force-cache' })
+        .then((response) => {
+          if (!response.ok) throw new Error(`offline world failed: ${response.status}`);
+          return response.json();
+        })
+        .then((data) => ({
+          type: 'FeatureCollection',
+          // Every bundled outline is a closed ring; fill each as land.
+          features: (data && data.features || []).flatMap((feature) => {
+            const geometry = feature && feature.geometry || {};
+            const rings = geometry.type === 'MultiLineString'
+              ? geometry.coordinates
+              : (geometry.type === 'LineString' ? [geometry.coordinates] : []);
+            return (rings || []).map((ring) => ({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'Polygon', coordinates: [ring] },
+            }));
+          }),
+        }))
+        .catch((error) => {
+          offlineWorldPromise = null;
+          throw error;
+        });
+    }
+    return offlineWorldPromise;
+  }
+
+  function syncOfflineWorld() {
+    if (!map || !map.getSource(OFFLINE_WORLD_SOURCE_ID)) return;
+    loadOfflineWorld()
+      .then((data) => {
+        const source = map && map.getSource(OFFLINE_WORLD_SOURCE_ID);
+        if (source) source.setData(data);
+      })
+      .catch(() => {});
   }
 
   function buildStyle(_isDark) {
@@ -1277,6 +1340,7 @@
     return [
       ACG_SOURCE_ID,
       ACG_LABEL_SOURCE_ID,
+      ACG_CHIP_SOURCE_ID,
       ECLIPSE_SOURCE_ID,
       ASTERISM_SOURCE_ID,
     ].includes(String(layer.source || ''));
@@ -1297,6 +1361,11 @@
     const lineLabels = layerById.get('acg-labels');
     if (lineLabels && lineLabels.paint) {
       lineLabels.paint['text-color'] = PRINT_ATLAS_LABEL_COLOR;
+    }
+    // Inline kind glyphs are drawn in the label colours, so print names them
+    // with the print colours.
+    if (lineLabels && lineLabels.layout && !acgLineLabelGlyphs()) {
+      lineLabels.layout['text-field'] = acgLineLabelExpression(true);
     }
     for (const layer of style.layers || []) {
       if (
@@ -1375,6 +1444,44 @@
     }
   }
 
+  function definedLayoutEntries(layout) {
+    return Object.fromEntries(
+      Object.entries(layout).filter(([, value]) => value !== undefined),
+    );
+  }
+
+  // Print chips use light cards (the copied layout names screen chips) and
+  // follow the print selection; their anchors are placed per page.
+  function applyPrintAtlasChips(style) {
+    if (style.sources[ACG_CHIP_SOURCE_ID]) {
+      style.sources[ACG_CHIP_SOURCE_ID].data = { type: 'FeatureCollection', features: [] };
+    }
+    const layerById = new Map(style.layers.map((layer) => [layer && layer.id, layer]));
+    const glyphs = acgLineLabelGlyphs();
+    for (const layer of style.layers) {
+      if (!layer) continue;
+      if (glyphs && ACG_CHIP_LAYER_IDS.includes(layer.id)) {
+        layer.layout = definedLayoutEntries(Object.assign(
+          {},
+          layer.layout || {},
+          acgChipLayout(layer.id, true),
+        ));
+      }
+      const anchored = ACG_CHIP_ANCHOR_LAYERS.find(([id]) => id === layer.id);
+      if (!anchored) continue;
+      const twin = layerById.get(anchored[1]);
+      const visible = glyphs && !!twin &&
+        !(twin.layout && twin.layout.visibility === 'none');
+      layer.layout = definedLayoutEntries(Object.assign(
+        {},
+        layer.layout || {},
+        acgChipAnchorLayout(layer.id, true),
+        { visibility: visible ? 'visible' : 'none' },
+      ));
+      if (twin && twin.filter) layer.filter = acgChipAnchorFilter(twin.filter);
+    }
+  }
+
   function snapshotPrecisePrintGeojson(geojson) {
     if (
       !geojson ||
@@ -1404,7 +1511,123 @@
     return snapshot;
   }
 
-  function activeStyleForPrintAtlas(selection, scene) {
+  function applyPrintAtlasCities(style) {
+    // Provider zoom thresholds are tuned for a screen, not a regional sheet.
+    // Use the same bundled city catalog and native symbol collision engine for
+    // both online and offline exports; suppress duplicate provider place names.
+    for (const layer of style.layers) {
+      if ([...CITY_LABEL_LAYER_IDS, ...MINOR_PLACE_LABEL_LAYER_IDS].includes(layer.id)) {
+        layer.layout = Object.assign({}, layer.layout || {}, { visibility: 'none' });
+      }
+    }
+    const source = style.sources[OFFLINE_PLACES_SOURCE_ID] ? OFFLINE_PLACES_SOURCE_ID : 'print-cities';
+    if (!style.sources[source]) {
+      style.sources[source] = {
+        type: 'geojson',
+        data: new URL('places.geojson', location.href).href,
+      };
+    }
+    const overlayIndex = style.layers.findIndex(isColoredAtlasOverlayLayer);
+    style.layers.splice(overlayIndex < 0 ? style.layers.length : overlayIndex, 0, {
+      id: 'print-cities', type: 'symbol', source,
+      filter: ['any', ['==', ['get', 'level'], 0], ['>=', ['get', 'population'], 1000000]],
+      layout: {
+        'text-field': SIMPLE_PLACE_NAME,
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11.5,
+        'text-max-width': 8,
+        'text-padding': 12,
+        'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
+        'text-radial-offset': 0.4,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'symbol-sort-key': ['-', ['get', 'population']],
+      },
+      paint: {
+        'text-color': PRINT_ATLAS_LABEL_COLOR,
+        'text-halo-color': PRINT_ATLAS_OVERLAY_HALO,
+        'text-halo-width': 1,
+        'text-halo-blur': 0,
+      },
+    });
+  }
+
+  // A fixed paper palette keeps exports independent of the screen theme.
+  // Only geography is restyled: astrology retains its semantic colours.
+  function applyNauticalPrintBasemap(style) {
+    const ink = '#262c30';
+    const land = '#eee7cf';
+    const water = '#e1f1f4';
+    if (style.sky) {
+      for (const key of ['sky-color', 'horizon-color', 'fog-color']) style.sky[key] = '#ffffff';
+    }
+    for (const layer of style.layers) {
+      if (isColoredAtlasOverlayLayer(layer)) continue;
+      const id = String(layer.id || '');
+      const paint = layer.paint || (layer.paint = {});
+      if (layer.type === 'background') {
+        paint['background-color'] = id === 'ocean' ? water : land;
+      } else if (layer.type === 'fill') {
+        paint['fill-color'] = /water/.test(id) ? water
+          : /park|landcover/.test(id) ? '#dce4cf'
+          : /building/.test(id) ? '#b0aea2' : land;
+        if (id === 'earth' || id === 'water') paint['fill-opacity'] = 1;
+      } else if (layer.type === 'line') {
+        const boundary = /boundar/.test(id);
+        const region = /region|boundary_3/.test(id);
+        paint['line-color'] = /water/.test(id) ? '#738f98'
+          : region ? '#85877c' : boundary ? '#525850' : '#77776e';
+        paint['line-opacity'] = 1;
+        if (boundary) {
+          paint['line-width'] = region ? 0.45 : 0.75;
+          paint['line-dasharray'] = region ? [2, 2] : [5, 2];
+          if (layer.source === OFFLINE_WORLD_SOURCE_ID) {
+            paint['line-color'] = ink;
+            delete paint['line-dasharray'];
+          }
+        }
+      } else if (layer.type === 'symbol') {
+        paint['text-color'] = /water/.test(id) ? '#426572' : ink;
+        paint['text-opacity'] = 1;
+        paint['text-halo-color'] = /water/.test(id) ? water : land;
+        paint['text-halo-width'] = 0.8;
+        paint['text-halo-blur'] = 0;
+      }
+    }
+    // Trace the provider's actual water polygons, including islands/lakes.
+    // The minimal offline map already draws its Natural Earth outlines.
+    const waterLayer = style.layers.find((layer) => layer.id === 'water' && layer.type === 'fill');
+    if (waterLayer) {
+      const coast = {
+        id: 'print-coastline', type: 'line', source: waterLayer.source,
+        layout: { visibility: (waterLayer.layout || {}).visibility || 'visible' },
+        paint: { 'line-color': ink, 'line-width': 0.75, 'line-opacity': 1 },
+      };
+      for (const key of ['source-layer', 'filter', 'minzoom', 'maxzoom']) {
+        if (waterLayer[key] !== undefined) coast[key] = waterLayer[key];
+      }
+      style.layers.splice(style.layers.indexOf(waterLayer) + 1, 0, coast);
+    }
+    const coordinates = [];
+    for (let lon = -180; lon < 180; lon += 15) {
+      coordinates.push(Array.from({ length: 171 }, (_, i) => [lon, i - 85]));
+    }
+    for (let lat = -75; lat <= 75; lat += 15) {
+      coordinates.push(Array.from({ length: 361 }, (_, i) => [i - 180, lat]));
+    }
+    style.sources['print-graticule'] = { type: 'geojson', data: {
+      type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates },
+    } };
+    const overlayIndex = style.layers.findIndex((layer) => (
+      layer.type === 'symbol' || isColoredAtlasOverlayLayer(layer)
+    ));
+    style.layers.splice(overlayIndex < 0 ? style.layers.length : overlayIndex, 0, {
+      id: 'print-graticule', type: 'line', source: 'print-graticule',
+      paint: { 'line-color': '#7d8888', 'line-width': 0.4, 'line-opacity': 0.6 },
+    });
+  }
+
+  function activeStyleForPrintAtlas(selection, scene, scope = 'world') {
     if (!map || typeof map.getStyle !== 'function') {
       throw new Error('active map style unavailable');
     }
@@ -1434,14 +1657,14 @@
       ) continue;
       layer.paint = grayscaleAtlasObjectColors(layer.paint || {});
       if (
-        Object.keys(layer.paint).some((key) => key.endsWith('-pattern'))
+        scope !== 'current' && Object.keys(layer.paint).some((key) => key.endsWith('-pattern'))
       ) {
         layer.layout = Object.assign({}, layer.layout || {}, {
           visibility: 'none',
         });
         continue;
       }
-      if (layer.type === 'symbol' && layer.layout && layer.layout['icon-image']) {
+      if (scope !== 'current' && layer.type === 'symbol' && layer.layout && layer.layout['icon-image']) {
         layer.paint['icon-opacity'] = 0;
       }
       if (layer.type === 'raster') {
@@ -1451,8 +1674,11 @@
     if (style.sky) style.sky = grayscaleAtlasObjectColors(style.sky);
     if (style.light) style.light = grayscaleAtlasObjectColors(style.light);
     if (style.fog) style.fog = grayscaleAtlasObjectColors(style.fog);
+    applyNauticalPrintBasemap(style);
     applyPrintAtlasOverlayContrast(style);
     applyPrintAtlasVisibility(style, printAtlasVisibilityState(selection));
+    applyPrintAtlasChips(style);
+    if (scope !== 'current') applyPrintAtlasCities(style);
     return style;
   }
 
@@ -1689,7 +1915,49 @@
     return composite;
   }
 
-  function printAtlasPageSpecs(pageFormat) {
+  function printAtlasRegionalGrid(originLongitude, originLatitude) {
+    // Use MapLibre's own projected coordinates: equal latitude increments are
+    // not equal page heights in Mercator. The default band covers inhabited
+    // continents without spending pages on exaggerated polar areas.
+    const mercator = maplibregl.MercatorCoordinate;
+    const south = Math.max(-85, Math.min(PRINT_ATLAS_SOUTH, originLatitude - 2));
+    const north = Math.min(85, Math.max(PRINT_ATLAS_NORTH, originLatitude + 2));
+    const northY = mercator.fromLngLat([0, north]).y;
+    const southY = mercator.fromLngLat([0, south]).y;
+    const originY = mercator.fromLngLat([0, Math.max(-85, Math.min(85, originLatitude))]).y;
+    const preferredWorldSize = 512 * 2 ** PRINT_ATLAS_PREFERRED_DETAIL_ZOOM;
+    const rowCount = Math.ceil(
+      (southY - northY) * preferredWorldSize / PRINT_ATLAS_LOGICAL_HEIGHT,
+    );
+    // Fit the band exactly, allowing ten percent overlap between rows. This
+    // slightly relaxes the preferred scale rather than adding a near-empty row.
+    const sheetHeight = (southY - northY) /
+      (rowCount - (rowCount - 1) * PRINT_ATLAS_OVERLAP);
+    const worldSize = PRINT_ATLAS_LOGICAL_HEIGHT / sheetHeight;
+    const columnCount = Math.ceil(
+      worldSize / (PRINT_ATLAS_LOGICAL_WIDTH * (1 - PRINT_ATLAS_OVERLAP)),
+    );
+    const zoom = Math.log2(worldSize / 512);
+    const rows = Array.from({ length: rowCount }, (_, row) => ({
+      row,
+      y: northY + sheetHeight / 2 + row * sheetHeight * (1 - PRINT_ATLAS_OVERLAP),
+    })).sort((a, b) => Math.abs(a.y - originY) - Math.abs(b.y - originY));
+    const cells = [];
+    for (let column = 0; column < columnCount; column += 1) {
+      const longitude = normalizedAtlasLongitude(originLongitude - column * 360 / columnCount);
+      for (const { row, y } of rows) {
+        cells.push({
+          center: [longitude, new mercator(0, y).toLngLat().lat],
+          zoom,
+          sheetId: `${String.fromCharCode(65 + column)}${row + 1}`,
+          grid: { column, row, columns: columnCount, rows: rowCount },
+        });
+      }
+    }
+    return cells;
+  }
+
+  function printAtlasPageSpecs(pageFormat, data, scope = 'world') {
     const targetWidth = String(pageFormat || '').toUpperCase() === 'A3'
       ? 4096
       : 3508;
@@ -1697,6 +1965,9 @@
       targetWidth * PRINT_ATLAS_LOGICAL_HEIGHT / PRINT_ATLAS_LOGICAL_WIDTH,
     );
     const currentCenter = map.getCenter();
+    const birthplace = birthplaceCoordinates(data);
+    const originLongitude = normalizedAtlasLongitude(birthplace ? birthplace[0] : currentCenter.lng);
+    const originLatitude = birthplace ? birthplace[1] : currentCenter.lat;
     const currentProjection = map.getProjection();
     const liveWidth = Math.max(
       1,
@@ -1710,6 +1981,19 @@
       Number(map.getCanvas() && map.getCanvas().clientHeight) ||
       PRINT_ATLAS_LOGICAL_HEIGHT,
     );
+    if (scope === 'current') {
+      const resolutionScale = targetWidth / Math.max(liveWidth, liveHeight);
+      return [{
+        role: 'overview',
+        projection: (currentProjection && currentProjection.type) || selectedProjection || 'globe',
+        center: [normalizedAtlasLongitude(currentCenter.lng), currentCenter.lat],
+        zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch(),
+        logicalWidth: liveWidth, logicalHeight: liveHeight,
+        targetWidth: Math.round(liveWidth * resolutionScale),
+        targetHeight: Math.round(liveHeight * resolutionScale),
+        containsAstrology: true,
+      }];
+    }
     const overviewScale = Math.min(
       PRINT_ATLAS_LOGICAL_WIDTH / liveWidth,
       PRINT_ATLAS_LOGICAL_HEIGHT / liveHeight,
@@ -1720,8 +2004,8 @@
         currentProjection && currentProjection.type
       ) || selectedProjection || 'globe',
       center: [
-        normalizedAtlasLongitude(currentCenter.lng),
-        Math.max(-90, Math.min(90, currentCenter.lat)),
+        originLongitude,
+        Math.max(-90, Math.min(90, originLatitude)),
       ],
       zoom: Math.max(
         -2,
@@ -1736,30 +2020,19 @@
       targetHeight,
       containsAstrology: true,
     }];
-    PRINT_ATLAS_DETAIL_ROWS.forEach((latitude, rowIndex) => {
-      PRINT_ATLAS_DETAIL_COLUMNS.forEach((longitude, columnIndex) => {
-        const sheetId = `${String.fromCharCode(65 + columnIndex)}${rowIndex + 1}`;
-        pages.push({
-          role: 'detail',
-          sheetId,
-          title: '',
-          projection: 'mercator',
-          center: [longitude, latitude],
-          zoom: PRINT_ATLAS_DETAIL_ZOOM,
-          bearing: 0,
-          pitch: 0,
-          targetWidth,
-          targetHeight,
-          containsAstrology: true,
-          grid: {
-            column: columnIndex,
-            row: rowIndex,
-            columns: PRINT_ATLAS_DETAIL_COLUMNS.length,
-            rows: PRINT_ATLAS_DETAIL_ROWS.length,
-          },
-        });
+    for (const cell of printAtlasRegionalGrid(originLongitude, originLatitude)) {
+      pages.push({
+        role: 'detail',
+        title: '',
+        projection: 'mercator',
+        bearing: 0,
+        pitch: 0,
+        targetWidth,
+        targetHeight,
+        containsAstrology: true,
+        ...cell,
       });
-    });
+    }
     return pages;
   }
 
@@ -1783,13 +2056,14 @@
 
   function printAtlasPageMetadata(printMap, page) {
     const bounds = printMap.getBounds();
-    const centerY = PRINT_ATLAS_LOGICAL_HEIGHT / 2;
+    const logicalWidth = printMap.transform.width;
+    const centerY = printMap.transform.height / 2;
     const scaleStart = printMap.unproject([
-      PRINT_ATLAS_LOGICAL_WIDTH * 0.4,
+      logicalWidth * 0.4,
       centerY,
     ]);
     const scaleEnd = printMap.unproject([
-      PRINT_ATLAS_LOGICAL_WIDTH * 0.6,
+      logicalWidth * 0.6,
       centerY,
     ]);
     return {
@@ -1803,13 +2077,13 @@
           ? `${String.fromCharCode(65 + page.grid.column)}${page.grid.row}`
           : null,
         east: `${String.fromCharCode(
-          65 + (page.grid.column + 1) % page.grid.columns,
+          65 + (page.grid.column + page.grid.columns - 1) % page.grid.columns,
         )}${page.grid.row + 1}`,
         south: page.grid.row + 1 < page.grid.rows
           ? `${String.fromCharCode(65 + page.grid.column)}${page.grid.row + 2}`
           : null,
         west: `${String.fromCharCode(
-          65 + (page.grid.column + page.grid.columns - 1) % page.grid.columns,
+          65 + (page.grid.column + 1) % page.grid.columns,
         )}${page.grid.row + 1}`,
       } : undefined,
     };
@@ -1870,7 +2144,7 @@
     });
   }
 
-  async function capturePrintAtlas(pageFormat, selection, geojson, signal) {
+  async function capturePrintAtlas(pageFormat, selection, geojson, signal, scope = 'world') {
     if (!window.maplibregl || !map || !mapReady) {
       throw new Error('active map renderer unavailable');
     }
@@ -1880,7 +2154,7 @@
       applyDisplayStyleToData(preciseData, ACTIVE_ASTROCART_STYLE);
     }
     const startedAt = performance.now();
-    const pageSpecs = printAtlasPageSpecs(pageFormat);
+    const pageSpecs = printAtlasPageSpecs(pageFormat, preciseData, scope);
     const printScene = buildRuntimeOverlayScene(
       preciseData,
       currentAsterismData,
@@ -1889,17 +2163,19 @@
     );
     const targetWidth = pageSpecs[0].targetWidth;
     const targetHeight = pageSpecs[0].targetHeight;
-    const pixelRatio = targetWidth / PRINT_ATLAS_LOGICAL_WIDTH;
+    const logicalWidth = pageSpecs[0].logicalWidth || PRINT_ATLAS_LOGICAL_WIDTH;
+    const logicalHeight = pageSpecs[0].logicalHeight || PRINT_ATLAS_LOGICAL_HEIGHT;
+    const pixelRatio = targetWidth / logicalWidth;
     const printVisibility = printAtlasVisibilityState(selection);
-    const activeStyle = activeStyleForPrintAtlas(selection, printScene);
+    const activeStyle = activeStyleForPrintAtlas(selection, printScene, scope);
     const host = document.createElement('div');
     host.setAttribute('aria-hidden', 'true');
     Object.assign(host.style, {
       position: 'fixed',
       left: '-10000px',
       top: '0',
-      width: `${PRINT_ATLAS_LOGICAL_WIDTH}px`,
-      height: `${PRINT_ATLAS_LOGICAL_HEIGHT}px`,
+      width: `${logicalWidth}px`,
+      height: `${logicalHeight}px`,
       pointerEvents: 'none',
       zIndex: '-1',
     });
@@ -1928,6 +2204,10 @@
           preserveDrawingBuffer: true,
         },
       });
+      printMap.on('styleimagemissing', (event) => {
+        provideAcgChipImage(printMap, event && event.id, pixelRatio);
+        provideAcgInlineGlyphImage(printMap, event && event.id, pixelRatio);
+      });
       await waitForPrintAtlasLoad(printMap, signal);
       if (document.fonts && document.fonts.ready) {
         await document.fonts.ready;
@@ -1943,6 +2223,20 @@
           bearing: page.bearing,
           pitch: page.pitch,
         });
+        const chipSource = printMap.getSource(ACG_CHIP_SOURCE_ID);
+        if (chipSource && acgLineLabelGlyphs()) {
+          chipSource.setData({
+            type: 'FeatureCollection',
+            features: computeAcgChipAnchors(printMap, printScene.mapData, {
+              print: true,
+              shown: acgChipShownPredicate(
+                printVisibility,
+                printMap.getLayoutProperty('acg-chip-labels', 'visibility') !== 'none',
+                printMap.getLayoutProperty('acg-chip-paran-labels', 'visibility') !== 'none',
+              ),
+            }),
+          });
+        }
         await waitForPrintAtlasIdle(printMap, signal);
         await new Promise((resolve) => window.requestAnimationFrame(() => {
           window.requestAnimationFrame(resolve);
@@ -2329,6 +2623,8 @@
       'acg-labels',
       'acg-zenith-labels',
       'acg-paran-labels',
+      'acg-chip-paran-labels',
+      'acg-chip-labels',
     ]) {
       if (map.getLayer(id)) {
         map.moveLayer(id);
@@ -2468,6 +2764,9 @@
     }
     if (map.getLayer('water')) {
       map.setPaintProperty('water', 'fill-color', s.oceanColor);
+    }
+    if (map.getLayer('ocean')) {
+      map.setPaintProperty('ocean', 'background-color', s.oceanColor);
     }
     if (map.getLayer('earth')) {
       map.setPaintProperty('earth', 'fill-color', s.landColor);
@@ -2684,19 +2983,7 @@
   let placesLoaded = false;
   let placesLoading = false;
   let placesData = [];
-  // null means no overlay source has been selected yet; [] is a valid dynamic
-  // response for an ocean/empty viewport and must not silently fall through to
-  // the 3 MB static search catalog.
-  let placeLabelData = null;
-  let placeLabelSource = 'none';
-  let staticOverlayRequested = false;
-  let cityLabelsController = null;
-  let cityLabelsTimer = null;
-  let cityLabelsRequestKey = '';
-  const placeLabelElements = new Map();
-  const acgLabelElements = new Map();
-  const acgLabelAnchorChoices = new Map();
-  let acgLabelCollisionBoxes = [];
+  let offlineWorldPromise = null;
   let pendingViewState = null;
   let pendingCenter = null;
   let viewOptions = {
@@ -2706,7 +2993,7 @@
     zeniths: true,
     localSpaceOppositions: false,
     layers: { natal: true, dynamic: true, transit: true, progression: true },
-    filters: { points: null, kinds: null, aspects: null, techniques: null },
+    filters: { points: null, kinds: null, aspects: null, techniques: null, hiddenLayerIds: [] },
   };
   let viewOptionsInitialized = false;
   let selectedProjection = 'globe';
@@ -2715,11 +3002,6 @@
   let hintHideTimer = null;
   let viewStatePostTimer = null;
   let viewStatePersistenceEnabled = false;
-  let domAcgLabelsDirty = false;
-  let placeLabelsDirty = false;
-  let domLabelLayoutRaf = 0;
-  let domLabelLayoutReason = '';
-  let domLabelRendererMode = '';
   let birthplaceMarker = null;
   let birthplaceMarkerElement = null;
   let birthplaceDrag = null;
@@ -2777,18 +3059,6 @@
     perfState.renderFrames += 1;
   }
 
-  function recordDomLabelPerf(ms, count, reason) {
-    if (!ACG_PERF_MODE) return;
-    perfState.domLabelRebuilds += 1;
-    if (reason === 'moveend' || reason === 'zoomend') {
-      perfState.domLabelSettleRebuilds += 1;
-    }
-    perfState.domLabelLastCount = count;
-    perfState.domLabelLastMs = ms;
-    perfState.domLabelTotalMs += ms;
-    perfState.domLabelMaxMs = Math.max(perfState.domLabelMaxMs, ms);
-  }
-
   function getPerfState() {
     const frames = perfState.frameSamples;
     const frameTotal = frames.reduce((acc, value) => acc + value, 0);
@@ -2808,22 +3078,6 @@
       avgFrameMs,
       p95FrameMs: percentile(frames, 95),
       maxFrameMs: perfState.maxFrameMs,
-      domLabelRebuilds: perfState.domLabelRebuilds,
-      domLabelSettleRebuilds: perfState.domLabelSettleRebuilds,
-      domLabelSkippedWhileMoving: perfState.domLabelSkippedWhileMoving,
-      domLabelBurstSettles: perfState.domLabelBurstSettles,
-      placeLabelSkippedWhileMoving: perfState.placeLabelSkippedWhileMoving,
-      domLabelLastCount: perfState.domLabelLastCount,
-      domLabelLastMs: perfState.domLabelLastMs,
-      domLabelAvgMs: perfState.domLabelRebuilds ? perfState.domLabelTotalMs / perfState.domLabelRebuilds : 0,
-      domLabelMaxMs: perfState.domLabelMaxMs,
-      placeLabelFetches: perfState.placeLabelFetches,
-      placeLabelAborts: perfState.placeLabelAborts,
-      placeLabelLastCount: perfState.placeLabelLastCount,
-      placeLabelLastFetchMs: perfState.placeLabelLastFetchMs,
-      placeLabelLastRenderMs: perfState.placeLabelLastRenderMs,
-      placeLabelMaxRenderMs: perfState.placeLabelMaxRenderMs,
-      placeLabelSource: perfState.placeLabelSource,
       runtimeSceneDeferredPushes: perfState.runtimeSceneDeferredPushes,
       runtimeSceneCoherentFlushes: perfState.runtimeSceneCoherentFlushes,
       polarOverlayPathCount: perfState.polarOverlayPathCount,
@@ -2975,10 +3229,9 @@
       projection: { type: selectedProjection },
       attributionControl: { compact: true },
       pixelRatio: LIVE_MAP_PIXEL_RATIO,
-      // Symbol collision fades keep MapLibre rendering after the useful
-      // camera paint. Astrocartography labels should settle immediately so a
-      // completed gesture has no animation tail competing with the next one.
-      fadeDuration: 0,
+      // A brief native symbol fade softens labels revealed by a new viewport.
+      // Print capture remains immediate, and reduced-motion users get no fade.
+      fadeDuration: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 100,
     });
     ensurePolarOverlayCanvas();
     let fallbackStylePending = false;
@@ -3055,13 +3308,7 @@
       ensureEclipseLayers();
       ensureAsterismLayer();
       ensureAcgLayers();
-      loadPlaceLabels();
-      if (map && typeof map.once === 'function') {
-        map.once('idle', () => {
-          schedulePlaceLabelsRender('idle');
-          scheduleCityLabelsRefresh('idle');
-        });
-      }
+      syncOfflineWorld();
       if (firstStyleLoad) {
         // Force-apply the currently selected projection at first render.
         // Some environments initialise MapLibre in an interim projection;
@@ -3119,6 +3366,11 @@
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
     }
     setAsterismHoverEnabled(true);
+    map.on('styleimagemissing', (event) => {
+      provideAcgChipImage(map, event && event.id, window.devicePixelRatio || 1);
+      provideAcgInlineGlyphImage(map, event && event.id, window.devicePixelRatio || 1);
+    });
+    map.on('styledata', syncAcgChipLayers);
     map.on('mouseleave', () => {
       hideAsterismStarPopup();
       mapRuler?.setParanHover(false);
@@ -3180,38 +3432,33 @@
     });
     map.on('movestart', () => {
       mapRuler?.setParanHover(false);
-      beginDomAcgMovement(beginMapMotion('move'));
+      beginMapMotion('move');
     });
     map.on('zoomstart', () => {
-      beginDomAcgMovement(beginMapMotion('zoom'));
+      beginMapMotion('zoom');
     });
     map.on('move', () => {
       if (ACG_PERF_MODE) perfState.moveEvents += 1;
-      scheduleDomAcgLabels('move');
     });
     map.on('zoom', () => {
       if (ACG_PERF_MODE) perfState.zoomEvents += 1;
-      scheduleDomAcgLabels('zoom');
     });
     map.on('resize', () => {
       if (ACG_PERF_MODE) perfState.resizeEvents += 1;
-      scheduleCityLabelsRefresh('resize');
-      scheduleDomAcgLabels('resize');
       scheduleCurveRefinement();
     });
     map.on('moveend', () => {
       const motionSettled = endMapMotion('move');
       if (motionSettled) flushRetainedRuntimeOverlayScene('moveend');
-      endDomAcgMovement('moveend', motionSettled);
-      if (motionSettled) scheduleCityLabelsRefresh('moveend');
+      if (motionSettled) postPerfSnapshot('moveend');
       if (motionSettled) scheduleCurveRefinement();
+      if (motionSettled) scheduleAcgChipAnchors();
       scheduleViewStatePost('moveend');
     });
     map.on('zoomend', () => {
       const motionSettled = endMapMotion('zoom');
       if (motionSettled) flushRetainedRuntimeOverlayScene('zoomend');
-      endDomAcgMovement('zoomend', motionSettled);
-      if (motionSettled) scheduleCityLabelsRefresh('zoomend');
+      if (motionSettled) postPerfSnapshot('zoomend');
       if (motionSettled) scheduleCurveRefinement();
     });
     wireControlsOnce();
@@ -3397,7 +3644,7 @@
         },
       });
     }
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('eclipse-path-label')) {
+    if (!map.getLayer('eclipse-path-label')) {
       map.addLayer({
         id: 'eclipse-path-label',
         type: 'symbol',
@@ -3559,55 +3806,957 @@
     return String(labels[key] || labels[String(p.aspect_id || '')] || uiLabels.aspect || '');
   }
 
-  function acgLineLabelExpression() {
-    const baseLabel = localizedPointLabelExpression('point', 'label');
-    const localSpaceLabel = [
-      'concat',
-      baseLabel,
-      ' ',
-      [
-        'coalesce',
-        ['get', 'bearing_label'],
-        ['to-string', ['get', 'source_bearing']],
-        '',
-      ],
-    ];
-    const localSpaceOppositionLabel = [
-      'concat',
-      localSpaceLabel,
-      uiLabels.localSpaceOpposition ? ` ${uiLabels.localSpaceOpposition}` : '',
-    ];
-    const aspectLabel = [
-      'concat',
-      baseLabel,
-      ' ',
-      localizedAspectLabelExpression(),
-      ' ',
-      ['coalesce', ['get', 'target_angle'], ''],
-    ];
+  // Line labels read "<point> <suffix>"; glyph mode (ACG Appearance) swaps the
+  // point name for its Morinus glyph, drawn as an inline image.
+  function acgLineLabelGlyphs() {
+    return !!referenceBehavior().lineLabelGlyphs;
+  }
+
+  // ACG Appearance can show the bearing degrees on Local Space labels (off by default).
+  function acgLocalSpaceBearings() {
+    return referenceBehavior().localSpaceBearings === true;
+  }
+
+  function acgLineLabelSuffixExpression() {
+    const bearing = acgLocalSpaceBearings()
+      ? ['coalesce', ['get', 'bearing_label'], ['to-string', ['get', 'source_bearing']], '']
+      : '';
     return [
-      'concat',
-      acgLayerPrefixExpression(),
+      'case',
+      ['any', ['==', ['get', 'kind'], 'LOCAL_SPACE'], ['==', ['get', 'kind'], 'LOCAL_SPACE_OPPOSITION']],
+      bearing,
+      ['==', ['get', 'kind'], 'ASPECT'],
       [
-        'case',
-        ['==', ['get', 'kind'], 'LOCAL_SPACE'],
-        localSpaceLabel,
-        ['==', ['get', 'kind'], 'LOCAL_SPACE_OPPOSITION'],
-        localSpaceOppositionLabel,
-        ['==', ['get', 'kind'], 'ASPECT'],
-        aspectLabel,
-        ['concat', baseLabel, ' ', ['get', 'kind']],
+        'concat',
+        localizedAspectLabelExpression(),
+        ' ',
+        ['coalesce', ['get', 'target_angle'], ''],
       ],
+      ['get', 'kind'],
     ];
   }
 
-  function acgZenithLabelExpression() {
+  function acgNamedLabelExpression(suffix) {
     return [
       'concat',
       acgLayerPrefixExpression(),
       localizedPointLabelExpression('point', 'label'),
-      uiLabels.zenith ? ` ${uiLabels.zenith}` : '',
+      ['case', ['==', suffix, ''], '', ['concat', ' ', suffix]],
     ];
+  }
+
+  // Local Space opposition labels end with the daemon-supplied Morinus
+  // opposition glyph (aspect_glyph_morinus). The vector text font has no
+  // Morinus face, so the glyph is an inline image in the label's text colour.
+  function acgLineLabelExpression(print = false) {
+    const named = acgNamedLabelExpression(acgLineLabelSuffixExpression());
+    return [
+      'case',
+      acgHasGlyphExpression('aspect_glyph_morinus'),
+      [
+        'format',
+        named, {},
+        ' ', {},
+        ['image', ['concat', acgInlineGlyphImagePrefix(print), ['get', 'aspect_glyph_morinus']]], {},
+      ],
+      ['format', named, {}],
+    ];
+  }
+
+  const ACG_INLINE_GLYPH_PREFIX = 'acg-inline-glyph';
+
+  function acgInlineGlyphImagePrefix(print) {
+    const s = currentDevSettings();
+    const t = currentThemeTokens();
+    return [
+      ACG_INLINE_GLYPH_PREFIX,
+      s.labelSize,
+      print ? PRINT_ATLAS_LABEL_COLOR : t.labelColor,
+      print ? PRINT_ATLAS_OVERLAY_HALO : t.labelHalo,
+      s.labelHaloOn ? s.labelHaloWidth : 0,
+      acgChipToken('--chrome-font-symbols', "'Morinus', serif"),
+    ].join(ACG_CHIP_SEPARATOR) + ACG_CHIP_SEPARATOR;
+  }
+
+  function drawAcgInlineGlyphImage(id, pixelRatio) {
+    const parts = String(id || '').split(ACG_CHIP_SEPARATOR);
+    if (parts.length !== 7 || parts[0] !== ACG_INLINE_GLYPH_PREFIX) return null;
+    const [, sizeText, color, haloColor, haloText, fontSymbols, glyph] = parts;
+    const size = Number(sizeText) * 1.2;
+    const haloWidth = Number(haloText) || 0;
+    if (!glyph || !Number.isFinite(size) || size <= 0) return null;
+    const ratio = Math.max(1, Math.min(4, Number(pixelRatio) || 1));
+    const box = Math.ceil((size + haloWidth * 2 + 2) * ratio);
+    const canvas = document.createElement('canvas');
+    canvas.width = box;
+    canvas.height = box;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.font = `${size * ratio}px ${fontSymbols}`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    if (haloWidth > 0) {
+      context.lineJoin = 'round';
+      context.strokeStyle = haloColor;
+      context.lineWidth = haloWidth * 2 * ratio;
+      context.strokeText(glyph, box / 2, box / 2);
+    }
+    context.fillStyle = color;
+    context.fillText(glyph, box / 2, box / 2);
+    return {
+      image: { width: box, height: box, data: context.getImageData(0, 0, box, box).data },
+      options: { pixelRatio: ratio },
+    };
+  }
+
+  // Draw only with the real Morinus face; a fallback font would cache wrong
+  // shapes under this id.
+  function provideAcgInlineGlyphImage(targetMap, id, pixelRatio) {
+    if (!targetMap || typeof id !== 'string' || !id.startsWith(ACG_INLINE_GLYPH_PREFIX + ACG_CHIP_SEPARATOR)) return;
+    if (targetMap.hasImage(id)) return;
+    const install = () => {
+      if (targetMap.hasImage(id)) return;
+      const drawn = drawAcgInlineGlyphImage(id, pixelRatio);
+      if (drawn) targetMap.addImage(id, drawn.image, drawn.options);
+    };
+    if (document.fonts && !document.fonts.check('12px Morinus')) {
+      document.fonts.load('12px Morinus').then(install, install);
+      return;
+    }
+    install();
+  }
+
+  function acgZenithLabelExpression() {
+    return acgNamedLabelExpression(String(uiLabels.zenith || '').trim());
+  }
+
+  // Glyph mode draws each label as an upright chip: a small card carrying the
+  // point's Morinus glyph in its line colour beside the angle. Chips are
+  // MapLibre icons drawn on demand (styleimagemissing), so the renderer keeps
+  // collision, spacing and print capture; the image id carries everything the
+  // drawing needs, so a restyle yields new ids instead of stale pixels.
+  const ACG_CHIP_PREFIX = 'acg-chip';
+  const ACG_CHIP_SEPARATOR = '\u001f';
+  const ACG_CHIP_LAYER_IDS = ['acg-labels', 'acg-zenith-labels', 'acg-paran-labels'];
+  // Line and paran chips are points on their own source: one per feature, at
+  // half the line's longest on-screen run, recomputed when the camera settles.
+  const ACG_CHIP_SOURCE_ID = 'acg-chip-anchors';
+  const ACG_CHIP_ANCHOR_LAYERS = [
+    ['acg-chip-labels', 'acg-labels'],
+    ['acg-chip-paran-labels', 'acg-paran-labels'],
+  ];
+  const ACG_CHIP_ANCHOR_KINDS = new Set([
+    'MC', 'IC', 'ASC', 'DSC', 'LOCAL_SPACE', 'LOCAL_SPACE_OPPOSITION', 'ASPECT', 'PARAN',
+  ]);
+  const ACG_CHIP_MIN_RUN_PX = 48;
+
+  // Chips wear the map chrome (the zoom, projection and legend controls):
+  // chrome background, chrome hairline, chrome text. Only the glyph carries
+  // the point's colour. Tokens live on body, where the style profile sets them.
+  function acgChipToken(name, fallback) {
+    try {
+      const value = getComputedStyle(document.body).getPropertyValue(name).trim();
+      if (value) return value;
+    } catch (_) {}
+    return fallback;
+  }
+
+  function acgChipTokens(print) {
+    return {
+      text: print ? PRINT_ATLAS_LABEL_COLOR : acgChipToken('--chrome-text', '#e2e3e6'),
+      background: print ? PRINT_ATLAS_OVERLAY_HALO : acgChipToken('--chrome-bg', 'rgba(29,30,33,0.88)'),
+      border: print ? 'rgba(0,0,0,0.12)' : acgChipToken('--chrome-border', 'rgba(255,255,255,0.10)'),
+      radius: acgChipToken('--chrome-panel-radius', '6px'),
+      fontUi: acgChipToken('--chrome-font-ui', 'sans-serif'),
+      fontSymbols: acgChipToken('--chrome-font-symbols', "'Morinus', serif"),
+    };
+  }
+
+  // Parans are the secondary tier: many more of them than planet lines, so
+  // their chips run 2px smaller, lighter and a touch translucent.
+  const ACG_PARAN_CHIP_SIZE_STEP = 2;
+  const ACG_PARAN_CHIP_OPACITY = 0.85;
+
+  function acgParanChipSize(settings) {
+    return Math.max(8, (Number(settings.paranLabelSize) || 11) - ACG_PARAN_CHIP_SIZE_STEP);
+  }
+
+  // print: the atlas draws dark text on light cards whatever the screen theme.
+  function acgChipStyleKey(kind, print) {
+    const s = currentDevSettings();
+    const tokens = acgChipTokens(print);
+    const size = kind === 'paran' ? acgParanChipSize(s) : s.labelSize;
+    return [
+      ACG_CHIP_PREFIX,
+      kind,
+      size,
+      tokens.text,
+      tokens.background,
+      tokens.border,
+      tokens.radius,
+      tokens.fontUi,
+      tokens.fontSymbols,
+    ].join(ACG_CHIP_SEPARATOR) + ACG_CHIP_SEPARATOR;
+  }
+
+  function acgHasGlyphExpression(property) {
+    return ['all', ['has', property], ['!=', ['get', property], '']];
+  }
+
+  function acgLineChipExpression(suffix, print = false) {
+    const s = currentDevSettings();
+    const hasGlyph = acgHasGlyphExpression('glyph_morinus');
+    return [
+      'concat',
+      acgChipStyleKey('line', print),
+      ['to-string', acgLineColorExpression(s)],
+      ACG_CHIP_SEPARATOR,
+      ['case', hasGlyph, ['get', 'glyph_morinus'], ''],
+      ACG_CHIP_SEPARATOR,
+      acgLayerPrefixExpression(),
+      ACG_CHIP_SEPARATOR,
+      [
+        'case',
+        hasGlyph,
+        suffix,
+        ['concat', localizedPointLabelExpression('point', 'label'), ' ', suffix],
+      ],
+      ACG_CHIP_SEPARATOR,
+      ['coalesce', ['get', 'aspect_glyph_morinus'], ''],
+    ];
+  }
+
+  function acgParanChipExpression(print = false) {
+    const t = currentThemeTokens();
+    const side = (prefix) => [
+      ['case', acgHasGlyphExpression(`${prefix}_glyph_morinus`), ['get', `${prefix}_glyph_morinus`], ''],
+      ACG_CHIP_SEPARATOR,
+      localizedPointLabelExpression(`${prefix}_point`, `${prefix}_label`),
+      ACG_CHIP_SEPARATOR,
+      ['coalesce', ['get', `${prefix}_color`], ''],
+      ACG_CHIP_SEPARATOR,
+      ['coalesce', ['get', `${prefix}_angle`], ''],
+    ];
+    return [
+      'concat',
+      acgChipStyleKey('paran', print),
+      t.paranColor,
+      ACG_CHIP_SEPARATOR,
+      acgLayerPrefixExpression(),
+      ACG_CHIP_SEPARATOR,
+      ...side('a'),
+      ACG_CHIP_SEPARATOR,
+      ...side('b'),
+    ];
+  }
+
+  function acgChipImageExpression(layerId, print = false) {
+    if (layerId === 'acg-paran-labels') return acgParanChipExpression(print);
+    return acgLineChipExpression(
+      layerId === 'acg-zenith-labels'
+        ? String(uiLabels.zenith || '').trim()
+        : acgLineLabelSuffixExpression(),
+      print,
+    );
+  }
+
+  const acgChipColorCache = new Map();
+
+  function acgChipRgba(value) {
+    if (!atlasColorContext || typeof value !== 'string' || !value) return null;
+    atlasColorContext.clearRect(0, 0, 1, 1);
+    atlasColorContext.fillStyle = '#000';
+    atlasColorContext.fillStyle = value;
+    atlasColorContext.fillRect(0, 0, 1, 1);
+    const data = atlasColorContext.getImageData(0, 0, 1, 1).data;
+    return [data[0], data[1], data[2], data[3] / 255];
+  }
+
+  function acgChipLuminance([r, g, b]) {
+    const channel = (value) => {
+      const c = value / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  }
+
+  // Line colours are chosen for strokes on the basemap; on a chip they sit on
+  // the card, so a dark navy glyph on a dark card (or yellow on a print card)
+  // is mixed toward the readable side until it clears 3:1 contrast.
+  function acgChipReadableColor(color, background) {
+    const key = `${color}\u0000${background}`;
+    if (acgChipColorCache.has(key)) return acgChipColorCache.get(key);
+    const fg = acgChipRgba(color);
+    const bg = acgChipRgba(background);
+    let result = color;
+    if (fg && bg) {
+      const bgLuminance = acgChipLuminance(bg);
+      const target = bgLuminance < 0.4 ? 255 : 0;
+      const contrast = (rgb) => {
+        const l = acgChipLuminance(rgb);
+        return (Math.max(l, bgLuminance) + 0.05) / (Math.min(l, bgLuminance) + 0.05);
+      };
+      let rgb = fg.slice(0, 3);
+      for (let step = 1; step <= 10 && contrast(rgb) < 3; step += 1) {
+        const mix = step / 10;
+        rgb = fg.slice(0, 3).map((channel) => Math.round(channel + (target - channel) * mix));
+      }
+      result = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    }
+    acgChipColorCache.set(key, result);
+    return result;
+  }
+
+  function acgChipSegments(kind, content, labelColor, background) {
+    const segment = (text, color, options = {}) => ({ text, color, ...options });
+    const readable = (color) => acgChipReadableColor(color, background);
+    const segments = [];
+    if (kind === 'line' && content.length === 5) {
+      const [color, glyph, prefix, suffix, kindGlyph] = content;
+      if (prefix.trim()) segments.push(segment(prefix.trim(), labelColor, { muted: true }));
+      if (glyph) segments.push(segment(glyph, readable(color || labelColor), { glyph: true }));
+      if (suffix.trim()) segments.push(segment(suffix.trim(), labelColor, { tight: !!glyph }));
+      if (kindGlyph) segments.push(segment(kindGlyph, labelColor, { glyph: true }));
+      return { segments };
+    }
+    if (kind === 'paran' && content.length === 10) {
+      const [paranColor, prefix, ...sides] = content;
+      if (prefix.trim()) segments.push(segment(prefix.trim(), labelColor, { muted: true }));
+      for (let index = 0; index < 2; index += 1) {
+        const [glyph, name, color, angle] = sides.slice(index * 4, index * 4 + 4);
+        if (index === 1) segments.push(segment('×', labelColor, { muted: true }));
+        segments.push(glyph
+          ? segment(glyph, readable(color || paranColor), { glyph: true })
+          : segment(name.trim(), labelColor));
+        if (angle.trim()) segments.push(segment(angle.trim(), labelColor, { tight: true }));
+      }
+      return { segments };
+    }
+    return null;
+  }
+
+  function drawAcgChipImage(id, pixelRatio) {
+    const parts = String(id || '').split(ACG_CHIP_SEPARATOR);
+    if (parts.length < 9 || parts[0] !== ACG_CHIP_PREFIX) return null;
+    const [, kind, sizeText, labelColor, background, border, radiusText, fontUi, fontSymbols, ...content] = parts;
+    const size = Number(sizeText);
+    const layout = acgChipSegments(kind, content, labelColor, background);
+    if (!layout || !layout.segments.length || !Number.isFinite(size) || size <= 0) return null;
+    const ratio = Math.max(1, Math.min(4, Number(pixelRatio) || 1));
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    const secondary = kind === 'paran';
+    const glyphScale = secondary ? 1.2 : 1.3;
+    const textWeight = secondary ? 500 : 600;
+    const fontFor = (item) => (
+      item.glyph
+        ? `${size * glyphScale}px ${fontSymbols}`
+        : `${item.muted ? 400 : textWeight} ${item.muted ? size * 0.88 : size}px ${fontUi}`
+    );
+    const widths = layout.segments.map((item) => {
+      context.font = fontFor(item);
+      return context.measureText(item.text).width;
+    });
+    const gap = size * (secondary ? 0.3 : 0.34);
+    const tightGap = size * 0.16;
+    const padX = size * (secondary ? 0.42 : 0.5);
+    const height = Math.ceil(size * glyphScale + size * (secondary ? 0.4 : 0.5));
+    const contentWidth = widths.reduce((total, width, index) => (
+      total + width + (index ? (layout.segments[index].tight ? tightGap : gap) : 0)
+    ), 0);
+    const width = Math.ceil(contentWidth + padX * 2);
+    canvas.width = Math.ceil((width + 2) * ratio);
+    canvas.height = Math.ceil((height + 2) * ratio);
+    context.scale(ratio, ratio);
+    const radius = Math.min(Number.parseFloat(radiusText) || 0, height / 2);
+    context.beginPath();
+    context.roundRect(1.5, 1.5, width - 1, height - 1, radius);
+    context.fillStyle = background;
+    context.fill();
+    context.lineWidth = 1;
+    context.strokeStyle = border;
+    context.stroke();
+    context.textBaseline = 'middle';
+    context.textAlign = 'left';
+    let x = 1 + padX;
+    const y = 1 + height / 2;
+    layout.segments.forEach((item, index) => {
+      if (index) x += item.tight ? tightGap : gap;
+      context.globalAlpha = item.muted ? 0.72 : 1;
+      context.font = fontFor(item);
+      context.fillStyle = item.color;
+      context.fillText(item.text, x, y + (item.glyph ? size * 0.04 : 0));
+      x += widths[index];
+    });
+    return {
+      image: {
+        width: canvas.width,
+        height: canvas.height,
+        data: context.getImageData(0, 0, canvas.width, canvas.height).data,
+      },
+      options: { pixelRatio: ratio },
+    };
+  }
+
+  function provideAcgChipImage(targetMap, id, pixelRatio) {
+    if (!targetMap || typeof id !== 'string' || !id.startsWith(ACG_CHIP_PREFIX + ACG_CHIP_SEPARATOR)) return;
+    if (targetMap.hasImage(id)) return;
+    const drawn = drawAcgChipImage(id, pixelRatio);
+    if (drawn) targetMap.addImage(id, drawn.image, drawn.options);
+  }
+
+  // Chips are drawn synchronously when MapLibre asks, so glyph mode is only
+  // switched on once the Morinus face is ready; a fallback font would bake
+  // wrong shapes into the image cache.
+  function whenAcgChipFontsReady(callback) {
+    if (!document.fonts || document.fonts.check('12px Morinus')) {
+      callback();
+      return;
+    }
+    document.fonts.load('12px Morinus').then(callback, callback);
+  }
+
+  function acgChipOpacity(sourceLayerId, settings) {
+    return sourceLayerId === 'acg-paran-labels'
+      ? scaledPointLayerOpacity(
+        (Number.isFinite(Number(settings.paranLabelOpacity)) ? Number(settings.paranLabelOpacity) : 1) *
+          ACG_PARAN_CHIP_OPACITY,
+        'line_opacity',
+      )
+      : scaledPointLayerOpacity(settings.labelOpacity, 'line_opacity');
+  }
+
+  function acgChipIconLayout(imageLayerId, print = false) {
+    return {
+      'icon-image': acgChipImageExpression(imageLayerId, print),
+      'icon-rotation-alignment': 'viewport',
+      'icon-pitch-alignment': 'viewport',
+      'icon-allow-overlap': false,
+      'icon-padding': 4,
+    };
+  }
+
+  // Glyph-mode layout of the three label layers. Zenith chips stay on their
+  // points; line and paran text goes quiet because the anchored chip layers
+  // (acgChipAnchorLayout) draw those labels.
+  function acgChipLayout(layerId, print = false) {
+    if (layerId === 'acg-zenith-labels') {
+      return {
+        ...acgChipIconLayout(layerId, print),
+        'text-field': '',
+        'icon-anchor': 'left',
+        'icon-offset': [8, 0],
+      };
+    }
+    return { ...acgNamedLabelLayout(layerId), 'text-field': '' };
+  }
+
+  function acgChipAnchorLayout(chipLayerId, print = false) {
+    const [, sourceLayerId] = ACG_CHIP_ANCHOR_LAYERS.find(([id]) => id === chipLayerId);
+    return acgChipIconLayout(sourceLayerId, print);
+  }
+
+  // Chip anchors are points standing in for lines, so the mirrored line
+  // filter reads the stamped source geometry instead of the point's own.
+  function acgChipAnchorFilter(filter) {
+    if (!Array.isArray(filter)) return filter;
+    if (filter.length === 1 && filter[0] === 'geometry-type') {
+      return ['get', 'acg_anchor_geometry'];
+    }
+    return filter.map((entry) => acgChipAnchorFilter(entry));
+  }
+
+  function acgNamedLabelLayout(layerId) {
+    return {
+      'text-field': layerId === 'acg-paran-labels'
+        ? acgParanLabelExpression()
+        : layerId === 'acg-zenith-labels'
+          ? acgZenithLabelExpression()
+          : acgLineLabelExpression(),
+      'icon-image': undefined,
+      'icon-rotation-alignment': undefined,
+      'icon-pitch-alignment': undefined,
+      'icon-allow-overlap': undefined,
+      'icon-padding': undefined,
+      'icon-anchor': undefined,
+      'icon-offset': undefined,
+    };
+  }
+
+  function acgLabelPresentationLayout(layerId, print = false) {
+    return acgLineLabelGlyphs()
+      ? acgChipLayout(layerId, print)
+      : acgNamedLabelLayout(layerId);
+  }
+
+  function applyAcgLabelPresentation() {
+    const apply = () => {
+      if (!map) return;
+      for (const [chipLayerId, sourceLayerId] of ACG_CHIP_ANCHOR_LAYERS) {
+        if (!map.getLayer(chipLayerId)) continue;
+        for (const [property, value] of Object.entries(acgChipAnchorLayout(chipLayerId))) {
+          map.setLayoutProperty(chipLayerId, property, value);
+        }
+        map.setPaintProperty(
+          chipLayerId,
+          'icon-opacity',
+          acgChipOpacity(sourceLayerId, currentDevSettings()),
+        );
+      }
+      scheduleAcgChipAnchors();
+      for (const layerId of ACG_CHIP_LAYER_IDS) {
+        if (!map.getLayer(layerId)) continue;
+        for (const [property, value] of Object.entries(acgLabelPresentationLayout(layerId))) {
+          map.setLayoutProperty(layerId, property, value);
+        }
+        map.setPaintProperty(
+          layerId,
+          'icon-opacity',
+          scaledPointLayerOpacity(
+            layerId === 'acg-paran-labels'
+              ? currentDevSettings().paranLabelOpacity
+              : currentDevSettings().labelOpacity,
+            'line_opacity',
+          ),
+        );
+      }
+    };
+    if (acgLineLabelGlyphs()) whenAcgChipFontsReady(apply);
+    else apply();
+  }
+
+  function acgChipCameraWindow(targetMap) {
+    const bounds = targetMap.getBounds();
+    const center = targetMap.getCenter();
+    const spanLat = Math.max(0.001, bounds.getNorth() - bounds.getSouth());
+    const spanLon = Math.max(0.001, Math.min(360, bounds.getEast() - bounds.getWest()));
+    const pad = Math.max(spanLat, spanLon) * 0.1;
+    let globe = false;
+    try {
+      const projection = targetMap.getProjection && targetMap.getProjection();
+      globe = !!projection && projection.type === 'globe';
+    } catch (_) {}
+    return {
+      center,
+      globe,
+      west: bounds.getWest() - pad,
+      east: bounds.getEast() + pad,
+      south: bounds.getSouth() - pad,
+      north: bounds.getNorth() + pad,
+      // Sample finely enough that a line crossing only a corner of the view
+      // still yields a run, without densifying off-screen stretches.
+      step: Math.max(0.005, Math.min(1.5, Math.min(spanLat, spanLon) / 24)),
+    };
+  }
+
+  // Screen rectangle chips may occupy: the live map keeps clear of the
+  // titlebar, toolbar and mode bar; a print page uses its whole frame.
+  function acgChipScreenRect(targetMap, print) {
+    const container = targetMap.getContainer();
+    const width = container.clientWidth || 1;
+    const height = container.clientHeight || 1;
+    if (print) return { left: 12, top: 12, right: width - 12, bottom: height - 12 };
+    const safeTop = Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--titlebar-safe-top'),
+    ) || 0;
+    return { left: 24, top: safeTop + 56, right: width - 24, bottom: height - 56 };
+  }
+
+  // Parameter interval [t0, t1] of segment a→b (raw lon/lat, linear in t)
+  // inside the camera window, for each world copy near the view.
+  function acgChipSegmentWindows(a, b, camera) {
+    const windows = [];
+    const dLon = b[0] - a[0];
+    const dLat = b[1] - a[1];
+    const axis = (start, delta, low, high) => {
+      if (Math.abs(delta) < 1e-12) return start >= low && start <= high ? [0, 1] : null;
+      const t0 = (low - start) / delta;
+      const t1 = (high - start) / delta;
+      return [Math.max(0, Math.min(t0, t1)), Math.min(1, Math.max(t0, t1))];
+    };
+    const latitude = axis(a[1], dLat, camera.south, camera.north);
+    if (!latitude || latitude[0] > latitude[1]) return windows;
+    for (const shift of [-360, 0, 360]) {
+      const longitude = axis(a[0] + shift, dLon, camera.west, camera.east);
+      if (!longitude) continue;
+      const t0 = Math.max(latitude[0], longitude[0]);
+      const t1 = Math.min(latitude[1], longitude[1]);
+      if (t0 <= t1) windows.push({ shift, t0, t1 });
+    }
+    return windows.sort((left, right) => left.t0 - right.t0);
+  }
+
+  // Screen-space runs of the feature inside the chip rectangle. Segments are
+  // read as drawn (a paran is one −180→180 segment), clipped to the view
+  // before sampling so zoom level never starves a short visible stretch.
+  function acgChipVisibleRuns(targetMap, feature, camera, rect) {
+    const runs = [];
+    let run = null;
+    const close = () => {
+      if (run && run.points.length >= 2) runs.push(run);
+      run = null;
+    };
+    const jumpLimit = (rect.right - rect.left) / 2;
+    for (const line of geometrySegments(feature.geometry)) {
+      close();
+      let continuation = null;
+      for (let index = 1; index < line.length; index += 1) {
+        const a = [Number(line[index - 1][0]), Number(line[index - 1][1])];
+        const b = [Number(line[index][0]), Number(line[index][1])];
+        if (!a.every(Number.isFinite) || !b.every(Number.isFinite)) {
+          close();
+          continuation = null;
+          continue;
+        }
+        const windows = acgChipSegmentWindows(a, b, camera);
+        if (!windows.length) {
+          close();
+          continuation = null;
+          continue;
+        }
+        for (const window of windows) {
+          if (!(continuation === window.shift && window.t0 === 0)) close();
+          const span = Math.max(
+            Math.abs(b[0] - a[0]),
+            Math.abs(b[1] - a[1]),
+          ) * (window.t1 - window.t0);
+          const steps = Math.min(2000, Math.max(1, Math.ceil(span / camera.step)));
+          for (let step = 0; step <= steps; step += 1) {
+            const t = window.t0 + (window.t1 - window.t0) * (step / steps);
+            const coordinate = [
+              a[0] + window.shift + (b[0] - a[0]) * t,
+              a[1] + (b[1] - a[1]) * t,
+            ];
+            if (camera.globe && !isPolarCoordinateVisible(coordinate, camera.center, targetMap)) {
+              close();
+              continue;
+            }
+            let point;
+            try { point = targetMap.project(coordinate); } catch (_) { point = null; }
+            if (
+              !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
+              point.x < rect.left || point.x > rect.right ||
+              point.y < rect.top || point.y > rect.bottom
+            ) {
+              close();
+              continue;
+            }
+            const last = run && run.points[run.points.length - 1];
+            if (last && Math.hypot(point.x - last.x, point.y - last.y) > jumpLimit) close();
+            if (!run) run = { points: [], length: 0 };
+            else run.length += Math.hypot(point.x - last.x, point.y - last.y);
+            run.points.push({ x: point.x, y: point.y });
+          }
+          continuation = window.t1 === 1 ? window.shift : null;
+        }
+      }
+    }
+    close();
+    return runs;
+  }
+
+  function acgChipRunPosition(run, fraction) {
+    const target = run.length * fraction;
+    let walked = 0;
+    for (let index = 1; index < run.points.length; index += 1) {
+      const a = run.points[index - 1];
+      const b = run.points[index];
+      const segment = Math.hypot(b.x - a.x, b.y - a.y);
+      if (walked + segment >= target && segment > 0) {
+        const t = (target - walked) / segment;
+        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      }
+      walked += segment;
+    }
+    return run.points[run.points.length - 1];
+  }
+
+  // Fraction along the run of the point nearest `point`, with its distance.
+  function acgChipRunFraction(run, point) {
+    let best = { distance: Infinity, fraction: 0 };
+    let walked = 0;
+    for (let index = 1; index < run.points.length; index += 1) {
+      const a = run.points[index - 1];
+      const b = run.points[index];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const segment = Math.hypot(dx, dy);
+      const t = segment > 0
+        ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (segment * segment)))
+        : 0;
+      const distance = Math.hypot(a.x + dx * t - point.x, a.y + dy * t - point.y);
+      if (distance < best.distance) {
+        best = { distance, fraction: run.length > 0 ? (walked + segment * t) / run.length : 0 };
+      }
+      walked += segment;
+    }
+    return best;
+  }
+
+  function acgChipLongestRun(targetMap, feature, camera, rect) {
+    const run = acgChipVisibleRuns(targetMap, feature, camera, rect).reduce((best, current) => (
+      !best || current.length > best.length ? current : best
+    ), null);
+    return run && run.length >= ACG_CHIP_MIN_RUN_PX ? run : null;
+  }
+
+  function acgChipAnchorKey(properties, index) {
+    return String(properties.label_id || `feature:${index}`);
+  }
+
+  // Screen box a chip will occupy, estimated from its text so placement can
+  // steer chips apart before MapLibre's collision pass would drop one.
+  function acgChipEstimatedBox(properties, point) {
+    const settings = currentDevSettings();
+    const paran = properties.kind === 'PARAN';
+    const size = Number(paran ? acgParanChipSize(settings) : settings.labelSize) || 11;
+    const textWidth = (text) => String(text || '').trim().length * size * 0.62;
+    const glyphWidth = size * (paran ? 1.2 : 1.3);
+    let width = size + textWidth(acgLayerPrefixText(properties));
+    if (paran) {
+      for (const side of ['a', 'b']) {
+        width += properties[`${side}_glyph_morinus`]
+          ? glyphWidth
+          : textWidth(localizedPointLabel(properties, `${side}_point`, `${side}_label`));
+        width += textWidth(properties[`${side}_angle`]) + size * 0.5;
+      }
+      width += size;
+    } else {
+      const glyph = !!properties.glyph_morinus;
+      width += (glyph ? glyphWidth : 0) +
+        (properties.aspect_glyph_morinus ? glyphWidth + size * 0.34 : 0) +
+        textWidth(acgFeatureLabelText(properties, glyph ? { glyphMode: true } : { withoutPrefix: true })) +
+        size * 0.5;
+    }
+    const height = size * 1.8 + 2;
+    return {
+      left: point.x - width / 2,
+      right: point.x + width / 2,
+      top: point.y - height / 2,
+      bottom: point.y + height / 2,
+    };
+  }
+
+  function acgChipBoxesOverlap(a, b, margin = 4) {
+    return a.left < b.right + margin && a.right + margin > b.left &&
+      a.top < b.bottom + margin && a.bottom + margin > b.top;
+  }
+
+  const ACG_CHIP_FRACTIONS = [0.5, 0.38, 0.62, 0.26, 0.74, 0.14, 0.86];
+  // Local Space lines radiate from the birthplace, so their chips ring it at
+  // one screen radius; a crowded spoke steps along its own line, out or in,
+  // so near-parallel spokes (a conjunction) offset their pills instead of
+  // one hiding the other.
+  const ACG_CHIP_RADIAL_KINDS = new Set(['LOCAL_SPACE', 'LOCAL_SPACE_OPPOSITION']);
+  const ACG_CHIP_RADIAL_BANDS = [
+    1, 1.24, 0.8, 1.48, 0.62, 1.72, 1.96, 0.5, 2.2, 2.44, 0.4, 2.68, 2.92, 3.2, 3.5,
+  ];
+  const ACG_CHIP_RADIUS_SHARE = 0.3;
+
+  // Screen position of the birthplace when it is on screen, with the ring
+  // radius the chips sit on.
+  function acgChipRadialOrigin(targetMap, data, rect) {
+    const coordinate = birthplaceCoordinates(data);
+    if (!coordinate) return null;
+    let center = null;
+    try { center = targetMap.getCenter(); } catch (_) { return null; }
+    let projection = null;
+    try { projection = targetMap.getProjection && targetMap.getProjection(); } catch (_) {}
+    if (
+      projection && projection.type === 'globe' &&
+      !isPolarCoordinateVisible(coordinate, center, targetMap)
+    ) return null;
+    let point = null;
+    try { point = targetMap.project(coordinate); } catch (_) { return null; }
+    if (
+      !point || point.x < rect.left || point.x > rect.right ||
+      point.y < rect.top || point.y > rect.bottom
+    ) return null;
+    const radius = ACG_CHIP_RADIUS_SHARE *
+      Math.min(rect.right - rect.left, rect.bottom - rect.top);
+    return { x: point.x, y: point.y, radius };
+  }
+
+  // First point along the run at `radius` screen pixels from the origin.
+  function acgChipRunPointAtRadius(run, origin, radius) {
+    let previous = run.points[0];
+    let previousDistance = Math.hypot(previous.x - origin.x, previous.y - origin.y);
+    for (let index = 1; index < run.points.length; index += 1) {
+      const point = run.points[index];
+      const distance = Math.hypot(point.x - origin.x, point.y - origin.y);
+      if ((previousDistance - radius) * (distance - radius) <= 0 && distance !== previousDistance) {
+        const t = (radius - previousDistance) / (distance - previousDistance);
+        return {
+          x: previous.x + (point.x - previous.x) * t,
+          y: previous.y + (point.y - previous.y) * t,
+        };
+      }
+      previous = point;
+      previousDistance = distance;
+    }
+    return null;
+  }
+
+  // Candidate chip positions in preference order: the ring for spokes from
+  // the birthplace, otherwise the middle of the visible run moving outward.
+  function acgChipCandidatePoints(properties, run, origin) {
+    const points = [];
+    if (origin && ACG_CHIP_RADIAL_KINDS.has(properties.kind)) {
+      for (const band of ACG_CHIP_RADIAL_BANDS) {
+        const point = acgChipRunPointAtRadius(run, origin, origin.radius * band);
+        if (point) points.push(point);
+      }
+      if (points.length) return points;
+    }
+    for (const fraction of ACG_CHIP_FRACTIONS) {
+      points.push(acgChipRunPosition(run, fraction));
+    }
+    return points;
+  }
+
+  // options.shown(properties) says which chips will actually draw; only those
+  // reserve room, so a hidden feature never pushes a visible chip aside.
+  function computeAcgChipAnchors(targetMap, data, options = {}) {
+    const features = [];
+    if (!targetMap || !data || !Array.isArray(data.features)) return features;
+    const camera = acgChipCameraWindow(targetMap);
+    const rect = acgChipScreenRect(targetMap, !!options.print);
+    const memory = options.memory || null;
+    const shown = typeof options.shown === 'function' ? options.shown : () => true;
+    const origin = acgChipRadialOrigin(targetMap, data, rect);
+    const entries = [];
+    data.features.forEach((feature, index) => {
+      const properties = feature && feature.properties || {};
+      if (!ACG_CHIP_ANCHOR_KINDS.has(properties.kind)) return;
+      const run = acgChipLongestRun(targetMap, feature, camera, rect);
+      if (!run) return;
+      entries.push({
+        properties,
+        run,
+        key: acgChipAnchorKey(properties, index),
+        shown: shown(properties),
+        rank: properties.kind === 'PARAN' ? 1 : 0,
+      });
+    });
+    entries.sort((a, b) => (Number(b.shown) - Number(a.shown)) || (a.rank - b.rank));
+    const placed = [];
+    const seen = new Set();
+    for (const entry of entries) {
+      const candidates = [];
+      const radial = !!origin && ACG_CHIP_RADIAL_KINDS.has(entry.properties.kind);
+      // Ring chips follow the origin, so only mid-run chips keep a memory.
+      const previous = memory && !radial ? memory.get(entry.key) : null;
+      if (previous) {
+        try {
+          const point = targetMap.project(previous);
+          const onRun = acgChipRunFraction(entry.run, point);
+          if (onRun.distance <= 3 && onRun.fraction >= 0.3 && onRun.fraction <= 0.7) {
+            candidates.push({ point, anchor: previous });
+          }
+        } catch (_) {}
+      }
+      for (const point of acgChipCandidatePoints(entry.properties, entry.run, origin)) {
+        candidates.push({ point });
+      }
+      let choice = candidates[0];
+      if (entry.shown) {
+        for (const candidate of candidates) {
+          const box = acgChipEstimatedBox(entry.properties, candidate.point);
+          if (placed.some((other) => acgChipBoxesOverlap(box, other))) continue;
+          choice = candidate;
+          placed.push(box);
+          break;
+        }
+      }
+      let anchor = choice.anchor;
+      if (!anchor) {
+        const lngLat = targetMap.unproject([choice.point.x, choice.point.y]);
+        anchor = [lngLat.lng, lngLat.lat];
+      }
+      seen.add(entry.key);
+      if (memory) memory.set(entry.key, anchor);
+      const anchoredProperties = { ...entry.properties, acg_anchor_geometry: 'LineString' };
+      delete anchoredProperties.label_anchors;
+      delete anchoredProperties.labelAnchors;
+      delete anchoredProperties.curve;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: anchor },
+        properties: anchoredProperties,
+      });
+    }
+    if (memory) {
+      for (const key of [...memory.keys()]) {
+        if (!seen.has(key)) memory.delete(key);
+      }
+    }
+    return features;
+  }
+
+  // Which chips draw, mirroring the label layers' kind groups and the
+  // point/layer selection (an approximation is safe: it only steers spacing).
+  function acgChipShownPredicate(visibility, linesVisible, paransVisible) {
+    return (properties) => {
+      if (properties.kind === 'PARAN') {
+        return paransVisible && isAcgPropertiesVisible(properties, visibility);
+      }
+      if (!linesVisible) return false;
+      if (properties.kind === 'LOCAL_SPACE_OPPOSITION' && !visibility.localSpaceOppositions) return false;
+      if (properties.kind === 'ASPECT' && !visibility.aspects) return false;
+      return isAcgPropertiesVisible(properties, visibility);
+    };
+  }
+
+  const acgChipAnchorMemory = new Map();
+  let acgChipAnchorFrame = 0;
+
+  // Chip layers follow their text twins' filter and visibility, whichever
+  // control changed them.
+  function syncAcgChipLayers() {
+    if (!map) return;
+    const glyphs = acgLineLabelGlyphs();
+    for (const [chipLayerId, sourceLayerId] of ACG_CHIP_ANCHOR_LAYERS) {
+      if (!map.getLayer(chipLayerId) || !map.getLayer(sourceLayerId)) continue;
+      const visibility = glyphs && map.getLayoutProperty(sourceLayerId, 'visibility') !== 'none'
+        ? 'visible'
+        : 'none';
+      if (map.getLayoutProperty(chipLayerId, 'visibility') !== visibility) {
+        map.setLayoutProperty(chipLayerId, 'visibility', visibility);
+      }
+      const filter = acgChipAnchorFilter(map.getFilter(sourceLayerId));
+      if (JSON.stringify(filter) !== JSON.stringify(map.getFilter(chipLayerId))) {
+        map.setFilter(chipLayerId, filter);
+      }
+    }
+  }
+
+  function updateAcgChipAnchors() {
+    const source = map && map.getSource && map.getSource(ACG_CHIP_SOURCE_ID);
+    if (!source) return;
+    syncAcgChipLayers();
+    const layerVisible = (id) => !!map.getLayer(id) &&
+      map.getLayoutProperty(id, 'visibility') !== 'none';
+    const features = acgLineLabelGlyphs()
+      ? computeAcgChipAnchors(map, currentMapData, {
+        memory: acgChipAnchorMemory,
+        shown: acgChipShownPredicate(
+          viewOptions,
+          layerVisible('acg-labels'),
+          layerVisible('acg-paran-labels'),
+        ),
+      })
+      : [];
+    if (!acgLineLabelGlyphs()) acgChipAnchorMemory.clear();
+    source.setData({ type: 'FeatureCollection', features });
+  }
+
+  function scheduleAcgChipAnchors() {
+    if (acgChipAnchorFrame) return;
+    acgChipAnchorFrame = window.requestAnimationFrame(() => {
+      acgChipAnchorFrame = 0;
+      updateAcgChipAnchors();
+    });
   }
 
   function acgParanLabelExpression() {
@@ -3809,6 +4958,12 @@
 
   function acgAttributeVisibilityFilter(options = viewOptions) {
     const filters = [];
+    if (options.filters.hiddenLayerIds && options.filters.hiddenLayerIds.length) {
+      filters.push(['!', ['in',
+        ['downcase', ['to-string', ['coalesce', ['get', 'astrocart_source_document_id'], '']]],
+        ['literal', options.filters.hiddenLayerIds],
+      ]]);
+    }
     for (const filter of [
       acgSelectionFilter(['point', 'a_point', 'b_point'], options.filters.points),
       acgSelectionFilter(['kind'], options.filters.kinds),
@@ -3938,6 +5093,9 @@
 
   function isAcgPropertiesVisible(props, options = viewOptions) {
     if (!isAcgLayerRoleVisible(props, options)) return false;
+    if (options.filters.hiddenLayerIds && options.filters.hiddenLayerIds.includes(
+      String(props.astrocart_source_document_id || '').toLowerCase()
+    )) return false;
     if (!visibilitySelectionMatches(
       options.filters.points,
       [props.point, props.a_point, props.b_point],
@@ -4314,9 +5472,9 @@
     if (!map.getSource(ACG_SOURCE_ID)) {
       map.addSource(ACG_SOURCE_ID, { type: 'geojson', data: currentMapData, tolerance: 0, maxzoom: 22 });
     }
-    // Keep online line labels on the parallel source used by HEAD. Attaching a
-    // line-placed symbol layer to the shared source can blank Liberty's lines.
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getSource(ACG_LABEL_SOURCE_ID)) {
+    // Line labels use a parallel source. Attaching a line-placed symbol layer
+    // to the shared source can blank the lines themselves.
+    if (!map.getSource(ACG_LABEL_SOURCE_ID)) {
       map.addSource(ACG_LABEL_SOURCE_ID, { type: 'geojson', data: currentMapData, tolerance: 0, maxzoom: 22 });
     }
     // Thin neutral outline so colored lines stay readable without looking heavy.
@@ -4456,7 +5614,7 @@
         },
       });
     }
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-labels')) {
+    if (!map.getLayer('acg-labels')) {
       map.addLayer({
         id: 'acg-labels',
         type: 'symbol',
@@ -4479,7 +5637,7 @@
         },
       });
     }
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-zenith-labels')) {
+    if (!map.getLayer('acg-zenith-labels')) {
       map.addLayer({
         id: 'acg-zenith-labels',
         type: 'symbol',
@@ -4503,7 +5661,7 @@
         },
       });
     }
-    if (!USE_LOCAL_BASEMAP && !USE_MINIMAL_BASEMAP && !map.getLayer('acg-paran-labels')) {
+    if (!map.getLayer('acg-paran-labels')) {
       map.addLayer({
         id: 'acg-paran-labels',
         type: 'symbol',
@@ -4526,6 +5684,30 @@
         },
       });
     }
+    if (!map.getSource(ACG_CHIP_SOURCE_ID)) {
+      map.addSource(ACG_CHIP_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        maxzoom: 22,
+      });
+    }
+    for (const [chipLayerId, sourceLayerId] of ACG_CHIP_ANCHOR_LAYERS) {
+      if (map.getLayer(chipLayerId)) continue;
+      map.addLayer({
+        id: chipLayerId,
+        type: 'symbol',
+        source: ACG_CHIP_SOURCE_ID,
+        filter: acgChipAnchorFilter(map.getFilter(sourceLayerId) || ['boolean', true]),
+        layout: {
+          ...acgChipAnchorLayout(chipLayerId),
+          'visibility': 'none',
+        },
+        paint: {
+          'icon-opacity': acgChipOpacity(sourceLayerId, s),
+        },
+      });
+    }
+    if (acgLineLabelGlyphs()) applyAcgLabelPresentation();
     raiseAcgLayers();
   }
 
@@ -4675,7 +5857,7 @@
   }
 
   function runtimeOverlaySceneDeferred() {
-    return !mapHostActive || isDomLabelMovementActive();
+    return !mapHostActive || isMapMotionActive();
   }
 
   function deferRuntimeOverlayScene(parts, options = {}) {
@@ -4688,7 +5870,7 @@
       // should reframe. Hidden maps intentionally preserve their prior camera.
       retainedEclipseFitPending = mapHostActive && !!options.fit;
     }
-    if (ACG_PERF_MODE && isDomLabelMovementActive()) {
+    if (ACG_PERF_MODE && isMapMotionActive()) {
       perfState.runtimeSceneDeferredPushes += 1;
     }
     return false;
@@ -4715,6 +5897,7 @@
       const labelSource = map && map.getSource && map.getSource(ACG_LABEL_SOURCE_ID);
       if (source) source.setData(currentMapData);
       if (labelSource) labelSource.setData(currentMapData);
+      scheduleAcgChipAnchors();
     }
     if (next.asterism) {
       const source = map && map.getSource && map.getSource(ASTERISM_SOURCE_ID);
@@ -4738,9 +5921,6 @@
     }
     if (next.eclipse && options.fit) fitFeatureCollection(currentEclipseData);
     if (next.data || next.eclipse || next.asterism) mapRuler?.refresh();
-    if (next.data || next.eclipse) {
-      scheduleDomAcgLabels(options.reason || 'scene-data');
-    }
     if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
     if (next.data && options.reason !== 'curve-refinement') scheduleCurveRefinement();
     return true;
@@ -4824,6 +6004,11 @@
         const b = pointStyles[props.b_point] || {};
         if (a.glyphMorinus != null) props.a_glyph_morinus = a.glyphMorinus;
         if (b.glyphMorinus != null) props.b_glyph_morinus = b.glyphMorinus;
+        // Paran chips key each glyph to its body's line colour.
+        if (a.color) props.a_color = a.color;
+        else delete props.a_color;
+        if (b.color) props.b_color = b.color;
+        else delete props.b_color;
         if (a.label || b.label) {
           props.label = `${a.label || props.a_point || ''} ${props.a_angle || ''} × ${b.label || props.b_point || ''} ${props.b_angle || ''}`.trim();
         }
@@ -4981,7 +6166,6 @@
     }
     if (map.getLayer('acg-labels')) {
       map.setLayoutProperty('acg-labels', 'visibility', s.labelsOn ? 'visible' : 'none');
-      map.setLayoutProperty('acg-labels', 'text-field', acgLineLabelExpression());
       map.setLayoutProperty('acg-labels', 'text-size', s.labelSize);
       map.setLayoutProperty('acg-labels', 'text-letter-spacing', s.labelSpacing);
       map.setPaintProperty('acg-labels', 'text-color', t.labelColor);
@@ -4991,7 +6175,6 @@
     }
     if (map.getLayer('acg-zenith-labels')) {
       map.setLayoutProperty('acg-zenith-labels', 'visibility', (viewOptions.zeniths && s.labelsOn) ? 'visible' : 'none');
-      map.setLayoutProperty('acg-zenith-labels', 'text-field', acgZenithLabelExpression());
       map.setLayoutProperty('acg-zenith-labels', 'text-size', s.labelSize);
       map.setLayoutProperty('acg-zenith-labels', 'text-letter-spacing', s.labelSpacing);
       map.setPaintProperty('acg-zenith-labels', 'text-color', acgLineColorExpression(s));
@@ -5001,7 +6184,6 @@
     }
     if (map.getLayer('acg-paran-labels')) {
       map.setLayoutProperty('acg-paran-labels', 'visibility', (viewOptions.parans && s.paranLabelsOn) ? 'visible' : 'none');
-      map.setLayoutProperty('acg-paran-labels', 'text-field', acgParanLabelExpression());
       map.setLayoutProperty('acg-paran-labels', 'text-size', s.paranLabelSize);
       map.setLayoutProperty('acg-paran-labels', 'text-letter-spacing', s.paranLabelSpacing);
       map.setPaintProperty('acg-paran-labels', 'text-color', t.paranColor);
@@ -5009,6 +6191,7 @@
       map.setPaintProperty('acg-paran-labels', 'text-halo-width', s.paranLabelHaloOn ? s.paranLabelHaloWidth : 0.0);
       map.setPaintProperty('acg-paran-labels', 'text-opacity', scaledPointLayerOpacity(s.paranLabelOpacity, 'line_opacity'));
     }
+    applyAcgLabelPresentation();
     if (map.getLayer('eclipse-path-shadow')) {
       map.setPaintProperty('eclipse-path-shadow', 'line-color', s.eclipseShadowColor);
       map.setPaintProperty('eclipse-path-shadow', 'line-width', s.eclipseShadowWidth);
@@ -5050,7 +6233,6 @@
       map.setPaintProperty('eclipse-path-label', 'text-opacity', s.eclipseLabelOpacity);
     }
     raiseAcgLayers();
-    scheduleDomAcgLabels('settings');
   }
 
   function updateLegend() {
@@ -5063,13 +6245,17 @@
     let hasLocalSpace = false;
     let hasAcgAngles = false;
     let hasLocalSpaceOpposition = false;
+    let localSpaceOppositionGlyph = '';
     let hasAspect = false;
     let hasZenith = false;
     for (const f of currentData.features || []) {
       if (!isAcgFeatureVisible(f)) continue;
       if (f.properties.kind === 'PARAN') { hasParan = true; continue; }
       if (f.properties.kind === 'LOCAL_SPACE') hasLocalSpace = true;
-      if (f.properties.kind === 'LOCAL_SPACE_OPPOSITION') hasLocalSpaceOpposition = true;
+      if (f.properties.kind === 'LOCAL_SPACE_OPPOSITION') {
+        hasLocalSpaceOpposition = true;
+        localSpaceOppositionGlyph ||= String(f.properties.aspect_glyph_morinus || '');
+      }
       if (f.properties.kind === 'ASPECT') hasAspect = true;
       if (f.properties.kind === 'ZENITH') hasZenith = true;
       if (['MC', 'IC', 'ASC', 'DSC'].includes(f.properties.kind)) hasAcgAngles = true;
@@ -5098,16 +6284,22 @@
     if (localRow) localRow.style.display = hasLocalSpace ? '' : 'none';
     const paranRow = document.getElementById('legend-paran-row');
     if (paranRow) paranRow.style.display = hasParan ? '' : 'none';
-    for (const [id, present, label] of [
-      ['legend-local-space-opposition-row', hasLocalSpaceOpposition, uiLabels.localSpaceOpposition],
-      ['legend-aspect-row', hasAspect, uiLabels.aspect],
-      ['legend-zenith-row', hasZenith, uiLabels.zenith],
+    // The opposition row pairs the glyph its line labels carry with the word.
+    for (const [id, present, label, glyph] of [
+      ['legend-local-space-opposition-row', hasLocalSpaceOpposition, uiLabels.localSpaceOpposition, localSpaceOppositionGlyph],
+      ['legend-aspect-row', hasAspect, uiLabels.aspect, ''],
+      ['legend-zenith-row', hasZenith, uiLabels.zenith, ''],
     ]) {
       const row = document.getElementById(id);
       const text = String(label || '').trim();
       if (!row) continue;
       const labelElement = row.querySelector('.localized-kind-label');
       if (labelElement) labelElement.textContent = text;
+      const glyphElement = row.querySelector('.legend-kind-glyph');
+      if (glyphElement) {
+        glyphElement.textContent = glyph;
+        glyphElement.style.display = glyph ? '' : 'none';
+      }
       row.style.display = present && text ? '' : 'none';
     }
   }
@@ -5127,59 +6319,10 @@
     };
   }
 
-  function shouldRenderPlaceOverlay() {
-    if (PLACE_LABELS_DISABLED) return false;
-    if (PLACE_LABELS_AUTO) return !!(USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP);
-    return true;
-  }
-
-  function shouldUseDynamicCityLabels() {
-    return (
-      PLACE_LABELS_CITY500 &&
-      shouldRenderPlaceOverlay() &&
-      !!CITY_LABELS_URL &&
-      /^https?:$/.test(location.protocol)
-    );
-  }
-
-  function loadPlaceLabels(options) {
-    const opts = options || {};
-    if (PLACE_LABELS_DISABLED) {
-      schedulePlaceLabelsRender('disabled');
-      return;
-    }
-    if (shouldUseDynamicCityLabels() && !opts.forceStatic) {
-      scheduleCityLabelsRefresh(opts.reason || 'load');
-      return;
-    }
-    if (PLACE_LABELS_AUTO && !shouldRenderPlaceOverlay() && !opts.forceStatic) {
-      schedulePlaceLabelsRender('provider-labels');
-      return;
-    }
-    loadStaticPlaceLabels(opts);
-  }
-
-  function setPlaceLabelDataset(rows, source) {
-    placeLabelData = Array.isArray(rows) ? rows : [];
-    placeLabelSource = source || 'unknown';
-    perfState.placeLabelSource = placeLabelSource;
-    perfState.placeLabelLastCount = placeLabelData.length;
-    schedulePlaceLabelsRender('dataset');
-  }
-
-  function loadStaticPlaceLabels(options) {
-    const opts = options || {};
-    if (PLACE_LABELS_DISABLED || !window.fetch) return;
-    if (opts.useForOverlay) staticOverlayRequested = true;
-    if (placesLoaded) {
-      if (staticOverlayRequested || !shouldUseDynamicCityLabels()) {
-        staticOverlayRequested = false;
-        setPlaceLabelDataset(placesData, 'static');
-      }
-      refreshSearchResults();
-      return;
-    }
-    if (placesLoading) return;
+  // The search catalog loads on first use. Offline map labels read the same
+  // bundled file through their own MapLibre source.
+  function loadPlaceSearchCatalog() {
+    if (placesLoaded || placesLoading || !window.fetch) return;
     placesLoading = true;
     fetch(PLACES_URL, { cache: 'force-cache' })
       .then((r) => {
@@ -5192,275 +6335,15 @@
           .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat) && p.name);
         placesLoaded = true;
         placesLoading = false;
-        if (staticOverlayRequested || !shouldUseDynamicCityLabels()) {
-          staticOverlayRequested = false;
-          setPlaceLabelDataset(placesData, 'static');
-        }
         refreshSearchResults();
       })
       .catch(() => {
         placesLoading = false;
-        placesLoaded = false;
-        staticOverlayRequested = false;
       });
   }
 
-  function cityLabelBudget(zoom) {
-    if (zoom < 1.7) return 60;
-    if (zoom < 2.3) return 110;
-    if (zoom < 3.0) return 180;
-    if (zoom < 4.0) return 260;
-    return 420;
-  }
-
-  function cityLabelsEndpointUrl() {
-    if (!map || !map.getBounds) return null;
-    let b;
-    try {
-      b = map.getBounds();
-    } catch (_) {
-      return null;
-    }
-    if (!b) return null;
-    const zoom = map.getZoom ? map.getZoom() : 0;
-    const params = new URLSearchParams({
-      west: String(b.getWest()),
-      south: String(b.getSouth()),
-      east: String(b.getEast()),
-      north: String(b.getNorth()),
-      zoom: String(zoom),
-      limit: String(cityLabelBudget(zoom)),
-    });
-    const sep = CITY_LABELS_URL.indexOf('?') === -1 ? '?' : '&';
-    return `${CITY_LABELS_URL}${sep}${params.toString()}`;
-  }
-
-  function scheduleCityLabelsRefresh(reason) {
-    if (!mapHostActive || !shouldUseDynamicCityLabels()) return;
-    if (cityLabelsTimer) window.clearTimeout(cityLabelsTimer);
-    cityLabelsTimer = window.setTimeout(() => {
-      cityLabelsTimer = null;
-      refreshDynamicCityLabels(reason || 'refresh');
-    }, 60);
-  }
-
-  function refreshDynamicCityLabels(reason) {
-    if (!shouldUseDynamicCityLabels() || !window.fetch) return;
-    const url = cityLabelsEndpointUrl();
-    if (!url) return;
-    if (url === cityLabelsRequestKey && (cityLabelsController || placeLabelSource === 'dynamic')) return;
-    if (cityLabelsController) {
-      try { cityLabelsController.abort(); } catch (_) {}
-      perfState.placeLabelAborts += 1;
-    }
-    cityLabelsRequestKey = url;
-    const controller = window.AbortController ? new AbortController() : null;
-    cityLabelsController = controller;
-    const started = perfNow();
-    perfState.placeLabelFetches += 1;
-    const headers = DAEMON_TOKEN ? { 'X-Aries-Token': DAEMON_TOKEN } : undefined;
-    fetch(url, {
-      cache: 'no-store',
-      headers,
-      signal: controller ? controller.signal : undefined,
-    })
-      .then((r) => {
-        if (!r || !r.ok) throw new Error(`city labels failed: ${r ? r.status : 'no response'}`);
-        return r.json();
-      })
-      .then((data) => {
-        if (controller && controller.signal.aborted) return;
-        if (!data || !data.meta || data.meta.available !== true || !Array.isArray(data.features)) {
-          throw new Error('city labels unavailable');
-        }
-        const rows = data.features
-          .map(normalizePlaceFeature)
-          .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat) && p.name);
-        perfState.placeLabelLastFetchMs = perfNow() - started;
-        staticOverlayRequested = false;
-        setPlaceLabelDataset(rows, 'dynamic');
-      })
-      .catch((err) => {
-        if (err && err.name === 'AbortError') return;
-        cityLabelsRequestKey = '';
-        // Keep the last useful labels visible until the bundled static fallback
-        // is ready; never replace them with an error-shaped empty response.
-        loadStaticPlaceLabels({ useForOverlay: true });
-      })
-      .finally(() => {
-        if (cityLabelsController === controller) cityLabelsController = null;
-      });
-  }
-
-  function boxesOverlap(a, b, padding = 0) {
-    return !(
-      a.right + padding <= b.left ||
-      a.left >= b.right + padding ||
-      a.bottom + padding <= b.top ||
-      a.top >= b.bottom + padding
-    );
-  }
-
-  function estimatedLabelBox(x, y, text, fontSize, extraWidth = 0) {
-    const width = Math.max(18, String(text || '').length * fontSize * 0.56 + extraWidth);
-    const height = Math.max(12, fontSize * 1.25);
-    return {
-      left: x - width / 2,
-      right: x + width / 2,
-      top: y - height / 2,
-      bottom: y + height / 2,
-    };
-  }
-
-  function schedulePlaceLabelsRender(reason) {
-    placeLabelsDirty = true;
-    domLabelLayoutReason = reason || domLabelLayoutReason;
-    if (isDomLabelMovementActive()) {
-      if (ACG_PERF_MODE) perfState.placeLabelSkippedWhileMoving += 1;
-      return;
-    }
-    requestDomLabelLayout();
-  }
-
-  function isDomLabelMovementActive() {
+  function isMapMotionActive() {
     return activeMapMotionPhases.size > 0;
-  }
-
-  function requestDomLabelLayout(reason) {
-    if (reason) domLabelLayoutReason = reason;
-    if (isDomLabelMovementActive() || domLabelLayoutRaf) return;
-    if (!domAcgLabelsDirty && !placeLabelsDirty) return;
-    domLabelLayoutRaf = window.requestAnimationFrame(() => {
-      domLabelLayoutRaf = 0;
-      if (isDomLabelMovementActive()) return;
-      const rebuildAcgLabels = domAcgLabelsDirty;
-      const rebuildPlaceLabels = placeLabelsDirty;
-      const authoritativeReason = domLabelLayoutReason || 'raf';
-      domAcgLabelsDirty = false;
-      placeLabelsDirty = false;
-      domLabelLayoutReason = '';
-      if (rebuildAcgLabels) renderDomAcgLabels(authoritativeReason);
-      if (rebuildPlaceLabels) renderPlaceLabels(authoritativeReason);
-    });
-  }
-
-  function beginDomAcgMovement(burstStarted) {
-    if (!burstStarted) return;
-    if (domLabelLayoutRaf) {
-      window.cancelAnimationFrame(domLabelLayoutRaf);
-      domLabelLayoutRaf = 0;
-    }
-    // Retain the last coherent label scene during the gesture. The map canvas
-    // remains free to animate; DOM labels are authoritatively placed once the
-    // complete move/zoom burst has settled.
-    domAcgLabelsDirty = true;
-    placeLabelsDirty = true;
-    const layer = document.getElementById('acg-dom-labels');
-    if (layer) layer.classList.remove('is-moving');
-  }
-
-  function endDomAcgMovement(reason, burstSettled) {
-    if (!burstSettled) return;
-    if (ACG_PERF_MODE) perfState.domLabelBurstSettles += 1;
-    requestDomLabelLayout(reason || 'settle');
-    postPerfSnapshot(reason || 'settle');
-  }
-
-  function scheduleDomAcgLabels(reason) {
-    domAcgLabelsDirty = true;
-    // Place labels share the ACG collision boxes, so both layouts belong to
-    // one authoritative frame whenever the ACG label scene changes.
-    placeLabelsDirty = true;
-    domLabelLayoutReason = reason || domLabelLayoutReason;
-    if (isDomLabelMovementActive()) {
-      if (ACG_PERF_MODE) {
-        perfState.domLabelSkippedWhileMoving += 1;
-        perfState.placeLabelSkippedWhileMoving += 1;
-      }
-      return;
-    }
-    requestDomLabelLayout();
-  }
-
-  function renderPlaceLabels(reason) {
-    if (isDomLabelMovementActive()) {
-      placeLabelsDirty = true;
-      if (ACG_PERF_MODE) perfState.placeLabelSkippedWhileMoving += 1;
-      return;
-    }
-    const layer = document.getElementById('place-labels');
-    if (!layer) return;
-    const started = perfNow();
-    for (const el of placeLabelElements.values()) el.style.display = 'none';
-    if (!map || !shouldRenderPlaceOverlay() || !Array.isArray(placeLabelData)) {
-      perfState.placeLabelLastRenderMs = perfNow() - started;
-      return;
-    }
-    const source = placeLabelData;
-    if (!source.length) {
-      perfState.placeLabelLastRenderMs = perfNow() - started;
-      return;
-    }
-    const zoom = map.getZoom ? map.getZoom() : 0;
-    const maxLevel = zoom < 1.7 ? 0 : (zoom < 2.3 ? 1 : (zoom < 3.0 ? 2 : (zoom < 4.0 ? 3 : 4)));
-    const minPop = zoom < 1.7 ? 4000000 : (zoom < 2.3 ? 1000000 : (zoom < 3.0 ? 250000 : (zoom < 4.0 ? 100000 : 0)));
-    const maxLabels = zoom < 1.7 ? 60 : (zoom < 2.3 ? 110 : (zoom < 3.0 ? 180 : (zoom < 4.0 ? 260 : 420)));
-    const bounds = map.getBounds ? map.getBounds() : null;
-    const w = window.innerWidth || 1;
-    const h = window.innerHeight || 1;
-    const labels = [];
-    for (const place of source) {
-      if (place.level > maxLevel && place.population < minPop) continue;
-      if (bounds && !bounds.contains([place.lon, place.lat])) continue;
-      if (!isCoordinateVisibleOnCurrentProjection([place.lon, place.lat])) continue;
-      let pt;
-      try {
-        pt = map.project([place.lon, place.lat]);
-      } catch (_) {
-        continue;
-      }
-      if (!pt || pt.x < 8 || pt.x > w - 8 || pt.y < 8 || pt.y > h - 8) continue;
-      labels.push({ place, x: pt.x, y: pt.y });
-    }
-    labels.sort((a, b) => (a.place.level - b.place.level) || (b.place.population - a.place.population));
-    const occupied = acgLabelCollisionBoxes.slice();
-    let rendered = 0;
-    const visibleKeys = new Set();
-    for (const item of labels) {
-      if (rendered >= maxLabels) break;
-      const box = estimatedLabelBox(item.x, item.y, item.place.name, 11, 9);
-      if (occupied.some((other) => boxesOverlap(box, other, 3))) continue;
-      occupied.push(box);
-      const key = `${item.place.lon.toFixed(5)}:${item.place.lat.toFixed(5)}:${item.place.name}`;
-      visibleKeys.add(key);
-      let el = placeLabelElements.get(key);
-      if (!el) {
-        el = document.createElement('div');
-        const dot = document.createElement('span');
-        dot.className = 'place-dot';
-        el.append(dot, document.createTextNode(item.place.name));
-        placeLabelElements.set(key, el);
-        layer.appendChild(el);
-      }
-      el.className = `place-label${item.place.level <= 1 || item.place.population >= 1500000 ? ' major' : ''}`;
-      el.style.left = `${item.x}px`;
-      el.style.top = `${item.y}px`;
-      el.style.display = '';
-      rendered += 1;
-    }
-    // Dynamic viewport payloads are small.  Bound the fallback cache too so a
-    // long pan session cannot retain one DOM node for every static catalog row.
-    if (placeLabelElements.size > 700) {
-      for (const [key, el] of placeLabelElements) {
-        if (visibleKeys.has(key)) continue;
-        el.remove();
-        placeLabelElements.delete(key);
-      }
-    }
-    const elapsed = perfNow() - started;
-    perfState.placeLabelLastCount = rendered;
-    perfState.placeLabelLastRenderMs = elapsed;
-    perfState.placeLabelMaxRenderMs = Math.max(perfState.placeLabelMaxRenderMs, elapsed);
   }
 
   function geometrySegments(geom) {
@@ -5468,72 +6351,6 @@
     if (geom.type === 'LineString') return [geom.coordinates || []];
     if (geom.type === 'MultiLineString') return geom.coordinates || [];
     return [];
-  }
-
-  function geometryLatitudeAnchors(geom) {
-    const segments = geometrySegments(geom);
-    if (!segments.length) return [];
-    let centerLat = 0;
-    try { centerLat = Number(map.getCenter().lat) || 0; } catch (_) {}
-    const targets = [centerLat, 0, -30, 30, -60, 60]
-      .map((lat) => Math.max(-75, Math.min(75, Number(lat) || 0)))
-      .filter((lat, index, all) => all.findIndex((other) => Math.abs(other - lat) < 0.01) === index);
-    const out = [];
-    for (const target of targets) {
-      for (const line of segments) {
-        for (let index = 1; index < line.length; index += 1) {
-          const a = line[index - 1];
-          const b = line[index];
-          if (!a || !b) continue;
-          const latA = Number(a[1]);
-          const latB = Number(b[1]);
-          if (!Number.isFinite(latA) || !Number.isFinite(latB)) continue;
-          if (target < Math.min(latA, latB) || target > Math.max(latA, latB)) continue;
-          const span = latB - latA;
-          const fraction = Math.abs(span) < 1e-9 ? 0 : (target - latA) / span;
-          const lonA = Number(a[0]);
-          let lonB = Number(b[0]);
-          if (!Number.isFinite(lonA) || !Number.isFinite(lonB)) continue;
-          while (lonB - lonA > 180) lonB -= 360;
-          while (lonB - lonA < -180) lonB += 360;
-          const lon = ((lonA + (lonB - lonA) * fraction + 540) % 360) - 180;
-          out.push([lon, target]);
-          break;
-        }
-      }
-    }
-    return out;
-  }
-
-  function fallbackLineAnchors(geom) {
-    const fromLatitudes = geometryLatitudeAnchors(geom);
-    if (fromLatitudes.length) return fromLatitudes;
-    const line = geometrySegments(geom).reduce(
-      (best, current) => current && (!best || current.length > best.length) ? current : best,
-      null,
-    );
-    if (!line || !line.length) return [];
-    return [0.25, 0.5, 0.75]
-      .map((fraction) => line[Math.min(line.length - 1, Math.round((line.length - 1) * fraction))])
-      .filter(Boolean);
-  }
-
-  function featureLabelAnchors(feature) {
-    const p = feature && feature.properties || {};
-    const declared = p.label_anchors || p.labelAnchors;
-    if (Array.isArray(declared) && declared.length) return declared;
-    if (p.kind === 'PARAN') {
-      const line = geometrySegments(feature.geometry)[0] || [];
-      const latitude = line.length ? Number(line[0][1]) : NaN;
-      if (!Number.isFinite(latitude)) return [];
-      let centerLon = 0;
-      try { centerLon = Number(map.getCenter().lng) || 0; } catch (_) {}
-      return [0, -55, 55, -110, 110].map((offset) => [((centerLon + offset + 540) % 360) - 180, latitude]);
-    }
-    if (feature.geometry && feature.geometry.type === 'Point') {
-      return [feature.geometry.coordinates];
-    }
-    return fallbackLineAnchors(feature.geometry);
   }
 
   function acgLayerDisplayLabel(properties) {
@@ -5552,22 +6369,29 @@
     return '';
   }
 
-  function prefixedAcgLabel(properties, text) {
+  function acgLayerPrefixText(properties) {
     const layerLabel = acgLayerDisplayLabel(properties);
-    return layerLabel ? `[${layerLabel}] ${text}` : text;
+    return layerLabel ? `[${layerLabel}]` : '';
   }
 
-  function acgFeatureLabelText(properties) {
+  function prefixedAcgLabel(properties, text) {
+    const prefix = acgLayerPrefixText(properties);
+    return prefix ? `${prefix} ${text}` : text;
+  }
+
+  // glyphMode: the glyph replaces the point name and the layer prefix is laid
+  // out before it (see acgChipSegments).
+  function acgFeatureLabelText(properties, options) {
     const p = properties || {};
-    const pointLabel = localizedPointLabel(p);
+    const glyphMode = !!(options && options.glyphMode);
+    const pointLabel = glyphMode ? '' : localizedPointLabel(p);
     const kind = String(p.kind || '');
     let text = pointLabel;
     if (kind === 'LOCAL_SPACE' || kind === 'LOCAL_SPACE_OPPOSITION') {
-      const bearing = String(p.bearing_label ?? p.source_bearing ?? '').trim();
-      const opposition = kind === 'LOCAL_SPACE_OPPOSITION'
-        ? String(uiLabels.localSpaceOpposition || '').trim()
+      const bearing = acgLocalSpaceBearings()
+        ? String(p.bearing_label ?? p.source_bearing ?? '').trim()
         : '';
-      text = `${pointLabel} ${bearing} ${opposition}`.trim();
+      text = `${pointLabel} ${bearing}`.trim();
     } else if (kind === 'ASPECT') {
       text = `${pointLabel} ${localizedAspectLabel(p)} ${p.target_angle || ''}`.trim();
     } else if (kind === 'ZENITH') {
@@ -5575,214 +6399,9 @@
     } else if (['MC', 'IC', 'ASC', 'DSC'].includes(kind)) {
       text = `${pointLabel} ${kind}`.trim();
     }
-    return prefixedAcgLabel(p, text);
-  }
-
-  function labelDescriptor(feature, source) {
-    if (source === 'acg' && !isAcgFeatureVisible(feature)) return null;
-    const p = feature && feature.properties || {};
-    const kind = p.kind || '';
-    const modeKey = `${p.astrocart_mode || ''}:${normalizedAcgLayerRole(p)}:`;
-    const settings = currentDevSettings();
-    const theme = currentThemeTokens();
-    if (source === 'eclipse') {
-      if (kind !== 'ECLIPSE_MAX' || !p.label) return null;
-      return {
-        id: p.label_id || `eclipse:${p.utc || ''}:${p.label}`,
-        text: String(p.label),
-        color: settings.eclipseCenterColor,
-        fontSize: settings.eclipseLabelSize,
-        letterSpacing: settings.eclipseLabelSpacing,
-        haloColor: settings.eclipseHaloColor,
-        haloWidth: settings.eclipseLabelHaloWidth,
-        opacity: settings.eclipseLabelOpacity * settings.domLabelOpacityScale,
-        priority: 0,
-        yOffset: 16,
-      };
-    }
-    if (kind === 'PARAN') {
-      if (!viewOptions.parans || !settings.paranLabelsOn) return null;
-      const line = geometrySegments(feature.geometry)[0] || [];
-      const latitudeKey = line.length && Number.isFinite(Number(line[0][1])) ? Number(line[0][1]).toFixed(6) : '';
-      return {
-        id: p.label_id || `${modeKey}paran:${p.a_point || ''}:${p.a_angle || ''}:${p.b_point || ''}:${p.b_angle || ''}:${latitudeKey}`,
-        text: prefixedAcgLabel(
-          p,
-          `${localizedPointLabel(p, 'a_point', 'a_label')} ${p.a_angle || ''} × ${localizedPointLabel(p, 'b_point', 'b_label')} ${p.b_angle || ''}`.trim(),
-        ),
-        color: theme.paranColor,
-        fontSize: settings.paranLabelSize,
-        letterSpacing: settings.paranLabelSpacing,
-        haloColor: theme.paranHalo,
-        haloWidth: settings.paranLabelHaloOn ? settings.paranLabelHaloWidth : 0,
-        opacity: settings.paranLabelOpacity * settings.domLabelOpacityScale * acgLayerOpacityScale(p),
-        priority: 3,
-        yOffset: 0,
-      };
-    }
-    if (
-      !settings.labelsOn ||
-      ![
-        'MC',
-        'IC',
-        'ASC',
-        'DSC',
-        'LOCAL_SPACE',
-        'LOCAL_SPACE_OPPOSITION',
-        'ASPECT',
-        'ZENITH',
-      ].includes(kind)
-    ) return null;
-    const text = acgFeatureLabelText(p);
-    return {
-      id: p.label_id || `${modeKey}${kind}:${p.point || p.label || ''}`,
-      text,
-      glyph: kind === 'ZENITH' ? String(p.glyph_morinus || '') : '',
-      className: kind === 'ZENITH' ? 'zenith' : '',
-      color: p.color || theme.labelColor,
-      fontSize: settings.labelSize,
-      letterSpacing: settings.labelSpacing,
-      haloColor: theme.labelHalo,
-      haloWidth: settings.labelHaloOn ? settings.labelHaloWidth : 0,
-      opacity: settings.labelOpacity * settings.domLabelOpacityScale * acgLayerOpacityScale(p),
-      priority: kind === 'ZENITH' ? 0 : (kind === 'LOCAL_SPACE' ? 2 : 1),
-      yOffset: kind === 'ZENITH' ? -10 : 0,
-    };
-  }
-
-  function applyDomAcgLabelContent(element, descriptor) {
-    const glyph = String(descriptor.glyph || '');
-    const contentKey = `${glyph}\u0000${descriptor.text}`;
-    if (element.dataset.contentKey === contentKey) return;
-    element.dataset.contentKey = contentKey;
-    if (!glyph) {
-      element.textContent = descriptor.text;
-      return;
-    }
-    const glyphElement = document.createElement('span');
-    glyphElement.className = 'acg-dom-label-glyph';
-    glyphElement.textContent = glyph;
-    const textElement = document.createElement('span');
-    textElement.textContent = descriptor.text;
-    element.replaceChildren(glyphElement, textElement);
-  }
-
-  function renderDomAcgLabels(reason) {
-    if (isDomLabelMovementActive()) {
-      domAcgLabelsDirty = true;
-      placeLabelsDirty = true;
-      if (ACG_PERF_MODE) perfState.domLabelSkippedWhileMoving += 1;
-      return;
-    }
-    if (!mapHostActive) return;
-    const layer = document.getElementById('acg-dom-labels');
-    if (!layer) return;
-    const offlineRenderer = USE_LOCAL_BASEMAP || USE_MINIMAL_BASEMAP;
-    if (!offlineRenderer) {
-      domLabelRendererMode = 'online';
-      layer.replaceChildren();
-      acgLabelElements.clear();
-      acgLabelAnchorChoices.clear();
-      acgLabelCollisionBoxes = [];
-      recordDomLabelPerf(0, 0, reason);
-      return;
-    }
-    if (domLabelRendererMode !== 'offline') {
-      layer.replaceChildren();
-      acgLabelElements.clear();
-      acgLabelAnchorChoices.clear();
-    }
-    domLabelRendererMode = 'offline';
-    const started = perfNow();
-    let renderedCount = 0;
-    for (const el of acgLabelElements.values()) el.style.display = 'none';
-    acgLabelCollisionBoxes = [];
-    if (!ACG_DOM_LABELS || !map || !currentData || !currentData.features) {
-      recordDomLabelPerf(perfNow() - started, renderedCount, reason);
-      return;
-    }
-    const w = window.innerWidth || 1;
-    const h = window.innerHeight || 1;
-    const safeTop = Math.max(12, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-safe-top')) + 12 || 12);
-    const screenCenter = { x: w / 2, y: h / 2 };
-    const features = (currentData.features || [])
-      .map((feature) => ({ feature, source: 'acg' }));
-    for (const feature of currentEclipseData.features || []) features.push({ feature, source: 'eclipse' });
-    const descriptors = features
-      .map((entry) => ({ ...entry, descriptor: labelDescriptor(entry.feature, entry.source) }))
-      .filter((entry) => entry.descriptor && entry.descriptor.text)
-      .sort((a, b) => (a.descriptor.priority - b.descriptor.priority) || a.descriptor.id.localeCompare(b.descriptor.id));
-    const currentDescriptorIds = new Set(descriptors.map((entry) => entry.descriptor.id));
-    for (const [id, el] of acgLabelElements) {
-      if (currentDescriptorIds.has(id)) continue;
-      el.remove();
-      acgLabelElements.delete(id);
-      acgLabelAnchorChoices.delete(id);
-    }
-    const featureLimit = 120;
-    for (const entry of descriptors) {
-      if (renderedCount >= featureLimit) break;
-      const descriptor = entry.descriptor;
-      const candidates = [];
-      for (const coord of featureLabelAnchors(entry.feature)) {
-        if (!Array.isArray(coord) || coord.length < 2 || !isCoordinateVisibleOnCurrentProjection(coord)) continue;
-        let pt;
-        try { pt = map.project(coord); } catch (_) { continue; }
-        const x = Number(pt && pt.x);
-        const y = Number(pt && pt.y) + descriptor.yOffset;
-        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-        if (x < 12 || x > w - 12 || y < safeTop || y > h - 42) continue;
-        const box = estimatedLabelBox(x, y, descriptor.text, descriptor.fontSize, 8);
-        if (acgLabelCollisionBoxes.some((other) => boxesOverlap(box, other, 3))) continue;
-        const score = Math.hypot(x - screenCenter.x, y - screenCenter.y);
-        const anchorKey = `${Number(coord[0]).toFixed(6)}:${Number(coord[1]).toFixed(6)}`;
-        candidates.push({ x, y, box, score, anchorKey });
-      }
-      candidates.sort((a, b) => a.score - b.score);
-      const previousAnchor = acgLabelAnchorChoices.get(descriptor.id);
-      const item = candidates.find((candidate) => candidate.anchorKey === previousAnchor) || candidates[0];
-      if (!item) continue;
-      acgLabelAnchorChoices.set(descriptor.id, item.anchorKey);
-      acgLabelCollisionBoxes.push(item.box);
-      let el = acgLabelElements.get(descriptor.id);
-      if (!el) {
-        el = document.createElement('div');
-        el.className = 'acg-dom-label';
-        acgLabelElements.set(descriptor.id, el);
-        layer.appendChild(el);
-      }
-      applyDomAcgLabelContent(el, descriptor);
-      el.className = `acg-dom-label${descriptor.className ? ` ${descriptor.className}` : ''}`;
-      el.style.left = `${item.x}px`;
-      el.style.top = `${item.y}px`;
-      el.style.color = descriptor.color;
-      el.style.opacity = String(descriptor.opacity);
-      el.style.fontSize = `${descriptor.fontSize}px`;
-      el.style.letterSpacing = `${descriptor.letterSpacing || 0}em`;
-      el.style.textShadow = descriptor.haloWidth > 0
-        ? `0 0 ${Math.max(2, descriptor.haloWidth * 2)}px ${descriptor.haloColor}`
-        : 'none';
-      el.style.display = '';
-      renderedCount += 1;
-    }
-    recordDomLabelPerf(perfNow() - started, renderedCount, reason);
-  }
-
-  function isCoordinateVisibleOnCurrentProjection(coord) {
-    if (!map || !coord) return true;
-    let projType = 'mercator';
-    try {
-      const proj = map.getProjection && map.getProjection();
-      projType = (proj && proj.type) || projType;
-    } catch (_) {}
-    if (projType !== 'globe') return true;
-    let center;
-    try {
-      center = map.getCenter();
-    } catch (_) {
-      return true;
-    }
-    return angularDistanceDeg(center.lng, center.lat, Number(coord[0]), Number(coord[1])) <= 92.0;
+    return glyphMode || (options && options.withoutPrefix)
+      ? text.trim()
+      : prefixedAcgLabel(p, text);
   }
 
   function angularDistanceDeg(lon1, lat1, lon2, lat2) {
@@ -7083,20 +7702,6 @@
     return features.find((f) => featurePlaceName(f)) || null;
   }
 
-  function domPlaceNameAtPoint(point) {
-    if (!map || !Array.isArray(placeLabelData)) return '';
-    let nearest = null;
-    for (const place of placeLabelData) {
-      if (!isCoordinateVisibleOnCurrentProjection([place.lon, place.lat])) continue;
-      let projected;
-      try { projected = map.project([place.lon, place.lat]); } catch (_) { continue; }
-      const distance = Math.hypot(projected.x - point.x, projected.y - point.y);
-      if (distance > 20 || (nearest && distance >= nearest.distance)) continue;
-      nearest = { distance, name: place.name };
-    }
-    return nearest ? nearest.name : '';
-  }
-
   function sendHereRequest(action, lngLat, placeName) {
     sendToHost({
       type: 'here',
@@ -7185,12 +7790,19 @@
   }
 
   function routeHostKeyCommand(event) {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented || event.altKey) return;
     const target = event.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
       return;
     }
     const key = event.key || '';
+    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 'a' && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) sendToHost({ type: 'shortcut', key: key, metaKey: event.metaKey, ctrlKey: event.ctrlKey });
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) return;
     const isLetter = key.length === 1 && /^[a-z]$/i.test(key);
     const isEscape = key === 'Escape';
     if (isEscape && mapRuler?.enabled) return;
@@ -7209,11 +7821,37 @@
     if (!event.repeat) sendToHost({ type: 'shortcut', key: key });
   }
 
+  // The map is an iframe, so arrow events focused here never reach the chart
+  // shortcut listener in the parent window. Forward them only while a linked
+  // chart owns the map keyboard; otherwise MapLibre keeps its arrow panning.
+  let chartKeyboardNavigationEnabled = false;
+  function routeChartNavigationKey(event, eventType) {
+    if (!chartKeyboardNavigationEnabled || window.parent === window || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' || target.isContentEditable)) return;
+    const keys = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+    const key = keys[event.key];
+    if (!key) return;
+    event.preventDefault();
+    event.stopPropagation();
+    postToParent({
+      type: 'navigation-key', eventType, key,
+      shiftKey: event.shiftKey, altKey: event.altKey,
+    });
+  }
+
+  window.addEventListener('keydown', (event) => routeChartNavigationKey(event, 'keydown'), true);
+  window.addEventListener('keyup', (event) => routeChartNavigationKey(event, 'keyup'), true);
+  window.addEventListener('blur', () => {
+    if (chartKeyboardNavigationEnabled) postToParent({ type: 'navigation-blur' });
+  });
+
   function onMapContextMenu(e) {
     if (e.preventDefault) e.preventDefault();
     if (e.originalEvent) e.originalEvent.preventDefault();
     const place = placeFeatureAtPoint(e.point);
-    const placeName = place ? featurePlaceName(place) : domPlaceNameAtPoint(e.point);
+    const placeName = place ? featurePlaceName(place) : '';
     showContextMenu(e.point, e.lngLat, placeName);
   }
 
@@ -7255,6 +7893,133 @@
     } catch (_) {}
   }
 
+  // The host app's UI font (chrome.fontUi) may name bundled or user-uploaded
+  // faces this page cannot fetch itself; the host sends their bytes.
+  var registeredUiFontFaces = new Set();
+  function registerUiFontFaces(faces) {
+    if (!Array.isArray(faces) || typeof FontFace !== 'function') return;
+    for (const face of faces) {
+      if (!face || typeof face.family !== 'string' || !(face.data instanceof ArrayBuffer)) continue;
+      const descriptors = {
+        weight: typeof face.weight === 'string' ? face.weight : 'normal',
+        style: typeof face.style === 'string' ? face.style : 'normal',
+        unicodeRange: typeof face.unicodeRange === 'string' ? face.unicodeRange : 'U+0-10FFFF',
+        display: 'swap',
+      };
+      const key = [face.family, descriptors.weight, descriptors.style, descriptors.unicodeRange].join('|');
+      if (registeredUiFontFaces.has(key)) continue;
+      registeredUiFontFaces.add(key);
+      try {
+        const fontFace = new FontFace(face.family, face.data, descriptors);
+        fontFace.load()
+          .then((loaded) => {
+            document.fonts.add(loaded);
+            scheduleTopControlsReport();
+          })
+          .catch(() => registeredUiFontFaces.delete(key));
+      } catch (_) {
+        registeredUiFontFaces.delete(key);
+      }
+    }
+  }
+
+  // Copy-as-PNG of the live viewport exactly as shown: the MapLibre canvas
+  // (read inside a render frame, when the WebGL buffer is valid) plus the
+  // map's own content overlays (globe overlay, DOM place/line labels, reference
+  // and birthplace markers). UI chrome (toolbar, legend, zoom, host navbar) is
+  // not part of it.
+  function renderMapFrameInto(context) {
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error('map render timed out')), 3000);
+      map.once('render', () => {
+        window.clearTimeout(timeout);
+        try {
+          context.drawImage(map.getCanvas(), 0, 0);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      });
+      map.triggerRepaint();
+    });
+  }
+
+  function effectiveOpacity(element, stop) {
+    let opacity = 1;
+    for (let node = element; node && node !== stop; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return 0;
+      opacity *= Number.parseFloat(style.opacity || '1');
+    }
+    return opacity;
+  }
+
+  function drawDomTextOverlay(context, element, origin, ratio) {
+    const text = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent)
+      .join('')
+      .trim();
+    if (!text) return;
+    const opacity = effectiveOpacity(element, document.body);
+    if (opacity <= 0.01) return;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const style = getComputedStyle(element);
+    const x = (rect.left - origin.left + rect.width / 2) * ratio;
+    const y = (rect.top - origin.top + rect.height / 2) * ratio;
+    context.save();
+    context.globalAlpha = Math.min(1, opacity);
+    context.font = `${style.fontStyle} ${style.fontWeight} ${Number.parseFloat(style.fontSize) * ratio}px ${style.fontFamily}`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    const halo = /^(rgba?\([^)]*\)|#[0-9a-f]+)\s+\S+\s+\S+\s+([\d.]+)px/i.exec(style.textShadow || '');
+    if (halo) {
+      context.lineJoin = 'round';
+      context.strokeStyle = halo[1];
+      context.lineWidth = Math.max(1, Number(halo[2]) || 1) * 2 * ratio;
+      context.strokeText(text, x, y);
+    }
+    context.fillStyle = style.color;
+    context.fillText(text, x, y);
+    context.restore();
+  }
+
+  async function captureViewportPng() {
+    if (!map || !mapReady) throw new Error('map renderer unavailable');
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const mapCanvas = map.getCanvas();
+    const origin = mapCanvas.getBoundingClientRect();
+    const ratio = mapCanvas.width / Math.max(1, origin.width);
+    const composite = document.createElement('canvas');
+    composite.width = mapCanvas.width;
+    composite.height = mapCanvas.height;
+    const context = composite.getContext('2d', { alpha: false });
+    if (!context) throw new Error('viewport compositor unavailable');
+    context.fillStyle = getComputedStyle(document.body).backgroundColor || '#000';
+    context.fillRect(0, 0, composite.width, composite.height);
+    await renderMapFrameInto(context);
+    const polar = document.getElementById('polar-line-overlay');
+    if (polar && polar.width && effectiveOpacity(polar, document.body) > 0) {
+      const rect = polar.getBoundingClientRect();
+      context.drawImage(
+        polar,
+        (rect.left - origin.left) * ratio,
+        (rect.top - origin.top) * ratio,
+        rect.width * ratio,
+        rect.height * ratio,
+      );
+    }
+    const overlays = document.querySelectorAll(
+      '#map .maplibregl-marker, #map .maplibregl-marker *',
+    );
+    for (const element of overlays) drawDomTextOverlay(context, element, origin, ratio);
+    const blob = await new Promise((resolve, reject) => {
+      composite.toBlob((value) => (value ? resolve(value) : reject(new Error('PNG encoding failed'))), 'image/png');
+    });
+    return { data: await blob.arrayBuffer(), width: composite.width, height: composite.height };
+  }
+
   function postToParent(payload) {
     try {
       if (window.parent && window.parent !== window) {
@@ -7262,6 +8027,61 @@
       }
     } catch (_) {}
   }
+
+  // The host's time navbar docks in this toolbar's row and copies its box style,
+  // so report the toolbar's measured geometry and resolved chrome whenever it
+  // can change (layout, chrome restyle, window resize).
+  // var, not let: chrome restyles can call the scheduler before this line runs.
+  var topControlsReportFrame = null;
+  var lastTopControlsReport = '';
+  function reportTopControls() {
+    topControlsReportFrame = null;
+    const controls = document.getElementById('top-controls');
+    const box = document.getElementById('proj');
+    if (!controls || !box) return;
+    const rect = controls.getBoundingClientRect();
+    const rootStyle = getComputedStyle(document.documentElement);
+    const boxStyle = getComputedStyle(box);
+    const gap = Number.parseFloat(rootStyle.getPropertyValue('--chrome-gap')) || 4;
+    const inset = Number.parseFloat(rootStyle.getPropertyValue('--chrome-inset')) || 8;
+    const legend = document.getElementById('legend');
+    // Usable end of the row: just before the Legend, else the map's edge. The
+    // iframe resizes with the map pane, so an opening settings pane moves it.
+    const limit = legend && legend.getClientRects().length
+      ? legend.getBoundingClientRect().left - gap
+      : window.innerWidth - inset;
+    const payload = {
+      type: 'top-controls-rect',
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      limit: limit,
+      edge: window.innerWidth - inset,
+      gap: gap,
+      controlSize: Number.parseFloat(rootStyle.getPropertyValue('--chrome-control-size')) || 28,
+      radius: boxStyle.borderTopLeftRadius,
+      background: boxStyle.backgroundColor,
+      border: boxStyle.borderTopColor,
+    };
+    const key = JSON.stringify(payload);
+    if (key === lastTopControlsReport) return;
+    lastTopControlsReport = key;
+    postToParent(payload);
+  }
+  function scheduleTopControlsReport() {
+    if (topControlsReportFrame != null) return;
+    topControlsReportFrame = window.requestAnimationFrame(reportTopControls);
+  }
+  if (typeof ResizeObserver === 'function') {
+    const topControlsObserver = new ResizeObserver(scheduleTopControlsReport);
+    for (const id of ['top-controls', 'legend']) {
+      const element = document.getElementById(id);
+      if (element) topControlsObserver.observe(element);
+    }
+  }
+  window.addEventListener('resize', scheduleTopControlsReport);
+  scheduleTopControlsReport();
 
   function postViewState(reason, options) {
     const opts = options || {};
@@ -7322,7 +8142,6 @@
       btn.classList.toggle('on', visible);
       btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
     }
-    scheduleDomAcgLabels('parans');
   }
 
   function setParansVisible(visible) {
@@ -7357,7 +8176,6 @@
   function syncVisibilityFilters() {
     syncAcgLineVisibility();
     mapRuler?.refresh();
-    scheduleDomAcgLabels('visibility-filters');
     updateLegend();
     if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
   }
@@ -7397,6 +8215,7 @@
       kinds: ['kinds', 'featureKinds', 'kind'],
       aspects: ['aspectNames', 'aspectTypes', 'aspect'],
       techniques: ['techniques', 'techniqueIds', 'technique'],
+      hiddenLayerIds: ['hiddenLayerIds'],
     })) {
       const alias = aliases.find((name) => Object.prototype.hasOwnProperty.call(attributes, name));
       if (alias) {
@@ -7521,6 +8340,9 @@
       techniques: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'techniques')
         ? overlays.filters.techniques
         : viewOptions.filters.techniques,
+      hiddenLayerIds: overlays.filters && Object.prototype.hasOwnProperty.call(overlays.filters, 'hiddenLayerIds')
+        ? overlays.filters.hiddenLayerIds
+        : viewOptions.filters.hiddenLayerIds,
     });
     const restoredLegend = restoredLegendState(state);
     if (restoredLegend) {
@@ -8008,11 +8830,11 @@
       list.addEventListener(type, (e) => e.stopPropagation(), { passive: true });
     }
     input.addEventListener('input', () => {
-      if (!placesLoaded) loadStaticPlaceLabels({ forceStatic: true });
+      loadPlaceSearchCatalog();
       refreshSearchResults();
     });
     input.addEventListener('focus', () => {
-      if (!placesLoaded) loadStaticPlaceLabels({ forceStatic: true });
+      loadPlaceSearchCatalog();
       if (input.value) refreshSearchResults();
     });
     input.addEventListener('keydown', (event) => {
@@ -8079,6 +8901,30 @@
           postPerfSnapshot('set-data');
         }
       } catch (err) { setStatus('error: ' + err.message); }
+    },
+    setDynamicData(geojson) {
+      try {
+        if (!mapReady) return;
+        const moving = geojson && Array.isArray(geojson.features) ? geojson.features : [];
+        if (ACTIVE_ASTROCART_STYLE) {
+          applyDisplayStyleToData({ features: moving }, ACTIVE_ASTROCART_STYLE);
+        }
+        currentData = {
+          ...currentData,
+          features: [
+            ...(currentData.features || []).filter((feature) =>
+              !(feature && feature.properties && feature.properties.astrocart_technique)),
+            ...moving,
+          ],
+          meta: {
+            ...(currentData.meta || {}),
+            dynamicLayers: geojson && geojson.meta && geojson.meta.dynamicLayers || [],
+          },
+        };
+        curveRefinement?.retainUnchanged(currentData);
+        if (runtimeOverlaySceneDeferred()) deferRuntimeOverlayScene({ data: true });
+        else applyRuntimeOverlayScene({ data: true }, { reason: 'curve-refinement' });
+      } catch (err) { console.error('[acg:moving]', err); }
     },
     setAsterismData(geojson) {
       try {
@@ -8198,16 +9044,7 @@
       uiLabels = Object.assign({}, uiLabels, labels || {});
       applyBirthplaceMarkerLabel();
       applyAsterismButtonLabel();
-      if (map && map.getLayer('acg-labels')) {
-        map.setLayoutProperty('acg-labels', 'text-field', acgLineLabelExpression());
-      }
-      if (map && map.getLayer('acg-zenith-labels')) {
-        map.setLayoutProperty('acg-zenith-labels', 'text-field', acgZenithLabelExpression());
-      }
-      if (map && map.getLayer('acg-paran-labels')) {
-        map.setLayoutProperty('acg-paran-labels', 'text-field', acgParanLabelExpression());
-      }
-      scheduleDomAcgLabels('ui-labels');
+      applyAcgLabelPresentation();
       updateLegend();
       if (map && typeof map.triggerRepaint === 'function') map.triggerRepaint();
     },
@@ -8236,6 +9073,7 @@
             kinds: viewOptions.filters.kinds && viewOptions.filters.kinds.slice(),
             aspects: viewOptions.filters.aspects && viewOptions.filters.aspects.slice(),
             techniques: viewOptions.filters.techniques && viewOptions.filters.techniques.slice(),
+            hiddenLayerIds: viewOptions.filters.hiddenLayerIds && viewOptions.filters.hiddenLayerIds.slice(),
           },
         },
         legend: {
@@ -8341,8 +9179,17 @@
         case 'aries.setRuler':
           configureRuler(data.options);
           break;
+        case 'aries.setKeyboardNavigation':
+          if (chartKeyboardNavigationEnabled && !data.enabled) {
+            postToParent({ type: 'navigation-blur' });
+          }
+          chartKeyboardNavigationEnabled = !!data.enabled;
+          break;
         case 'aries.setData':
           if (typeof acg.setData === 'function') acg.setData(data.payload);
+          break;
+        case 'aries.setDynamicData':
+          if (typeof acg.setDynamicData === 'function') acg.setDynamicData(data.payload);
           break;
         case 'aries.setAsterismData':
           if (typeof acg.setAsterismData === 'function') acg.setAsterismData(data.payload);
@@ -8356,6 +9203,22 @@
         case 'aries.setDisplayStyle':
           if (typeof acg.setDisplayStyle === 'function') acg.setDisplayStyle(data.payload);
           break;
+        case 'aries.setUiFontFaces':
+          registerUiFontFaces(data.payload && data.payload.faces);
+          break;
+        case 'aries.captureViewport': {
+          const requestId = String(data.requestId || '');
+          captureViewportPng()
+            .then((capture) => postToParent({
+              type: 'viewport-capture', requestId, ok: true,
+              data: capture.data, width: capture.width, height: capture.height,
+            }))
+            .catch((error) => postToParent({
+              type: 'viewport-capture', requestId, ok: false,
+              error: String(error && error.message || error),
+            }));
+          break;
+        }
         case 'aries.setUiLabels':
           if (typeof acg.setUiLabels === 'function') acg.setUiLabels(data.labels);
           break;
@@ -8387,25 +9250,13 @@
           if (map) {
             if (!data.active) {
               // Retained workspace maps keep their WebGL state, but hidden
-              // camera animation, replay timers, labels, and pending viewport
-              // work must not contend with the active chart.
+              // camera animation and replay timers must not contend with the
+              // active chart.
               map.stop();
               retainedEclipseFitPending = false;
               if (runtimeOverlayReplayTimer) {
                 window.clearTimeout(runtimeOverlayReplayTimer);
                 runtimeOverlayReplayTimer = null;
-              }
-              if (cityLabelsTimer) {
-                window.clearTimeout(cityLabelsTimer);
-                cityLabelsTimer = null;
-              }
-              if (cityLabelsController) {
-                try { cityLabelsController.abort(); } catch (_) {}
-                cityLabelsController = null;
-              }
-              if (domLabelLayoutRaf) {
-                window.cancelAnimationFrame(domLabelLayoutRaf);
-                domLabelLayoutRaf = 0;
               }
               hideAsterismStarPopup();
               clearPolarOverlay();
@@ -8416,7 +9267,6 @@
                 flushRetainedRuntimeOverlayScene('reactivate');
                 scheduleCurveRefinement();
                 scheduleOnlineBasemapAdoption();
-                scheduleCityLabelsRefresh('reactivate');
                 renderPolarOverlay();
                 map.triggerRepaint();
               });
@@ -8443,6 +9293,7 @@
                     data.selection,
                     data.geojson,
                     controller.signal,
+                    data.scope,
                   )
                 : null,
             ).then(
@@ -8460,6 +9311,9 @@
                   type: 'print-atlas',
                   requestId,
                   ok: false,
+                  error: String(
+                    (error && error.message) || error || 'print atlas failed',
+                  ).slice(0, 500),
                 });
               },
             ).finally(() => {

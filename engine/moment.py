@@ -18,6 +18,8 @@ headless driver) all delegate here.
 
 import datetime
 
+import astrology
+
 try:
     import zoneinfo
 except ImportError:  # pragma: no cover - py<3.9 fallback, not expected
@@ -31,7 +33,15 @@ ZT_LOCALMEAN = 2      # LMT — wx passthrough (no display conversion), kept
 ZT_LOCALAPPARENT = 3  # LAT — wx passthrough, kept
 
 
-def utc_to_zone_fields(utc_dt, tzid):
+def _calendar_date(year, month, day, source_calendar, target_calendar):
+    if source_calendar == target_calendar:
+        return int(year), int(month), int(day)
+    jd = astrology.swe_julday(int(year), int(month), int(day), 0.0, source_calendar)
+    result = astrology.swe_revjul(jd, target_calendar)
+    return int(result[0]), int(result[1]), int(result[2])
+
+
+def utc_to_zone_fields(utc_dt, tzid, *, calendar=0):
     """Resolve one exact UTC instant into an IANA zone and Time fields.
 
     Deriving the offset from the UTC instant avoids both stale DST flags and
@@ -44,6 +54,10 @@ def utc_to_zone_fields(utc_dt, tzid):
     if not tzid or zoneinfo is None:
         return None
     try:
+        if calendar == 1:  # chart.Time.JULIAN; ZoneInfo uses Gregorian dates.
+            y, m, d = _calendar_date(
+                y, m, d, astrology.SE_JUL_CAL, astrology.SE_GREG_CAL,
+            )
         aware_utc = datetime.datetime(
             y, m, d, h, mi, s, tzinfo=datetime.timezone.utc,
         )
@@ -52,6 +66,11 @@ def utc_to_zone_fields(utc_dt, tzid):
         dst_offset = aware_local.dst() or datetime.timedelta(0)
         if total_offset is None:
             return None
+        local_date = (aware_local.year, aware_local.month, aware_local.day)
+        if calendar == 1:
+            local_date = _calendar_date(
+                *local_date, astrology.SE_GREG_CAL, astrology.SE_JUL_CAL,
+            )
         standard_minutes = int(
             (total_offset - dst_offset).total_seconds() // 60
         )
@@ -59,9 +78,7 @@ def utc_to_zone_fields(utc_dt, tzid):
         absolute_minutes = abs(standard_minutes)
         return {
             "datetime": (
-                aware_local.year,
-                aware_local.month,
-                aware_local.day,
+                *local_date,
                 aware_local.hour,
                 aware_local.minute,
                 aware_local.second,
@@ -152,7 +169,7 @@ def utc_to_chart_local(time_obj, utc_dt, *, place=None,
         return y, m, d, h, mi, s
 
 
-def utc_to_place_local_zone(utc_dt, place):
+def utc_to_place_local_zone(utc_dt, place, *, calendar=0):
     """Return clicked-place local display time plus ZONE fields for a UT instant.
 
     Relocation-style callers need both halves: the local civil clock for visible
@@ -176,7 +193,7 @@ def utc_to_place_local_zone(utc_dt, place):
     place_time.daylightsaving = False
     place_time.tzid = ""
     tzid = _resolve_tzid(place_time, place)
-    resolved_zone = utc_to_zone_fields((y, m, d, h, mi, s), tzid)
+    resolved_zone = utc_to_zone_fields((y, m, d, h, mi, s), tzid, calendar=calendar)
     if resolved_zone is not None:
         return resolved_zone
 

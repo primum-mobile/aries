@@ -20,6 +20,7 @@ import {
   type DirectionCustomSignificator,
   type SupplementaryBindingPayload,
   type WorkspaceOpenResult,
+  type EditorCursorSeed,
 } from "@/lib/daemon/client";
 import {
   sourceLiveFollowPolicy,
@@ -277,6 +278,8 @@ export type AspectListPreferences = {
   focusMatchMode: "or" | "and";
   /** Motion constraint for rows with an R, SR, or SD endpoint. */
   rxFocusEnabled: boolean;
+  /** Independent display inclusion for house cusp contacts. */
+  includeHouseCusps: boolean;
   /** Retained inclusion overrides keyed by the active secondary-ring mode. */
   secondaryRingEnabledByMode: Record<string, boolean>;
   filterDrawerOpen: boolean;
@@ -293,6 +296,7 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     focusedFilterIds: [],
     focusMatchMode: "or",
     rxFocusEnabled: false,
+    includeHouseCusps: true,
     secondaryRingEnabledByMode: {},
     filterDrawerOpen: false,
   },
@@ -774,6 +778,8 @@ type WorkspaceState = {
   editChartRequester:
     | ((radix: WorkspaceDocument) => void)
     | null;
+  eventEditorRequester: ((documentId: string, seed?: EditorCursorSeed) => void) | null;
+  setEventEditorRequester: (fn: ((documentId: string, seed?: EditorCursorSeed) => void) | null) => void;
 
   // UX-state actions
   setHoveredRegion: (region: HoverRegion | null) => void;
@@ -1068,6 +1074,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   aspectListPerfectionLinkMode: "transits",
   synastryPartnerRequester: null,
   editChartRequester: null,
+  eventEditorRequester: null,
+  setEventEditorRequester: (fn) => set({ eventEditorRequester: fn }),
 
   setHoveredRegion: (region) => {
     if (hoverRegionKey(get().hoveredRegion) === hoverRegionKey(region)) return;

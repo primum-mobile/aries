@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { Chart, ChartPalette, ChartPlanet, ChartRenderSnapshot } from "./types";
-import type { ThemeState } from "@/lib/daemon/client";
+import type { OptionsColors, ThemeState } from "@/lib/daemon/client";
+import type { SettingsColorPreview } from "@/stores/color-settings-preview-store";
 
 // Neutral last-resort values for the named per-body / per-aspect CSS roles.
 // Retained daemon snapshot arrays overlay these fallbacks, and active profile
@@ -51,6 +52,147 @@ const ELEMENT_COLOR_VARS = [
 ] as const;
 
 const SIGN_ELEMENT_INDEX = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3] as const;
+
+const SETTINGS_CHART_COLOR_VARS: Partial<Record<keyof OptionsColors, string>> = {
+  clrbackground: "--morinus-background",
+  clrtexts: "--morinus-text-bright",
+  clrframe: "--morinus-frame",
+  clrsigns: "--morinus-signs",
+  clrAscMC: "--morinus-angles",
+  clrhouses: "--morinus-houses",
+  clrhousenumbers: "--morinus-housenums",
+  clrpositions: "--morinus-positions",
+  clrperegrin: "--morinus-peregrin",
+  clrdomicil: "--morinus-dignity-domicil",
+  clrexil: "--morinus-dignity-exil",
+  clrexal: "--morinus-dignity-exal",
+  clrcasus: "--morinus-dignity-casus",
+  clrsignelementfire: ELEMENT_COLOR_VARS[0],
+  clrsignelementearth: ELEMENT_COLOR_VARS[1],
+  clrsignelementair: ELEMENT_COLOR_VARS[2],
+  clrsignelementwater: ELEMENT_COLOR_VARS[3],
+  clrtable: "--morinus-table",
+};
+
+const SETTINGS_APP_COLOR_VARS: Partial<Record<keyof OptionsColors, string>> = {
+  clrbackground: "--aries-background",
+  clrtexts: "--aries-text-primary",
+  clrappbackground: "--aries-background",
+  clrapptexts: "--aries-text-primary",
+  clrsidebar: "--aries-surface",
+  clrsidebartext: "--aries-sidebar-text",
+};
+
+function previewBackgroundMode(rgb: readonly [number, number, number]): "dark" | "light" {
+  const linear = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722 < 0.5
+    ? "dark" : "light";
+}
+
+/** Transient paint inputs for Settings. The daemon remains the saved authority. */
+export function withSettingsColorPreview(
+  theme: ThemeState | null | undefined,
+  preview: SettingsColorPreview | null,
+): ThemeState | null {
+  if (!theme || !preview) return theme ?? null;
+  const { attr, index, rgb } = preview;
+  const color = `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
+  const chartVar = settingsColorPreviewChartToken(preview);
+  const appVar = SETTINGS_APP_COLOR_VARS[attr];
+  if (!chartVar && !appVar) return theme;
+  const profile = theme.profileOverrides;
+  const data = profile.chartData;
+  const wheelAuthoring = chartVar
+    ? Object.entries(profile.wheelColorRoleAliases ?? {}).reduce(
+      (values, [semanticId, role]) => {
+        if (role === chartVar) values[semanticId] = [...rgb];
+        return values;
+      },
+      { ...profile.wheelAuthoring },
+    )
+    : profile.wheelAuthoring;
+  let chartData = data;
+  if (attr === "clrindividual" && index != null && Array.isArray(data.planets)) {
+    const planets = [...data.planets];
+    planets[index] = color;
+    chartData = { ...data, planets };
+  } else if (attr === "clraspect" && index != null && Array.isArray(data.aspects)) {
+    const aspects = [...data.aspects];
+    aspects[index] = color;
+    chartData = { ...data, aspects };
+  } else {
+    const element = ELEMENT_COLOR_VARS.indexOf(chartVar as typeof ELEMENT_COLOR_VARS[number]);
+    if (element >= 0 && Array.isArray(data.signColors)) {
+      chartData = {
+        ...data,
+        signColors: data.signColors.map((existing, sign) => (
+          SIGN_ELEMENT_INDEX[sign] === element ? color : existing
+        )),
+      };
+    }
+  }
+  return {
+    ...theme,
+    mode: appVar === "--aries-background" ? previewBackgroundMode(rgb) : theme.mode,
+    appTokens: appVar ? { ...theme.appTokens, [appVar]: color } : theme.appTokens,
+    chartPalette: chartVar ? { ...theme.chartPalette, [chartVar]: color } : theme.chartPalette,
+    profileOverrides: {
+      ...profile,
+      appTokens: appVar ? { ...profile.appTokens, [appVar]: color } : profile.appTokens,
+      chartPalette: chartVar ? { ...profile.chartPalette, [chartVar]: color } : profile.chartPalette,
+      chartData,
+      wheelAuthoring,
+    },
+  };
+}
+
+export function settingsColorPreviewChartToken(
+  preview: SettingsColorPreview | null,
+): string | undefined {
+  if (!preview) return undefined;
+  if (preview.attr === "clrindividual") return BODY_COLOR_VARS[preview.index ?? -1];
+  if (preview.attr === "clraspect") return ASPECT_COLOR_VARS[preview.index ?? -1];
+  return SETTINGS_CHART_COLOR_VARS[preview.attr];
+}
+
+export function settingsColorPreviewMatchesTheme(
+  theme: ThemeState | null | undefined,
+  preview: SettingsColorPreview | null,
+): boolean {
+  if (!theme || !preview) return false;
+  const color = `rgb(${preview.rgb[0]} ${preview.rgb[1]} ${preview.rgb[2]})`;
+  const chartToken = preview.attr === "clrindividual" ? BODY_COLOR_VARS[preview.index ?? -1]
+    : preview.attr === "clraspect" ? ASPECT_COLOR_VARS[preview.index ?? -1]
+      : SETTINGS_CHART_COLOR_VARS[preview.attr];
+  const appToken = SETTINGS_APP_COLOR_VARS[preview.attr];
+  if (!chartToken && !appToken) return false;
+  if (chartToken && theme.chartPalette[chartToken] !== color) return false;
+  if (appToken && theme.appTokens[appToken] !== color) return false;
+  const profile = theme.profileOverrides;
+  if (chartToken && profile.chartPalette[chartToken]
+    && profile.chartPalette[chartToken] !== color) return false;
+  if (appToken && profile.appTokens[appToken]
+    && profile.appTokens[appToken] !== color) return false;
+  if (preview.index != null && preview.attr === "clrindividual"
+    && profile.chartData.planets?.[preview.index] !== undefined) {
+    return profile.chartData.planets[preview.index] === color;
+  }
+  if (preview.index != null && preview.attr === "clraspect"
+    && profile.chartData.aspects?.[preview.index] !== undefined) {
+    return profile.chartData.aspects[preview.index] === color;
+  }
+  const element = ELEMENT_COLOR_VARS.indexOf(chartToken as typeof ELEMENT_COLOR_VARS[number]);
+  if (element >= 0 && profile.chartData.useZodiacElementColors
+    && profile.chartData.signColors?.length) {
+    return profile.chartData.signColors.every((existing, sign) => (
+      SIGN_ELEMENT_INDEX[sign] !== element || existing === color
+    ));
+  }
+  return true;
+}
 
 function parseCssRgbChannels(value: string | undefined): readonly [number, number, number] | null {
   if (!value) return null;
@@ -260,7 +402,12 @@ export function readPaletteProfileOverrides(
 
 function readProfileSignColors(
   theme: ThemeState | null | undefined,
+  useElementColors: boolean,
 ): string[] | undefined {
+  if (!useElementColors) {
+    const sign = theme?.profileOverrides?.chartPalette?.["--morinus-signs"];
+    return sign ? Array.from({ length: 12 }, () => sign) : undefined;
+  }
   const data = theme?.profileOverrides?.chartData?.signColors;
   if (Array.isArray(data) && data.length) return [...data];
   const profileChart = theme?.profileOverrides?.chartPalette ?? {};
@@ -368,7 +515,7 @@ export function applyProfileColorsToSnapshot(
   theme: ThemeState | null | undefined,
 ): ChartRenderSnapshot {
   const palette = readPaletteProfileOverrides(theme);
-  const signColors = readProfileSignColors(theme);
+  const signColors = readProfileSignColors(theme, true);
   const usePlanetColors = theme?.profileOverrides?.chartData?.usePlanetColors;
   if (
     Object.keys(palette).length === 0
@@ -377,7 +524,12 @@ export function applyProfileColorsToSnapshot(
   ) return snapshot;
   const apply = (chart: Chart | null | undefined) => (
     chart
-      ? applyProfileColorsToChart(chart, palette, signColors, usePlanetColors)
+      ? applyProfileColorsToChart(
+        chart,
+        palette,
+        readProfileSignColors(theme, Boolean(chart.options.useZodiacElementColors)),
+        usePlanetColors,
+      )
       : chart
   );
   return {

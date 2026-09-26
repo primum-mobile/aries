@@ -256,6 +256,8 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
       onClose={onClose}
       toolbar={
         <TextExportActions
+          sourceName={sourceName}
+          fileStem="decennials"
           buildDocument={() =>
             buildTableExportDocument(payload, payload.rows, {
               fileStem: "decennials",

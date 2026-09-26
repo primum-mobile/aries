@@ -62,7 +62,7 @@ def _mdo_display_targets(chrt, opts, *, event_frame=None):
             targets.extend((None, mdo, quadrant) for quadrant in quadrants)
             continue
         else:
-            flag = {"fortune": "showfixstarslof", "vertex": "showvertex",
+            flag = {"fortune": "showlof", "vertex": "showvertex",
                     "syzygy": "showprenatalsyzygy", "eclipse": "showprenataleclipse"}[key]
             if not getattr(opts, flag, False):
                 continue

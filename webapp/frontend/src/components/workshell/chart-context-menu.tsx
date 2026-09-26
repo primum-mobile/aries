@@ -7,7 +7,7 @@
 
 import type React from "react";
 import { setSideBySideView } from "./side-by-side-charts";
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 
 import {
   ContextMenu,
@@ -433,15 +433,36 @@ function MenuNode({
           if (selected && !selected.disabled) onAction(selected.actionId, selected.payload);
         }}
       >
-        {radios.map((radio) => (
-          <ContextMenuRadioItem
-            key={`${radio.value}-${radio.label}`}
-            value={radio.value}
-            disabled={radio.disabled}
-          >
-            {label(radio)}
-          </ContextMenuRadioItem>
-        ))}
+        {radios.map((radio) => {
+          const choice = (
+            <ContextMenuRadioItem
+              value={radio.value}
+              disabled={radio.disabled}
+            >
+              {label(radio)}
+            </ContextMenuRadioItem>
+          );
+          return radio.trailingToggle ? (
+            <div key={`${radio.value}-${radio.label}`} className="relative" data-asteroid-menu-row>
+              {choice}
+              <button
+                type="button"
+                data-asteroid-menu-all
+                aria-pressed={radio.trailingToggle.checked}
+                className={`absolute top-1/2 -translate-y-1/2 rounded-[var(--aries-radius-menu-item)] px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] leading-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none ${radio.trailingToggle.checked ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                style={{ right: "calc(var(--aries-menu-indicator-inset) + var(--aries-menu-icon-size) + 20px)" }}
+                aria-label={tf(radio.trailingToggle.labelKey, "All active asteroids")}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onAction(radio.trailingToggle?.actionId, radio.trailingToggle?.payload);
+                }}
+              >
+                {tf("chartmenu.allAsteroidsCompact", "all")}
+              </button>
+            </div>
+          ) : <Fragment key={`${radio.value}-${radio.label}`}>{choice}</Fragment>;
+        })}
       </ContextMenuRadioGroup>
     );
   }

@@ -192,7 +192,12 @@ def compute_local_space(
             altitude_apparent_deg=float(alt_app),
             segments=true_segments,
         ))
-        if include_oppositions:
+        # Each lunar node already represents the other node's reciprocal ray.
+        # Keep their own rays, but never add duplicate opposition geometry.
+        is_lunar_node = pt.kind == astrocart.KIND_NODE or pt.body_id in (
+            astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE,
+        )
+        if include_oppositions and not is_lunar_node:
             opposition_bearing = (true_bearing + 180.0) % 360.0
             opposition_samples = _sample_geodesic_ray(
                 origin_lon,

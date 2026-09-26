@@ -25,7 +25,7 @@ function sourceBetween(startMarker, endMarker) {
 
 const frameRecorder = sourceBetween(
   "function recordRenderFrame",
-  "function recordDomLabelPerf",
+  "function getPerfState",
 );
 const motionCoordinator = sourceBetween(
   "function beginMapMotion",

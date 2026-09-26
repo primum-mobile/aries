@@ -17,14 +17,32 @@ async function load(path, deps = {}) {
   return api.exports;
 }
 const palette = await load('../src/lib/theme/table-print-palette.ts');
+const filenames = await load('../src/components/workshell/text-export.ts', {
+  '@/lib/daemon/client': {}, '@/lib/shell-host': {},
+});
 const pdf = await load('../src/components/workshell/table-pdf-export.ts', {
   '@/lib/daemon/client': {}, '@/lib/shell-host': {},
   '@/lib/theme/table-print-palette': palette,
-  './text-export': {},
+  './text-export': filenames,
   './table-text-export': {
     adHocTableToConfiguredAlignedText: async () => 'semantic text',
     tableToConfiguredAlignedText: async () => 'semantic text',
   },
+});
+
+test('report filenames carry the chart holder and retain the report date', async () => {
+  assert.equal(filenames.chartExportFileStem('Jane / Doe', 'transits-2026-09'), 'Jane _ Doe transits-2026-09');
+  assert.equal(filenames.chartExportFileStem('Jane Doe', 'Jane Doe Transits'), 'Jane Doe Transits');
+  const document = await pdf.buildAdHocTableExportDocument({
+    title: 'Transits', sourceName: 'Jane Doe', fileStem: 'transits-2026-09',
+    columns: [], rows: [],
+  });
+  assert.equal(document.fileStem, 'Jane Doe transits-2026-09');
+  const table = await pdf.buildTableExportDocument({
+    tableId: 'profections_table', title: 'Profections', sourceName: 'Jane Doe',
+    columns: [], rows: [],
+  }, []);
+  assert.equal(table.fileStem, 'Jane Doe Profections');
 });
 
 test('every standard print color has at least 4.5:1 contrast on white', () => {
