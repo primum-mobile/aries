@@ -29,6 +29,29 @@ import './style.css';
 
 let editor = null;
 let ready = false;
+
+function announceReady() {
+  if (!ready) return;
+  post({ type: 'ready' });
+}
+
+window.__ariesNotesAnnounceReady = announceReady;
+
+window.addEventListener('message', (event) => {
+  const payload = typeof event.data === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(event.data);
+        } catch {
+          return null;
+        }
+      })()
+    : event.data;
+  if (!payload || typeof payload !== 'object') return;
+  if (payload.type === 'hostReady') {
+    announceReady();
+  }
+});
 let readOnly = true;
 let suppressInput = false;
 let currentMarkdown = '';
@@ -39,7 +62,8 @@ const appRoot = document.getElementById('notes-app');
 const statusNode = document.getElementById('boot-status');
 
 function post(message) {
-  const body = JSON.stringify(message);
+  const envelope = { source: 'aries-notes', payload: message };
+  const body = JSON.stringify(envelope);
   if (window.ariesNotes && typeof window.ariesNotes.postMessage === 'function') {
     window.ariesNotes.postMessage(body);
   }
@@ -430,7 +454,7 @@ async function createEditor() {
     pendingDocument = null;
     setDocument(payload);
   }
-  post({ type: 'ready' });
+  announceReady();
 }
 
 window.AriesNotes = {

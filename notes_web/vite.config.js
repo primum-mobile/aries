@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
-const assetVersion = '20260809-native-edit-context-menu';
+const assetVersion = '20261018-same-origin-shell-v4';
 const nodeModulesMarker = '/node_modules/';
 
 function packageRootForModule(moduleId) {
@@ -150,9 +150,16 @@ export default defineConfig({
       (() => {
         const bridge = {
           postMessage(payload) {
-            if (window.parent && window.parent !== window) {
-              window.parent.postMessage(payload, "*");
+            if (!window.parent || window.parent === window) return;
+            let message = payload;
+            if (typeof payload === "string") {
+              try {
+                message = JSON.parse(payload);
+              } catch {
+                message = payload;
+              }
             }
+            window.parent.postMessage(message, "*");
           },
         };
 
@@ -167,9 +174,16 @@ export default defineConfig({
               Object.assign(bridge, target);
             }
             bridge.postMessage = (payload) => {
-              if (window.parent && window.parent !== window) {
-                window.parent.postMessage(payload, "*");
+              if (!window.parent || window.parent === window) return;
+              let message = payload;
+              if (typeof payload === "string") {
+                try {
+                  message = JSON.parse(payload);
+                } catch {
+                  message = payload;
+                }
               }
+              window.parent.postMessage(message, "*");
             };
           },
         });
@@ -191,6 +205,13 @@ export default defineConfig({
           const type = message.type;
           if (typeof type !== "string") return;
           const payload = message.payload;
+
+          if (type === "hostReady") {
+            if (typeof window.__ariesNotesAnnounceReady === "function") {
+              window.__ariesNotesAnnounceReady();
+            }
+            return;
+          }
 
           const editor = window.AriesNotes;
           if (!editor) return;

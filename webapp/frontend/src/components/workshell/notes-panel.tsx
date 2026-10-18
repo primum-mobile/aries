@@ -8,16 +8,13 @@ import { ListPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Chart, ChartFortune, ChartPlanet, ChartRenderSnapshot, ChartSyzygy, ChartVertex, PlanetId } from "@/lib/chart/types";
-import type { ThemeState } from "@/lib/daemon/client";
 import {
-  daemonBaseUrl,
   fetchNotes,
   saveNotes,
 } from "@/lib/daemon/client";
 import { cn } from "@/lib/utils";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
-import { useThemeStore } from "@/stores/theme-store";
 
 type Props = {
   sourceName: string;
@@ -29,18 +26,14 @@ type Props = {
   className?: string;
 };
 
-const NOTES_EDITOR_ASSET_VERSION = "20260809-native-edit-context-menu";
-
 /**
  * Per-radix notes — file-backed via the daemon. Saved charts write the
  * shared chart-ID Markdown file; ephemeral root charts write a daemon scratch
  * note keyed by document id until the chart-save lifecycle promotes it.
  *
- * Saved events have their own stable Markdown identity. Other derived charts
- * share the radix note. Event identity stays fixed through queued autosaves.
- *
- * Re-mounted per sourceName via React `key` in the parent so internal
- * fetch state starts fresh on radix switch (no stale notes flash).
+ * The Milkdown iframe editor is not used in the desktop shell: WKWebView does
+ * not reliably deliver iframe postMessage to the React host. Editing uses the
+ * same native textarea surface as chart event notes.
  */
 export function NotesPanel({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
   return (
@@ -59,19 +52,17 @@ export function NotesPanel({ sourceName, chart = null, documentId, scratch = fal
 
 function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
   const t = useT();
-  const theme = useThemeStore((s) => s.theme);
   const setNotesPaneOpen = useFrameLayoutStore((s) => s.setNotesPaneOpen);
   const [notesLoading, setNotesLoading] = React.useState(true);
-  const [editorReady, setEditorReady] = React.useState(false);
+  const [noteText, setNoteText] = React.useState("");
   const [savedAt, setSavedAt] = React.useState<Date | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
-  const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const contentRef = React.useRef("");
   const dirtyRef = React.useRef(false);
   const focusedRef = React.useRef(false);
   const lastSyncedRef = React.useRef("");
-  const editorReadyRef = React.useRef(false);
   const mountedRef = React.useRef(true);
   const saveQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const noteTarget = React.useMemo(
@@ -80,25 +71,15 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   );
   const savedTargetRef = React.useRef(noteTarget);
   const revisionRef = React.useRef<string | undefined>(undefined);
-  const notesBaseUrl = React.useMemo(() => daemonBaseUrl(), []);
-  const notesEditorUrl = React.useMemo(
-    () => `${notesBaseUrl}/Res/notes/index.html?v=${NOTES_EDITOR_ASSET_VERSION}`,
-    [notesBaseUrl],
-  );
-  const notesEditorOrigin = React.useMemo(
-    () => {
-      if (typeof window === "undefined") return notesBaseUrl;
-      return new URL(notesEditorUrl, window.location.href).origin;
-    },
-    [notesBaseUrl, notesEditorUrl],
-  );
-  type RawEditorEvent = Record<string, unknown>;
-  const notesTheme = React.useMemo(() => notesEditorTheme(theme), [theme]);
 
   const markClean = React.useCallback((text: string) => {
     lastSyncedRef.current = text;
     dirtyRef.current = false;
-    if (mountedRef.current) setDirty(false);
+    if (mountedRef.current) {
+      setDirty(false);
+      setNoteText(text);
+    }
+    contentRef.current = text;
   }, []);
 
   React.useEffect(() => {
@@ -108,34 +89,13 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     };
   }, []);
 
-  const sendEditorMessage = React.useCallback(
-    (type: string, payload: RawEditorEvent | null = null) => {
-      if (!editorReadyRef.current) return;
-      const frame = iframeRef.current?.contentWindow;
-      if (!frame) return;
-      frame.postMessage(
-        payload === null ? { type } : { type, payload },
-        "*",
-      );
-    },
-    [],
-  );
-
-  const syncDocumentToEditor = React.useCallback(() => {
-    if (!editorReadyRef.current) return;
-    sendEditorMessage("setDocument", {
-      markdown: contentRef.current,
-      readonly: false,
-      label: sourceName,
-    });
-  }, [sendEditorMessage, sourceName]);
-
-  const insertChartInfo = React.useCallback(() => {
-    if (!chart || !editorReadyRef.current) return;
-    sendEditorMessage("insertMarkdown", { markdown: chartInfoMarkdown(chart, t) });
-    sendEditorMessage("focusEditor");
-    setError(null);
-  }, [chart, sendEditorMessage, t]);
+  const applyNoteText = React.useCallback((text: string) => {
+    contentRef.current = text;
+    const nextDirty = text !== lastSyncedRef.current;
+    dirtyRef.current = nextDirty;
+    setDirty(nextDirty);
+    setNoteText(text);
+  }, []);
 
   const loadNote = React.useCallback(
     async (signal?: AbortSignal, force = false) => {
@@ -145,21 +105,12 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       savedTargetRef.current = { ...noteTarget, recordId: payload.recordId ?? noteTarget.recordId };
       revisionRef.current = payload.revision;
       const text = payload.content ?? "";
-      contentRef.current = text;
       markClean(text);
       setNotesLoading(false);
       setError(null);
-      syncDocumentToEditor();
     },
-    [markClean, noteTarget, sourceName, syncDocumentToEditor],
+    [markClean, noteTarget, sourceName],
   );
-
-  const setEditorText = React.useCallback((text: string) => {
-    contentRef.current = text;
-    const nextDirty = text !== lastSyncedRef.current;
-    dirtyRef.current = nextDirty;
-    setDirty(nextDirty);
-  }, []);
 
   const saveCurrent = React.useCallback(() => {
     const flushLatest = async () => {
@@ -195,16 +146,16 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     return queued;
   }, [sourceName]);
 
-  const handleIframeLoad = React.useCallback(() => {
-    editorReadyRef.current = false;
-    setEditorReady(false);
+  const insertChartInfo = React.useCallback(() => {
+    if (!chart) return;
+    const next = `${contentRef.current}${chartInfoMarkdown(chart, t)}`;
+    applyNoteText(next);
     setError(null);
-  }, []);
+    textareaRef.current?.focus();
+  }, [applyNoteText, chart, t]);
 
   React.useEffect(() => {
     const controller = new AbortController();
-    // A fresh identity mounts clean. Renaming an open event must not replace
-    // unsaved editor text with an older disk copy while its autosave is queued.
     loadNote(controller.signal)
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -232,13 +183,6 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     };
   }, [saveCurrent]);
 
-  // App-quit notes flush (DEF-003; wx onExit/_flush_notes_if_dirty,
-  // morin.py:15638-15645, 11897-11903). The debounce timer can leave the last
-  // <1.5 s of edits unwritten when the app is closing; the quit flow dispatches
-  // `aries://flush-notes` before confirming quit, and this listener forces an
-  // immediate write of the dirty sidecar buffer (saved or scratch .md — never
-  // the chart file, per the notes-sidecar policy). awaitFlush lets the quit flow
-  // hold for in-flight writes before tearing the daemon down.
   React.useEffect(() => {
     const onFlush = (event: Event) => {
       if (!dirtyRef.current) return;
@@ -276,100 +220,6 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     void saveCurrent().catch((err) => setError(String(err)));
   }, [saveCurrent]);
 
-  const handleEditorMessage = React.useCallback(
-    (event: MessageEvent<unknown>) => {
-      const frameWindow = iframeRef.current?.contentWindow;
-      const fromEditorFrame =
-        event.source === frameWindow ||
-        (event.origin === notesEditorOrigin && event.source !== window);
-      if (!fromEditorFrame) return;
-
-      const payload =
-        typeof event.data === "string"
-          ? (() => {
-              try {
-                return JSON.parse(event.data) as RawEditorEvent;
-              } catch {
-                return null;
-              }
-            })()
-          : (event.data as RawEditorEvent);
-      if (!payload || typeof payload !== "object") return;
-      const type = String(payload.type ?? "");
-
-      if (type === "ready") {
-        editorReadyRef.current = true;
-        setEditorReady(true);
-        setError(null);
-        sendEditorMessage("setTheme", notesTheme);
-        syncDocumentToEditor();
-        window.setTimeout(syncDocumentToEditor, 50);
-        return;
-      }
-
-      if (type === "input") {
-        const next = typeof payload.value === "string" ? payload.value : "";
-        setEditorText(next);
-        return;
-      }
-
-      if (type === "focus") {
-        focusedRef.current = true;
-        return;
-      }
-
-      if (type === "blur") {
-        handleBlur();
-        return;
-      }
-
-      if (type === "save") {
-        void saveCurrent().catch((err) => setError(String(err)));
-        return;
-      }
-
-      if (type === "close") {
-        setNotesPaneOpen(false);
-        return;
-      }
-
-      if (type === "ambient-key") {
-        window.dispatchEvent(
-          new CustomEvent("aries://notes-editor-ambient-key", {
-            detail: {
-              eventType: payload.eventType,
-              key: payload.key,
-              metaKey: payload.metaKey,
-              ctrlKey: payload.ctrlKey,
-              altKey: payload.altKey,
-              repeat: payload.repeat,
-            },
-          }),
-        );
-        return;
-      }
-
-      if (type === "error") {
-        const message = payload.message;
-        setError(message ? String(message) : t("notes.editorError"));
-        return;
-      }
-    },
-    [handleBlur, notesEditorOrigin, notesTheme, saveCurrent, setEditorText, setNotesPaneOpen, sendEditorMessage, syncDocumentToEditor, t],
-  );
-
-  React.useEffect(() => {
-    window.addEventListener("message", handleEditorMessage);
-    return () => {
-      window.removeEventListener("message", handleEditorMessage);
-    };
-  }, [handleEditorMessage]);
-
-  React.useEffect(() => {
-    if (!editorReady) return;
-    sendEditorMessage("setTheme", notesTheme);
-  }, [editorReady, notesTheme, sendEditorMessage]);
-
   return (
     <aside
       data-aries-surface="panel"
@@ -386,7 +236,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
           type="button"
           variant="ghost"
           size="xs"
-          disabled={!chart || !editorReady}
+          disabled={!chart || notesLoading}
           onClick={insertChartInfo}
           title={chart ? t("notes.appendChartInfo") : t("notes.noChartLoaded")}
           className="h-5 shrink-0 rounded-[var(--aries-radius-control-compact)] px-1.5 text-[length:var(--aries-font-size-section)] text-foreground/55 hover:text-foreground"
@@ -404,20 +254,43 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
         </p>
       )}
       <div className="relative -mx-1 min-h-0 flex-1 overflow-hidden border-y border-border/40 bg-background/80">
-        <iframe
-          ref={iframeRef}
-          title={t("notes.editorTitle")}
-          src={notesEditorUrl}
-          onLoad={handleIframeLoad}
-          className={cn(
-            "h-full w-full min-w-0 border-0 bg-background/80 transition-opacity",
-            notesLoading || !editorReady ? "opacity-0" : "opacity-100",
-          )}
-        />
-        {(notesLoading || !editorReady) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-[length:var(--aries-font-size-small)] text-foreground/55">
-            {notesLoading ? t("notes.loadingNotes") : t("notes.loadingEditor")}
+        {notesLoading ? (
+          <div className="flex h-full items-center justify-center text-[length:var(--aries-font-size-small)] text-foreground/55">
+            {t("notes.loadingNotes")}
           </div>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            value={noteText}
+            aria-label={t("notes.editorTitle")}
+            placeholder={t("editor.notesPlaceholder")}
+            data-aries-control-appearance="local"
+            className="block h-full w-full min-h-0 resize-none appearance-none overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] border-0 bg-background/80 p-[var(--aries-notes-gap)] text-[length:var(--aries-font-size-base)] text-foreground shadow-none outline-none field-sizing-fixed placeholder:text-foreground/40"
+            onChange={(event) => applyNoteText(event.target.value)}
+            onFocus={() => {
+              focusedRef.current = true;
+            }}
+            onBlur={handleBlur}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setNotesPaneOpen(false);
+              }
+              window.dispatchEvent(
+                new CustomEvent("aries://notes-editor-ambient-key", {
+                  detail: {
+                    eventType: event.type,
+                    key: event.key,
+                    metaKey: event.metaKey,
+                    ctrlKey: event.ctrlKey,
+                    altKey: event.altKey,
+                    repeat: event.repeat,
+                  },
+                }),
+              );
+            }}
+          />
         )}
       </div>
     </aside>
@@ -431,32 +304,6 @@ function timeSince(d: Date, t: TFunc): string {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return t("notes.minutesAgo", { minutes });
   return d.toLocaleTimeString();
-}
-
-function notesEditorTheme(theme: ThemeState | null): Record<string, string | boolean> {
-  const app = theme?.appTokens ?? {};
-  const chart = theme?.chartPalette ?? {};
-  const get = (tokens: Record<string, string>, key: string, fallback = "") => tokens[key] || fallback;
-  const background = get(app, "--aries-background", get(app, "--background", "rgb(35 36 40)"));
-  const surface = get(app, "--aries-surface", get(app, "--card", "rgb(29 30 33)"));
-  const raised = get(app, "--aries-surface-subtle", get(app, "--muted", "rgb(45 46 49)"));
-  const text = get(app, "--aries-text-primary", get(app, "--foreground", "rgb(220 220 221)"));
-  const muted = get(app, "--aries-text-dim", get(app, "--muted-foreground", "rgb(153 154 156)"));
-  const border = get(app, "--aries-border-subtle", get(app, "--border", "rgb(46 47 50)"));
-  const accent = get(chart, "--morinus-angles", get(app, "--aries-text-muted", muted));
-
-  return {
-    dark: theme?.mode !== "light",
-    background,
-    surface,
-    raised,
-    text,
-    muted,
-    border,
-    accent,
-    selection: `color-mix(in srgb, ${accent} 28%, transparent)`,
-    "font-sans": get(app, "--aries-font-ui", get(app, "--font-ui", "FreeSans, ui-sans-serif, system-ui, sans-serif")),
-  };
 }
 
 const PLANET_ORDER: PlanetId[] = [
