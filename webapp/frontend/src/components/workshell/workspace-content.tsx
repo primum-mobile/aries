@@ -4086,7 +4086,7 @@ export type ModeHintRailProps = {
   modeHintTitle?: string | null;
   onToggleModeHint?: () => void;
   onToggleComparison?: () => void;
-  onSwitchRelationshipMode?: (variant: "midpoint" | "davison" | "synastry") => void;
+  onSwitchRelationshipMode?: (variant: "midpoint" | "davison" | "partner_horoscope" | "synastry") => void;
   onNavigateHint?: (
     key: NavigationHintKey,
     modifiers?: { shift?: boolean; alt?: boolean },
@@ -4386,20 +4386,29 @@ export const ModeHintRail = React.memo(function ModeHintRail({
                     className="aries-mode-hint-button aries-mode-hint-main"
                     onClick={() => {
                       onHintInteraction?.();
-                      onSwitchRelationshipMode(
-                        compositeVariant === "davison" ? "midpoint" : "davison",
-                      );
+                      const nextVariant =
+                        compositeVariant === "davison"
+                          ? "partner_horoscope"
+                          : compositeVariant === "partner_horoscope"
+                            ? "midpoint"
+                            : "davison";
+                      onSwitchRelationshipMode(nextVariant);
                     }}
                     aria-label={t("toolbar.switchToView", {
-                      mode: compositeVariant === "davison"
-                        ? t("toolbar.navbar.midpoint")
-                        : t("toolbar.navbar.davison"),
+                      mode:
+                        compositeVariant === "partner_horoscope"
+                          ? t("toolbar.navbar.partnerHoroscope")
+                          : compositeVariant === "davison"
+                            ? t("toolbar.navbar.davison")
+                            : t("toolbar.navbar.midpoint"),
                     })}
                   >
                     <span className="aries-mode-hint-label">
-                      {compositeVariant === "davison"
-                        ? t("toolbar.navbar.midpoint")
-                        : t("toolbar.navbar.davison")}
+                      {compositeVariant === "partner_horoscope"
+                        ? t("toolbar.navbar.partnerHoroscope")
+                        : compositeVariant === "davison"
+                          ? t("toolbar.navbar.davison")
+                          : t("toolbar.navbar.midpoint")}
                     </span>
                   </button>
                 }
@@ -4407,9 +4416,12 @@ export const ModeHintRail = React.memo(function ModeHintRail({
               </TooltipTrigger>
               <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
                 {t("toolbar.switchToView", {
-                  mode: compositeVariant === "davison"
-                    ? t("toolbar.navbar.midpoint")
-                    : t("toolbar.navbar.davison"),
+                  mode:
+                    compositeVariant === "partner_horoscope"
+                      ? t("toolbar.navbar.partnerHoroscope")
+                      : compositeVariant === "davison"
+                        ? t("toolbar.navbar.davison")
+                        : t("toolbar.navbar.midpoint"),
                 })}
               </TooltipContent>
             </Tooltip>

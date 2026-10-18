@@ -5567,6 +5567,20 @@
     "fr": "Si une association durera et à qui elle profitera",
     "es": "Si una sociedad se mantendrá y a quién beneficiará"
   },
+  "PartnerHoroscope": {
+    "en": "Partner Horoscope",
+    "it": "Oroscopo di coppia",
+    "de": "Partnerhoroskop",
+    "fr": "Horoscope de couple",
+    "es": "Horóscopo de pareja"
+  },
+  "PartnerHoroscopeChart": {
+    "en": "Partner Horoscope",
+    "it": "Oroscopo di coppia (Marr III p. 10)",
+    "de": "Partnerhoroskop (Marr III S. 10)",
+    "fr": "Horoscope de couple (Marr III p. 10)",
+    "es": "Horóscopo de pareja (Marr III p. 10)"
+  },
   "TipHorPregnancy": {
     "en": "Whether with child, when she conceives, sex of the child",
     "it": "Se vi è gravidanza, quando avverrà il concepimento e quale sarà il sesso del nascituro",

@@ -44,6 +44,7 @@ import chartfile
 import chart_context
 import chart_context_view
 import compositechart
+import partner_horoscope
 import dateformat
 import default_location as default_location_model
 import horary_session
@@ -1643,6 +1644,10 @@ class WorkspaceService:
             composite_item = self._synastry_composite_menu_item(doc_id, session)
             if composite_item is not None:
                 items.append(composite_item)
+            partner_horoscope_item = self._partner_horoscope_menu_item(doc_id, session)
+            if partner_horoscope_item is not None:
+                items.append(partner_horoscope_item)
+            if composite_item is not None or partner_horoscope_item is not None:
                 items.append({"type": "separator"})
 
             items.append(self._supplementary_charts_menu(doc_id, session))
@@ -2014,8 +2019,26 @@ class WorkspaceService:
         return {
             "type": "checkbox",
             "label": mtexts.txts.get("Composite", "Composite"),
-            "checked": session.get("compound_kind") == "composite_from_synastry",
+            "checked": session.get("compound_kind") == "composite_from_synastry"
+            and session.get("composite_variant") != "partner_horoscope",
             "actionId": "workspace.toggle_synastry_composite",
+            "payload": {"documentId": document_id},
+        }
+
+    def _partner_horoscope_menu_item(self, document_id: str, session: dict) -> Optional[dict]:
+        center, partner = self._active_synastry_pair(session)
+        if center is None or partner is None:
+            return None
+        if len(self._relationship_session_all_participants(session)) != 2:
+            return None
+        return {
+            "type": "checkbox",
+            "label": mtexts.txts.get("PartnerHoroscopeChart", "Partner Horoscope"),
+            "checked": (
+                session.get("compound_kind") == "composite_from_synastry"
+                and session.get("composite_variant") == "partner_horoscope"
+            ),
+            "actionId": "workspace.toggle_partner_horoscope",
             "payload": {"documentId": document_id},
         }
 
@@ -2477,6 +2500,18 @@ class WorkspaceService:
             if action_id == "workspace.toggle_synastry_composite":
                 doc_id = str(payload.get("documentId") or self._controller.active_document_id() or "")
                 return self.set_synastry_composite(doc_id)
+
+            if action_id == "workspace.toggle_partner_horoscope":
+                doc_id = str(payload.get("documentId") or self._controller.active_document_id() or "")
+                session = self._controller.session(doc_id)
+                if session is None:
+                    raise ValueError(f"unknown document {doc_id!r}")
+                if (
+                    session.get("compound_kind") == "composite_from_synastry"
+                    and session.get("composite_variant") == "partner_horoscope"
+                ):
+                    return self.set_synastry_composite(doc_id, variant="synastry")
+                return self.set_synastry_composite(doc_id, variant="partner_horoscope")
 
             if action_id == "workspace.toggle_relationship_participant":
                 doc_id = str(payload.get("documentId") or "")
@@ -10784,6 +10819,16 @@ class WorkspaceService:
         )
 
     @classmethod
+    def _partner_horoscope_session_title(cls, center, partner) -> str:
+        older, younger = partner_horoscope.classify_older_younger(center, partner)
+        suffix = mtexts.txts.get("PartnerHoroscope", "Partner Horoscope")
+        return "%s + %s • %s" % (
+            cls._chart_label(older),
+            cls._chart_label(younger),
+            suffix,
+        )
+
+    @classmethod
     def _composite_participants_session_title(cls, participants, *, davison: bool = False) -> str:
         # Source twin: morin._composite_participants_session_title, morin.py:7660-7666.
         participants = [participant for participant in (participants or []) if participant is not None]
@@ -10971,11 +11016,15 @@ class WorkspaceService:
 
     def _build_synastry_composite_variant(self, center, partner, variant: str):
         opts = copy.deepcopy(chart_snapshot_service.options)
-        title = self._composite_session_title(center, partner, davison=(variant == "davison"))
-        if variant == "davison":
-            comp = compositechart.build_davison_chart(center, partner, opts, name=title)
+        if variant == "partner_horoscope":
+            title = self._partner_horoscope_session_title(center, partner)
+            comp = partner_horoscope.build_partner_horoscope_chart(center, partner, opts, name=title)
         else:
-            comp = compositechart.build_composite_chart(center, partner, opts, name=title)
+            title = self._composite_session_title(center, partner, davison=(variant == "davison"))
+            if variant == "davison":
+                comp = compositechart.build_davison_chart(center, partner, opts, name=title)
+            else:
+                comp = compositechart.build_composite_chart(center, partner, opts, name=title)
         setattr(comp, "_composite_variant", variant)
         setattr(comp, "_composite_source_pair", (center, partner))
         return comp
@@ -11203,10 +11252,13 @@ class WorkspaceService:
             current_variant = session.get('composite_variant') or "midpoint"
             if requested in ("synastry", "relationship"):
                 target = "synastry"
-            elif requested in ("midpoint", "davison"):
+            elif requested in ("midpoint", "davison", "partner_horoscope"):
                 target = requested
             elif current_kind == "composite_from_synastry":
-                target = "synastry"
+                if current_variant == "partner_horoscope":
+                    target = "midpoint"
+                else:
+                    target = "synastry"
             else:
                 target = "midpoint"
             active_participants = self._relationship_session_participants(session)
@@ -11260,8 +11312,13 @@ class WorkspaceService:
                         davison=(target == "davison"),
                     )
                 else:
+                    if target == "partner_horoscope" and len(active_participants) >= 3:
+                        raise ValueError("Partner horoscope requires exactly two participants")
                     comp = self._cached_synastry_composite_variant(session, center, partner, target)
-                    title = self._composite_session_title(center, partner, davison=(target == "davison"))
+                    if target == "partner_horoscope":
+                        title = self._partner_horoscope_session_title(center, partner)
+                    else:
+                        title = self._composite_session_title(center, partner, davison=(target == "davison"))
                 display_dt = cs._chart_display_datetime(comp) if hasattr(cs, "_chart_display_datetime") else getattr(cs, 'display_datetime', None)
                 session['compound_kind'] = 'composite_from_synastry'
                 session['comparison_chart'] = None
@@ -16061,7 +16118,15 @@ class WorkspaceService:
             if cs is None:
                 raise ValueError(f"document {document_id!r} has no chart session")
             if session.get('compound_kind') == 'composite_from_synastry':
-                next_variant = 'davison' if session.get('composite_variant') != 'davison' else 'midpoint'
+                current_variant = session.get('composite_variant') or 'midpoint'
+                if current_variant == 'midpoint':
+                    next_variant = 'davison'
+                elif current_variant == 'davison':
+                    next_variant = 'partner_horoscope'
+                elif current_variant == 'partner_horoscope':
+                    next_variant = 'midpoint'
+                else:
+                    next_variant = 'midpoint'
                 result = self.set_synastry_composite(document_id, variant=next_variant)
                 result["toggled"] = True
                 return result
