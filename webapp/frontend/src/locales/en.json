@@ -2476,6 +2476,8 @@
   "help.shortcut.aspects": "Toggle aspects",
   "help.shortcut.houses": "Toggle houses",
   "help.shortcut.inspector": "Toggle Inspector",
+  "help.shortcut.converseTransitsOn": "Converse transits on",
+  "help.shortcut.converseTransitsOff": "Converse transits off",
   "help.shortcut.minorAspects": "Toggle minor aspects",
   "help.shortcut.closeDocument": "Close active document",
   "help.shortcut.resetInitialChart": "Reset to the initial chart",

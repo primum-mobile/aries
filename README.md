@@ -29,6 +29,8 @@ official supported installers.
 | `Cmd/Ctrl + Alt + A` | Ascensional Transits |
 | `Cmd/Ctrl + Shift + A` | Appearance |
 | `Cmd/Ctrl + Shift + E` | Chart Style Lab |
+| `Alt/Option + E` | Events |
+| `Alt/Option + R` | Converse transits |
 | `I` | Toggle Inspector |
 | `Shift`, then `Shift` | Open Spotlight |
 | `0`–`9` | Open Spotlight with that digit |

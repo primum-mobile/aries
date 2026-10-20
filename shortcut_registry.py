@@ -184,6 +184,20 @@ TAURI_MANIFEST_SHORTCUT_ROWS = (
 		'group': 'WORKSPACE',
 		'commandId': 'open-style-lab',
 	},
+	{
+		'keys': '⌥ E',
+		'label': 'Events',
+		'labelKey': 'chartEvents.title',
+		'group': 'WORKSPACE',
+		'commandId': 'chart-events',
+	},
+	{
+		'keys': '⌥ R',
+		'label': 'Converse transits',
+		'labelKey': 'chartmenu.converseTransit',
+		'group': 'CHART MODES',
+		'commandId': 'toggle-converse-transits',
+	},
 )
 
 

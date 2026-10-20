@@ -72,6 +72,7 @@ import { LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
 import { ChartCanvas } from "./chart-canvas";
+import { ChartFlashHint } from "./chart-flash-hint";
 import type { GraphicEphemerisDisplayMode } from "./graph-ephemeris-view";
 import {
   AstrocartControls,
@@ -5795,6 +5796,7 @@ export function ChartSurface({
         inheritAppTheme={inheritAppTheme}
         wheelVerticalAlignment={wheelVerticalAlignment}
       />
+      <ChartFlashHint />
       {!isMultiwheel && cornerChart.options.showInformation ? (
         <CornerLines
           semanticClassId="chartOverlay.information.topLeft"

@@ -31,7 +31,43 @@ type ShortcutGesture = {
 
 type EmbeddedManifestShortcutDetail = Partial<ShortcutGesture> & {
   repeat?: boolean;
+  code?: string;
 };
+
+/** macOS Option chords often rewrite `event.key`; match the physical letter key. */
+export function keyboardGestureFromEvent(event: Pick<
+  KeyboardEvent,
+  "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"
+>): ShortcutGesture {
+  let key = event.key.toLowerCase();
+  if (event.altKey && /^Key[A-Z]$/.test(event.code)) {
+    key = event.code.slice(3).toLowerCase();
+  }
+  return {
+    key,
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
+    shiftKey: event.shiftKey,
+  };
+}
+
+export function keyboardGestureFromEmbeddedDetail(
+  detail: EmbeddedManifestShortcutDetail,
+): ShortcutGesture | null {
+  if (typeof detail.key !== "string" || detail.key.length === 0) return null;
+  let key = detail.key.toLowerCase();
+  if (detail.altKey === true && typeof detail.code === "string" && /^Key[A-Z]$/.test(detail.code)) {
+    key = detail.code.slice(3).toLowerCase();
+  }
+  return {
+    key,
+    metaKey: detail.metaKey === true,
+    ctrlKey: detail.ctrlKey === true,
+    altKey: detail.altKey === true,
+    shiftKey: detail.shiftKey === true,
+  };
+}
 
 function parseShortcut(row: ShortcutEntry): ParsedShortcut | null {
   const keys = row.keys.trim();
@@ -56,6 +92,14 @@ function parseShortcut(row: ShortcutEntry): ParsedShortcut | null {
       key: commandShiftMatch[1].toLowerCase(),
       requireCommand: true,
       requireShift: true,
+    };
+  }
+  const altMatch = keys.match(/^⌥\s+([A-Za-z])$/u);
+  if (altMatch) {
+    return {
+      key: altMatch[1].toLowerCase(),
+      requireCommand: false,
+      requireAlt: true,
     };
   }
   return null;
@@ -115,7 +159,14 @@ export function useManifestShortcutDispatch(
         if (parsed.requireCommand !== commandHeld) continue;
         if (Boolean(parsed.requireAlt) !== gesture.altKey) continue;
         if (Boolean(parsed.requireShift) !== gesture.shiftKey) continue;
-        if (!parsed.requireCommand && (gesture.metaKey || gesture.ctrlKey || gesture.altKey)) {
+        if (
+          !parsed.requireCommand &&
+          !parsed.requireAlt &&
+          (gesture.metaKey || gesture.ctrlKey || gesture.altKey)
+        ) {
+          continue;
+        }
+        if (parsed.requireAlt && (gesture.metaKey || gesture.ctrlKey)) {
           continue;
         }
         if (!isCommandEnabled(row.commandId ?? "")) return;
@@ -128,40 +179,26 @@ export function useManifestShortcutDispatch(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat || !targetAllowsShortcut(event.target)) return;
       if (!chartScopeIsClear()) return;
-      dispatchGesture(event, () => event.preventDefault());
+      dispatchGesture(keyboardGestureFromEvent(event), () => event.preventDefault());
     };
 
     const onEmbeddedShortcut = (event: Event) => {
       const detail = (
         event as CustomEvent<EmbeddedManifestShortcutDetail>
       ).detail;
-      if (
-        detail?.repeat ||
-        typeof detail?.key !== "string" ||
-        detail.key.length === 0 ||
-        !chartScopeIsClear()
-      ) {
-        return;
-      }
-      dispatchGesture(
-        {
-          key: detail.key,
-          metaKey: detail.metaKey === true,
-          ctrlKey: detail.ctrlKey === true,
-          altKey: detail.altKey === true,
-          shiftKey: detail.shiftKey === true,
-        },
-        () => undefined,
-      );
+      if (detail?.repeat || !chartScopeIsClear()) return;
+      const gesture = keyboardGestureFromEmbeddedDetail(detail ?? {});
+      if (!gesture) return;
+      dispatchGesture(gesture, () => undefined);
     };
 
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener(
       EMBEDDED_MANIFEST_SHORTCUT_EVENT,
       onEmbeddedShortcut,
     );
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener(
         EMBEDDED_MANIFEST_SHORTCUT_EVENT,
         onEmbeddedShortcut,

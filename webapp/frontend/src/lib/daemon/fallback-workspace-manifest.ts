@@ -124,6 +124,8 @@ export const FALLBACK_WORKSPACE_MANIFEST = {
     { keys: "⌘ B", label: "Toggle sidebar", group: "WORKSPACE", labelKey: "toolbar.toggleSidebar", bound: true },
     { keys: "⌘ G", label: "Cycle secondary view", group: "WORKSPACE", labelKey: "nativeMenu.cycleSecondaryView", bound: true },
     { keys: "⌘ ⇧ A", label: "Appearance", group: "WORKSPACE", labelKey: "appearance.title", bound: true },
+    { keys: "⌥ E", label: "Events", group: "WORKSPACE", labelKey: "chartEvents.title", commandId: "chart-events", bound: true },
+    { keys: "⌥ R", label: "Converse transits", group: "CHART MODES", labelKey: "chartmenu.converseTransit", commandId: "toggle-converse-transits", bound: true },
     { keys: "T", label: "Transits", group: "CHART MODES", commandId: "transits", bound: true },
     { keys: "R", label: "Solar Revolution", group: "CHART MODES", commandId: "solar-revolution", bound: true },
     { keys: "L", label: "Lunar Revolution", group: "CHART MODES", commandId: "lunar-revolution", bound: true },

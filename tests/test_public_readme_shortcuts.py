@@ -40,6 +40,8 @@ def _normalize_readme_key(key: str) -> str:
         "Shift + Up / Shift + Down": "⇧ + ↑ / ↓",
         "Left / Right": "← / →",
         "Up / Down": "↑ / ↓",
+        "Alt/Option + E": "⌥ E",
+        "Alt/Option + R": "⌥ R",
     }
     return replacements.get(key, key)
 

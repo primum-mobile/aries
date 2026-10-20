@@ -56,6 +56,8 @@ import { SettingsWindowBridge } from "@/components/workshell/settings-window-bri
 import { prewarmToolWindows } from "@/lib/shell/tool-window-lifecycle";
 import { openNativeSettings, hideNativeSettings } from "@/lib/shell/settings-window";
 import { findChartLaunchParent } from "@/components/workshell/chart-launch-parent";
+import { handleChartEventsMenuAction } from "@/components/workshell/chart-events-actions";
+import { radixPaneOwner } from "@/lib/radix-pane-state";
 import type { EditTarget } from "@/components/workshell/chart-editor-dialog";
 import {
   createLatestWinsWriteQueue,
@@ -301,6 +303,27 @@ type RevolutionLocationRequest = Extract<
   NonNullable<PickerState>,
   { mode: "revolution-location" }
 >;
+
+function documentSupportsChartEvents(doc: WorkspaceDocument): boolean {
+  return (
+    doc.kind !== "astrocart" &&
+    doc.kind !== "directions" &&
+    doc.kind !== "astrolabe" &&
+    doc.kind !== "astrolog-sphere" &&
+    doc.kind !== "square-chart" &&
+    doc.kind !== "mundane-chart" &&
+    doc.kind !== "ephemeris" &&
+    doc.kind !== "transit-search" &&
+    doc.kind !== "ascensional-transits" &&
+    doc.kind !== "table"
+  );
+}
+
+function activeTransitSupportsConverseToggle(doc: WorkspaceDocument | null): boolean {
+  if (!doc) return false;
+  const kind = doc.supplementaryFeatureKind;
+  return kind === "transits" || kind === "converse-transits";
+}
 
 const CHART_INDEPENDENT_COMMANDS = new Set([
   "appearance.toggle",
@@ -2206,6 +2229,17 @@ export function HomeClient() {
   const commandIsRuntimeEnabled = useCallback(
     (command: string): boolean => {
       if (command === "workspace.close-active") return activeDoc !== null;
+      if (command === "chart-events") {
+        return (
+          activeDoc !== null &&
+          activeRadix !== null &&
+          documentSupportsChartEvents(activeDoc) &&
+          radixPaneOwner(useDaemonWorkspaceStore.getState().documents, activeDoc.id) !== null
+        );
+      }
+      if (command === "toggle-converse-transits") {
+        return activeTransitSupportsConverseToggle(activeDoc);
+      }
       if (CHART_INDEPENDENT_COMMANDS.has(command)) return true;
       if (command === "menu.copy-chart-png") return hasCopyableActiveChart;
       if (SAVE_CHART_COMMANDS.has(command)) return activeSaveTarget !== null;
@@ -3469,6 +3503,39 @@ export function HomeClient() {
       if (!commandIsRuntimeEnabled(command)) return;
       if (command === "open-style-lab") {
         openStyleLab();
+        return;
+      }
+      if (command === "chart-events") {
+        const activeDocument = activeDocRef.current;
+        if (!activeDocument || !documentSupportsChartEvents(activeDocument)) return;
+        const owner = radixPaneOwner(
+          useDaemonWorkspaceStore.getState().documents,
+          activeDocument.id,
+        );
+        if (!owner) return;
+        const workspace = useWorkspaceStore.getState();
+        if (workspace.chartEventsPane?.documentId === owner) {
+          workspace.closeChartEventsPane();
+        } else {
+          void handleChartEventsMenuAction("workspace.show_events", { documentId: owner });
+        }
+        return;
+      }
+      if (command === "toggle-converse-transits") {
+        const activeDocument = activeDocRef.current;
+        if (!activeDocument || !activeTransitSupportsConverseToggle(activeDocument)) return;
+        void executeWorkspaceContextMenuAction("workspace.toggle_converse_transit", {
+          documentId: activeDocument.id,
+        })
+          .then((result) => {
+            applyImmediateWorkspaceCommandResult(result, activeDocument.id);
+            useWorkspaceStore.getState().publishChartFlashHint(
+              result.converseEnabled
+                ? "help.shortcut.converseTransitsOn"
+                : "help.shortcut.converseTransitsOff",
+            );
+          })
+          .catch((err) => console.error("[toggle-converse-transits]", err));
         return;
       }
       if (command === "toggle-inspector") {

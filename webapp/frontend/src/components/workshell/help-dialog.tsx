@@ -105,6 +105,8 @@ const COMMAND_LABEL_KEYS: Record<string, string> = {
   "toggle-aspects": "help.shortcut.aspects",
   "toggle-houses": "help.shortcut.houses",
   "toggle-inspector": "help.shortcut.inspector",
+  "chart-events": "chartEvents.title",
+  "toggle-converse-transits": "chartmenu.converseTransit",
   "toggle-minor-aspects": "help.shortcut.minorAspects",
   "workspace.close-active": "help.shortcut.closeDocument",
 };

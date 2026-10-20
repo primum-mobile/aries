@@ -29,6 +29,8 @@ import {
 import { sameRetainedPaneActivation } from "@/lib/retained-pane-activation.mjs";
 import { radixPaneOwner, retainRadixPanes } from "@/lib/radix-pane-state";
 
+let chartFlashHintClearTimer: ReturnType<typeof setTimeout> | undefined;
+
 export type HoverRegion =
   | {
       kind: "planet";
@@ -710,6 +712,7 @@ type WorkspaceState = {
   synodicCyclesPane: SynodicCyclesPaneState | null;
   synodicListPreferencesByDocument: Record<string, SynodicListPreferences>;
   chartEventsPane: ChartEventsPaneState | null;
+  chartFlashHint: { messageKey: string; nonce: number } | null;
   aspectListPane: AspectListPaneState | null;
   aspectListPreferencesByDocument: Record<string, AspectListPreferences>;
   ascensionalTransitsPane: AscensionalTransitsPaneState | null;
@@ -826,6 +829,7 @@ type WorkspaceState = {
   ) => void;
   openChartEventsPane: (state: ChartEventsPaneState) => void;
   closeChartEventsPane: () => void;
+  publishChartFlashHint: (messageKey: string) => void;
   openAspectListPane: (state: AspectListPaneState) => void;
   closeAspectListPane: () => void;
   setAspectListPreferences: (
@@ -921,6 +925,7 @@ const EMPTY_RIGHT_PANES = {
   lunarMansionsPane: null,
   synodicCyclesPane: null,
   chartEventsPane: null,
+  chartFlashHint: null,
   aspectListPane: null,
   ascensionalTransitsPane: null,
   calendarPane: null,
@@ -1054,6 +1059,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   synodicCyclesPane: null,
   synodicListPreferencesByDocument: {},
   chartEventsPane: null,
+  chartFlashHint: null,
   aspectListPane: null,
   aspectListPreferencesByDocument: {},
   ascensionalTransitsPane: null,
@@ -1277,6 +1283,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
   openChartEventsPane: (state) => set((current) => activateRetainedRightPane(current, "chartEventsPane", state)),
   closeChartEventsPane: () => set({ chartEventsPane: null }),
+  publishChartFlashHint: (messageKey) => {
+    const nonce = Date.now();
+    set({ chartFlashHint: { messageKey, nonce } });
+    if (typeof window !== "undefined") {
+      if (chartFlashHintClearTimer !== undefined) {
+        window.clearTimeout(chartFlashHintClearTimer);
+      }
+      chartFlashHintClearTimer = window.setTimeout(() => {
+        chartFlashHintClearTimer = undefined;
+        set({ chartFlashHint: null });
+      }, 1500);
+    }
+  },
   openAspectListPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "aspectListPane", {

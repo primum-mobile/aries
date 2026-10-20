@@ -279,7 +279,10 @@ PY
 )"
 echo "$TAURI_PID" >"$PID_FILE"
 
-for _ in $(seq 1 60); do
+# Cold `make run` can exceed one minute: BeforeDevCommand runs web-legal/notes,
+# the first `cargo run` link takes ~30–40s on this machine, then Next must compile.
+TAURI_DEV_READY_WAIT_SEC="${TAURI_DEV_READY_WAIT_SEC:-180}"
+for _ in $(seq 1 "$TAURI_DEV_READY_WAIT_SEC"); do
   if frontend_ready && daemon_ready && tauri_app_ready; then
     echo "$CURRENT_SOURCE_STAMP" >"$SOURCE_STAMP_FILE"
     echo "tauri dev ready"
