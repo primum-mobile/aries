@@ -2325,6 +2325,19 @@ class WorkspaceService:
             if action_id in ("workspace.rename_event", "workspace.remove_event"):
                 return self.chart_events.change(str(payload.get("documentId") or ""), str(payload.get("eventId") or ""),
                     name=payload.get("name"), remove=action_id == "workspace.remove_event")
+            if action_id == "workspace.export_events_clipboard":
+                event_ids = payload.get("eventIds") or []
+                if not isinstance(event_ids, list):
+                    raise ValueError("eventIds must be a list")
+                return self.chart_events.export_clipboard(
+                    str(payload.get("documentId") or ""),
+                    [str(event_id) for event_id in event_ids],
+                )
+            if action_id == "workspace.paste_events_clipboard":
+                return self.chart_events.paste_clipboard(
+                    str(payload.get("documentId") or ""),
+                    str(payload.get("text") or ""),
+                )
             if action_id == "workspace.open_supplementary":
                 doc_id = str(payload.get("documentId") or "")
                 kind = str(payload.get("kind") or "")

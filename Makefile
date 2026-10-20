@@ -61,7 +61,7 @@ check: build-ext web-corpus web-runtime-resources web-legal web-check-deps
 	cd webapp/frontend/src-tauri && cargo test
 	@if find tests aries -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then \
 		PYTHONPATH=$(SWEP_SRC) $(WEB_PYTHON) -m pytest -q \
-			aries/astrology/transit_fast/tests tests/test_public_readme_shortcuts.py; \
+			aries/astrology/transit_fast/tests tests/test_chart_event_clipboard.py tests/test_public_readme_shortcuts.py; \
 	else \
 		printf '%s\n' 'No Python tests in this source export; running static checks only.'; \
 	fi

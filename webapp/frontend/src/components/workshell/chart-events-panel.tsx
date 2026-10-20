@@ -4,7 +4,7 @@
 "use client";
 
 import * as React from "react";
-import { FolderOpen, Pencil, Plus, ArrowDownWideNarrow } from "lucide-react";
+import { FolderOpen, Pencil, Plus, ArrowDownWideNarrow, Copy, ClipboardPaste, ListChecks } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -13,6 +13,9 @@ import { Input } from "@/components/ui/input";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useT } from "@/lib/i18n/i18n";
 import { executeWorkspaceContextMenuAction, fetchEditorCursorSeed, type WorkspaceOpenResult } from "@/lib/daemon/client";
+import { chartEventClipboardLooksValid } from "@/lib/chart-event-clipboard";
+import { copyTextToClipboard } from "./text-export";
+import { resolveShellHost } from "@/lib/shell-host";
 import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { recordChartPerf, perfNow } from "@/lib/chart/perf";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
@@ -60,8 +63,27 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   const [editingEvent, setEditingEvent] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
   const [pending, setPending] = React.useState(false);
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
+  const [pasteAvailable, setPasteAvailable] = React.useState(false);
   const openedAt = React.useRef(perfNow());
   const recordedPaint = React.useRef(false);
+
+  const refreshPasteAvailability = React.useCallback(async () => {
+    try {
+      const text = await resolveShellHost().readClipboardText();
+      setPasteAvailable(chartEventClipboardLooksValid(text));
+    } catch {
+      setPasteAvailable(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refreshPasteAvailability();
+    const onFocus = () => { void refreshPasteAvailability(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshPasteAvailability, documentId]);
 
   React.useEffect(() => {
     void useChartEventsStore.getState().load(documentId);
@@ -197,6 +219,78 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
     setDeleting(row);
   };
 
+  const toggleSelectedId = (eventId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  };
+
+  const copySelected = async () => {
+    if (pending) return;
+    const ids = [...selectedIds];
+    if (ids.length === 0) {
+      useChartEventsStore.getState().patch(documentId, { error: "chartEvents.copyNoneSelected" });
+      return;
+    }
+    setPending(true);
+    try {
+      const result = await executeWorkspaceContextMenuAction("workspace.export_events_clipboard", {
+        documentId,
+        eventIds: ids,
+      }) as { text?: string };
+      const text = String(result.text ?? "").trim();
+      if (!text) {
+        throw new Error("empty export payload");
+      }
+      await copyTextToClipboard(text);
+      useChartEventsStore.getState().patch(documentId, { error: null });
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error("[chart-events-copy]", error);
+      useChartEventsStore.getState().patch(documentId, { error: "chartEvents.copyFailed" });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const pasteFromClipboard = async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      const text = await resolveShellHost().readClipboardText();
+      if (!chartEventClipboardLooksValid(text)) {
+        useChartEventsStore.getState().patch(documentId, { error: "chartEvents.pasteUnavailable" });
+        setPasteAvailable(false);
+        return;
+      }
+      const result = await executeWorkspaceContextMenuAction("workspace.paste_events_clipboard", {
+        documentId,
+        text,
+      }) as { pastedCount?: number };
+      useChartEventsStore.getState().patch(documentId, {
+        error: null,
+        query: "",
+      });
+      useChartEventsStore.getState().invalidate([documentId]);
+      void refreshPasteAvailability();
+      const count = Number(result.pastedCount ?? 0);
+      if (count > 0) {
+        useChartEventsStore.getState().patch(documentId, {
+          error: null,
+        });
+      }
+    } catch (error) {
+      console.error("[chart-events-paste]", error);
+      useChartEventsStore.getState().patch(documentId, { error: "chartEvents.pasteFailed" });
+    } finally {
+      setPending(false);
+    }
+  };
+
   return (
     <>
     <ContextMenu onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedTag(null); } }}>
@@ -215,6 +309,30 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
             aria-expanded={view.tagsOpen} aria-controls={tagDrawerId}
             aria-pressed={view.tagIds.length > 0 || view.untagged}
             onClick={() => filters({ tagsOpen: !view.tagsOpen })}>{t("chartEvents.tags")}</Button>
+          <Button type="button" variant={selectMode ? "default" : "ghost"} size="icon-xs"
+            aria-label={selectMode ? t("chartEvents.selectDone") : t("chartEvents.select")}
+            title={selectMode ? t("chartEvents.selectDone") : t("chartEvents.select")}
+            aria-pressed={selectMode}
+            onClick={() => {
+              setSelectMode((open) => {
+                if (open) setSelectedIds(new Set());
+                return !open;
+              });
+            }}>
+            <ListChecks aria-hidden="true" />
+          </Button>
+          {selectMode ? (
+            <Button type="button" variant="ghost" size="icon-xs" disabled={pending || selectedIds.size === 0}
+              aria-label={t("chartEvents.copy")} title={t("chartEvents.copy")}
+              onClick={() => void copySelected()}>
+              <Copy aria-hidden="true" />
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="icon-xs" disabled={pending || !pasteAvailable}
+            aria-label={t("chartEvents.paste")} title={t("chartEvents.paste")}
+            onClick={() => void pasteFromClipboard()}>
+            <ClipboardPaste aria-hidden="true" />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs"
               aria-label={t("chartEvents.sort")} title={t("chartEvents.sort")} />}>
@@ -294,21 +412,33 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                     <SidebarListRow data-event-row={row.id} className={`${LIST_ROW_CLASSES.hover} border-b-0`}
                       data-state={selectedEventKey === `${documentId}:${row.id}` ? "selected" : undefined}
                       tabIndex={-1}
-                      onClick={(event) => { setSelectedEventKey(`${documentId}:${row.id}`); event.currentTarget.focus(); }}
+                      onClick={(event) => {
+                        setSelectedEventKey(`${documentId}:${row.id}`);
+                        if (selectMode && !(event.target as HTMLElement).closest("input[type=checkbox], button, textarea, a")) {
+                          toggleSelectedId(row.id);
+                        }
+                        event.currentTarget.focus();
+                      }}
                       onKeyDown={(event) => {
                         if (event.key !== "Backspace" || event.repeat || pending || deleting
                           || selectedEventKey !== `${documentId}:${row.id}`
                           || (event.target as HTMLElement).closest('input, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [data-aries-surface="popover"]')) return;
                         event.preventDefault(); event.stopPropagation(); confirmRemove(row);
                       }}
-                      onDoubleClick={() => void openEvent(row)} onContextMenu={(event) => {
+                      onDoubleClick={() => { if (!selectMode) void openEvent(row); }} onContextMenu={(event) => {
                         if ((event.target as HTMLElement).closest("[data-event-tag]")) return;
                         setSelectedEventKey(`${documentId}:${row.id}`);
                         setSelectedTag(null); setSelected(row);
                       }}>
                       <SidebarListCell className="whitespace-normal">
-                        <div className="relative">
-                        <button type="button" className={`whitespace-normal text-left [overflow-wrap:anywhere] ${renaming?.id === row.id ? "invisible" : ""}`}
+                        <div className="relative flex items-start gap-[var(--aries-control-gap-compact)]">
+                        {selectMode ? (
+                          <input type="checkbox" className="mt-0.5 shrink-0" checked={selectedIds.has(row.id)}
+                            aria-label={row.name}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() => toggleSelectedId(row.id)} />
+                        ) : null}
+                        <button type="button" className={`min-w-0 flex-1 whitespace-normal text-left [overflow-wrap:anywhere] ${renaming?.id === row.id ? "invisible" : ""}`}
                           tabIndex={renaming?.id === row.id ? -1 : undefined} aria-hidden={renaming?.id === row.id || undefined} onClick={(event) => {
                           event.stopPropagation();
                           setSelectedEventKey(`${documentId}:${row.id}`);

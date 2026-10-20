@@ -24,6 +24,7 @@ import note_storage
 from engine import chart_factory
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.supplementary_service import PUBLIC_TO_FEATURE_KIND
+from webapp.daemon.chart_event_clipboard import format_clipboard_payload, parse_clipboard_text
 from webapp.daemon.event_tags import EventTags
 
 
@@ -279,6 +280,96 @@ class ChartEventsService:
         return {'ownerDocumentId': owner_id, 'recordId': str(owner.get('chart_id') or getattr(radix, 'chart_id', '') or ''),
                 'sourceName': radix.name, **self.tag_metadata(events),
                 'rows': rows, 'total': len(ordered), 'offset': start}
+
+    def export_clipboard(self, document_id, event_ids):
+        owner_id, owner, radix = self.owner(document_id)
+        if not event_ids:
+            raise ValueError('No events selected')
+        stored = owner.get('saved_events', []) or []
+        by_id = {str(item.get('id') or ''): item for item in stored}
+        selected = []
+        for event_id in event_ids:
+            key = str(event_id or '')
+            event = by_id.get(key)
+            if event is None:
+                raise ValueError('Unknown saved event')
+            selected.append(event)
+        record_id = str(owner.get('chart_id') or getattr(radix, 'chart_id', '') or '')
+        radix_name = getattr(radix, 'name', '') or ''
+        payloads = [self._clipboard_export_event(event, record_id=record_id, radix_name=radix_name) for event in selected]
+        return {
+            'ok': True,
+            'ownerDocumentId': owner_id,
+            'count': len(payloads),
+            'text': format_clipboard_payload(payloads),
+        }
+
+    def paste_clipboard(self, document_id, text):
+        owner_id, owner, radix = self.owner(document_id)
+        incoming = parse_clipboard_text(text)
+        events = copy.deepcopy(owner.get('saved_events', []) or [])
+        record_id = str(owner.get('chart_id') or getattr(radix, 'chart_id', '') or '')
+        radix_name = getattr(radix, 'name', '') or ''
+        pasted_ids = []
+        for item in incoming:
+            nodes = copy.deepcopy(item['nodes'])
+            name = str(item.get('name') or '').strip()
+            event_id = str(uuid.uuid4())
+            new_event = {
+                'v': 1,
+                'id': event_id,
+                'name': name,
+                'signature': _signature(nodes),
+                'nodes': nodes,
+            }
+            tag_names = item.get('tagNames')
+            if isinstance(tag_names, list) and tag_names:
+                new_event['tags'] = self._tags_for_names(tag_names, events)
+            events.append(new_event)
+            pasted_ids.append(event_id)
+            notes = item.get('notes')
+            if notes and str(notes).strip():
+                from webapp.daemon.notes_service import write_note_state
+                write_note_state(radix_name, str(notes), record_id=record_id or None, event_id=event_id)
+        self._persist(owner_id, owner, radix, events)
+        return {'ok': True, 'ownerDocumentId': owner_id, 'pastedCount': len(pasted_ids), 'eventIds': pasted_ids}
+
+    def _clipboard_export_event(self, event, *, record_id, radix_name):
+        from webapp.daemon.notes_service import read_note_state
+        out = {
+            'v': int(event.get('v') or 1),
+            'name': event['name'],
+            'nodes': copy.deepcopy(event['nodes']),
+        }
+        tags = self.tags.resolve(event.get('tags'))
+        if tags:
+            out['tagNames'] = [tag['name'] for tag in tags]
+        try:
+            note = read_note_state(radix_name, record_id=record_id or None, event_id=event['id'])
+            content = str(note.get('content') or '').strip()
+            if content:
+                out['notes'] = content
+        except Exception:
+            pass
+        return out
+
+    def _tags_for_names(self, names, existing_events):
+        catalog = self.tag_metadata(existing_events)['tagCatalog']
+        available = {tag['name'].casefold(): tag for tag in catalog}
+        refs = []
+        for raw in names:
+            name = str(raw or '').strip()
+            if not name:
+                continue
+            tag = available.get(name.casefold())
+            if tag is None:
+                tag = self.tags.change(name=name, refs=catalog)
+                available[name.casefold()] = tag
+                catalog = [*catalog, tag]
+            refs.append(tag)
+        if refs:
+            self.tags.touch([tag['id'] for tag in refs], refs=refs)
+        return self.tags.resolve(refs)
 
     def tag_metadata(self, events):
         resolved = [self.tags.resolve(event.get('tags')) for event in events]

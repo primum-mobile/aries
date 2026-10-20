@@ -93,6 +93,8 @@ export type ShellHost = {
   capabilities: ShellHostCapabilities;
   closeChartPickerWindow: () => Promise<void>;
   confirmQuit: () => Promise<void>;
+  copyText: (text: string) => Promise<void>;
+  readClipboardText: () => Promise<string>;
   copyImage: (bytes: Uint8Array, mimeType: string) => Promise<void>;
   downloadBytes: (filename: string, bytes: Uint8Array, mimeType: string) => Promise<void>;
   installBeforeUnloadGuard: (shouldBlock: () => boolean) => () => void;
@@ -239,6 +241,34 @@ function downloadBytesInBrowser(filename: string, bytes: Uint8Array, mimeType: s
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+async function copyTextInBrowser(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // Chromium can reject toolbar writes; fall back to a transient textarea.
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard write was blocked");
+}
+
+async function readClipboardTextInBrowser(): Promise<string> {
+  if (!navigator.clipboard?.readText) {
+    throw new Error("Clipboard read is unavailable");
+  }
+  return navigator.clipboard.readText();
+}
+
 async function copyImageInBrowser(bytes: Uint8Array, mimeType: string): Promise<void> {
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
     throw new Error("image clipboard is unavailable in this browser");
@@ -328,6 +358,8 @@ export const browserShellHost: ShellHost = {
     throw new Error("native chart picker window is unavailable in browser runtime");
   },
   confirmQuit: async () => {},
+  copyText: copyTextInBrowser,
+  readClipboardText: readClipboardTextInBrowser,
   copyImage: copyImageInBrowser,
   downloadBytes: async (filename: string, bytes: Uint8Array, mimeType: string) => {
     downloadBytesInBrowser(filename, bytes, mimeType);
@@ -396,6 +428,14 @@ export const tauriShellHost: ShellHost = {
   confirmQuit: async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("confirm_quit");
+  },
+  copyText: async (text: string) => {
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(text);
+  },
+  readClipboardText: async () => {
+    const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+    return readText();
   },
   copyImage: async (bytes: Uint8Array) => {
     const { Image } = await import("@tauri-apps/api/image");

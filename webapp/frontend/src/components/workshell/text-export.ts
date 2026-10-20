@@ -64,25 +64,7 @@ export async function exportTextContent({
 }
 
 export async function copyTextToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Tauri/Chromium can reject a focused toolbar write. The DOM path keeps
-    // the same user gesture and works in that focus edge case.
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  const copied = document.execCommand("copy");
-  textarea.remove();
-  if (!copied) throw new Error("Clipboard write was blocked");
+  await resolveShellHost().copyText(text);
   return true;
 }
 

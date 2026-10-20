@@ -3314,5 +3314,14 @@
   "chartEvents.sort": "Sort events",
   "chartEvents.dateAdded": "Date added",
   "chartEvents.oldestFirst": "Oldest first",
-  "chartEvents.newestFirst": "Newest first"
+  "chartEvents.newestFirst": "Newest first",
+  "chartEvents.select": "Select",
+  "chartEvents.selectDone": "Done",
+  "chartEvents.copy": "Copy",
+  "chartEvents.paste": "Paste",
+  "chartEvents.copyFailed": "Could not copy events to the clipboard.",
+  "chartEvents.pasteFailed": "Could not paste events from the clipboard.",
+  "chartEvents.pasteSuccess": "Pasted {count} event(s).",
+  "chartEvents.copyNoneSelected": "Select at least one event to copy.",
+  "chartEvents.pasteUnavailable": "Clipboard has no Aries events."
 }
