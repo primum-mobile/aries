@@ -8,12 +8,12 @@
   "counts": {
     "tokens": 1515,
     "cssTokens": 1491,
-    "cssDeclarations": 1585,
+    "cssDeclarations": 1587,
     "runtimeOnlyTokens": 14,
     "externalTokens": 10,
     "public": 1106,
-    "derived": 198,
-    "runtime": 211
+    "derived": 196,
+    "runtime": 213
   },
   "legacyMigration": {
     "authority": "legacy-preview-v1",
@@ -16314,24 +16314,27 @@
       "id": "--aries-list-hover-bg",
       "name": "--aries-list-hover-bg",
       "family": "app.list",
-      "class": "derived",
+      "class": "runtime",
       "role": "list",
       "owner": "sidebar-lists",
-      "provider": "css-expression",
+      "provider": "css-declaration",
       "scope": "component",
       "type": "color",
       "unit": "",
-      "default": "color-mix(in srgb, var(--aries-text-primary) 10%, transparent)",
-      "dependencies": [
-        "--aries-text-primary"
-      ],
+      "default": "#353638",
+      "dependencies": [],
       "selectors": [
-        ":root"
+        ":root",
+        ".day"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "color-mix(in srgb, var(--aries-text-primary) 10%, transparent)"
+          "value": "#353638"
+        },
+        {
+          "selector": ".day",
+          "value": "#e4e4e4"
         }
       ],
       "consumerFiles": [
@@ -16628,24 +16631,27 @@
       "id": "--aries-list-selected-bg",
       "name": "--aries-list-selected-bg",
       "family": "app.list",
-      "class": "derived",
+      "class": "runtime",
       "role": "list",
       "owner": "sidebar-lists",
-      "provider": "css-expression",
+      "provider": "css-declaration",
       "scope": "component",
       "type": "color",
       "unit": "",
-      "default": "color-mix(in srgb, var(--aries-text-primary) 14%, transparent)",
-      "dependencies": [
-        "--aries-text-primary"
-      ],
+      "default": "#3a3b3e",
+      "dependencies": [],
       "selectors": [
-        ":root"
+        ":root",
+        ".day"
       ],
       "declarations": [
         {
           "selector": ":root",
-          "value": "color-mix(in srgb, var(--aries-text-primary) 14%, transparent)"
+          "value": "#3a3b3e"
+        },
+        {
+          "selector": ".day",
+          "value": "#dedede"
         }
       ],
       "consumerFiles": [

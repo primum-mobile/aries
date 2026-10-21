@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useT } from "@/lib/i18n/i18n";
 import { executeWorkspaceContextMenuAction, fetchEditorCursorSeed, type WorkspaceOpenResult } from "@/lib/daemon/client";
-import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
+import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES, LIST_ROW_CLASSES, LIST_ROW_TEXT_BUTTON, useListRowHeight } from "@/lib/list-tokens";
 import { recordChartPerf, perfNow } from "@/lib/chart/perf";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -307,9 +307,11 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                         setSelectedTag(null); setSelected(row);
                       }}>
                       <SidebarListCell className="whitespace-normal">
-                        <div className="relative">
-                        <button type="button" className={`whitespace-normal text-left [overflow-wrap:anywhere] ${renaming?.id === row.id ? "invisible" : ""}`}
-                          tabIndex={renaming?.id === row.id ? -1 : undefined} aria-hidden={renaming?.id === row.id || undefined} onClick={(event) => {
+                        <div className="relative flex items-start gap-[var(--aries-control-gap-compact)]">
+                        <div role="button" tabIndex={renaming?.id === row.id ? -1 : 0}
+                          aria-hidden={renaming?.id === row.id || undefined}
+                          className={`${LIST_ROW_TEXT_BUTTON} min-w-0 flex-1 whitespace-normal text-left [overflow-wrap:anywhere] ${renaming?.id === row.id ? "invisible" : ""}`}
+                          onClick={(event) => {
                           event.stopPropagation();
                           setSelectedEventKey(`${documentId}:${row.id}`);
                         }} onDoubleClick={(event) => {
@@ -317,7 +319,7 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                           setRenamingTag(null); setRenaming(row); setName(row.name);
                         }} onKeyDown={(event) => {
                           if (event.key === "Enter") { event.preventDefault(); void openEvent(row); }
-                        }}>{row.name}</button>
+                        }}>{row.name}</div>
                         {renaming?.id === row.id ? <textarea autoFocus rows={1} value={name} readOnly={pending}
                           data-aries-control-appearance="local" aria-label={t("chartEvents.name")}
                           className="absolute inset-0 h-full w-full resize-none appearance-none rounded-none border-0 bg-transparent p-0 text-inherit shadow-none outline-none whitespace-pre-wrap [overflow-wrap:anywhere]"
@@ -358,7 +360,8 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                         </span>
                       </SidebarListTimeCell>
                     </SidebarListRow>
-                    <SidebarListRow data-event-row={row.id} className="[--aries-list-hover-bg:transparent]">
+                    <SidebarListRow data-event-row={row.id} className="[--aries-list-hover-bg:transparent]"
+                      data-state={selectedEventKey === `${documentId}:${row.id}` ? "selected" : undefined}>
                       <SidebarListCell colSpan={3} className="whitespace-normal">
                         <ChartEventNote target={{ recordId: view.recordId, eventId: row.id, name: row.name }}
                           expanded={editingNote === row.id} onEditing={onNoteEditing} />

@@ -163,6 +163,10 @@ export const LIST_TEXT_CLASSES = {
   secondary: "aries-list-secondary-text",
 } as const;
 
+/** Plain `<button>` row labels in sidebar lists — disables WKWebView native
+ * button chrome (light fill) so selection/hover stays on the `<tr>`. */
+export const LIST_ROW_TEXT_BUTTON = "aries-list-row-text-button" as const;
+
 export const LIST_BUTTON_PROPS = {
   command: { size: "xs", variant: "outline" },
   icon: { size: "icon-xs", variant: "ghost" },

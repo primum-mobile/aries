@@ -1281,8 +1281,10 @@ html {
   --aries-list-cell-y-symbolic: 8px;
   --aries-list-rule-color: var(--aries-border-subtle);
   --aries-list-stripe-bg: var(--aries-surface-subtle);
-  --aries-list-hover-bg: color-mix(in srgb, var(--aries-text-primary) 10%, transparent);
-  --aries-list-selected-bg: color-mix(in srgb, var(--aries-text-primary) 14%, transparent);
+  /* Hex only — Tailwind v4 rewrites `hex + color-mix()` into a @supports fallback of
+   * var(--aries-text-primary), which WKWebView keeps when srgb color-mix fails. */
+  --aries-list-hover-bg: #353638;
+  --aries-list-selected-bg: #3a3b3e;
   --aries-list-current-bg: var(--aries-accent);
   --aries-table-font-size-standard: var(--aries-font-size-base);
   --aries-table-row-height-standard: 31px;
@@ -1746,6 +1748,8 @@ html[data-theme-ready="pending"] body {
   --morinus-angles: rgb(74 78 88);
   --morinus-houses: rgb(120 124 132);
   --morinus-housenums: rgb(66 68 74);
+  --aries-list-hover-bg: #e4e4e4;
+  --aries-list-selected-bg: #dedede;
   color-scheme: light;
 }
 
@@ -2063,18 +2067,66 @@ html[data-theme-ready="pending"] body {
   .aries-list-row {
     min-height: var(--aries-list-row-height);
     transition: none;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .aries-list-row--hover:hover {
-    background: var(--aries-list-hover-bg);
+  /* WKWebView ignores row backgrounds on `<tr>`; paint cells instead. */
+  .aries-list-row--hover:hover > .aries-list-cell,
+  .aries-list-row--hover:hover > .aries-list-head,
+  .aries-list-row--hover:hover > .aries-list-head-cell {
+    background-color: var(--aries-list-hover-bg);
   }
 
-  .aries-list-row--selected[data-state="selected"] {
-    background: var(--aries-list-selected-bg);
+  .aries-list-row--selected[data-state="selected"] > .aries-list-cell,
+  .aries-list-row--selected[data-state="selected"] > .aries-list-head,
+  .aries-list-row--selected[data-state="selected"] > .aries-list-head-cell {
+    background-color: var(--aries-list-selected-bg);
+    color: var(--aries-text-primary);
   }
 
-  .aries-list-row--current {
-    background: var(--aries-list-current-bg);
+  /* Sidebar list rows still host real `<button>` icons; strip WKWebView native fill. */
+  .aries-sidebar-list-table .aries-list-cell :is(button, [data-slot="button"], textarea, [role="button"]) {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .aries-sidebar-list-table .aries-list-row--selected[data-state="selected"] .aries-list-cell :is(button, [data-slot="button"], textarea, [role="button"]) {
+    background-color: transparent;
+    color: inherit;
+    box-shadow: none;
+  }
+
+  .aries-sidebar-list-table [data-aries-control-appearance="local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: transparent;
+    color: inherit;
+  }
+
+  /* WKWebView paints native `<button>` fills light; row selection looked "all white". */
+  .aries-list-row-text-button {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    outline: none;
+    padding: 0;
+  }
+
+  .aries-list-row-text-button:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--aries-text-primary) 35%, var(--aries-surface-subtle));
+    outline-offset: 2px;
+  }
+
+  .aries-list-row--current > .aries-list-cell,
+  .aries-list-row--current > .aries-list-head,
+  .aries-list-row--current > .aries-list-head-cell {
+    background-color: var(--aries-list-current-bg);
   }
 
   .aries-list-row--flagged {
@@ -2083,7 +2135,12 @@ html[data-theme-ready="pending"] body {
 
   .aries-list-row--flagged:hover {
     border-left-color: var(--primary);
-    background: var(--aries-list-hover-bg);
+  }
+
+  .aries-list-row--flagged:hover > .aries-list-cell,
+  .aries-list-row--flagged:hover > .aries-list-head,
+  .aries-list-row--flagged:hover > .aries-list-head-cell {
+    background-color: var(--aries-list-hover-bg);
   }
 
   .aries-table {
