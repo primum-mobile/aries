@@ -1850,7 +1850,7 @@ export type ChartPickerRowsPayload = {
   rows: ChartPickerRow[];
 };
 
-export type ImportKind = "hor_folder" | "jsonl" | "sfcht" | "aaf";
+export type ImportKind = "hor_folder" | "jsonl" | "sfcht" | "aaf" | "zet" | "zeus";
 export type ExportKind = "auto" | "png" | "pdf";
 
 export type ImportSummary = {

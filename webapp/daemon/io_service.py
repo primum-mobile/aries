@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import chart
 import aaf_import
+import zet_zeus_import
 import chartfile
 import horfileio
 import note_storage
@@ -59,6 +60,22 @@ class IoService:
         selected = [str(Path(path).expanduser()) for path in paths if str(path or "").strip()]
         if kind == "aaf" and str(text or "").strip():
             return self._import_aaf_text(str(text or ""), collection=collection)
+        if kind == "zet" and str(text or "").strip():
+            return self._import_line_paste_text(
+                str(text or ""),
+                collection=collection,
+                label="Zet paste",
+                parser=zet_zeus_import.parse_zet_text_best_effort,
+                kind_label="zet",
+            )
+        if kind == "zeus" and str(text or "").strip():
+            return self._import_line_paste_text(
+                str(text or ""),
+                collection=collection,
+                label="Zeus paste",
+                parser=zet_zeus_import.parse_zeus_text_best_effort,
+                kind_label="zeus",
+            )
         if files:
             return self._import_uploaded_files(kind, files, collection=collection)
         if not selected:
@@ -744,18 +761,37 @@ class IoService:
         )
 
     def _import_aaf_text(self, text: str, *, collection: str | None = None) -> dict[str, Any]:
+        return self._import_line_paste_text(
+            text,
+            collection=collection,
+            label="AAF paste",
+            parser=aaf_import.parse_aaf_text_best_effort,
+            kind_label="aaf",
+            record_converter=aaf_import.record_to_v1_dict,
+        )
+
+    def _import_line_paste_text(
+        self,
+        text: str,
+        *,
+        collection: str | None,
+        label: str,
+        parser,
+        kind_label: str,
+        record_converter=aaf_import.record_to_v1_dict,
+    ) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
         duplicates: list[str] = []
         errors: list[dict[str, str]] = []
         existing_charts = self._existing_charts_for_duplicate_check()
-        parsed = aaf_import.parse_aaf_text_best_effort(text, source_name="AAF paste")
+        parsed = parser(text, source_name=label)
         errors.extend(
-            {"path": "AAF paste", "message": str(issue["message"])}
+            {"path": label, "message": str(issue["message"])}
             for issue in parsed["errors"]
         )
         for record in parsed["records"]:
             try:
-                chart_record = aaf_import.record_to_v1_dict(record)
+                chart_record = record_converter(record)
                 key = self._record_duplicate_key(chart_record)
                 if key is not None and key in existing_charts:
                     duplicates.append(
@@ -764,7 +800,7 @@ class IoService:
                     continue
                 records.append(self._lift_import_record(chart_record))
             except Exception as exc:
-                errors.append({"path": "AAF paste", "message": str(exc)})
+                errors.append({"path": label, "message": str(exc)})
 
         collection_path: Path | None = None
         added = 0
@@ -772,7 +808,7 @@ class IoService:
             collection_path = self._resolve_collection_path(collection)
             added = chartfile.merge_into_jsonl(records, str(collection_path))
         return self._summary(
-            kind="aaf",
+            kind=kind_label,
             selected_paths=[],
             collection_path=collection_path,
             imported_count=added,

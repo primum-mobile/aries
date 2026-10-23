@@ -311,6 +311,8 @@ const CHART_INDEPENDENT_COMMANDS = new Set([
   "menu.import.sfcht",
   "menu.import.aaf",
   "menu.import.aaf-paste",
+  "menu.import.zet-paste",
+  "menu.import.zeus-paste",
   "menu.colors",
   "menu.help.about",
   "menu.help.features",
@@ -1505,7 +1507,7 @@ export function HomeClient() {
     summary: ImportSummary | null;
     error: string | null;
   } | null>(null);
-  const [aafPasteOpen, setAafPasteOpen] = useState(false);
+  const [pasteImportKind, setPasteImportKind] = useState<"aaf" | "zet" | "zeus" | null>(null);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const runImportKind = useCallback((importKind: ImportKind) => {
     void selectImportSelection(importKind, tf)
@@ -3546,7 +3548,15 @@ export function HomeClient() {
         return;
       }
       if (command === "menu.import.aaf-paste") {
-        setAafPasteOpen(true);
+        setPasteImportKind("aaf");
+        return;
+      }
+      if (command === "menu.import.zet-paste") {
+        setPasteImportKind("zet");
+        return;
+      }
+      if (command === "menu.import.zeus-paste") {
+        setPasteImportKind("zeus");
         return;
       }
       if (SAVE_CHART_COMMANDS.has(command)) {
@@ -4287,14 +4297,16 @@ export function HomeClient() {
           open={importDrawerOpen}
           onOpenChange={setImportDrawerOpen}
           onImport={runImportKind}
-          onPasteAaf={() => {
+          onPasteImport={(kind) => {
             setImportDrawerOpen(false);
-            setAafPasteOpen(true);
+            setPasteImportKind(kind);
           }}
         />
-        <AafPasteImportDialog
-          open={aafPasteOpen}
-          onOpenChange={setAafPasteOpen}
+        <ChartPasteImportDialog
+          kind={pasteImportKind}
+          onOpenChange={(open) => {
+            if (!open) setPasteImportKind(null);
+          }}
           onImported={(summary) => setImportResult({ summary, error: null })}
           onError={(error) => setImportResult({ summary: null, error })}
         />
@@ -4686,12 +4698,12 @@ function ImportChartsDrawer({
   open,
   onOpenChange,
   onImport,
-  onPasteAaf,
+  onPasteImport,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (kind: ImportKind) => void;
-  onPasteAaf: () => void;
+  onPasteImport: (kind: "aaf" | "zet" | "zeus") => void;
 }) {
   const t = useT();
   const importFromFile = (kind: ImportKind) => {
@@ -4732,7 +4744,17 @@ function ImportChartsDrawer({
           <ImportChartsDrawerButton
             icon={ClipboardPaste}
             label={t("home.importPasteAaf")}
-            onClick={onPasteAaf}
+            onClick={() => onPasteImport("aaf")}
+          />
+          <ImportChartsDrawerButton
+            icon={ClipboardPaste}
+            label={t("home.importPasteZet")}
+            onClick={() => onPasteImport("zet")}
+          />
+          <ImportChartsDrawerButton
+            icon={ClipboardPaste}
+            label={t("home.importPasteZeus")}
+            onClick={() => onPasteImport("zeus")}
           />
         </div>
       </SheetContent>
@@ -4762,18 +4784,44 @@ function ImportChartsDrawerButton({
   );
 }
 
-function AafPasteImportDialog({
-  open,
+const PASTE_IMPORT_COPY: Record<
+  "aaf" | "zet" | "zeus",
+  { titleKey: string; descriptionKey: string; placeholder: string; collectionPlaceholder: string }
+> = {
+  aaf: {
+    titleKey: "home.pasteAafTitle",
+    descriptionKey: "home.pasteAafDescription",
+    placeholder: "Astro-Seek",
+    collectionPlaceholder: "Astro-Seek",
+  },
+  zet: {
+    titleKey: "home.pasteZetTitle",
+    descriptionKey: "home.pasteZetDescription",
+    placeholder: "Zet",
+    collectionPlaceholder: "Zet",
+  },
+  zeus: {
+    titleKey: "home.pasteZeusTitle",
+    descriptionKey: "home.pasteZeusDescription",
+    placeholder: "Zeus",
+    collectionPlaceholder: "Zeus",
+  },
+};
+
+function ChartPasteImportDialog({
+  kind,
   onOpenChange,
   onImported,
   onError,
 }: {
-  open: boolean;
+  kind: "aaf" | "zet" | "zeus" | null;
   onOpenChange: (open: boolean) => void;
   onImported: (summary: ImportSummary) => void;
   onError: (error: string) => void;
 }) {
   const t = useT();
+  const open = kind != null;
+  const copy = kind ? PASTE_IMPORT_COPY[kind] : PASTE_IMPORT_COPY.aaf;
   const [text, setText] = useState("");
   const [collections, setCollections] = useState<ChartCollection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState("");
@@ -4807,7 +4855,7 @@ function AafPasteImportDialog({
     setPending(true);
     try {
       const summary = await importCharts({
-        kind: "aaf",
+        kind: kind ?? "aaf",
         paths: [],
         text: rawText,
         collection: collectionValue,
@@ -4837,9 +4885,9 @@ function AafPasteImportDialog({
       <DialogContent size="reading" className="h-[min(44rem,calc(100vh-3rem))] overflow-hidden">
         <form onSubmit={submit} className="grid h-full min-h-0 grid-rows-[auto_minmax(12rem,1fr)_auto_auto_auto] gap-4">
           <DialogHeader>
-            <DialogTitle>{t("home.pasteAafTitle")}</DialogTitle>
+            <DialogTitle>{t(copy.titleKey)}</DialogTitle>
             <DialogDescription>
-              {t("home.pasteAafDescription")}
+              {t(copy.descriptionKey)}
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -4871,7 +4919,7 @@ function AafPasteImportDialog({
               <input
                 data-aries-control-appearance="local"
                 value={newCollectionName}
-                placeholder="Astro-Seek"
+                placeholder={copy.collectionPlaceholder}
                 onChange={(event) => setNewCollectionName(event.currentTarget.value)}
                 className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
               />

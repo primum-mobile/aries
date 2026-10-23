@@ -878,7 +878,7 @@ def io_import(payload: IoImportPayload) -> dict:
 
     Tauri/native dialogs supply selected path strings; browser shells supply
     selected file bytes; AAF paste supplies text. The daemon performs all
-    HOR/JSONL/SFcht/AAF reads, duplicate checks, conversions, and collection
+    HOR/JSONL/SFcht/AAF/Zet/Zeus paste reads, duplicate checks, conversions, and collection
     writes through the existing Python helpers.
     """
     try:
