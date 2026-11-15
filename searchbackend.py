@@ -20,6 +20,8 @@ from engine import cheby_progressions
 from engine import cheby_transits
 from engine import converse_transits
 from engine import prog_log
+from engine import synodic_cycle
+from engine.dignity_display import dignity_color, minor_dignity_count
 import fortune
 import houses
 import mtexts
@@ -181,9 +183,12 @@ class _SearchRuntime(object):
 		self._secondary_event_tuple_cache = {}
 		self._secondary_snapshot_cache = {}
 		self._primary_search_contexts = {}
+		self._transit_month_events = {}
+		self._transit_scan_caches = {}
 
 
 	def ephemeris_context(self, chrt):
+		transit_fast_api.check_search_cancellation()
 		key = id(chrt)
 		context = self._ephemeris_contexts.get(key)
 		if context is None:
@@ -461,6 +466,7 @@ def search_cursor_progress(
 	minimum_date=None,
 	maximum_date=None,
 	should_cancel=None,
+	progressive=False,
 ):
 	"""Yield complete, contiguous Search row coverage until a row budget is met.
 
@@ -507,17 +513,18 @@ def search_cursor_progress(
 	max_window_months = _cursor_max_window_months(catalog, query)
 
 	def search_span(span_start, span_end):
-		return _search_cursor_span(
-			catalog,
-			chrt,
-			query,
-			span_start,
-			span_end,
-			runtime,
-			compiled,
-			CURSOR_CHUNK_RESULT_LIMIT,
-			should_cancel=should_cancel,
-		)
+		with transit_fast_api.search_cancellation_scope(should_cancel):
+			return _search_cursor_span(
+				catalog,
+				chrt,
+				query,
+				span_start,
+				span_end,
+				runtime,
+				compiled,
+				CURSOR_CHUNK_RESULT_LIMIT,
+				should_cancel=should_cancel,
+			)
 
 	yield from row_cursor_progress(
 		chrt,
@@ -531,6 +538,11 @@ def search_cursor_progress(
 		search_span=search_span,
 		max_window_months=max_window_months,
 		should_cancel=should_cancel,
+		date_spans=(
+			_iter_search_cursor_seed_spans(start_date, end_date, direction, anchor_date,
+				max_window_months, minimum_date, maximum_date)
+			if progressive else None
+		),
 	)
 
 
@@ -549,6 +561,7 @@ def row_cursor_progress(
 	should_cancel=None,
 	dedupe_rows=None,
 	row_sort_key=None,
+	date_spans=None,
 ):
 	"""Apply Search's contiguous row-budget scheduler to an existing row source.
 
@@ -593,8 +606,8 @@ def row_cursor_progress(
 	anchor_jd = _date_to_jd(anchor_date, chrt)
 	seed_start = start_date
 	seed_end = end_date
-	coverage_start = start_date
-	coverage_end = end_date
+	coverage_start = None
+	coverage_end = None
 	all_rows = []
 	window_count = 0
 	leaf_window_count = 0
@@ -602,14 +615,16 @@ def row_cursor_progress(
 	started_at = time.perf_counter()
 	last_yield_at = 0.0
 
-	for span_start, span_end in _iter_cursor_date_spans(
-		start_date,
-		end_date,
-		direction,
-		max_window_months=max_window_months,
-		minimum_date=minimum_date,
-		maximum_date=maximum_date,
-	):
+	if date_spans is None:
+		date_spans = _iter_cursor_date_spans(
+			start_date,
+			end_date,
+			direction,
+			max_window_months=max_window_months,
+			minimum_date=minimum_date,
+			maximum_date=maximum_date,
+		)
+	for span_start, span_end in date_spans:
 		if should_cancel is not None and should_cancel():
 			return
 		try:
@@ -624,10 +639,11 @@ def row_cursor_progress(
 
 		window_count += 1
 		leaf_window_count += span_leaf_count
-		coverage_start = min(coverage_start, span_start)
-		coverage_end = max(coverage_end, span_end)
-		all_rows.extend(span_rows)
-		all_rows = dedupe_rows(all_rows)
+		coverage_start = span_start if coverage_start is None else min(coverage_start, span_start)
+		coverage_end = span_end if coverage_end is None else max(coverage_end, span_end)
+		# A published revision keeps its exact coverage and row snapshot. Do not
+		# extend a previously yielded list while computing the next slice.
+		all_rows = dedupe_rows(all_rows + span_rows)
 		all_rows.sort(key=row_sort_key)
 		row_count = len(all_rows)
 		before_count = sum(
@@ -655,6 +671,7 @@ def row_cursor_progress(
 		now = time.perf_counter()
 		if (
 			window_count == 1
+			or (previous_row_count == 0 and row_count > 0)
 			or span_truncated
 			or satisfied
 			or exhausted
@@ -697,6 +714,39 @@ def row_cursor_progress(
 
 		if span_truncated or satisfied or exhausted:
 			return
+
+
+def _iter_search_cursor_seed_spans(
+	start_date, end_date, direction, anchor_date,
+	max_window_months, minimum_date, maximum_date,
+):
+	"""Publish a small complete seed first, then retain the calendar scheduler.
+
+	Every slice contains all selected techniques. The original month seed is a
+	scheduling hint, not a coverage proof: callers may stop once the row budget
+	is met, and only the solved adjacent slices belong to reported coverage.
+	"""
+	first = end_date if direction == 'previous' else start_date
+	if direction == 'around':
+		first = anchor_date
+	yield first, first
+	left = right = first
+	for days in (3, 7, CURSOR_MAX_SEED_DAYS):
+		if direction != 'next' and left > start_date:
+			span_start = left - datetime.timedelta(days=min(days, (left - start_date).days))
+			yield span_start, left - datetime.timedelta(days=1)
+			left = span_start
+		if direction != 'previous' and right < end_date:
+			span_end = right + datetime.timedelta(days=min(days, (end_date - right).days))
+			yield right + datetime.timedelta(days=1), span_end
+			right = span_end
+	# The seed is now fully solved. Continue through the same adjacent calendar
+	# spans used by sparse searches, including their existing growth limits.
+	spans = _iter_cursor_date_spans(start_date, end_date, direction,
+		max_window_months=max_window_months,
+		minimum_date=minimum_date, maximum_date=maximum_date)
+	next(spans)
+	yield from spans
 
 
 def _iter_cursor_date_spans(
@@ -805,8 +855,7 @@ def _days_in_month(year, month):
 	return (next_month - datetime.date(year, month, 1)).days
 
 
-class _SearchCursorCancelled(Exception):
-	pass
+_SearchCursorCancelled = transit_fast_api.TransitSearchCancelled
 
 
 def _search_cursor_span(
@@ -1097,9 +1146,9 @@ def _search_transits(catalog, chrt, query, start_jd, end_jd, runtime=None, compi
 			fallback_promittors.append(prom_id)
 	rows.extend(_search_transits_fast_engine(catalog, chrt, start_jd, end_jd, compiled, excluded_significator_ids=per_target_sig_ids))
 	if len(per_target_sig_ids) != 0 and len(fast_promittors) != 0:
-		rows.extend(_search_transits_per_target(catalog, chrt, query, start_jd, end_jd, fast_promittors, significator_ids=per_target_sig_ids))
+		rows.extend(_search_transits_per_target(catalog, chrt, query, start_jd, end_jd, fast_promittors, significator_ids=per_target_sig_ids, runtime=runtime))
 	if len(fallback_promittors) != 0:
-		rows.extend(_search_transits_per_target(catalog, chrt, query, start_jd, end_jd, fallback_promittors))
+		rows.extend(_search_transits_per_target(catalog, chrt, query, start_jd, end_jd, fallback_promittors, runtime=runtime))
 	return rows
 
 
@@ -1144,7 +1193,7 @@ def _can_use_fast_transit_promittor(prom):
 		return True
 	return (
 		prom.family == searchcatalog.SearchObject.FAMILY_PLANET
-		and (prom.planet_index <= astrology.SE_PLUTO or prom.id.startswith('asteroid:'))
+		and (prom.planet_index <= astrology.SE_PLUTO or prom.id == 'planet:apogee' or prom.id.startswith('asteroid:'))
 	)
 
 
@@ -1228,10 +1277,17 @@ def _search_transits_fast_engine(catalog, chrt, start_jd, end_jd, compiled, excl
 	return rows
 
 
-def _search_transits_per_target(catalog, chrt, query, start_jd, end_jd, promittor_ids=None, aspect_ids=None, significator_ids=None):
+def _search_transits_per_target(catalog, chrt, query, start_jd, end_jd, promittor_ids=None, aspect_ids=None, significator_ids=None, runtime=None):
 	rows = []
 	calflag = _calendar_flag(chrt)
 	context = _planet_ephemeris_context(chrt)
+	scan_cache = None
+	if runtime is not None:
+		scan_key = (id(chrt), context)
+		scan_cache = runtime._transit_scan_caches.get(scan_key)
+		if scan_cache is None:
+			scan_cache = transits.TargetScanCache(context)
+			runtime._transit_scan_caches[scan_key] = scan_cache
 	if promittor_ids is None:
 		promittor_ids = query.promittor_ids
 	if aspect_ids is None:
@@ -1240,12 +1296,14 @@ def _search_transits_per_target(catalog, chrt, query, start_jd, end_jd, promitto
 		significator_ids = query.significator_ids
 
 	for prom_id in promittor_ids:
+		transit_fast_api.check_search_cancellation()
 		prom = catalog.get(prom_id)
 		transit_body, target_shift = _transit_promittor_body_and_target_shift(prom, chrt)
 		if transit_body is None:
 			continue
 
 		for sig_id in significator_ids:
+			transit_fast_api.check_search_cancellation()
 			sig = catalog.get(sig_id)
 			if sig is None:
 				continue
@@ -1258,17 +1316,26 @@ def _search_transits_per_target(catalog, chrt, query, start_jd, end_jd, promitto
 				for target_lon in _aspect_target_longitudes(sig.longitude, chart_aspect):
 					search_target_lon = util.normalize(target_lon - target_shift)
 					for year, month in _iter_months_between(start_jd, end_jd, calflag):
-						engine = transits.Transits()
-						engine.month(
-							year,
-							month,
-							chrt,
-							transit_body,
-							search_target_lon,
-							context=context,
-						)
-						for tr in engine.transits:
-							event_jd = astrology.swe_julday(year, month, tr.day, tr.time, calflag)
+						transit_fast_api.check_search_cancellation()
+						# Progressive civil slices can share a month. Preserve the
+						# existing exact-second solver, but solve each target/month
+						# once per search, before filtering to the certified slice.
+						cache_key = (id(chrt), context, calflag, transit_body, search_target_lon, year, month)
+						events = runtime._transit_month_events.get(cache_key) if runtime is not None else None
+						if events is None:
+							engine = transits.Transits(scan_cache=scan_cache)
+							engine.month(year, month, chrt, transit_body, search_target_lon, context=context)
+							transit_fast_api.check_search_cancellation()
+							events = tuple(
+								astrology.swe_julday(year, month, tr.day, tr.time, calflag)
+								for tr in engine.transits
+							)
+							if runtime is not None:
+								# Bound sparse, effectively unbounded cursor histories.
+								if len(runtime._transit_month_events) >= 4096:
+									runtime._transit_month_events.pop(next(iter(runtime._transit_month_events)))
+								runtime._transit_month_events[cache_key] = events
+						for event_jd in events:
 							if event_jd < start_jd or event_jd >= end_jd:
 								continue
 
@@ -1547,7 +1614,7 @@ def _search_secondary_directions(catalog, chrt, query, start_jd, end_jd, runtime
 	return rows
 
 
-def build_secondary_station_rows(catalog, chrt, start_date, end_date, promittor_ids=None, method=posfordate.SECONDARY):
+def build_secondary_station_rows(catalog, chrt, start_date, end_date, promittor_ids=None, method=posfordate.SECONDARY, direction='direct'):
 	if catalog is None or chrt is None or getattr(chrt, 'time', None) is None:
 		return []
 	start_jd = _date_to_jd(start_date, chrt)
@@ -1560,6 +1627,7 @@ def build_secondary_station_rows(catalog, chrt, start_date, end_date, promittor_
 		_SearchRuntime(),
 		promittor_ids=promittor_ids,
 		method=method,
+		direction=direction,
 	)
 
 
@@ -1636,6 +1704,8 @@ def _search_secondary_ingress_rows(
 				targets,
 				context=context,
 			)
+		except transit_fast_api.TransitSearchCancelled:
+			raise
 		except Exception:
 			continue
 		for hit in hits:
@@ -1691,10 +1761,25 @@ def _search_secondary_ingress_rows(
 	return _dedupe_rows(rows)
 
 
-def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None, promittor_ids=None, method=posfordate.SECONDARY):
+# The progression key magnifies a station root's ephemeris error (x365 for
+# 1 day = 1 year). The transit tolerance (1e-6 deg/day) leaves a slow outer
+# planet's root ~0.002 day loose, hours of civil time that move with the
+# search window; solve progressed stations to the day tolerance instead.
+SECONDARY_STATION_SPEED_EPS = 1e-12
+
+
+def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None, promittor_ids=None, method=posfordate.SECONDARY, direction='direct'):
+	"""Return exact SR/SD stations on the progression trajectory.
+
+	Converse motion reads the ephemeris before birth (birth - symbolic age),
+	as the converse ingress rows do. The station code is the ephemeris
+	planet's own motion at that instant, matching the R marker converse
+	aspect rows show for the same regressed planet.
+	"""
 	if runtime is None:
 		runtime = _SearchRuntime()
 	method = posfordate.progression_method(method)
+	converse = str(direction or 'direct').strip().lower() == 'converse'
 	start_age = _secondary_symbolic_age_for_jd(chrt, start_jd, method=method)
 	end_age = _secondary_symbolic_age_for_jd(chrt, end_jd, method=method)
 	if start_age >= end_age:
@@ -1705,8 +1790,12 @@ def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None
 		return []
 
 	birth_jd = float(chrt.time.jd)
-	range_start = birth_jd + float(start_age)
-	range_end = birth_jd + float(end_age)
+	if converse:
+		range_start = birth_jd - float(end_age)
+		range_end = birth_jd - float(start_age)
+	else:
+		range_start = birth_jd + float(start_age)
+		range_end = birth_jd + float(end_age)
 	context = runtime.ephemeris_context(chrt)
 	flags = context.flags
 	planet_ids = [planet_idx for planet_idx, _prom_id in station_promittors]
@@ -1718,7 +1807,10 @@ def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None
 			float(range_start),
 			float(range_end),
 			context=context,
+			eps_speed=SECONDARY_STATION_SPEED_EPS,
 		)
+	except transit_fast_api.TransitSearchCancelled:
+		raise
 	except Exception:
 		hits = []
 		for planet_idx in planet_ids:
@@ -1728,7 +1820,10 @@ def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None
 					float(range_start),
 					float(range_end),
 					context=context,
+					eps_speed=SECONDARY_STATION_SPEED_EPS,
 				))
+			except transit_fast_api.TransitSearchCancelled:
+				raise
 			except Exception:
 				continue
 
@@ -1739,7 +1834,7 @@ def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None
 		if prom_id is None:
 			continue
 		station_jd = float(hit.jd_ut)
-		symbolic_age = station_jd - birth_jd
+		symbolic_age = birth_jd - station_jd if converse else station_jd - birth_jd
 		event_info = _secondary_real_event_info_for_symbolic_age(chrt, symbolic_age, method=method)
 		if event_info is None:
 			continue
@@ -1764,7 +1859,9 @@ def _search_secondary_station_rows(catalog, chrt, start_jd, end_jd, runtime=None
 		row.metadata['progressed_station_jd'] = station_jd
 		row.metadata['station_code'] = code
 		row.metadata['secondary_station'] = True
-		station_lon = _secondary_symbolic_object_longitude(prom, chrt, symbolic_age, runtime=runtime, method=method)
+		station_lon = _secondary_symbolic_object_longitude(
+			prom, chrt, -symbolic_age if converse else symbolic_age, runtime=runtime, method=method,
+		)
 		_apply_secondary_station_display_payload(row, chrt, prom, station_lon, float(hit.speed), station_jd, code)
 		rows.append(row)
 	return rows
@@ -2020,6 +2117,12 @@ def _cheby_body_kind_for_promittor(prom, options):
 		# LoF under MEAN_QUOTIDIAN_Q2 isn't supported by the fast path yet — falls
 		# back to legacy via supported_body_id() returning False.
 		return cheby_progressions.KIND_LOF
+	if prom.id == 'point:vertex':
+		return cheby_progressions.KIND_VERTEX
+	if prom.id.startswith('asteroid:'):
+		return cheby_progressions.KIND_ASTEROID
+	if prom.planet_index in (astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
+		return cheby_progressions.KIND_PLANET_FAST
 	if prom.planet_index == astrology.SE_MOON:
 		return cheby_progressions.KIND_PLANET_FAST
 	if prom.planet_index is not None and prom.planet_index in (
@@ -2043,19 +2146,27 @@ def _search_secondary_directions_cheby(catalog, chrt, compiled, start_age, end_a
 	with rec.stage('cheby_select'):
 		supported_targets = []
 		supported_promittor_ids = set()
-		body_specs = {}  # promittor_id -> (kind, planet_index)
+		body_specs = {}  # fit body id -> (kind, planet_index)
+		# Resolve each promittor's fit once, not once per aspect target.
+		fit_spec_by_prom = {}
 		for prom_id, sig_id, aspect_id, target_lon in compiled.static_targets:
-			prom = catalog.get(prom_id)
-			if prom is None:
-				continue
-			kind = _cheby_body_kind_for_promittor(prom, chrt.options)
+			if prom_id not in fit_spec_by_prom:
+				fit_id = _SECONDARY_ANGLE_AXIS_ALIASES.get(prom_id, (prom_id, 0.0))[0]
+				prom = catalog.get(fit_id)
+				kind = None
+				if prom is not None and catalog.get(prom_id) is not None:
+					kind = _cheby_body_kind_for_promittor(prom, chrt.options)
+					if kind is not None and not cheby_progressions.supported_body_id(catalog, chrt.options, fit_id):
+						kind = None
+				fit_spec_by_prom[prom_id] = (fit_id, kind, prom.planet_index if prom is not None else None)
+			fit_id, kind, planet_index = fit_spec_by_prom[prom_id]
 			if kind is None:
 				continue
-			if not cheby_progressions.supported_body_id(catalog, chrt.options, prom_id):
-				continue
-			body_specs[prom_id] = (kind, prom.planet_index)
 			supported_targets.append((prom_id, sig_id, aspect_id, target_lon))
-			supported_promittor_ids.add(prom_id)
+		for prom_id, (fit_id, kind, planet_index) in fit_spec_by_prom.items():
+			if kind is not None:
+				body_specs[fit_id] = (kind, planet_index)
+				supported_promittor_ids.add(prom_id)
 
 	if len(supported_targets) == 0:
 		return [], set()
@@ -2063,14 +2174,23 @@ def _search_secondary_directions_cheby(catalog, chrt, compiled, start_age, end_a
 	try:
 		with rec.stage('cheby_fit'):
 			fit = cheby_progressions.ProgressionFit(chrt, chrt.options, start_age, end_age, method=method)
-			fit.fit_many(
-				(
-					(prom_id, kind, planet_index)
-					for prom_id, (kind, planet_index) in body_specs.items()
-				)
-			)
+			for fit_id, (kind, planet_index) in body_specs.items():
+				try:
+					fit.fit(fit_id, kind, planet_index=planet_index)
+				except cheby_progressions.EphemerisUnavailable:
+					# A missing asteroid file leaves that body without rows, as on
+					# every other path; the catalog reports it as unavailable.
+					fit_obj = catalog.get(fit_id)
+					if fit_obj is not None:
+						fit_obj.ephemeris_unavailable = True
 	except Exception:
 		return [], set()
+	unfitted = set(fit_id for fit_id in body_specs if not fit.has(fit_id))
+	if unfitted:
+		supported_targets = [
+			target for target in supported_targets
+			if _SECONDARY_ANGLE_AXIS_ALIASES.get(target[0], (target[0], 0.0))[0] not in unfitted
+		]
 
 	if prog_log.enabled():
 		# Per-body fit breakdown — one line per body, sorted slowest first.
@@ -2100,17 +2220,32 @@ def _search_secondary_directions_cheby(catalog, chrt, compiled, start_age, end_a
 	finalize_ms = 0.0
 	total_hits = 0
 	scale = posfordate.progression_symbolic_scale(method) or 1.0
-	for (prom_id, _target_key), specs in grouped.items():
+	# Solve every target of one promittor in a single vectorized pass.
+	group_keys_by_prom = {}
+	for key in grouped:
+		group_keys_by_prom.setdefault(key[0], []).append(key)
+	candidates_by_group = {}
+	t0 = time.perf_counter()
+	for prom_id, keys in group_keys_by_prom.items():
+		# Dsc/IC solve on the Asc/MC fit with the antipodal target; rows keep their own id.
+		fit_id, fit_offset = _SECONDARY_ANGLE_AXIS_ALIASES.get(prom_id, (prom_id, 0.0))
+		solve_lons = [
+			util.normalize(grouped[key][0][2] - fit_offset) if fit_offset else grouped[key][0][2]
+			for key in keys
+		]
+		for key, hits in zip(keys, fit.find_aspect_hits_many(fit_id, solve_lons, with_candidate_kinds=True)):
+			if hits:
+				candidates_by_group[key] = hits
+	roots_ms += (time.perf_counter() - t0) * 1000.0
+	snap_by_prom = {}
+	for (prom_id, _target_key), age_candidates in candidates_by_group.items():
+		specs = grouped[(prom_id, _target_key)]
 		target_lon = specs[0][2]
-		t0 = time.perf_counter()
-		age_candidates = fit.find_aspect_hits(
-			prom_id,
-			target_lon,
-			with_candidate_kinds=True,
-		)
-		roots_ms += (time.perf_counter() - t0) * 1000.0
+		fit_id, fit_offset = _SECONDARY_ANGLE_AXIS_ALIASES.get(prom_id, (prom_id, 0.0))
 		total_hits += len(age_candidates)
-		needs_snap = _secondary_requires_real_snap(prom_id, catalog)
+		if prom_id not in snap_by_prom:
+			snap_by_prom[prom_id] = _secondary_requires_real_snap(prom_id, catalog)
+		needs_snap = snap_by_prom[prom_id]
 		t1 = time.perf_counter()
 		candidates = []
 		for age, is_tangent in age_candidates:
@@ -2131,7 +2266,7 @@ def _search_secondary_directions_cheby(catalog, chrt, compiled, start_age, end_a
 			event_tuple = _jd_to_datetime_tuple(approx_jd, calflag)
 			event_date = '%04d-%02d-%02d' % (event_tuple[0], event_tuple[1], event_tuple[2])
 			event_time = '%02d:%02d:%02d' % (event_tuple[3], event_tuple[4], event_tuple[5])
-			prom_speed = fit.speed(prom_id, float(age))
+			prom_speed = fit.speed(fit_id, float(age))
 			prom_motion_jd = birth_jd + float(age)
 			previous_jd = (
 				float(candidates[candidate_index - 1][2][0])
@@ -2340,6 +2475,7 @@ def _search_primary_directions(catalog, chrt, query, start_jd, end_jd, runtime=N
 		finally:
 			if getattr(effective_options, 'searchEcPd', False):
 				chrt.cpd2 = original_cpd2
+		transit_fast_api.check_search_cancellation()
 		context = (engine, selected_prom_ids, selected_sig_ids)
 		if runtime is not None:
 			runtime._primary_search_contexts[cache_key] = context
@@ -2423,6 +2559,8 @@ def _search_mundane_weather(catalog, chrt, query, start_jd, end_jd, runtime=None
 		if not _cheby_secondary_disabled():
 			try:
 				cheby_rows = _search_mundane_weather_specs_cheby(catalog, chrt, start_jd, end_jd, runtime, body_objects, legacy_specs)
+			except transit_fast_api.TransitSearchCancelled:
+				raise
 			except Exception:
 				cheby_rows = None
 		if cheby_rows is None:
@@ -2455,6 +2593,7 @@ def _search_mundane_weather_specs_cheby(catalog, chrt, start_jd, end_jd, runtime
 
 	fit = cheby_transits.TransitFit(chrt, chrt.options, float(start_jd), float(end_jd))
 	for body_id in body_ids:
+		transit_fast_api.check_search_cancellation()
 		obj = body_objects_by_id.get(body_id)
 		if obj is None:
 			raise RuntimeError('cheby weather: unknown body %r' % (body_id,))
@@ -2462,8 +2601,10 @@ def _search_mundane_weather_specs_cheby(catalog, chrt, start_jd, end_jd, runtime
 
 	calflag = _calendar_flag(chrt)
 	for prom_id, sig_id, _prom_idx, _sig_idx, aspect_id, offset in specs:
+		transit_fast_api.check_search_cancellation()
 		hits = fit.find_relative_aspect_hits(prom_id, sig_id, float(offset))
 		for exact_jd in hits:
+			transit_fast_api.check_search_cancellation()
 			if exact_jd < start_jd or exact_jd >= end_jd:
 				continue
 			exact_jd = _refine_cheby_weather_exact_jd(
@@ -2512,6 +2653,7 @@ def _refine_cheby_weather_exact_jd(prom_obj, sig_obj, chrt, offset, candidate_jd
 		return float(candidate_jd)
 
 	def evaluate(event_jd):
+		transit_fast_api.check_search_cancellation()
 		prom_lon = _live_object_longitude_uncached(prom_obj, chrt, event_jd, flags)
 		sig_lon = _live_object_longitude_uncached(sig_obj, chrt, event_jd, flags)
 		if prom_lon is None or sig_lon is None:
@@ -2655,6 +2797,7 @@ def _search_mundane_weather_specs_fast(catalog, chrt, start_jd, end_jd, runtime,
 		context=context,
 	)
 	for exact_jd, spec_idx, _target_deg, _aspect_deg, _hit_kind, _hit_speed, _retrograde in hits:
+		transit_fast_api.check_search_cancellation()
 		if exact_jd < start_jd or exact_jd >= end_jd:
 			continue
 		prom_id, sig_id, prom_idx, sig_idx, aspect_id, offset = specs[int(spec_idx)]
@@ -2692,10 +2835,12 @@ def _search_mundane_weather_specs_legacy(catalog, chrt, start_jd, end_jd, runtim
 	current_state = _live_planet_longitude_vector_uncached(body_objects, chrt, flags, current_jd)
 	calflag = _calendar_flag(chrt)
 	while current_jd < end_jd:
+		transit_fast_api.check_search_cancellation()
 		next_jd = min(current_jd + 1.0/24.0, end_jd)
 		next_state = _live_planet_longitude_vector_uncached(body_objects, chrt, flags, next_jd)
 
 		for prom_id, sig_id, prom_idx, sig_idx, aspect_id, offset in remapped_specs:
+			transit_fast_api.check_search_cancellation()
 			lon0 = current_state[prom_idx]
 			lon1 = next_state[prom_idx]
 			sig0 = current_state[sig_idx]
@@ -3038,14 +3183,16 @@ def _apply_heliacal_display_payload(row, chrt, prom, longitude, speed_lon, event
 			options=getattr(chrt, 'options', None),
 		)
 	dignity_code = _dignity_code_for_longitude(chrt, prom, longitude)
+	minor_count = _object_minor_dignity_count(chrt, prom, longitude)
 	row.metadata['prom_display'] = {
 		'longitude': longitude,
 		'display_longitude': display_longitude,
 		'speed_lon': speed_lon,
 		'lon_text': _format_compact_longitude(display_longitude),
-		'glyph_color': _glyph_color_for_dignity(chrt, prom, dignity_code),
+		'glyph_color': _glyph_color_for_dignity(chrt, prom, dignity_code, minor_count),
 		'motion_marker': motion_marker,
 		'dignity_code': dignity_code,
+		'minor_dignity_count': minor_count,
 		'state_suffix': _format_state_suffix(motion_marker, dignity_code),
 		'is_live': True,
 	}
@@ -3154,6 +3301,8 @@ def _search_station_rows(catalog, chrt, promittor_ids, start_jd, end_jd, techniq
 			float(end_jd),
 			context=context,
 		)
+	except transit_fast_api.TransitSearchCancelled:
+		raise
 	except Exception:
 		hits = []
 		for planet_idx in planet_ids:
@@ -3164,6 +3313,8 @@ def _search_station_rows(catalog, chrt, promittor_ids, start_jd, end_jd, techniq
 					float(end_jd),
 					context=context,
 				))
+			except transit_fast_api.TransitSearchCancelled:
+				raise
 			except Exception:
 				continue
 
@@ -3203,7 +3354,19 @@ def _search_station_rows(catalog, chrt, promittor_ids, start_jd, end_jd, techniq
 	return rows
 
 
-def _search_cazimi_rows(
+def _search_cazimi_rows(catalog, chrt, promittor_ids, start_jd, end_jd, technique, runtime):
+	rows = _search_solar_conjunction_rows(
+		catalog, chrt, promittor_ids, start_jd, end_jd, technique, runtime,
+		cazimi_only=True,
+	)
+	for row in rows:
+		row.aspect = searchquery.SearchQuery.ASPECT_CAZIMI
+		row.event_label = mtexts.txts.get('Cazimi', 'Cazimi')
+		row.notes = row.event_label
+	return rows
+
+
+def _search_solar_conjunction_rows(
 	catalog,
 	chrt,
 	promittor_ids,
@@ -3212,7 +3375,7 @@ def _search_cazimi_rows(
 	technique,
 	runtime,
 	*,
-	respect_mode=True,
+	cazimi_only=False,
 ):
 	if runtime is None:
 		runtime = _SearchRuntime()
@@ -3267,6 +3430,8 @@ def _search_cazimi_rows(
 		if not _cheby_secondary_disabled():
 			try:
 				cheby_rows = _search_mundane_weather_specs_cheby(catalog, chrt, start_jd, end_jd, runtime, body_objects, legacy_specs)
+			except transit_fast_api.TransitSearchCancelled:
+				raise
 			except Exception:
 				cheby_rows = None
 		if cheby_rows is None:
@@ -3274,30 +3439,29 @@ def _search_cazimi_rows(
 		else:
 			raw_rows.extend(cheby_rows)
 
+	if not raw_rows:
+		return []
 	rows = []
 	mode = radixsignals._normalize_cazimi_mode(getattr(chrt.options, 'cazimimode', radixsignals.CAZIMI_MODE_HELLENISTIC))
 	calflag = _calendar_flag(chrt)
+	flags = _planet_flags(chrt)
 	for row in raw_rows:
-		prom = catalog.get(row.promittor_id)
-		sig = catalog.get(row.significator_id)
-		match = _cazimi_event_match(
-			chrt,
-			prom,
-			sig,
-			row.event_jd,
-			mode,
-			respect_mode=respect_mode,
-		)
-		if match is None:
+		prom = body_objects[row.promittor_id]
+		prom_state = _live_object_lon_lat_state_uncached(prom, chrt, row.event_jd, flags)
+		sun_state = _live_object_lon_lat_state_uncached(sun, chrt, row.event_jd, flags)
+		if prom_state is None or sun_state is None:
+			continue
+		lon_delta = radixsignals._angular_distance(prom_state[0], sun_state[0])
+		lat_delta = abs(prom_state[1] - sun_state[1])
+		is_cazimi = radixsignals.matches_cazimi_mode(mode, lon_delta, lat_delta)
+		if cazimi_only and not is_cazimi:
 			continue
 		row.technique = technique
-		row.aspect = searchquery.SearchQuery.ASPECT_CAZIMI
-		row.notes = mtexts.txts.get('Cazimi', 'Cazimi')
-		row.event_label = mtexts.txts.get('Cazimi', 'Cazimi')
-		row.metadata['cazimi'] = True
+		row.metadata['solar_conjunction'] = synodic_cycle.conjunction_phase(prom.planet_index, prom_state[2])
+		row.metadata['cazimi'] = is_cazimi
 		row.metadata['cazimi_mode'] = mode
-		row.metadata['cazimi_lon_delta'] = match[0]
-		row.metadata['cazimi_lat_delta'] = match[1]
+		row.metadata['cazimi_lon_delta'] = lon_delta
+		row.metadata['cazimi_lat_delta'] = lat_delta
 		row.metadata['exact_event_jd'] = row.event_jd
 		row.metadata['exact_event_datetime'] = _jd_to_datetime_tuple(row.event_jd, calflag)
 		_apply_live_pair_row_display_payloads(row, catalog, chrt, runtime)
@@ -3322,37 +3486,6 @@ def _cazimi_promittors(catalog, chrt, promittor_ids):
 			continue
 		promittors.append((planet_idx, prom_id))
 	return promittors
-
-
-def _cazimi_event_match(
-	chrt,
-	prom,
-	sun,
-	event_jd,
-	mode,
-	*,
-	respect_mode=True,
-):
-	if prom is None or sun is None:
-		return None
-	flags = _planet_flags(chrt)
-	prom_state = _live_object_lon_lat_state_uncached(prom, chrt, event_jd, flags)
-	sun_state = _live_object_lon_lat_state_uncached(sun, chrt, event_jd, flags)
-	if prom_state is None or sun_state is None:
-		return None
-	lon_delta = radixsignals._angular_distance(prom_state[0], sun_state[0])
-	lat_delta = abs(float(prom_state[1]) - float(sun_state[1]))
-	if not respect_mode:
-		return lon_delta, lat_delta
-	if mode == radixsignals.CAZIMI_MODE_HELLENISTIC:
-		matches = lon_delta <= radixsignals.CAZIMI_HELLENISTIC_ORB_DEG
-	elif mode == radixsignals.CAZIMI_MODE_ABU_MASHAR:
-		matches = lon_delta <= radixsignals.CAZIMI_SIXTEEN_MIN_ORB_DEG
-	else:
-		matches = lon_delta <= radixsignals.CAZIMI_SIXTEEN_MIN_ORB_DEG and lat_delta <= radixsignals.CAZIMI_SIXTEEN_MIN_ORB_DEG
-	if not matches:
-		return None
-	return lon_delta, lat_delta
 
 
 def _sign_change_technique(query):
@@ -3457,15 +3590,17 @@ def _apply_sign_change_row_display_payloads(row, radix_catalog, chrt, runtime):
 			options=getattr(chrt, 'options', None),
 		)
 	dignity_code = _dignity_code_for_longitude(chrt, prom, longitude)
+	minor_count = _object_minor_dignity_count(chrt, prom, longitude)
 
 	row.metadata['prom_display'] = {
 		'longitude': longitude,
 		'display_longitude': display_longitude,
 		'speed_lon': speed_lon,
 		'lon_text': _format_compact_longitude(display_longitude),
-		'glyph_color': _glyph_color_for_dignity(chrt, prom, dignity_code),
+		'glyph_color': _glyph_color_for_dignity(chrt, prom, dignity_code, minor_count),
 		'motion_marker': motion_marker,
 		'dignity_code': dignity_code,
+		'minor_dignity_count': minor_count,
 		'state_suffix': _format_state_suffix(motion_marker, dignity_code),
 		'is_live': True,
 	}
@@ -3519,14 +3654,16 @@ def _build_row_object_display(radix_catalog, object_id, display_chart, event_jd,
 			options=getattr(display_chart, 'options', None),
 		)
 	dignity_code = _object_dignity_code(display_chart, obj)
+	minor_count = _object_minor_dignity_count(display_chart, obj, longitude)
 	payload = {
 		'longitude': longitude,
 		'display_longitude': display_longitude,
 		'speed_lon': speed_lon,
 		'lon_text': _format_compact_longitude(display_longitude),
-		'glyph_color': _object_glyph_color(display_chart, obj),
+		'glyph_color': _glyph_color_for_dignity(display_chart, obj, dignity_code, minor_count),
 		'motion_marker': motion_marker,
 		'dignity_code': dignity_code,
+		'minor_dignity_count': minor_count,
 		'state_suffix': _format_state_suffix(motion_marker, dignity_code),
 		'is_live': bool(is_live),
 	}
@@ -3581,14 +3718,16 @@ def _build_payload_for_object(display_chart, obj, longitude, speed_lon, event_jd
 			options=getattr(display_chart, 'options', None),
 		)
 	dignity_code = _dignity_code_for_longitude(display_chart, obj, longitude)
+	minor_count = _object_minor_dignity_count(display_chart, obj, longitude)
 	payload = {
 		'longitude': longitude,
 		'display_longitude': display_longitude,
 		'speed_lon': speed_lon,
 		'lon_text': _format_compact_longitude(display_longitude),
-		'glyph_color': _glyph_color_for_dignity(display_chart, obj, dignity_code),
+		'glyph_color': _glyph_color_for_dignity(display_chart, obj, dignity_code, minor_count),
 		'motion_marker': motion_marker,
 		'dignity_code': dignity_code,
+		'minor_dignity_count': minor_count,
 		'state_suffix': _format_state_suffix(motion_marker, dignity_code),
 		'is_live': bool(is_live),
 	}
@@ -3893,6 +4032,9 @@ def _dignity_code_for_longitude(display_chart, obj, longitude):
 		oppsign = (sign + chart.Chart.SIGN_NUM // 2) % chart.Chart.SIGN_NUM
 		isexil = display_chart.options.dignities[obj.planet_index][0][oppsign]
 		iscasus = display_chart.options.dignities[obj.planet_index][1][oppsign]
+		# Match Chart.dignity() at the event's longitude, not the radix.
+		if obj.planet_index == astrology.SE_MERCURY and isdom and isexal:
+			return chart.Chart.EXAL
 		if isdom:
 			return chart.Chart.DOMICIL
 		if isexil:
@@ -3906,30 +4048,28 @@ def _dignity_code_for_longitude(display_chart, obj, longitude):
 		return None
 
 
+def _object_minor_dignity_count(display_chart, obj, longitude):
+	if obj is None or obj.family != searchcatalog.SearchObject.FAMILY_PLANET:
+		return 0
+	return minor_dignity_count(display_chart, obj.planet_index, longitude)
+
+
 def _object_glyph_color(display_chart, obj):
 	return _glyph_color_for_dignity(display_chart, obj, _object_dignity_code(display_chart, obj))
 
 
-def _glyph_color_for_dignity(display_chart, obj, dignity_code):
+def _glyph_color_for_dignity(display_chart, obj, dignity_code, minor_count=None):
 	if obj is None:
 		return display_chart.options.clrtexts
 	if obj.id == 'point:lof':
 		return display_chart.options.clrperegrin
 	if obj.planet_index is None:
 		return display_chart.options.clrtexts
-	if obj.planet_index == astrology.SE_CHIRON:
+	if obj.planet_index in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
 		return display_chart.options.clrperegrin
-	palette = (
-		display_chart.options.clrdomicil,
-		display_chart.options.clrexal,
-		display_chart.options.clrperegrin,
-		display_chart.options.clrcasus,
-		display_chart.options.clrexil,
-	)
-	try:
-		return palette[dignity_code]
-	except Exception:
-		return display_chart.options.clrperegrin
+	if minor_count is None:
+		minor_count = _object_minor_dignity_count(display_chart, obj, getattr(obj, 'longitude', None))
+	return dignity_color(display_chart.options, dignity_code, minor_count)
 
 
 def _format_state_suffix(motion_marker, dignity_code):
@@ -4014,10 +4154,16 @@ def _interpolate_zero_crossing(start_value, end_value, delta0, delta1):
 	return start_value + (end_value - start_value) * fraction
 
 
+# Progressed points read from the progressed angle state rather than an ephemeris body.
+_SECONDARY_ANGLE_STATE_IDS = ('angle:asc', 'angle:mc', 'angle:dsc', 'angle:ic', 'point:vertex', 'point:lof')
+# Dsc/IC progress as the Asc/MC axis: (fit body, longitude offset) for the fast path.
+_SECONDARY_ANGLE_AXIS_ALIASES = {'angle:dsc': ('angle:asc', 180.0), 'angle:ic': ('angle:mc', 180.0)}
+
+
 def _secondary_symbolic_snapshot(radix_catalog, radix, symbolic_age, object_ids, runtime=None, method=posfordate.SECONDARY):
 	objects_by_id = {}
 	angle_state = None
-	if any(oid in ('angle:asc', 'angle:mc', 'point:lof') for oid in object_ids):
+	if any(oid in _SECONDARY_ANGLE_STATE_IDS for oid in object_ids):
 		angle_state = posfordate.progressed_angle_state_for_symbolic_age(
 			radix,
 			radix.options,
@@ -4046,18 +4192,35 @@ def _secondary_symbolic_snapshot(radix_catalog, radix, symbolic_age, object_ids,
 	return _SnapshotCatalog(objects_by_id)
 
 
+def _secondary_angle_projection(radix, symbolic_age, method):
+	"""Progressed Asc/MC/ARMC without building house cusps (bit-identical to the
+	full house state; tests/test_secondary_fast_path_contract.py)."""
+	return posfordate.ProgressedAngleSampler(radix, radix.options, method=method).sample(float(symbolic_age))
+
+
 def _secondary_symbolic_object_longitude(base_obj, radix, symbolic_age, angle_state=None, runtime=None, method=posfordate.SECONDARY):
 	if base_obj is None:
 		return None
 	if base_obj.id == 'angle:asc':
 		if angle_state is None:
-			angle_state = posfordate.progressed_angle_state_for_symbolic_age(radix, radix.options, float(symbolic_age), method=method)
+			angle_state = _secondary_angle_projection(radix, symbolic_age, method)
 		return float(angle_state['asc_lon'])
 	if base_obj.id == 'angle:mc':
 		if angle_state is None:
-			angle_state = posfordate.progressed_angle_state_for_symbolic_age(radix, radix.options, float(symbolic_age), method=method)
+			angle_state = _secondary_angle_projection(radix, symbolic_age, method)
 		return float(angle_state['mc_lon'])
+	if base_obj.id in _SECONDARY_ANGLE_AXIS_ALIASES:
+		axis_id, offset = _SECONDARY_ANGLE_AXIS_ALIASES[base_obj.id]
+		if angle_state is None:
+			angle_state = _secondary_angle_projection(radix, symbolic_age, method)
+		return util.normalize(float(angle_state['asc_lon' if axis_id == 'angle:asc' else 'mc_lon']) + offset)
+	if base_obj.id == 'point:vertex':
+		if angle_state is None or angle_state.get('houses') is None:
+			angle_state = posfordate.progressed_angle_state_for_symbolic_age(radix, radix.options, float(symbolic_age), method=method)
+		return util.normalize(float(angle_state['houses'].ascmc[houses.Houses.VERTEX]))
 	if base_obj.id == 'point:lof':
+		if angle_state is None:
+			angle_state = _secondary_angle_projection(radix, symbolic_age, method)
 		return _secondary_symbolic_lof_longitude(radix, symbolic_age, angle_state, method=method)
 	if base_obj.planet_index is None:
 		return None
@@ -4180,9 +4343,7 @@ def _secondary_requires_real_snap(prom_id, catalog):
 	obj = catalog.get(prom_id)
 	if obj is None:
 		return False
-	if obj.id == 'point:lof':
-		return True
-	if obj.id in ('angle:asc', 'angle:mc'):
+	if obj.id in _SECONDARY_ANGLE_STATE_IDS:
 		return True
 	return obj.planet_index == astrology.SE_MOON
 
@@ -4503,7 +4664,7 @@ def _cheby_finalize_real_jd(catalog, radix, prom_id, target_lon, age, approx_jd,
 	# Catastrophic mismatch — degenerate cheby fit or branch-cut surprise — bisect.
 	if error_deg is None or math.fabs(error_deg) > 60.0:
 		return _secondary_snap_real_jd(catalog, radix, prom_id, target_lon, approx_jd, start_jd, end_jd, runtime, method=method)
-	speed_per_ephem_day = fit.speed(prom_id, float(age))
+	speed_per_ephem_day = fit.speed(_SECONDARY_ANGLE_AXIS_ALIASES.get(prom_id, (prom_id, 0.0))[0], float(age))
 	if speed_per_ephem_day is None or math.fabs(speed_per_ephem_day) < 1e-9:
 		return _secondary_snap_real_jd(catalog, radix, prom_id, target_lon, approx_jd, start_jd, end_jd, runtime, method=method)
 	scale = posfordate.progression_symbolic_scale(method) or 1.0
@@ -4574,6 +4735,8 @@ def _build_primary_search_options(chrt, catalog, query):
 	options.pdcustomer2 = False
 	options.pdpromchiron = False
 	options.pdsigchiron = False
+	options.pdpromapogee = False
+	options.pdsigapogee = False
 	options.pdaspects = [False] * len(source_pdaspects)
 
 	for prom_id in query.promittor_ids:
@@ -4586,6 +4749,9 @@ def _build_primary_search_options(chrt, catalog, query):
 			and obj.planet_index < len(options.promplanets)
 		):
 			options.promplanets[obj.planet_index] = True
+			selected_prom_ids.add(prom_id)
+		elif obj.id == 'planet:apogee':
+			options.pdpromapogee = True
 			selected_prom_ids.add(prom_id)
 		elif obj.planet_index == astrology.SE_CHIRON:
 			options.pdpromchiron = True
@@ -4604,6 +4770,9 @@ def _build_primary_search_options(chrt, catalog, query):
 			and obj.planet_index < len(options.sigplanets)
 		):
 			options.sigplanets[obj.planet_index] = True
+			selected_sig_ids.add(sig_id)
+		elif obj.id == 'planet:apogee':
+			options.pdsigapogee = True
 			selected_sig_ids.add(sig_id)
 		elif obj.planet_index == astrology.SE_CHIRON:
 			options.pdsigchiron = True
@@ -4646,7 +4815,16 @@ def _build_primary_search_options(chrt, catalog, query):
 
 
 def _build_primary_engine(chrt, options):
-	abort = primdirs.AbortPD()
+	class SearchAbort(primdirs.AbortPD):
+		@property
+		def abort(self):
+			return self._manual_abort or transit_fast_api.search_is_cancelled()
+
+		@abort.setter
+		def abort(self, value):
+			self._manual_abort = bool(value)
+
+	abort = SearchAbort()
 	pdrange = primdirs.PrimDirs.RANGEALL
 	direction = primdirs.PrimDirs.BOTHDC
 
@@ -4662,8 +4840,8 @@ def _build_primary_engine(chrt, options):
 
 
 def _pd_object_id(catalog, pd_object, dynamic_key=None):
-	if dynamic_key == 'chiron':
-		return 'planet:chiron'
+	if dynamic_key in ('chiron', 'apogee'):
+		return 'planet:' + dynamic_key
 	if dynamic_key == 'user_sig' and catalog.get('point:eclipse') is not None:
 		return 'point:eclipse'
 	if pd_object == primdirs.PrimDir.ASC:
@@ -4818,6 +4996,7 @@ def _live_object_longitude_uncached(obj, chrt, event_jd, flags, context=None):
 
 
 def _live_object_state_uncached(obj, chrt, event_jd, flags, context=None):
+	transit_fast_api.check_search_cancellation()
 	if obj is None:
 		return None
 	context = context or _planet_ephemeris_context(chrt)
@@ -4825,7 +5004,8 @@ def _live_object_state_uncached(obj, chrt, event_jd, flags, context=None):
 		if obj.id.startswith('asteroid:'):
 			ret, data, _error = astrology.swe_calc_ut_ex(event_jd, obj.planet_index, flags)
 			if int(ret) & 0xFFFFFFFF == 0xFFFFFFFF or len(data) < 4:
-				raise ValueError(mtexts.txts['TimedAsteroidEphemerisUnavailable'].format(body=obj.label))
+				obj.ephemeris_unavailable = True
+				return None
 			return util.normalize(float(data[0])), float(data[3])
 		if obj.id == 'planet:asc_node':
 			node_id = astrology.SE_MEAN_NODE if getattr(chrt.options, 'meannode', True) else astrology.SE_TRUE_NODE
@@ -4998,11 +5178,14 @@ def _secondary_symbolic_age_for_jd(radix, event_jd, method=posfordate.SECONDARY)
 def _secondary_real_event_info_for_symbolic_age(radix, symbolic_age, method=posfordate.SECONDARY):
 	if radix is None:
 		return None
-	# `symbolic_age` is in ephemeris days. The calendar-age helper expects native
-	# years, so convert via the method's scale factor first.
-	scale = posfordate.progression_symbolic_scale(method)
-	age_years = float(symbolic_age) / scale if scale != 0.0 else float(symbolic_age)
-	real_tuple = symbolic_time._real_datetime_for_calendar_age(radix, float(age_years))
+	# Invert the same method/day key used to scan the civil window. Omitting
+	# Q1/Bija here misdates events and drops roots at adjacent window boundaries.
+	real_tuple = symbolic_time.signified_datetime_for_progressed_jd(
+		radix,
+		float(radix.time.jd) + float(symbolic_age),
+		method=method,
+		day_type=getattr(radix.options, 'progression_day_type', posfordate.PROGRESSION_DAY_TYPE_Q2),
+	)
 	if real_tuple is None:
 		return None
 	calflag = _calendar_flag(radix)

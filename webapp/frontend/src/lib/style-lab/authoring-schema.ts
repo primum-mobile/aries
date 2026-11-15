@@ -1,4 +1,4 @@
-import type { WheelArrowStyle } from "../chart/wheel-render-style";
+import type { WheelArrowStyle, WheelPaintedRingRole } from "../chart/wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -246,6 +246,10 @@ export type ChartStyleFontRef = Readonly<{
 
 export type ChartStyleClassProperties = Readonly<{
   radius?: ChartStyleDimension;
+  /** Stable inherited radius used to sample the wheel's preferred recipe. */
+  recipeRadius?: ChartStyleDimension;
+  /** Explicit live boundary intent, including a value equal to its recipe. */
+  radiusAuthored?: boolean;
   bandWidth?: ChartStyleDimension;
   /**
    * Unitless multiplier on the whole wheel, authored only by `canvas.chart`.
@@ -255,6 +259,12 @@ export type ChartStyleClassProperties = Readonly<{
    * px and is scaled by this one.
    */
   scale?: number;
+  /** Internal edit intent; keeps a pushed boundary stable after release. */
+  radiusPriority?: WheelPaintedRingRole;
+  /** Marks an explicit recipe basis, including an empty factory basis. */
+  recipeVersion?: 1;
+  /** Disambiguates the legacy outer-degree radius after band reordering. */
+  outerDegreeBinding?: "degree" | "cuspLabels";
   /** A band span's inner edge, in reference-space px. */
   spanInner?: ChartStyleDimension;
   /** How much a band span scales its run, about the run's outer anchor. */
@@ -320,7 +330,9 @@ export type ChartStyleVariant =
   | "compact"
   | "anglo"
   | "houses"
-  | "cusps";
+  | "cusps"
+  /** The Vintage magazine wheel's own appearance; never inherits `styles`. */
+  | "vintage";
 export type ChartStyleClassMap = Readonly<Record<string, ChartStyleClassProperties>>;
 
 export type ChartStyleProfileV2 = Readonly<{

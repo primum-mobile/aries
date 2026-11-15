@@ -1,3 +1,4 @@
+import dignityDisplayPolicy from "./dignity-display-policy.json";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -229,6 +230,36 @@ function deriveDimChartText(
   return `rgb(${mixed[0]} ${mixed[1]} ${mixed[2]})`;
 }
 
+export function blendMinorDignityColor(
+  neutral: string | undefined,
+  positive: string | undefined,
+  count: number,
+  enabled: boolean,
+): string | undefined {
+  if (!enabled || !count) return neutral;
+  const a = parseCssRgbChannels(neutral);
+  const b = parseCssRgbChannels(positive);
+  if (!a || !b) return neutral;
+  const weight = dignityDisplayPolicy.minorBlendWeights[Math.min(3, Math.max(0, Math.trunc(count)))];
+  return `rgb(${a.map((channel, index) => Math.round(channel + (b[index] - channel) * weight)).join(" ")})`;
+}
+
+/** Derived paint roles, never independent editable colors. Recompute from the
+ * final live palette so Settings and native style previews stay coherent. */
+export function withMinorDignityColors(
+  tokens: Readonly<Record<string, string>>,
+  enabled: boolean,
+): Record<string, string> {
+  const result = { ...tokens };
+  for (const count of [1, 2, 3]) {
+    const color = blendMinorDignityColor(
+      tokens["--morinus-peregrin"], tokens["--morinus-dignity-domicil"], count, enabled,
+    );
+    if (color) result[dignityDisplayPolicy.minorColorRoles[count - 1]] = color;
+  }
+  return result;
+}
+
 export function neutralChartPalette(): ChartPalette {
   return {
     background: "rgb(35,36,40)",
@@ -296,6 +327,7 @@ export function readPalette(el?: HTMLElement): ChartPalette {
     textBright: chartText,
     fortune: planets[11],
     elements: ELEMENT_COLOR_VARS.map((name) => v(name, peregrin)),
+    minorDignities: dignityDisplayPolicy.minorColorRoles.map((name) => v(name, peregrin)),
     // Warm surveil accent; daemon chart.palette.surveilAccent overrides this.
     surveilAccent: "rgb(229,146,70)",
     // Named roles are the defined fallback. A retained daemon snapshot still
@@ -307,7 +339,10 @@ export function readPalette(el?: HTMLElement): ChartPalette {
 
 export function readPaletteFromTheme(theme: ThemeState | null | undefined): ChartPalette {
   if (!theme) return readPalette();
-  const chart = theme.chartPalette;
+  const chart = withMinorDignityColors(
+    { ...theme.chartPalette, ...theme.profileOverrides?.chartPalette },
+    theme.profileOverrides?.chartData?.blendMinorDignities === true,
+  );
   const v = (tokens: Record<string, string>, name: string, fallback: string) =>
     tokens[name] || fallback;
   const chartBackground = v(chart, "--morinus-background", "rgb(35 36 40)");
@@ -336,6 +371,7 @@ export function readPaletteFromTheme(theme: ThemeState | null | undefined): Char
     textBright: chartText,
     fortune: planets[11],
     elements: ELEMENT_COLOR_VARS.map((name) => v(chart, name, peregrin)),
+    minorDignities: dignityDisplayPolicy.minorColorRoles.map((name) => v(chart, name, peregrin)),
     surveilAccent: "rgb(229,146,70)",
     planets,
     aspects,
@@ -393,6 +429,10 @@ export function readPaletteProfileOverrides(
     result.elements = [...(named().elements ?? [])];
   }
   const data = theme?.profileOverrides?.chartData;
+  if (theme && (typeof data?.blendMinorDignities === "boolean"
+    || chart["--morinus-peregrin"] || chart["--morinus-dignity-domicil"])) {
+    result.minorDignities = named().minorDignities;
+  }
   // Daemon chartData is the fully resolved partial-array contract and remains
   // final over named CSS fallbacks and retained snapshot arrays.
   if (Array.isArray(data?.planets)) result.planets = [...data.planets];
@@ -430,22 +470,33 @@ function readProfileSignColors(
 function planetPaletteIndex(planet: ChartPlanet): number {
   if (planet.id === "nnode" || planet.id === "snode") return 10;
   if (planet.id === "chiron") return 12;
+  if (planet.id === "apogee") return 1;
   return Math.max(0, Math.min(9, Number(planet.seId) || 0));
 }
 
-function profiledPlanetColor(
+/** Consumers select the global role; blending belongs to palette resolution. */
+export function minorDignityPaletteColor(
+  palette: Partial<ChartPalette>, count: number, enabled: boolean,
+): string | undefined {
+  return enabled && count > 0
+    ? palette.minorDignities?.[Math.min(3, Math.trunc(count)) - 1] ?? palette.peregrin
+    : palette.peregrin;
+}
+
+export function profiledPlanetColor(
   planet: ChartPlanet,
   useIndividualColors: boolean,
   palette: Partial<ChartPalette>,
+  blendMinorDignities: boolean,
 ): string | undefined {
   if (useIndividualColors) return palette.planets?.[planetPaletteIndex(planet)];
-  if (planet.id === "chiron") return palette.peregrin;
+  if (planet.id === "chiron" || planet.id === "apogee") return palette.peregrin;
   switch (planet.dignity) {
     case "domicil": return palette.domicil;
     case "exil": return palette.exil;
     case "exal": return palette.exal;
     case "casus": return palette.casus;
-    case "peregrin": return palette.peregrin;
+    case "peregrin": return minorDignityPaletteColor(palette, planet.minorDignityCount ?? 0, blendMinorDignities);
     default: return palette.peregrin;
   }
 }
@@ -455,11 +506,17 @@ function applyProfileColorsToChart(
   palette: Partial<ChartPalette>,
   signColors: string[] | undefined,
   usePlanetColors: boolean | undefined,
+  blendMinorDignities: boolean | undefined,
+  glyphOptions: { showDignityGlyphs?: boolean; showTermGlyphs?: boolean; showFaceGlyphs?: boolean; usePlanetColorsForSubdivisions?: boolean },
 ): Chart {
   const useIndividualColors = usePlanetColors ?? Boolean(chart.options.useDignityColors);
+  const blend = blendMinorDignities ?? Boolean(chart.options.blendMinorDignities);
+  const minorPalette = { ...chart.palette, ...palette };
   let changed = false;
   const planets = chart.planets.map((planet) => {
-    const color = profiledPlanetColor(planet, useIndividualColors, palette);
+    const color = profiledPlanetColor(planet, useIndividualColors,
+      planet.dignity === "peregrin" && (planet.minorDignityCount ?? 0) > 0
+        ? minorPalette : palette, blend);
     if (!color || color === planet.color) return planet;
     changed = true;
     return { ...planet, color };
@@ -487,12 +544,28 @@ function applyProfileColorsToChart(
       ? Array.from({ length: 12 }, () => palette.signs as string)
       : undefined;
   let options = chart.options;
+  for (const key of ["showDignityGlyphs", "showTermGlyphs", "showFaceGlyphs"] as const) {
+    const value = glyphOptions[key];
+    if (typeof value === "boolean" && options[key] !== value) {
+      changed = true;
+      options = { ...options, [key]: value };
+    }
+  }
+  if (typeof blendMinorDignities === "boolean" && options.blendMinorDignities !== blendMinorDignities) {
+    changed = true;
+    options = { ...options, blendMinorDignities };
+  }
   if (
     typeof usePlanetColors === "boolean"
     && Boolean(options.useDignityColors) !== usePlanetColors
   ) {
     changed = true;
     options = { ...options, useDignityColors: usePlanetColors };
+  }
+  if (typeof glyphOptions.usePlanetColorsForSubdivisions === "boolean"
+    && options.usePlanetColorsForSubdivisions !== glyphOptions.usePlanetColorsForSubdivisions) {
+    changed = true;
+    options = { ...options, usePlanetColorsForSubdivisions: glyphOptions.usePlanetColorsForSubdivisions };
   }
   if (nextSignColors) {
     changed = true;
@@ -517,10 +590,14 @@ export function applyProfileColorsToSnapshot(
   const palette = readPaletteProfileOverrides(theme);
   const signColors = readProfileSignColors(theme, true);
   const usePlanetColors = theme?.profileOverrides?.chartData?.usePlanetColors;
+  const blendMinorDignities = theme?.profileOverrides?.chartData?.blendMinorDignities;
+  const glyphOptions = theme?.profileOverrides?.chartData ?? {};
   if (
     Object.keys(palette).length === 0
     && !signColors?.length
     && typeof usePlanetColors !== "boolean"
+    && typeof blendMinorDignities !== "boolean"
+    && ![glyphOptions.showDignityGlyphs, glyphOptions.showTermGlyphs, glyphOptions.showFaceGlyphs, glyphOptions.usePlanetColorsForSubdivisions].some(value => typeof value === "boolean")
   ) return snapshot;
   const apply = (chart: Chart | null | undefined) => (
     chart
@@ -529,6 +606,8 @@ export function applyProfileColorsToSnapshot(
         palette,
         readProfileSignColors(theme, Boolean(chart.options.useZodiacElementColors)),
         usePlanetColors,
+        blendMinorDignities,
+        glyphOptions,
       )
       : chart
   );

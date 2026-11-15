@@ -154,25 +154,30 @@ def _split_antimeridian(points: list[tuple[float, float]]) -> list[list[list[flo
     ]
 
 
+def equatorial_line(
+    coordinates: list,
+    jd_ut: float,
+) -> list[tuple[float, float]]:
+    """Date-correct, densely sampled figure arc shared by sky and map views."""
+    epoch_points = [
+        precess_j2000_equatorial(float(point[0]), float(point[1]), jd_ut)
+        for point in coordinates
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
+    dense: list[tuple[float, float]] = []
+    for start, end in zip(epoch_points, epoch_points[1:]):
+        arc = _great_circle(start, end)
+        dense.extend(arc[1:] if dense else arc)
+    return dense
+
+
 def _project_line(
     coordinates: list,
     *,
     jd_ut: float,
     sidereal_deg: float,
 ) -> list[list[list[float]]]:
-    epoch_points = [
-        precess_j2000_equatorial(float(point[0]), float(point[1]), jd_ut)
-        for point in coordinates
-        if isinstance(point, (list, tuple)) and len(point) >= 2
-    ]
-    if len(epoch_points) < 2:
-        return []
-    dense: list[tuple[float, float]] = []
-    for start, end in zip(epoch_points, epoch_points[1:]):
-        arc = _great_circle(start, end)
-        if dense:
-            arc = arc[1:]
-        dense.extend(arc)
+    dense = equatorial_line(coordinates, jd_ut)
     earth_fixed = [(_normalize_lon(ra - sidereal_deg), dec) for ra, dec in dense]
     return _split_antimeridian(earth_fixed)
 

@@ -108,35 +108,7 @@ def _bisect_phase_root(jd_a, jd_b, target):
 	return 0.5 * (lo + hi)
 
 
-def _jd_to_ymdhms(jd_value, calflag):
-	year, month, day, hour = astrology.swe_revjul(float(jd_value), int(calflag))
-	total = int(round(float(hour) * 3600.0))
-	if total >= 24 * 3600:
-		total -= 24 * 3600
-		year, month, day = util.incrDay(int(year), int(month), int(day))
-	elif total < 0:
-		total += 24 * 3600
-		year, month, day = util.decrDay(int(year), int(month), int(day))
-
-	hour = total // 3600
-	total %= 3600
-	minute = total // 60
-	second = total % 60
-	return int(year), int(month), int(day), int(hour), int(minute), int(second)
-
-
-def _place_lon_hours(place):
-	lon = float(place.deglon) + float(place.minlon) / 60.0
-	if not place.east:
-		lon *= -1.0
-	return lon / 15.0
-
-
 def _utc_jd_to_original_components(jd_ut, template_time, place):
-	calflag = astrology.SE_GREG_CAL
-	if template_time.cal == chart.Time.JULIAN:
-		calflag = astrology.SE_JUL_CAL
-
 	if template_time.zt == chart.Time.GREENWICH:
 		local_jd = jd_ut
 	elif template_time.zt == chart.Time.ZONE:
@@ -145,24 +117,15 @@ def _utc_jd_to_original_components(jd_ut, template_time, place):
 		if template_time.daylightsaving:
 			offset_hours += 1.0
 		local_jd = jd_ut + offset_hours / 24.0
-	elif template_time.zt == chart.Time.LOCALMEAN:
-		offset_hours = _place_lon_hours(place)
+	elif template_time.zt in (chart.Time.LOCALMEAN, chart.Time.LOCALAPPARENT):
+		offset_days = chart.Time.solar_clock_offset_days(jd_ut, place.lon, template_time.zt)
 		if template_time.daylightsaving:
-			offset_hours += 1.0
-		local_jd = jd_ut + offset_hours / 24.0
-	elif template_time.zt == chart.Time.LOCALAPPARENT:
-		jd_lmt = jd_ut + _place_lon_hours(place) / 24.0
-		apparent_jd = jd_lmt
-		for _ in range(8):
-			ret, te, serr = astrology.swe_time_equ(apparent_jd)
-			apparent_jd = jd_lmt - float(te)
-		if template_time.daylightsaving:
-			apparent_jd += 1.0 / 24.0
-		local_jd = apparent_jd
+			offset_days += 1.0 / 24.0
+		local_jd = jd_ut + offset_days
 	else:
 		local_jd = jd_ut
 
-	year, month, day, hour, minute, second = _jd_to_ymdhms(local_jd, calflag)
+	year, month, day, hour, minute, second = moment.jd_to_civil_tuple(local_jd, calendar=template_time.cal)
 	if template_time.bc and year <= 0:
 		year = 1 - year
 	return year, month, day, hour, minute, second
@@ -179,12 +142,9 @@ def jump_to_classical_phase(template_time, place, direction):
 	jd_target = _bisect_phase_root(bracket[0], bracket[1], target)
 	zone_fields = None
 	if template_time.zt == chart.Time.ZONE and getattr(template_time, 'tzid', ''):
-		calflag = astrology.SE_GREG_CAL
-		if template_time.cal == chart.Time.JULIAN:
-			calflag = astrology.SE_JUL_CAL
-		utc_components = _jd_to_ymdhms(jd_target, calflag)
+		utc_components = moment.jd_to_civil_tuple(jd_target, calendar=template_time.cal)
 		zone_fields = moment.utc_to_zone_fields(
-			utc_components, getattr(template_time, 'tzid', ''),
+			utc_components, template_time.tzid, calendar=template_time.cal,
 		)
 	if zone_fields is not None:
 		y, m, d, h, mi, s = zone_fields['datetime']

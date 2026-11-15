@@ -4,7 +4,7 @@
 
 """Moment normalizer — first piece of the canonical Moment layer.
 
-Policy: doc/policy-chart-lifecycle.md §1 (Moment) and the display rule —
+Policy: the display rule —
 a displayed chart always shows LOCAL civil time of its place/zone; UT only in
 the footer. Julian days (``swe_revjul``) are UT; their digits must pass
 through :func:`utc_to_chart_local` before touching any visible display field.
@@ -17,6 +17,9 @@ headless driver) all delegate here.
 """
 
 import datetime
+import math
+import re
+from typing import NamedTuple
 
 import astrology
 
@@ -31,6 +34,63 @@ ZT_ZONE = 0           # standard zone time: UTC + zh:zm
 ZT_GREENWICH = 1      # UTC calculation/storage; visible display still local
 ZT_LOCALMEAN = 2      # LMT — wx passthrough (no display conversion), kept
 ZT_LOCALAPPARENT = 3  # LAT — wx passthrough, kept
+
+
+class CivilDateTime(NamedTuple):
+    """Civil fields outside datetime's AD/Gregorian domain; year is astronomical."""
+
+    year: int
+    month: int
+    day: int
+    hour: int
+    minute: int
+    second: int
+
+    def isoformat(self):
+        return "%04d-%02d-%02dT%02d:%02d:%02d" % self
+
+
+def civil_datetime(values, *, calendar=0):
+    """Validate chart-calendar fields without imposing Python's AD-only range."""
+    fields = CivilDateTime(*(int(value) for value in values))
+    y, m, d, h, mi, s = fields
+    if not (1 <= m <= 12 and 1 <= d <= 31 and 0 <= h < 24 and 0 <= mi < 60 and 0 <= s < 60):
+        raise ValueError("invalid civil datetime fields")
+    calflag = astrology.SE_JUL_CAL if calendar == 1 else astrology.SE_GREG_CAL
+    jd = astrology.swe_julday(y, m, d, 0.0, calflag)
+    if tuple(int(value) for value in astrology.swe_revjul(jd, calflag)[:3]) != (y, m, d):
+        raise ValueError("invalid civil calendar date")
+    try:
+        return datetime.datetime(*fields)
+    except ValueError:
+        return fields
+
+
+def parse_civil_datetime(value, *, calendar=0):
+    """Parse daemon civil timestamps, including signed years and year zero."""
+    text = str(value or "")
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        match = re.fullmatch(r"([+-]?\d+)-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?", text)
+        if match is None:
+            raise ValueError("invalid civil datetime") from None
+        return civil_datetime((int(part or 0) for part in match.groups()), calendar=calendar)
+    civil_datetime((parsed.year, parsed.month, parsed.day, parsed.hour, parsed.minute, parsed.second), calendar=calendar)
+    return parsed.replace(tzinfo=None)
+
+
+def jd_to_civil_tuple(jd, *, calendar=0):
+    """Round a JD to civil seconds, carrying midnight into the next date."""
+    calflag = astrology.SE_JUL_CAL if calendar == 1 else astrology.SE_GREG_CAL
+    y, m, d, hours = astrology.swe_revjul(float(jd), calflag)
+    seconds = int(round(hours * 3600.0))
+    if seconds >= 86400:
+        y, m, d, _ = astrology.swe_revjul(math.floor(float(jd) + 0.5) + 0.5, calflag)
+        seconds = 0
+    h, rest = divmod(seconds, 3600)
+    mi, s = divmod(rest, 60)
+    return int(y), int(m), int(d), h, mi, s
 
 
 def _calendar_date(year, month, day, source_calendar, target_calendar):
@@ -142,7 +202,6 @@ def utc_to_chart_local(time_obj, utc_dt, *, place=None,
     if resolved_zone is not None:
         return resolved_zone["datetime"]
     try:
-        base = datetime.datetime(y, m, d, h, mi, s)
         use_plus = bool(getattr(time_obj, "plus", True) if plus is None else plus)
         use_zh = int((getattr(time_obj, "zh", 0) if zh is None else zh) or 0)
         use_zm = int((getattr(time_obj, "zm", 0) if zm is None else zm) or 0)
@@ -156,7 +215,14 @@ def utc_to_chart_local(time_obj, utc_dt, *, place=None,
         if not use_plus:
             standard_minutes *= -1
         total_minutes = standard_minutes + (60 if use_dst else 0)
-        local_dt = base + datetime.timedelta(minutes=total_minutes)
+        try:
+            base = datetime.datetime(y, m, d, h, mi, s)
+            local_dt = base + datetime.timedelta(minutes=total_minutes)
+        except (ValueError, OverflowError):
+            calendar = int(getattr(time_obj, "cal", 0) or 0)
+            calflag = astrology.SE_JUL_CAL if calendar == 1 else astrology.SE_GREG_CAL
+            jd = astrology.swe_julday(y, m, d, h + mi / 60.0 + s / 3600.0, calflag)
+            return jd_to_civil_tuple(jd + total_minutes / 1440.0, calendar=calendar)
         return (
             local_dt.year,
             local_dt.month,

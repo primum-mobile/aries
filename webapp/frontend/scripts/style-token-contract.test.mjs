@@ -19,15 +19,78 @@ test("the checked-in style contract resolves one provider graph", () => {
   assert.deepEqual(result.inventory.counts, {
     // +24 over the three-profile contract: one independent painted-ring radius
     // token per role for both House Wheel and Cusp Wheel; +7 runtime tokens for
-    // the Astrocart navbar docked in the map toolbar row.
-    tokens: 1515,
-    cssTokens: 1491,
-    cssDeclarations: 1585,
-    runtimeOnlyTokens: 14,
+    // the Astrocart navbar docked in the map toolbar row; +3 derived minor-dignity colors;
+    // -2 fixed quick-options height caps now owned by available window space;
+    // +7 public Astrolabe polar-plate roles (3 colors, 4 metrics);
+    // -9 Astrolabe canvas info/PD-row roles now owned by DOM corner overlays.
+    // +4 declarations: the phone navbar re-scopes four existing mode-hint
+    // sizing tokens to 44 px touch targets (.aries-mode-hint--mobile).
+    // +7 declarations: the phone launcher sheet re-scopes four sidebar row and
+    // close-action tokens, and the phone title bar three header sizes, to
+    // 44 px touch targets.
+    // +1 runtime token (2 declarations, night/day): the native-window shadow
+    // that browser floating panels carry in place of the OS window shadow.
+    // +1 runtime token: --aries-inspector-text-scale (Inspector text size setting).
+    // +10 runtime Graphic Ephemeris radix-layer metrics: label column, line
+    // and midpoint-line widths and dash, line opacity, ring size and width,
+    // label scales.
+    // +11 aspect-matrix tokens for the framed-block matrix (chart dashboard
+    // module 0): 3 public metrics (section gap, frame and exact widths),
+    // 6 derived type/colour roles, 2 runtime (parallel strength, orb line height).
+    // +3 shared chart-module line tokens (dashboard modules; the aspect-matrix
+    // line tokens alias them): 2 public widths, 1 derived rule colour.
+    // +1 public app token: --aries-signal (theme signal colour for eclipse paths).
+    // +1 public app token: --aries-inspector-own-glyph-opacity (inspected glyph fade).
+    // +6 public Astrolabe star roles: faint-star colour and opacity, bright
+    // (glyph) limit, magnitude exponent and the size clamp.
+    // +25 public Astrolabe zoom roles: 23 annotation metrics, zoomed house
+    // ink and the conjunction cue colour; +4 star/label zoom-curve roles.
+    // +11 public Astrolabe zodiac-division roles: sign share of the rete band,
+    // term and decan ring widths, ruler glyph scale and minimum, polar box
+    // depth and opacity, and the term/decan ring, boundary and glyph colours;
+    // +2 for the bare ecliptic (zodiac off): graduation and sign glyph scale.
+    // +2 for the polar rim Asc/MC label and fixed-star name scales.
+    // -1 public app token: --aries-statusbar-action-size (the status-bar
+    // Settings gear moved to the titlebar).
+    // +7 for the astrolabe ecliptic engraving: scale ticks and weight,
+    // divided band width, box and tick share.
+    // +13 runtime graphic-ephemeris plate roles: plate frame, tick and minor
+    // tick widths, four ruler tick lengths, tick minimum and spacing, ruler
+    // label scale and gap, scale-column pad and label leader gap.
+    // +7 runtime graphic-ephemeris lunation roles: line width, dash on/off,
+    // disc scale, minimum, maximum and outline width; +4 eclipse corona ray
+    // count, inner and outer scale, and lunar eclipse shade opacity.
+    // -3 runtime graphic-ephemeris lunation line roles (width, dash on/off):
+    // the plates' dotted verticals are month lines, already the grid.
+    // -1 runtime graphic-ephemeris plate frame width: no plate box on screen.
+    // +1 runtime graphic-ephemeris plate frame width (the paper plate is back).
+    // +2 runtime graphic-ephemeris decan limb: width and bar share.
+    // +6 graphic-ephemeris instrument plate (net): +32 runtime band, table,
+    // gutter, ruler, font, curve-weight, guide and label roles; -26 runtime
+    // roles of the old plate (decan limb, planet heads and leaders, station
+    // ticks, old size divisors); public curve small/large become inner/outer
+    // and the three public station-tick roles go (-3 public).
+    // +3 runtime Graphic Ephemeris declination tokens: decan limb width
+    // and zebra share, out-of-bounds tint opacity.
+    // +3 runtime Graphic Ephemeris reading-line tokens: line width and
+    // opacity, date-tag padding.
+    // +2 runtime Graphic Ephemeris planet-contact tokens: aspect glyph size
+    // and its paper knock-out.
+    // +10 runtime Graphic Ephemeris radix tokens (net): angle line, outer
+    // width, band, focus and recede, contour and reading-glyph roles.
+    // +1 derived app token: --aries-sidebar-row-selected-chart (tinted fill of
+    // the selected chart row in the sidebar).
+    // +2 runtime Graphic Ephemeris tokens: the pinned natal line's recede
+    // fade duration and its pause before the fade.
+    // +1 runtime Graphic Ephemeris token: the declination turn dot's size.
+    tokens: 1646,
+    cssTokens: 1621,
+    cssDeclarations: 1727,
+    runtimeOnlyTokens: 15,
     externalTokens: 10,
-    public: 1106,
-    derived: 198,
-    runtime: 211,
+    public: 1162,
+    derived: 210,
+    runtime: 274,
   });
   const printPalettePath = "src/lib/theme/table-print-palette.ts";
   const printRoles = [...readFileSync(join(frontendRoot, printPalettePath), "utf8")
@@ -45,7 +108,15 @@ test("the checked-in style contract resolves one provider graph", () => {
       .filter((token) => token.runtimeProviderFiles?.some((path) => path !== printPalettePath))
       .map((token) => token.name),
     [
+      // Design Lab mockup overrides are owner tooling and are never recorded.
+      // The sidebar text-size setting rescales the nav and sidebar row metrics at runtime (app-sidebar.tsx).
+      "--aries-control-gap-compact",
+      "--aries-control-height",
       "--aries-destructive",
+      "--aries-font-size-nav",
+      "--aries-font-size-nav-section",
+      "--aries-inspector-text-scale",
+      "--aries-nav-side-margin",
       "--aries-navbar-dock-bg",
       "--aries-navbar-dock-border",
       "--aries-navbar-dock-height",
@@ -54,12 +125,30 @@ test("the checked-in style contract resolves one provider graph", () => {
       "--aries-navbar-dock-room",
       "--aries-navbar-dock-top",
       "--aries-navbar-scale",
+      "--aries-sidebar-action-icon-size",
+      "--aries-sidebar-close-action-size",
+      "--aries-sidebar-close-inset",
+      "--aries-sidebar-drop-indicator-overhang",
+      "--aries-sidebar-drop-indicator-size",
+      "--aries-sidebar-group-padding-end",
+      "--aries-sidebar-group-padding-start",
+      "--aries-sidebar-row-height",
+      "--aries-sidebar-row-line-box",
+      "--aries-sidebar-row-padding-x",
+      "--aries-sidebar-row-padding-y",
+      "--aries-sidebar-section-header-height",
+      "--aries-sidebar-section-line-box",
+      "--aries-sidebar-trailing-inset",
+      "--aries-sidebar-tree-indent",
+      "--aries-sidebar-unsaved-indicator-size",
       "--morinus-angles",
+      "--morinus-aspect-conjunction",
       "--morinus-background",
       "--morinus-body-sun",
       "--morinus-frame",
       "--morinus-houses",
       "--morinus-positions",
+      "--morinus-signs",
       "--morinus-text-bright",
       "--right-pane-min-content-width",
       "--right-pane-preferred-width",
@@ -70,8 +159,8 @@ test("the checked-in style contract resolves one provider graph", () => {
     ],
   );
   assert.deepEqual(result.publicManifest.counts, {
-    public: 1106,
-    editable: 1106,
+    public: 1162,
+    editable: 1162,
     blockedByCoupling: 0,
     supportingDerived: 11,
   });
@@ -112,7 +201,7 @@ test("the checked-in style contract resolves one provider graph", () => {
   for (const [name, unit] of [
     ["--aries-ephem-frame-small-max", "px"],
     ["--aries-ephem-frame-medium-max", "px"],
-    ["--aries-ephem-text-font-divisor", ""],
+    ["--aries-ephem-text-font-scale", ""],
     ["--aries-table-cell-x", "px"],
     ["--aries-table-cell-y", "px"],
     ["--aries-table-font-size", "px"],

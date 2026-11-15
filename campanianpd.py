@@ -5,6 +5,7 @@
 
 import math
 import astrology
+import regiospec
 import primdirs
 import regiocampbasepd
 import planets
@@ -168,6 +169,47 @@ class CampanianPD(regiocampbasepd.RegioCampBasePD):
 				)
 
 
+	def _traditional_converse_mundane_aspect_arc(self, plprom, rasig, declsig, aspect):
+		# toPlanet's Campanus mundane aspect branch, with the aspect place taken
+		# from the promissor (CMP_prom - aspect) and the significator moving.
+		cmpap = util.normalize(plprom.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.CMP]-aspect)
+
+		zdap = math.fabs(cmpap-90.0)
+		val = self.sinlat*math.sin(math.radians(zdap))
+		if math.fabs(val) > 1.0:
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		poleap = math.degrees(math.asin(val))
+		if (self.chart.place.lat < 0.0 and poleap > 0.0) or (self.chart.place.lat > 0.0 and poleap < 0.0):
+			poleap *= -1
+
+		val = self.sinlat*math.sin(math.radians(cmpap))
+		if math.fabs(val) > 1.0:
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		declap = -math.degrees(math.asin(val))
+		val = math.tan(math.radians(declap))*math.tan(math.radians(poleap))
+		if math.fabs(val) > 1.0:
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		qap = math.degrees(math.asin(val))
+
+		X = math.degrees(math.atan(self.coslat*math.tan(math.radians(cmpap))))
+
+		rising = (cmpap >= 0.0 and cmpap < 90.0) or (cmpap > 270.0 and cmpap <= 360.0)
+		setting = cmpap > 90.0 and cmpap < 270.0
+		if not (rising or setting):
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		if rising:
+			wtarget = util.normalize(self.ramc+90.0+X-qap)
+		else:
+			wtarget = util.normalize(self.ramc-90.0+X+qap)
+
+		val = math.tan(math.radians(declsig))*math.tan(math.radians(poleap))
+		if math.fabs(val) > 1.0:
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		q = math.degrees(math.asin(val))
+		wsig = rasig-q if rising else rasig+q
+		return util.normalize(wsig)-wtarget
+
+
 	def toHCs(self, mundane, idprom, raprom, declprom, aspect, asp=0.0):
 		'''Calculates directions of Promissor to intermediate house cusps'''
 
@@ -257,54 +299,19 @@ class CampanianPD(regiocampbasepd.RegioCampBasePD):
 
 
 	def calcMP(self, ra, decl, pl):
-		eastern = True
-		if self.ramc > self.raic:
-			if ra > self.raic and ra < self.ramc:
-				eastern = False
-		else:
-			if (ra > self.raic and ra < 360.0) or (ra < self.ramc and ra > 0.0):
-				eastern = False
-
-		med = math.fabs(self.ramc-ra)
-
-		if med > 180.0:
-			med = 360.0-med
-		icd = math.fabs(self.raic-ra)
-		if icd > 180.0:
-			icd = 360.0-icd
-
-		md = med
-		umd = True
-		if icd < med:
-			md = icd
-			umd = False
-
-		#zd
-		zd = pl.getZD(md, self.chart.place.lat, decl, umd)
-
-		Cmp = 0.0
-		if eastern:
-			if umd:
-				Cmp = 270+zd
-			else:
-				Cmp = 90-zd
-		else:
-			if umd:
-				Cmp = 270-zd
-			else:
-				Cmp = 90+zd
-# ###########################################
-# Roberto CMP fix - V 7.0.0
-		if (self.abovehorizon and tablemd < 0.0) or (not self.abovehorizon and tablemd > 0.0):
-				Cmp = 360.0-Cmp 
-# ###########################################
-
-		return True, util.normalize(Cmp)
+		# Use the chart's canonical Campanian speculum for the trial position.
+		# Horizon and signed meridian distance belong to this position, not
+		# to the direction engine or the reference planet.
+		spec = regiospec.RegiomontanianSpeculum(
+			self.chart.place.lat, self.chart.houses.ascmc2,
+			self.chart.raequasc, 0.0, 0.0, ra, decl,
+		)
+		return True, util.normalize(spec.speculum[regiospec.RegiomontanianSpeculum.CMP])
 
 
 #####################################Moon's SecMotion
 	def calcArcWithSM(self, mundane, idprom, latprom, sig, sigasp, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		raprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
 		declprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
@@ -405,7 +412,7 @@ class CampanianPD(regiocampbasepd.RegioCampBasePD):
 
 
 	def calcHArcWithSM(self, mundane, idprom, h, hcps, arc, aspect, asp=0.0):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 			
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]

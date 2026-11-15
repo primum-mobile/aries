@@ -1,0 +1,11 @@
+{
+  "build": {
+    "beforeDevCommand": "cd ../.. && webapp/.venv/bin/python -m webapp.daemon.dev_runtime --resources && cd webapp/frontend && npm run dev"
+  },
+  "bundle": {
+    "resources": {
+      "binaries/aries-daemon": null,
+      "target/aries-frontend-media": null
+    }
+  }
+}

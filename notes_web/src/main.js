@@ -29,8 +29,9 @@ import './style.css';
 
 let editor = null;
 let ready = false;
+let readyRequested = false;
 let readOnly = true;
-let suppressInput = false;
+let lastPublishedDoc = null;
 let currentMarkdown = '';
 let pendingDocument = null;
 
@@ -39,10 +40,7 @@ const appRoot = document.getElementById('notes-app');
 const statusNode = document.getElementById('boot-status');
 
 function post(message) {
-  const body = JSON.stringify(message);
-  if (window.ariesNotes && typeof window.ariesNotes.postMessage === 'function') {
-    window.ariesNotes.postMessage(body);
-  }
+  if (window.parent !== window) window.parent.postMessage(message, '*');
 }
 
 function setStatus(text) {
@@ -85,16 +83,30 @@ function setDocument(payload) {
     return;
   }
   const markdown = typeof payload.markdown === 'string' ? payload.markdown : '';
-  suppressInput = true;
-  try {
-    editor.action(replaceAll(markdown, true));
-    currentMarkdown = markdown;
-    setReadOnly(Boolean(payload.readonly));
-  } finally {
-    requestAnimationFrame(() => {
-      suppressInput = false;
-    });
-  }
+  editor.action(replaceAll(markdown, true));
+  lastPublishedDoc = getView()?.state.doc ?? null;
+  currentMarkdown = markdown;
+  setReadOnly(Boolean(payload.readonly));
+}
+
+function publishInput(markdown) {
+  const doc = getView()?.state.doc;
+  if (readOnly || !doc || (lastPublishedDoc && doc.eq(lastPublishedDoc))) return;
+  lastPublishedDoc = doc;
+  currentMarkdown = markdown ?? getMarkdownText();
+  post({ type: 'input', value: currentMarkdown });
+}
+
+function closeNotes() {
+  // The editor's change listener is debounced. Publish the last edit before
+  // the host removes the frame and flushes its save queue.
+  publishInput();
+  post({ type: 'close' });
+}
+
+function requestReady() {
+  readyRequested = true;
+  if (ready) post({ type: 'ready' });
 }
 
 function command(key, payload) {
@@ -181,13 +193,32 @@ function toggleClickedTask(view, event) {
       checked: !found.node.attrs.checked,
     }).scrollIntoView(),
   );
-  post({ type: 'input', value: getMarkdownText() });
+  publishInput();
   event.preventDefault();
   return true;
 }
 
 function eventHasCommandModifier(event) {
   return Boolean(event.metaKey || event.ctrlKey || event.altKey);
+}
+
+function openExternalLink(event) {
+  if (event.type === 'auxclick' && event.button !== 1) return;
+  const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+  if (!anchor) return;
+  if (anchor.getAttribute('href')?.startsWith('#')) return;
+  let url;
+  try {
+    url = new URL(anchor.href, window.location.href);
+  } catch {
+    return;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  // The iframe cannot use the native shell. Forward activation to its host
+  // before either the webview or editor handles the link.
+  event.preventDefault();
+  event.stopPropagation();
+  post({ type: 'open-external', url: url.href });
 }
 
 function focusEditorAtPointer(view, event) {
@@ -308,8 +339,15 @@ function runCommand(name) {
 
 function focusEditor() {
   const view = getView();
-  if (!view || readOnly) return;
+  if (!view?.editable) return false;
   view.focus();
+  return document.hasFocus() && view.hasFocus();
+}
+
+function blurEditor() {
+  publishInput();
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
 }
 
 function setTheme(theme) {
@@ -333,17 +371,11 @@ function setTitlebarSafeTop(value) {
 
 function bindToolbar() {
   document.getElementById('notes-toolbar')?.addEventListener('mousedown', (event) => {
-    if (event.target.closest('button[data-command], button[data-close-notes]')) {
+    if (event.target.closest('button[data-command]')) {
       event.preventDefault();
     }
   });
   document.getElementById('notes-toolbar')?.addEventListener('click', (event) => {
-    const closeButton = event.target.closest('button[data-close-notes]');
-    if (closeButton) {
-      event.preventDefault();
-      post({ type: 'close' });
-      return;
-    }
     const button = event.target.closest('button[data-command]');
     if (!button) return;
     event.preventDefault();
@@ -403,15 +435,15 @@ async function createEditor() {
             return false;
           },
           blur: () => {
+            publishInput();
             post({ type: 'blur' });
             return false;
           },
           click: (view, event) => toggleClickedTask(view, event) || focusEditorAtPointer(view, event),
         },
       });
-      ctx.get(listenerCtx).markdownUpdated((milkdownCtx, markdown) => {
-        currentMarkdown = markdown;
-        if (!suppressInput) post({ type: 'input', value: markdown });
+      ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
+        publishInput(markdown);
       });
     })
     .use(commonmark)
@@ -430,14 +462,17 @@ async function createEditor() {
     pendingDocument = null;
     setDocument(payload);
   }
-  post({ type: 'ready' });
+  if (readyRequested) requestReady();
 }
 
 window.AriesNotes = {
+  blurEditor,
+  closeNotes,
   focusEditor,
   getMarkdown: getMarkdownText,
   getMarkdownJSON: () => JSON.stringify(getMarkdownText()),
   insertMarkdown,
+  requestReady,
   runCommand,
   setDocument,
   setReadOnly,
@@ -447,6 +482,8 @@ window.AriesNotes = {
 
 bindToolbar();
 bindEditorShortcuts();
+editorRoot.addEventListener('click', openExternalLink, true);
+editorRoot.addEventListener('auxclick', openExternalLink, true);
 editorRoot.addEventListener('click', focusEditorFromSurfaceClick);
 createEditor().catch((error) => {
   setStatus(`Notes editor failed to load: ${error?.message || error}`);

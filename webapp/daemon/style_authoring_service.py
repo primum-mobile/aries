@@ -15,6 +15,7 @@ from copy import deepcopy
 from typing import Any, Mapping, Optional
 
 from webapp.daemon.style_profile_catalog_generated import STYLE_PROFILE_TOKENS
+from webapp.daemon.wheel_geometry_ownership import OUTER_DEGREE_BINDINGS, RADIUS_PRIORITY_ROLES
 
 
 AUTHORING_OVERRIDE_PREFIX = "authoring.wheel."
@@ -27,7 +28,23 @@ CHART_AUTHORING_REFERENCE_SPACE = {
     "wheelRadius": 400,
     "unit": "chart-px",
 }
-AUTHORING_SCOPES = ("base", "classic", "compact", "anglo", "houses", "cusps")
+VARIANT_SCOPES = ("classic", "compact", "anglo", "houses", "cusps")
+# The Vintage magazine wheel shares the Cusp wheel layout but owns its own
+# appearance edits, in its 400-unit frame. Nothing folds into it from Base,
+# and it carries appearance only: its geometry is the measured mock-up.
+VINTAGE_SCOPE = "vintage"
+VINTAGE_CLASSES = frozenset({
+    "bodies.inner.glyph", "bodies.inner.position.degree", "bodies.inner.position.minute",
+    "bodies.inner.position.sign", "bodies.inner.motion", "houses.inner.label",
+    "houses.inner.position.degree", "houses.inner.position.minute", "houses.inner.position.sign",
+    "rings.angloCuspOuter", "rings.innerBoundary", "rings.aspectBoundary", "houses.inner.cusp",
+    "angles.inner.ray", "angles.inner.arrowhead", "bodies.inner.leader", "aspects.primary.line",
+})
+VINTAGE_PROPERTIES = frozenset({
+    "fontRef", "fontWeight", "fontStyle", "fontSize", "tracking", "color", "opacity",
+    "strokeWidth", "strokeStyle", "dashLength", "dashGap", "lineCap", "arrowSize",
+})
+AUTHORING_SCOPES = ("base", *VARIANT_SCOPES, VINTAGE_SCOPE)
 
 
 class StyleAuthoringError(ValueError):
@@ -56,6 +73,7 @@ TYPOGRAPHY_CLASSES = frozenset({
     "bodies.outer.glyph",
     "bodies.outer.motion",
     "bodies.outer.position",
+    "bodies.outer.position.minute",
     "aspects.primary.glyph",
     "aspects.interchart.glyph",
     "secondaryRing.fixedStar.label",
@@ -124,6 +142,8 @@ LINE_CLASSES = frozenset({
     "angles.outer.arrowhead",
     "bodies.inner.leader",
     "bodies.outer.leader",
+    "bodies.inner.minorDignityOutline",
+    "bodies.outer.minorDignityOutline",
     "aspects.primary.line",
     "aspects.interchart.line",
     "aspects.interchart.endpointMarker",
@@ -181,7 +201,7 @@ COLOR_PROPERTIES = frozenset({
     "shadowColor", "color",
 })
 DIMENSION_PROPERTIES = frozenset({
-    "fontSize", "tracking", "strokeWidth", "dashLength", "dashGap", "radius", "bandWidth",
+    "fontSize", "tracking", "strokeWidth", "dashLength", "dashGap", "radius", "recipeRadius", "bandWidth",
     "cellSize", "dotSize", "shadowX", "shadowY", "shadowBlur",
 })
 FONT_REF_PROPERTIES = frozenset({"fontRef"})
@@ -193,7 +213,8 @@ CHART_CLASSES = frozenset({"canvas.chart"})
 # One class per band span; mirrors WHEEL_BAND_SPANS in the frontend.
 BAND_SPAN_CLASSES = frozenset({"canvas.span.chartRing"})
 BAND_SPAN_PROPERTIES = frozenset({"spanInner"})
-CHART_PROPERTIES = frozenset({"scale"})
+CHART_PROPERTIES = frozenset({"scale", "radiusPriority", "outerDegreeBinding", "recipeVersion"})
+BOOLEAN_PROPERTIES = frozenset({"radiusAuthored"})
 ALL_PROPERTIES = frozenset((
     *DIMENSION_PROPERTIES,
     *COLOR_PROPERTIES,
@@ -201,6 +222,7 @@ ALL_PROPERTIES = frozenset((
     *MASK_FILL_PROPERTIES,
     *SHADOW_FILL_PROPERTIES,
     *CHART_PROPERTIES,
+    *BOOLEAN_PROPERTIES,
     *BAND_SPAN_PROPERTIES,
     "fontWeight", "fontStyle",
     "strokeStyle", "fillPattern", "shadowPattern", "gradientType", "gradientDirection",
@@ -229,6 +251,8 @@ NUMERIC_BOUNDS = {
     "maskAmount": (0.0, 100.0),
     "seed": (0.0, 65535.0),
     "radius": (0.0, 400.0),
+    "recipeRadius": (0.0, 400.0),
+    "recipeVersion": (1.0, 1.0),
     "bandWidth": (0.0, 400.0),
     # Matches WHEEL_SCALE_RANGE in the frontend's wheel-render-style.ts. At 1 the
     # wheel already fills the pane; below 0.3 its own scale handle would be out
@@ -261,6 +285,8 @@ SYMBOL_TYPOGRAPHY_CLASSES = frozenset({
     "chartOverlay.events.signal.glyph",
 })
 ENUM_VALUES = {
+    "radiusPriority": RADIUS_PRIORITY_ROLES,
+    "outerDegreeBinding": OUTER_DEGREE_BINDINGS,
     "arrowStyle": frozenset({"filled", "outlined", "open", "stealth", "spear"}),
     "fontStyle": frozenset({"normal", "italic"}),
     "strokeStyle": frozenset({"solid", "dashed", "dotted"}),
@@ -299,7 +325,7 @@ def class_properties(class_id: str) -> frozenset[str]:
         properties.update(MASK_FILL_PROPERTIES)
         properties.update(SHADOW_FILL_PROPERTIES)
     if class_id in RING_CLASSES:
-        properties.add("radius")
+        properties.update({"radius", "recipeRadius", "radiusAuthored"})
     if class_id in CHART_CLASSES:
         properties.update(CHART_PROPERTIES)
     if class_id in BAND_SPAN_CLASSES:
@@ -331,6 +357,8 @@ def _split_override_id(semantic_id: str) -> tuple[str, str, str]:
     class_id = ".".join(parts[1:-1])
     if scope not in AUTHORING_SCOPES:
         raise StyleAuthoringError(f"unknown authoring scope in {semantic_id}: {scope}")
+    if scope == VINTAGE_SCOPE and (class_id not in VINTAGE_CLASSES or property_name not in VINTAGE_PROPERTIES):
+        raise StyleAuthoringError(f"the vintage wheel does not paint {class_id}.{property_name}")
     if property_name not in ALL_PROPERTIES:
         raise StyleAuthoringError(f"unknown authoring property in {semantic_id}: {property_name}")
     supported = class_properties(class_id)
@@ -487,6 +515,10 @@ def _validated_value(
     property_name: str,
     value: Any,
 ) -> Any:
+    if property_name in BOOLEAN_PROPERTIES:
+        if not isinstance(value, bool):
+            raise StyleAuthoringError(f"{semantic_id} must be a boolean")
+        return value
     if property_name in FONT_REF_PROPERTIES:
         return _validated_font_ref(semantic_id, class_id, value)
     if property_name in NUMERIC_BOUNDS:
@@ -584,7 +616,12 @@ def _dimension(value: Any) -> dict[str, Any]:
     return {"value": value, "unit": "px"}
 
 
-def _color(value: Any) -> dict[str, Any]:
+def _color(value: Any) -> str | dict[str, Any]:
+    # A role swatch authors a reference, not a copy of its current RGB value.
+    # Keep it intact in the portable profile and resolve it only for paint.
+    alias = authoring_color_alias_target(value)
+    if alias is not None:
+        return f"{{{alias}}}"
     result = {
         "colorSpace": "srgb",
         "components": list(value[:3]),
@@ -604,7 +641,7 @@ def build_chart_style_profile_v2(
     normalized = validate_authoring_overrides(overrides)
     styles: dict[str, dict[str, Any]] = {}
     variants: dict[str, dict[str, dict[str, Any]]] = {
-        "classic": {}, "compact": {}, "anglo": {}, "houses": {}, "cusps": {},
+        variant: {} for variant in (*VARIANT_SCOPES, VINTAGE_SCOPE)
     }
     for semantic_id, value in normalized.items():
         scope, class_id, property_name = _split_override_id(semantic_id)
@@ -630,6 +667,8 @@ def build_chart_style_profile_v2(
         "variants": {
             variant: dict(sorted(class_map.items()))
             for variant, class_map in variants.items()
+            # The vintage container is written only when it holds edits.
+            if variant != VINTAGE_SCOPE or class_map
         },
     }
     return validate_chart_style_profile_v2(profile)
@@ -678,13 +717,13 @@ def flatten_chart_style_profile_v2(payload: Any) -> dict[str, Any]:
     variants = payload.get("variants")
     if not isinstance(styles, Mapping) or not isinstance(variants, Mapping):
         raise StyleAuthoringError("chart style styles and variants must be objects")
-    unknown_variants = set(variants) - {"classic", "compact", "anglo", "houses", "cusps"}
+    unknown_variants = set(variants) - {*VARIANT_SCOPES, VINTAGE_SCOPE}
     if unknown_variants:
         raise StyleAuthoringError(f"unknown chart style variant: {sorted(unknown_variants)[0]}")
     flat: dict[str, Any] = {}
     containers = [("base", styles), *(
         (variant, variants.get(variant, {}))
-        for variant in ("classic", "compact", "anglo", "houses", "cusps")
+        for variant in (*VARIANT_SCOPES, VINTAGE_SCOPE)
     )]
     for scope, class_map in containers:
         if not isinstance(class_map, Mapping):
@@ -704,15 +743,18 @@ def flatten_chart_style_profile_v2(payload: Any) -> dict[str, Any]:
                         raise StyleAuthoringError(f"{semantic_id} must be a px dimension")
                     value = raw_value.get("value")
                 elif property_name in COLOR_PROPERTIES:
-                    if (
+                    if authoring_color_alias_target(raw_value) is not None:
+                        value = raw_value
+                    elif (
                         not isinstance(raw_value, Mapping)
                         or raw_value.get("colorSpace") != "srgb"
                         or not isinstance(raw_value.get("components"), (list, tuple))
                     ):
                         raise StyleAuthoringError(f"{semantic_id} must be an sRGB color")
-                    value = list(raw_value["components"])
-                    if "alpha" in raw_value:
-                        value.append(raw_value["alpha"])
+                    else:
+                        value = list(raw_value["components"])
+                        if "alpha" in raw_value:
+                            value.append(raw_value["alpha"])
                 elif property_name in FONT_REF_PROPERTIES:
                     if not isinstance(raw_value, Mapping):
                         raise StyleAuthoringError(
@@ -750,7 +792,7 @@ def build_chart_style_profile_v2_unchecked(
     """Build a canonical profile after flat/base/reference validation."""
     styles: dict[str, dict[str, Any]] = {}
     variants: dict[str, dict[str, dict[str, Any]]] = {
-        "classic": {}, "compact": {}, "anglo": {}, "houses": {}, "cusps": {},
+        variant: {} for variant in (*VARIANT_SCOPES, VINTAGE_SCOPE)
     }
     for semantic_id, value in normalized_overrides.items():
         scope, class_id, property_name = _split_override_id(semantic_id)
@@ -776,6 +818,8 @@ def build_chart_style_profile_v2_unchecked(
         "variants": {
             variant: dict(sorted(class_map.items()))
             for variant, class_map in variants.items()
+            # The vintage container is written only when it holds edits.
+            if variant != VINTAGE_SCOPE or class_map
         },
     }
 
@@ -788,7 +832,7 @@ def authoring_schema() -> dict[str, Any]:
         "profileSchemaVersion": CHART_STYLE_PROFILE_SCHEMA_VERSION,
         "classManifestVersion": CHART_STYLE_CLASS_MANIFEST_VERSION,
         "overridePrefix": AUTHORING_OVERRIDE_PREFIX,
-        "keyPattern": "authoring.wheel.<base|classic|compact|anglo|houses|cusps>.<classId>.<property>",
+        "keyPattern": "authoring.wheel.<base|classic|compact|anglo|houses|cusps|vintage>.<classId>.<property>",
         "scopes": list(AUTHORING_SCOPES),
         "referenceSpace": deepcopy(CHART_AUTHORING_REFERENCE_SPACE),
         "properties": {
@@ -806,6 +850,7 @@ def authoring_schema() -> dict[str, Any]:
                         "fontWeight": "",
                         # A ratio, not a length — the default below is px.
                         "scale": "",
+                        "recipeVersion": "",
                         "arrowSize": "%",
                     }.get(property_name, "px"),
                     "min": bounds[0],
@@ -823,6 +868,8 @@ def authoring_schema() -> dict[str, Any]:
                     ],
                 }
                 if property_name in FONT_REF_PROPERTIES
+                else {"type": "boolean"}
+                if property_name in BOOLEAN_PROPERTIES
                 else {"type": "enum", "values": sorted(ENUM_VALUES[property_name])}
             )
             for property_name in sorted(ALL_PROPERTIES)

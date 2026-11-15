@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "description": "Golden capture of resolveWheelRingSet. The five override-free baselines (default, perturbed#1-4) are FROZEN behaviour: no solver or band-model change may alter them, and re-baselining one is a real visual change needing a changelog entry. The three overrides#N baselines depend on how pinned ring radii resolve and on band contents following their band; they were re-captured when the sequential neighbour clamp became the declarative pin solver, and again when band contents were made to travel with their band, and again when the two content floors were located by band rather than by classic's circle names, which had left anglo's decan band with no floor at all. overrides#3 was re-captured once more when a pinned Anglo cusp ring began carrying the cusp-ruler band's inner edge with it, so that placing the ring moves the ruler band instead of stretching it and its ticks. The three authored-radius baselines were re-captured when secondary tracks gained rim-relative clearance to prevent enlarged primary wheels crushing comparison glyphs. All override-free baselines remain unchanged.",
+  "description": "Golden capture of resolveWheelRingSet. The five override-free baselines (default, perturbed#1-4) are FROZEN behaviour: no solver or band-model change may alter them, and re-baselining one is a real visual change needing a changelog entry. The three overrides#N baselines depend on how pinned ring radii resolve and on band contents following their band; they were re-captured when the sequential neighbour clamp became the declarative pin solver, and again when band contents were made to travel with their band, and again when the two content floors were located by band rather than by classic's circle names, which had left anglo's decan band with no floor at all. overrides#3 was re-captured once more when a pinned Anglo cusp ring began carrying the cusp-ruler band's inner edge with it, so that placing the ring moves the ruler band instead of stretching it and its ticks. The three authored-radius baselines were re-captured when secondary tracks gained rim-relative clearance to prevent enlarged primary wheels crushing comparison glyphs. All override-free baselines remain unchanged. The authored-radius baselines were re-captured when Anglo body glyphs and their dependent anchors began preserving their rim inset during band resizing, preventing the glyph track from converging with the fixed-depth leader feet.",
   "aggregates": {
     "default": "b239b41f8353d5bbd6efeabfcbb6ef6c0335d09a7e902c654c46cadfb3dbb8fc",
     "perturbed#1": "025bb02e2cc69e5fd565307d43a9efe2f024ec14a742682d4ca8ca42ca31182b",
     "perturbed#2": "6bbb099b4cdb299d9c9c7131b568549bcbc1fc49caff7d066db6457d0183a029",
     "perturbed#3": "391cee617daaa5498e2bc1bfe4feb4cd7d81351457c9b043ebf210562a5ffc22",
     "perturbed#4": "ec07e3b716f3e0a052849848175ca38eba1c8b50ab627c06a67fe621c9a694b5",
-    "overrides#1": "fe6786c01c7f180965f8546fb5a8662a7ce47943d9c5c23645d81f2bf4e3f96b",
-    "overrides#2": "e4a038a851e29422549c4eb40cf4e7be8b2aec03f48afff9de78bdc61796b17d",
-    "overrides#3": "6c7dadb85be1e95cec948e6686c746e5829d9301d4c23b99a7fd6c787c9cf6a3"
+    "overrides#1": "ab2dfb24131646410704a0284977e9302ec849262352c9e395c956d81c21e393",
+    "overrides#2": "073c4dbbb5d61b799f37c4b8d8496d35b9c7d8f2d4060840fda8a43b358c97fc",
+    "overrides#3": "78ab2de430da6f10487b62053eda2f146986a98540e5c850463ee40b26ba62b4"
   },
   "defaultPerState": {
     "classic|single|180|0|0|0|0|0|0|0": "458fdb9615aa",

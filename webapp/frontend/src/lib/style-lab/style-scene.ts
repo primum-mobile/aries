@@ -102,6 +102,8 @@ export function styleSceneClassId(element: StyleSceneElement): string {
 }
 
 export interface StyleSceneTokenBinding {
+  /** Compatibility target for the historical outer-degree radius role. */
+  readonly radiusTarget?: "degree" | "cuspLabels";
   readonly semanticId: string;
   readonly cssVar: string;
   readonly property: StyleSceneTokenProperty;
@@ -278,6 +280,7 @@ export interface StyleSceneHandleDrag {
 }
 
 export interface StyleSceneTokenPatch {
+  readonly radiusTarget?: "degree" | "cuspLabels";
   readonly semanticId: string;
   readonly cssVar: string;
   readonly value: number;
@@ -445,6 +448,7 @@ export function resolveStyleSceneHandleDrag(
   return {
     semanticId: handle.binding.semanticId,
     cssVar: handle.binding.cssVar,
+    ...(handle.binding.radiusTarget ? {radiusTarget: handle.binding.radiusTarget} : {}),
     value: value === handle.binding.value ? value : Number(value.toFixed(6)),
   };
 }

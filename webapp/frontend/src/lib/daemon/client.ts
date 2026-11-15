@@ -6,11 +6,9 @@ import type { WheelCompositions } from "../chart/wheel-composition";
 // Modified for Aries in 2026 by Max Lange.
 
 import type {
+  ChartDashboard,
   ChartRenderSnapshot,
-  OuterRingMode,
   OverlayRenderMode,
-  PdDirectionState,
-  RenderVariant,
   SymbolicTimeReadout,
 } from "@/lib/chart/types";
 import {
@@ -22,6 +20,7 @@ import {
 } from "@/lib/chart/perf";
 import { resolveShellHost } from "@/lib/shell-host";
 import type { ChartStyleFontRef } from "@/lib/style-lab/authoring-schema";
+import type { LiveSurfaceRequest } from "@/lib/live-surfaces";
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:8765";
 const SAME_ORIGIN_DAEMON_URL = "same-origin";
@@ -247,46 +246,6 @@ export async function fetchChartSnapshot(
   return snapshot;
 }
 
-export type ChartPreviewRequestOptions = Readonly<{
-  variant: RenderVariant;
-  houses: boolean;
-  positions: boolean;
-  terms: boolean;
-  decans: boolean;
-  aspects: boolean;
-  minorAspects: boolean;
-  outerRing: Exclude<OuterRingMode, "parallel_transits">;
-  /** Compatibility with the rejected boolean preview contract. */
-  fixedStars?: boolean;
-}>;
-
-export function chartPreviewRequestKey(
-  chartRequestKey: string,
-  preview: ChartPreviewRequestOptions,
-): string {
-  const search = new URLSearchParams(chartRequestKey);
-  search.set("previewVariant", preview.variant);
-  search.set("previewHouses", String(preview.houses));
-  search.set("previewPositions", String(preview.positions));
-  search.set("previewTerms", String(preview.terms));
-  search.set("previewDecans", String(preview.decans));
-  search.set("previewAspects", String(preview.aspects));
-  search.set("previewMinorAspects", String(preview.minorAspects));
-  search.set("previewOuterRing", preview.outerRing);
-  if (preview.fixedStars != null) {
-    search.set("previewFixedStars", String(preview.fixedStars));
-  }
-  return search.toString();
-}
-
-export function fetchChartPreviewSnapshot(
-  chartRequestKey: string,
-  preview: ChartPreviewRequestOptions,
-  signal?: AbortSignal,
-): Promise<ChartRenderSnapshot> {
-  return fetchChartSnapshot(chartPreviewRequestKey(chartRequestKey, preview), signal);
-}
-
 /**
  * Render a workspace document by its daemon id — the session-truth path.
  *
@@ -299,9 +258,11 @@ export async function fetchDocumentSnapshot(
   docId: string,
   signal?: AbortSignal,
   overlayRenderMode?: OverlayRenderMode,
+  viewSide?: "left" | "right",
 ): Promise<ChartRenderSnapshot> {
   const startedAt = perfNow();
   const search = new URLSearchParams();
+  if (viewSide) search.set("viewSide", viewSide);
   if (overlayRenderMode && overlayRenderMode !== "full") {
     search.set("overlayRenderMode", overlayRenderMode);
   }
@@ -697,6 +658,15 @@ export type InspectorDignityItem =
     };
 
 /** An aspect-row item — prefix text + Morinus glyph + suffix text, coloured. */
+export type InspectorAspectEndpoint = {
+  glyph: string; // Morinus glyph char, or "" when the point has none
+  text: string; // short label used only when glyph is ""
+  ring: string; // multiwheel ring numeral, or ""
+  colour?: RGB | null; // planets: dignity colour, like the Triplicity Rulers row
+  colour_role?: string | null;
+  own?: boolean; // the inspected object itself: drawn muted
+};
+
 export type InspectorAspectItem = {
   prefix_text: string;
   aspect_glyph: string; // Morinus glyph char
@@ -704,6 +674,12 @@ export type InspectorAspectItem = {
   aspect_colour?: RGB | null;
   aspect_colour_role?: string | null;
   full_text: string;
+  /** Actor-first glyph row: left, aspect glyph, right, then app./sep. + orb. */
+  left?: InspectorAspectEndpoint;
+  right?: InspectorAspectEndpoint;
+  state_text?: string; // "app." / "sep." / "" for a non-directed aspect
+  orb_text?: string;
+  exact?: boolean; // within the Exact orb setting: the orb is emphasised
 };
 
 export type InspectorManzil = {
@@ -736,6 +712,9 @@ export type InspectorLunarConditions = {
 
 export type InspectorPayload = {
   glyph: string; // Morinus glyph char (or "")
+  signGlyph?: string;
+  signLabel?: string;
+  signColourRole?: string | null;
   title: string;
   motionGlyph?: string;
   motionUsesSymbolFont?: boolean;
@@ -748,21 +727,26 @@ export type InspectorPayload = {
   dignity_items?: InspectorDignityItem[];
   detail_rows?: string[];
   station_rows?: string[];
+  station_items?: { text: string; spans: InspectorFlagSpan[] }[];
+  /** Summary lines with glyph runs (position · house), matched by text. */
+  summary_items?: { text: string; spans: InspectorFlagSpan[] }[];
+  /** Domicile/Exaltation/Term/Face rows; a named ruler carries its dignity-coloured glyph. */
+  ruler_items?: { text: string; spans: InspectorFlagSpan[] | null }[];
   aspect_rows?: string[];
   aspect_items?: InspectorAspectItem[];
+  header_aspect_items?: InspectorAspectItem[];
   manzil?: InspectorManzil | null;
   lunar_conditions?: InspectorLunarConditions;
   phasis_row?: string | null;
+  void_course_row?: string | null;
   deferred_slots?: string[];
   rows?: string[];
   footer?: string;
-  /** Daemon-owned primary-direction event state for kind=pd_event. */
-  directionEvent?: PdDirectionState | null;
 };
 
 export type InspectorRegionQuery = {
-  kind: string; // planet|vertex|fortune|syzygy|eclipse|angle|house|sign|secondary_ring|aspect|drishti|pd_event
-  // planet SE id | "vertex" | angle key | house/sign index |
+  kind: string; // planet|vertex|fortune|syzygy|eclipse|angle|house|sign|term|secondary_ring|aspect|drishti
+  // planet SE id | "vertex" | angle key | house/sign index | term "sign:ruler" |
   // secondary_ring "family|longitude|label" | aspect "p1:p2:type" |
   // dṛṣṭi relation id | selected primary-direction event id
   objectId: string;
@@ -784,6 +768,8 @@ export type InspectorRegionQuery = {
   when?: string;
   binding?: SupplementaryBindingPayload;
   deferSignals?: boolean;
+  /** Hovered moment (JD UT) for a view that plots time (Graphic Ephemeris). */
+  atJd?: number;
 };
 
 export async function fetchInspectorPayload(
@@ -801,6 +787,7 @@ export async function fetchInspectorPayload(
   if (query.when) search.set("when", query.when);
   if (query.binding) search.set("binding", JSON.stringify(query.binding));
   if (query.deferSignals) search.set("deferSignals", "true");
+  if (query.atJd != null) search.set("atJd", String(query.atJd));
   const response = await daemonFetch(`${daemonBaseUrl()}/api/inspector?${search.toString()}`, {
     cache: "no-store",
     signal,
@@ -810,6 +797,88 @@ export async function fetchInspectorPayload(
     throw new Error(`inspector request failed: ${response.status} ${detail}`);
   }
   return (await response.json()) as InspectorPayload;
+}
+
+/** An ascensional-transit endpoint or contact kind as the AT list draws it. */
+export type InspectorAscensionalGlyph = {
+  glyph: string;
+  font: "morinus" | "text" | string;
+  label: string;
+};
+
+/** Longitude or declination evidence qualifying the two-transit moment. */
+export type InspectorAscensionalEclipticAspect = {
+  radixLabel: string;
+  radixGlyph: string;
+  aspectDeg?: number;
+  aspectLabel?: string;
+  orbText: string;
+};
+
+export type InspectorAscensionalRow = {
+  id: string;
+  transit: InspectorAscensionalGlyph;
+  aspect: InspectorAscensionalGlyph;
+  radix: InspectorAscensionalGlyph;
+  orbText: string;
+  /** Daemon-localized applying/separating timing (approaching rows only). */
+  statusText: string;
+  /** Qualifying ordinary transits of the acting body; empty ⇒ no two-transit cue. */
+  twoTransit: InspectorAscensionalEclipticAspect[];
+  /** The committed wheel contact this row is drawn as (in-orb rows only). */
+  region: {
+    kind: "aspect";
+    p1: string;
+    p2: string;
+    aspectType: number;
+    scope: "primary" | "interchart";
+    method: string;
+    contactId: string;
+    chartRole?: "primary" | "outer";
+    ringIndex?: number;
+  } | null;
+};
+
+export type InspectorAscensionalTransitsPayload = {
+  supportsEvent: boolean;
+  title: string;
+  documentId: string;
+  event: { jd: number; datetimeText: string; ramcText: string; applyPrecession: boolean };
+  /** The one precession switch; shown only where an event or second ring elapses time. */
+  precession: {
+    available: boolean;
+    applied: boolean;
+    measure: "ecliptic" | "equatorial";
+    rateText: string;
+    correctionText: string;
+    experimental: boolean;
+  };
+  twoTransit: { isActiveMoment: boolean; activeEclipticCount: number; activeAspectCount: number };
+  sections: Array<{
+    id: "contacts" | "approaching";
+    title: string;
+    rows: InspectorAscensionalRow[];
+    emptyText: string | null;
+  }>;
+};
+
+export async function fetchInspectorAscensionalTransits(
+  docId: string,
+  signal?: AbortSignal,
+  viewSide?: "left" | "right",
+): Promise<InspectorAscensionalTransitsPayload | null> {
+  const search = new URLSearchParams({ docId });
+  if (viewSide) search.set("viewSide", viewSide);
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/inspector/ascensional-transits?${search.toString()}`,
+    { cache: "no-store", signal },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`inspector ascensional transits failed: ${response.status} ${detail}`);
+  }
+  // Null: the document closed or the view left ascensional mode before arrival.
+  return (await response.json()) as InspectorAscensionalTransitsPayload | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -829,6 +898,8 @@ export type InspectorFlagSpan = {
   colour?: RGB | null;
   colourRole?: string | null;
   glyph?: boolean; // render in the Morinus face
+  bold?: boolean;
+  wrapGroup?: number; // contiguous runs with the same ID stay together when wrapping
 };
 
 /** One flag row, as serialized from the Python tuple. Index 0 = label, 1 =
@@ -843,7 +914,12 @@ export type InspectorFlagRow =
 /** Exact shape of chartinspector.build_flag_payload (chartinspector.py:1157). */
 export type InspectorFlagPayload = {
   glyph: string; // Morinus glyph char (or "")
+  signGlyph?: string;
+  signLabel?: string;
+  signColourRole?: string | null;
   title: string;
+  titleSpans?: InspectorFlagSpan[];
+  titleLabel?: string;
   motionGlyph?: string;
   motionUsesSymbolFont?: boolean;
   motionLabel?: string;
@@ -851,10 +927,9 @@ export type InspectorFlagPayload = {
   accentRole?: string | null;
   rows: InspectorFlagRow[];
   nextStationRow?: InspectorFlagRow | null;
+  voidCourseRow?: InspectorFlagRow | null;
   deferredSlots?: string[];
   compact?: boolean; // aspect flags set this (smaller card, accent border)
-  /** Daemon-owned primary-direction event state for kind=pd_event. */
-  directionEvent?: PdDirectionState | null;
 };
 
 export async function fetchInspectorFlagPayload(
@@ -890,8 +965,7 @@ export async function fetchInspectorFlagPayload(
 // chart identity + region-building, so the signification keys off the SAME
 // region the Zone-A payload does; alerts key off the chart identity + an
 // explicit lens. All source/citation/alert text passes through verbatim from CorpusDB /
-// rule_engine — the skin renders it and computes/fabricates nothing. Spec:
-// doc/migration/surfaces/inspector-zone-b.md.
+// rule_engine — the skin renders it and computes/fabricates nothing.
 // ---------------------------------------------------------------------------
 
 /** A flattened CorpusDB section — inspector_zone_b_service._section_to_passage
@@ -899,8 +973,8 @@ export async function fetchInspectorFlagPayload(
  * by the bridge; every other field is the raw section, passed through verbatim
  * (never fabricate/mutate — memory feedback_corpus_no_hallucination.md). */
 export type InspectorPassageSection = {
-  source: string; // fixed "Valens, Anthologies 0.7"
-  citation: string; // "Anthologies <book>.<chapter>" + Kroll/Pingree page anchors
+  source: string;
+  citation: string;
   citation_label?: string | null; // wx QuoteTextPane-style citation line
   citation_runs?: InspectorPassageRun[];
   heading: string | null; // section heading (e.g. "[Sun]")
@@ -919,6 +993,7 @@ export type InspectorPassageSection = {
   // desktop-parity formatting; fall back to `text` if absent.
   runs?: InspectorPassageRun[];
   footnotes: string[];
+  footnote_runs?: InspectorPassageRun[][]; // per footnote, same run kinds as `runs`
   editorial_notes: string[];
 };
 
@@ -935,6 +1010,14 @@ export type InspectorPassageParagraph = {
 export type InspectorPassageRun = {
   kind: "normal" | "glyph" | "editorial" | "italic" | "bold";
   text: string;
+  signIndex?: number;
+  signColors?: InspectorSignGlyphColors | null;
+};
+
+/** Daemon-resolved sign paint for both display modes on retained corpus cards. */
+export type InspectorSignGlyphColors = {
+  plain: { colour: RGB; colourRole: string | null };
+  element: { colour: RGB; colourRole: string | null };
 };
 
 /** GET /api/inspector/passages payload. `packId` is null when passive source
@@ -944,6 +1027,7 @@ export type InspectorPassagesPayload = {
   region: { kind: string; object_id: string | number | null };
   packId: string | null;
   section: InspectorPassageSection | null;
+  sections?: { packId: string; section: InspectorPassageSection }[];
 };
 
 export type LillyRecoveryPlace = {
@@ -1075,6 +1159,7 @@ export type LillyRecoveryTimingAggregate = {
 export type InspectorAlert = {
   status: "good" | "caution" | "avoid" | string | null;
   glyph: string; // Morinus glyph char (or "")
+  glyphColors?: InspectorSignGlyphColors | null;
   title: string;
   /** Stable localization key; `title` remains the authored fallback. */
   titleKey?: string | null;
@@ -1130,6 +1215,7 @@ export async function fetchPassages(
   if (query.when) search.set("when", query.when);
   if (query.binding) search.set("binding", JSON.stringify(query.binding));
   if (query.maxResults != null) search.set("maxResults", String(query.maxResults));
+  if (query.atJd != null) search.set("atJd", String(query.atJd));
   const response = await daemonFetch(`${daemonBaseUrl()}/api/inspector/passages?${search.toString()}`, {
     cache: "no-store",
     signal,
@@ -1265,6 +1351,8 @@ export type CorpusPack = {
   era: string;
   short_label: string;
   disciplines: string[];
+  license: string;
+  copyright_note: string;
   active: boolean;
 };
 
@@ -1470,8 +1558,7 @@ export async function fetchChartList(
 // ---------------------------------------------------------------------------
 // Chart editor (Personal Data) + JSONL collections.
 // POST /api/editor/build · GET /api/editor/resolve-place · POST /api/editor/save
-// · GET /api/collections. Oracle: personaldatadlg.py. Spec:
-// doc/migration/surfaces/chart-editor.md (§5 daemon, §7 form layout). The daemon
+// · GET /api/collections. Oracle: personaldatadlg.py. The daemon
 // constructs charts on the canonical chartfile path; the form ships the
 // personaldatadlg apply() field set verbatim — never re-derives chart math here.
 // ---------------------------------------------------------------------------
@@ -1504,6 +1591,8 @@ export type EditorFields = {
   lat?: number;
   lon?: number;
   place?: string;
+  /** Infer a name for manually edited coordinates unless the user named them. */
+  inferPlace?: boolean;
   altitude?: number;
   plus?: boolean;
   zoneHour?: number;
@@ -1519,7 +1608,7 @@ export type EditorFields = {
 // lists (mtexts.{typeList,calList,zoneList}) and the seed values
 // (engine `now` + Male/Radix plus the saved Aries Default Location). The skin
 // renders the form from this and never hardcodes enums or seeds from the browser
-// clock. Spec: doc/migration/surfaces/chart-editor.md.
+// clock.
 // ---------------------------------------------------------------------------
 
 export type EditorEnumOption = { value: string; label: string };
@@ -1645,6 +1734,32 @@ export type EditorBuildResult = {
   snapshot: ChartRenderSnapshot;
 };
 
+export type EditorTimezone = {
+  tzid: string;
+  plus: boolean;
+  zoneHour: number;
+  zoneMin: number;
+  daylightSaving: boolean;
+};
+
+export async function resolveEditorTimezone(
+  fields: EditorFields,
+  signal?: AbortSignal,
+): Promise<EditorTimezone> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/editor/resolve-timezone`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ fields }),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`editor timezone failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as EditorTimezone;
+}
+
 /** Construct a chart from editor fields on the canonical path and return its
  * export snapshot (live preview, no save). */
 export async function editorBuild(
@@ -1673,7 +1788,8 @@ export async function editorBuild(
  * display-only for the picker list.
  */
 export type PlaceCandidate = {
-  name: string; // persisted place value (≤20)
+  name: string; // full persisted place value
+  isCoordinate?: boolean;
   lonDeg: number;
   lonMin: number;
   lonSec: number;
@@ -1697,13 +1813,14 @@ export type PlaceCandidate = {
   countryName: string;
 };
 
-/** City candidates (already form-shaped) for a typed query (>= 3 chars) — the
- * dialog's place search (personaldatadlg.py:606). */
+/** Form-shaped candidates for typed place names or coordinates. */
 export async function resolvePlace(
   query: string,
   signal?: AbortSignal,
+  coordinatesOnly = false,
 ): Promise<PlaceCandidate[]> {
   const search = new URLSearchParams({ q: query });
+  if (coordinatesOnly) search.set("coordinatesOnly", "true");
   const response = await daemonFetch(`${daemonBaseUrl()}/api/editor/resolve-place?${search.toString()}`, {
     cache: "no-store",
     signal,
@@ -1714,6 +1831,29 @@ export async function resolvePlace(
   }
   const body = (await response.json()) as { candidates: PlaceCandidate[] };
   return body.candidates ?? [];
+}
+
+/** Form-shaped place for an exact point (an address picked from the
+ * type-ahead search). Same shape and timezone path as `resolvePlace`; the
+ * daemon keeps `name` in full and adds country and altitude from the offline
+ * nearest city. */
+export async function placeAt(
+  lon: number,
+  lat: number,
+  name: string,
+  signal?: AbortSignal,
+): Promise<PlaceCandidate> {
+  const search = new URLSearchParams({ lon: String(lon), lat: String(lat), name });
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/editor/place-at?${search.toString()}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`place-at failed: ${response.status} ${detail}`);
+  }
+  const body = (await response.json()) as { candidate: PlaceCandidate };
+  return body.candidate;
 }
 
 export type EditorSaveResult = {
@@ -1747,7 +1887,7 @@ export async function editorSave(
 // transit/SR/return/progression child's STEPPING ANCHOR rather than a stored
 // radix, the editor seeds from the cursor and writes back to the cursor chart
 // (re-derived through the canonical Binding -> Deriver -> Chart path) — it does
-// NOT save a .jsonl record. Spec: doc/migration/wiring/chart-editor.md §4.
+// NOT save a .jsonl record.
 
 /** Cursor-editor seed: the editor's form fields seeded from a document's live
  * stepping cursor, plus the lock-type flag + the stepping-anchor hint. For a
@@ -1834,9 +1974,14 @@ export type ChartPickerRow = {
   name: string;
   date: string;
   time: string;
+  /** English display fallback; render the stable chartType through the catalog. */
   type: string;
+  /** Canonical schema-v1 chart type (radix, solar, transit, horary, …). */
+  chartType?: string;
   place: string;
+  /** English display fallback; render the stable male flag through the catalog. */
   gender: string;
+  male?: boolean | null;
   collection: string;
   modified: string;
   lastOpened: string;
@@ -1850,7 +1995,7 @@ export type ChartPickerRowsPayload = {
   rows: ChartPickerRow[];
 };
 
-export type ImportKind = "hor_folder" | "jsonl" | "sfcht" | "aaf";
+export type ImportKind = "hor_folder" | "jsonl" | "sfcht" | "aaf" | "zet" | "zeus" | "library";
 export type ExportKind = "auto" | "png" | "pdf";
 
 export type ImportSummary = {
@@ -1929,6 +2074,7 @@ export async function fetchChartPickerRows(
 export type ChartPickerChoice = {
   value: string;
   label: string;
+  group?: "points" | "asteroids" | "parts";
 };
 
 export type ChartPickerSearchCatalog = {
@@ -1969,7 +2115,6 @@ export type ChartPickerSearchPayload = {
 
 export type ChartPickerWorkbenchState = ChartPickerSearchPayload & {
   view: "list" | "search";
-  filter: string;
   listSort: { column: keyof ChartPickerRow; ascending: boolean };
   collectionPaths: string[] | null;
   collectionDrawerOpen: boolean;
@@ -2003,6 +2148,7 @@ export type ChartPickerSearchRow = {
   date: string;
   time: string;
   type: string;
+  chartType?: string;
   collection: string;
   place: string;
   matches: string;
@@ -2052,6 +2198,40 @@ export async function searchChartPickerRows(
     payload,
     signal,
   );
+}
+
+export type ChartEventSearchPayload = ChartPickerSearchPayload & {
+  documentId: string;
+  nameTagQuery: string;
+  tagIds: string[];
+  tagMatch: "any" | "all";
+  untagged: boolean;
+  sort: "date" | "added";
+  descending: boolean;
+  offset: number;
+  limit: number;
+};
+
+export type ChartEventSearchResult = {
+  rows: Array<{ id: string; name: string; date: string; time: string; datetime: string;
+    kind: string; tags?: Array<{ id: string; name: string }>; matches: string[] }>;
+  nextOffset: number;
+  totalCandidates: number;
+  errors: number;
+  done: boolean;
+  ownerDocumentId: string;
+};
+
+export function searchChartEvents(payload: ChartEventSearchPayload, signal?: AbortSignal): Promise<ChartEventSearchResult> {
+  return workspacePost<ChartEventSearchResult>("/api/workspace/events/search", payload, signal);
+}
+
+export async function fetchChartEventSearchCatalog(documentId: string, signal?: AbortSignal): Promise<ChartPickerSearchCatalog> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/workspace/events/search-catalog/${encodeURIComponent(documentId)}`, {
+    cache: "no-store", signal,
+  });
+  if (!response.ok) throw new Error(`event search catalog failed: ${response.status}`);
+  return response.json() as Promise<ChartPickerSearchCatalog>;
 }
 
 export async function renameChartPickerRow(
@@ -2161,13 +2341,26 @@ export async function importCharts(
   return workspacePost<ImportSummary>("/api/io/import", params, signal);
 }
 
-/** File -> Export route. Tauri supplies the save path only; the daemon resolves
- * active session chart truth and writes PNG/PDF server-side. */
-export async function exportActiveChart(
-  params: { kind: ExportKind; path: string; documentId?: string },
+export type ChartLibraryExportResult = {
+  ok: boolean;
+  filename: string;
+  mimeType: string;
+  bytes: number;
+  collections: string[];
+  noteFiles: number;
+  /** Present when the daemon wrote the archive to a native save-dialog path. */
+  path?: string;
+  /** Present for browser shells, which download the archive themselves. */
+  dataBase64?: string;
+};
+
+/** Chart library backup (.zip of every collection plus notes). Restore uses
+ * importCharts({ kind: "library" }). */
+export async function exportChartLibrary(
+  params: { path?: string } = {},
   signal?: AbortSignal,
-): Promise<ExportSummary> {
-  return workspacePost<ExportSummary>("/api/io/export", params, signal);
+): Promise<ChartLibraryExportResult> {
+  return workspacePost<ChartLibraryExportResult>("/api/io/library/export", params, signal);
 }
 
 export type ExportBytesSummary = {
@@ -2180,13 +2373,6 @@ export type ExportBytesSummary = {
   documentId?: string;
 };
 
-export async function exportActiveChartBytes(
-  params: { kind: ExportKind; filename?: string; documentId?: string },
-  signal?: AbortSignal,
-): Promise<ExportBytesSummary> {
-  return workspacePost<ExportBytesSummary>("/api/io/export-bytes", params, signal);
-}
-
 export type RenderedChartExportParams = {
   kind: "pdf" | "png";
   pngBase64: string;
@@ -2194,6 +2380,7 @@ export type RenderedChartExportParams = {
   height: number;
   title?: string;
   documentId?: string;
+  pageFormat?: PdfPageFormat;
 };
 
 export async function exportRenderedChart(
@@ -2208,6 +2395,42 @@ export async function exportRenderedChartBytes(
   signal?: AbortSignal,
 ): Promise<ExportBytesSummary> {
   return workspacePost<ExportBytesSummary>("/api/io/export-rendered-bytes", params, signal);
+}
+
+export type PosterSheet = "A1" | "A2" | "A3";
+
+/** Open a poster sheet the renderer fills tile by tile (`poster_export_service.py`). */
+/** Every dashboard module's data for a document's wheel (astrolabe poster). */
+export async function fetchPosterDashboard(documentId: string): Promise<ChartDashboard> {
+  return workspacePost("/api/io/poster/dashboard", { documentId });
+}
+
+export async function beginPosterExport(
+  params: { sheet: PosterSheet; width: number; height: number },
+): Promise<{ jobId: string }> {
+  return workspacePost<{ jobId: string }>("/api/io/poster/begin", params);
+}
+
+export async function addPosterTile(
+  params: { jobId: string; x: number; y: number; pngBase64: string },
+): Promise<void> {
+  await workspacePost("/api/io/poster/tile", params);
+}
+
+export async function finishPosterExport(
+  params: { jobId: string; kind: "pdf" | "png"; title?: string; path: string },
+): Promise<ExportSummary> {
+  return workspacePost<ExportSummary>("/api/io/poster/finish", params);
+}
+
+export async function finishPosterExportBytes(
+  params: { jobId: string; kind: "pdf" | "png"; title?: string; filename?: string },
+): Promise<ExportBytesSummary> {
+  return workspacePost<ExportBytesSummary>("/api/io/poster/finish", params);
+}
+
+export async function cancelPosterExport(jobId: string): Promise<void> {
+  await workspacePost("/api/io/poster/cancel", { jobId });
 }
 
 export type TextExportSummary = {
@@ -2494,7 +2717,7 @@ export async function listCollections(signal?: AbortSignal): Promise<ChartCollec
 // Primary Directions list + Directions-to-Solar-Revolution.
 // GET /api/directions?name&range&direction · GET /api/directions/annual?name&year.
 // Oracle: primdirslistwnd.py (6-column DC table). Daemon: directions_service.py.
-// Spec: doc/migration/surfaces/primary-directions.md. The daemon ships rendered
+// The daemon ships rendered
 // text cells (mz/prom/dc/sig/arc/date) PLUS raw engine ids and daemon-resolved
 // prom/sig glyphs in `fields`; React only maps aspect ids client-side.
 // ---------------------------------------------------------------------------
@@ -2663,7 +2886,9 @@ export type DirectionsMeta = {
   title: string;
   columns: string[]; // [MZ, Prom, DC, Sig, Arc, Date] — wx labels verbatim
   system: string;
-  key: string;
+  key: string; // localized key name only (Naibod, Ptolemy, …); no rate suffix to parse
+  /** Daemon-built, unlabelled settings line for TXT/PDF exports. */
+  exportParameters?: string;
   subprimarydir: number;
   rangeMode: number;
   direction: number;
@@ -2684,6 +2909,12 @@ export type DirectionsMeta = {
     startJdUt: number;
     endJdUt: number;
     authoritative: boolean;
+  };
+  /** Present on a first-paint payload: only rows in this span of the full list. */
+  focusWindow?: {
+    startJdUt: number;
+    endJdUt: number;
+    totalRows: number;
   };
 };
 
@@ -2726,12 +2957,17 @@ export async function fetchDirections(
     customSignificator?: DirectionCustomSignificator | null;
     optionsPreview?: OptionsPatch | null;
     includeTemporal?: boolean;
+    /** First paint: only rows this many years either side of the focus. */
+    focusSpanYears?: number;
+    focusDatetime?: string;
   } = {},
   signal?: AbortSignal,
 ): Promise<DirectionsPayload> {
   const search = new URLSearchParams({ name });
   if (params.range != null) search.set("range", String(params.range));
   if (params.direction != null) search.set("direction", String(params.direction));
+  if (params.focusSpanYears != null) search.set("focusSpanYears", String(params.focusSpanYears));
+  if (params.focusDatetime) search.set("focusDatetime", params.focusDatetime);
   if (params.startAge != null) search.set("startAge", String(params.startAge));
   if (params.endAge != null) search.set("endAge", String(params.endAge));
   if (params.seek) search.set("seek", params.seek);
@@ -2836,6 +3072,19 @@ export type SecondaryDirectionRow = {
   temporal?: TemporalRowMeta;
 };
 
+/** The one option input an options event alters, when the daemon knows it. */
+export type ListDataDomain =
+  | "houses"
+  | "primaryDirections"
+  | "orbs"
+  | "profections"
+  | "revolutions"
+  | "firdaria"
+  | "eclipses"
+  | "lunarMansions"
+  | "stepAlerts"
+  | "relationshipCharts";
+
 export type SecondaryDirectionsPayload = {
   name: string;
   meta: {
@@ -2844,6 +3093,8 @@ export type SecondaryDirectionsPayload = {
     direction?: string;
     directionModes?: string[];
     conversionKey?: string;
+    /** Daemon-built, unlabelled settings line for TXT/PDF exports. */
+    exportParameters?: string;
     startAge: number;
     endAge: number;
     totalStartAge?: number;
@@ -2856,7 +3107,12 @@ export type SecondaryDirectionsPayload = {
     ranges: number[][];
     truncated: boolean;
     columns: string[];
-    filterPoints?: Array<{ id: string; label: string; glyph?: string | null; groupId: string; from: boolean; to: boolean; planetId: number | null }>;
+    filterPoints?: Array<{ id: string; label: string; glyph?: string | null; groupId: string; from: boolean; to: boolean; defaultFrom?: boolean; defaultTo?: boolean; planetId: number | null }>;
+    /** Daemon-owned default aspect ids for the list filter (the five majors). */
+    defaultAspectIds?: number[];
+    /** Daemon-owned years of life per adjacent fetch; shrinks for dense angle methods. */
+    chunkYears?: number;
+    unavailableEphemeris?: Array<{ id: string; label: string }>;
     filterPlanets?: Array<{ id: number; label: string; glyph?: string | null }>;
     filterAngles?: Array<{ id: string; label: string }>;
     temporalCoverage?: {
@@ -2866,7 +3122,44 @@ export type SecondaryDirectionsPayload = {
     };
   };
   directions: SecondaryDirectionRow[];
+  /** Content identity of the rows' world: radix, its revision and the options read. */
+  dataKey?: string;
+  /** The chart the document hosted when these rows were built. */
+  radixIdentity?: string;
 };
+
+/** The secondary progression list's current content key, without rows. */
+export type SecondaryDirectionsDataKey = {
+  dataKey: string;
+  optionsDataKey: string;
+  radixIdentity: string;
+};
+
+/** HTTP 409 `radix-retarget`: the document now hosts a different chart than
+ * the `radixIdentity` a list sent. The list re-targets to the live chart. */
+export class RadixRetargetError extends Error {
+  readonly documentId: string | null;
+  readonly radixIdentity: string | null;
+  constructor(detail: { documentId?: string; radixIdentity?: string }) {
+    super("radix-retarget");
+    this.name = "RadixRetargetError";
+    this.documentId = detail.documentId ?? null;
+    this.radixIdentity = detail.radixIdentity ?? null;
+  }
+}
+
+async function secondaryDirectionsFailure(response: Response, what: string): Promise<Error> {
+  const detail = await response.text().catch(() => "");
+  if (response.status === 409) {
+    try {
+      const parsed = JSON.parse(detail) as { detail?: { code?: string; documentId?: string; radixIdentity?: string } };
+      if (parsed.detail?.code === "radix-retarget") return new RadixRetargetError(parsed.detail);
+    } catch {
+      // Not the typed payload: report it as an ordinary failure.
+    }
+  }
+  return new Error(`${what} failed: ${response.status} ${detail}`);
+}
 
 export async function fetchSecondaryDirections(
   name: string,
@@ -2879,6 +3172,7 @@ export async function fetchSecondaryDirections(
     documentId?: string;
     referenceDatetime?: string;
     includeTemporal?: boolean;
+    radixIdentity?: string | null;
   } = {},
   signal?: AbortSignal,
 ): Promise<SecondaryDirectionsPayload> {
@@ -2891,15 +3185,32 @@ export async function fetchSecondaryDirections(
   if (params.documentId) search.set("documentId", params.documentId);
   if (params.referenceDatetime) search.set("referenceDatetime", params.referenceDatetime);
   if (params.includeTemporal) search.set("includeTemporal", "true");
+  if (params.radixIdentity) search.set("radixIdentity", params.radixIdentity);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/directions/secondary?${search.toString()}`, {
     cache: "no-store",
     signal,
   });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`secondary directions failed: ${response.status} ${detail}`);
-  }
+  if (!response.ok) throw await secondaryDirectionsFailure(response, "secondary directions");
   return (await response.json()) as SecondaryDirectionsPayload;
+}
+
+/** GET /api/directions/secondary/data-key: the list's current `dataKey`,
+ * cheap (no rows are built). Throws `RadixRetargetError` on a 409. */
+export async function fetchSecondaryDirectionsDataKey(
+  name: string,
+  params: { source?: string; documentId?: string; radixIdentity?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<SecondaryDirectionsDataKey> {
+  const search = new URLSearchParams({ name });
+  if (params.source) search.set("source", params.source);
+  if (params.documentId) search.set("documentId", params.documentId);
+  if (params.radixIdentity) search.set("radixIdentity", params.radixIdentity);
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/directions/secondary/data-key?${search.toString()}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw await secondaryDirectionsFailure(response, "secondary directions data key");
+  return (await response.json()) as SecondaryDirectionsDataKey;
 }
 
 // ---------------------------------------------------------------------------
@@ -2968,6 +3279,10 @@ export type CircumambulationPayload = {
   meta: {
     title: string;
     useExactOa: boolean;
+    /** Localized PD system name (header metadata, as in the PD list header). */
+    system?: string;
+    /** Localized PD key name; the rate when `useExactOa` (the "PD key" method). */
+    key?: string;
     maxAge: number;
     columns: string[];
     mode?: "radix" | "sr" | "lr" | string;
@@ -3101,14 +3416,14 @@ export async function setEclipseChartMoment(
   );
 }
 
-/** Open a Primary-Directions row as a retained PD-in-Chart session. Celestial
- * uses the zodiacal compound wheel; terrestrial uses the legacy mundane-position
- * comparison while retaining the same chart cursor and step contract. */
+/** Open the row's native projection as a compound chart. Coordinate mode
+ * chooses its presentation without changing the row's M/Z calculation. */
 export async function openDirectionsPdInChart(
   directionsDocumentId: string,
   arc: number,
   options?: {
     mode?: "celestial" | "terrestrial";
+    coordinateMode?: "zodiacal" | "ascensional";
     direct?: boolean;
     eventJd?: number | null;
     whenIso?: string | null;
@@ -3123,6 +3438,7 @@ export async function openDirectionsPdInChart(
       directionsDocumentId,
       arc,
       mode: options?.mode ?? "celestial",
+      coordinateMode: options?.coordinateMode,
       direct: options?.direct ?? true,
       eventJd: options?.eventJd ?? null,
       whenIso: options?.whenIso ?? null,
@@ -3133,19 +3449,21 @@ export async function openDirectionsPdInChart(
   );
 }
 
-/** Open/Step Secondary Chart from the secondary/minor/tertiary directions row
- * menu. The daemon resolves the view-only directions document back to its radix
- * parent, then opens a real secondary progression child at the selected row time
- * (matching secdirframe.py, where Minor/Tertiary still call SECONDARY here). */
+/** Open the row's progression method and direction under its radix parent. */
 export async function openDirectionsSecondaryChart(
   directionsDocumentId: string,
   whenIso: string,
   sessionLabel?: string | null,
+  options?: { method?: "secondary" | "tertiary" | "minor"; direction?: "direct" | "converse" },
   signal?: AbortSignal,
 ): Promise<WorkspaceOpenResult> {
   return workspacePost<WorkspaceOpenResult>(
     "/api/directions/secondary-chart",
-    { directionsDocumentId, whenIso, sessionLabel: sessionLabel ?? null },
+    {
+      directionsDocumentId, whenIso, sessionLabel: sessionLabel ?? null,
+      method: options?.method ?? "secondary",
+      direction: options?.direction ?? "direct",
+    },
     signal,
   );
 }
@@ -3207,6 +3525,8 @@ export type TransitSearchPresets = {
     standard: string[];
     planets: string[];
     core7: string[];
+    /** Shared list-filter default (planets, Chiron, North Node, Asc, MC), without the transiting Moon. */
+    listDefault: string[];
     clear: string[];
   };
   significators: {
@@ -3214,6 +3534,8 @@ export type TransitSearchPresets = {
     builtins: string[];
     planets: string[];
     fixedStars: string[];
+    /** Shared list-filter default (planets, Chiron, North Node, Asc, MC). */
+    listDefault: string[];
     clear: string[];
   };
 };
@@ -3461,7 +3783,7 @@ export async function startTransitSearch(
   params: TransitSearchRequest,
   signal?: AbortSignal,
 ): Promise<TransitSearchProgressResult> {
-  return workspacePost<TransitSearchProgressResult>(
+  return startCancellableTransitSearch(
     "/api/search/start",
     {
       ...transitSearchRequestBody(params),
@@ -3528,14 +3850,14 @@ export async function startTransitMonthExport(
   params: TransitMonthExportRequest,
   signal?: AbortSignal,
 ): Promise<TransitSearchProgressResult> {
-  return workspacePost("/api/search/context/transit-month-export", params, signal);
+  return startCancellableTransitSearch("/api/search/context/transit-month-export", { ...params }, signal);
 }
 
 export async function startTransitSearchContext(
   params: TransitSearchContextRequest,
   signal?: AbortSignal,
 ): Promise<TransitSearchProgressResult> {
-  return workspacePost<TransitSearchProgressResult>(
+  return startCancellableTransitSearch(
     "/api/search/context/start",
     {
       ...transitSearchContextRequestBody(params),
@@ -3676,21 +3998,46 @@ export async function followTransitSearchProgress(
   onProgress: (result: TransitSearchProgressResult) => void,
   options?: { waitMs?: number },
 ): Promise<TransitSearchProgressResult> {
-  let current = initial;
-  onProgress(current);
-  while (!signal?.aborted && !current.complete) {
-    const next = await fetchTransitSearchProgress(current.sessionId, signal, {
-      afterRevision: current.revision,
-      waitMs: options?.waitMs ?? 25_000,
-    });
-    if (next.revision === current.revision && !next.complete) continue;
-    current = next;
+  const cancelJob = () => { void cancelTransitSearch(initial.sessionId).catch(() => undefined); };
+  signal?.addEventListener("abort", cancelJob, { once: true });
+  try {
+    if (signal?.aborted) {
+      cancelJob();
+      throw new DOMException("Aborted", "AbortError");
+    }
+    let current = initial;
     onProgress(current);
+    while (!signal?.aborted && !current.complete) {
+      const next = await fetchTransitSearchProgress(current.sessionId, signal, {
+        afterRevision: current.revision,
+        waitMs: options?.waitMs ?? 25_000,
+      });
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      if (next.revision === current.revision && !next.complete) continue;
+      current = next;
+      onProgress(current);
+    }
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    return current;
+  } finally {
+    signal?.removeEventListener("abort", cancelJob);
   }
+}
+
+async function startCancellableTransitSearch(
+  path: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<TransitSearchProgressResult> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  // Keep the short start acknowledgement so an abort cannot lose the job ID
+  // after the daemon has accepted work. Progress polling remains abortable.
+  const initial = await workspacePost<TransitSearchProgressResult>(path, body);
   if (signal?.aborted) {
+    void cancelTransitSearch(initial.sessionId).catch(() => undefined);
     throw new DOMException("Aborted", "AbortError");
   }
-  return current;
+  return initial;
 }
 
 export async function cancelTransitSearch(sessionId: string): Promise<{ cancelled: boolean }> {
@@ -3777,16 +4124,133 @@ export type AstrolabePdEvent = {
   offsetYears: number;
 };
 
+export type AstrolabeProjection = "stereographic" | "polarEquidistant";
+
+/** One term or decan of the active set, in chart-zodiac degrees. Points are
+ * projected by the daemon; polar boundaries carry the ecliptic's unit tangent. */
+export type AstrolabeZodiacDivision = {
+  sign: number;
+  index: number;
+  start: number;
+  end: number;
+  planetId: number;
+  glyph: string;
+  color: string;
+  colorRole?: string | null;
+  boundary: AstrolabePoint & { tx?: number; ty?: number };
+  mid: AstrolabePoint & { tx?: number; ty?: number };
+};
+
+export type AstrolabeZodiacDivisions = {
+  terms: AstrolabeZodiacDivision[];
+  decans: AstrolabeZodiacDivision[];
+  /** Chart wheel's subdivision ink: ruler colours, else the sign colour. */
+  inheritPlanetColors?: boolean;
+};
+
+export type AstrolabePdCapability = { supported: boolean; reason?: string };
+export type AstrolabePdPair = {
+  key?: string;
+  metadata?: {
+    name?: string; glyph?: string; glyphFont?: string;
+    color?: string; colorRole?: string | null; semanticId?: string; longitude?: number;
+    motionRef?: { kind?: string; bodyId?: number; code?: string };
+  };
+  actual?: AstrolabePoint & { ra: number; decl: number; longitude: number; latitude: number };
+  representative?: AstrolabePoint & { longitude: number; position: string };
+  /** Interior samples of the system's zero-arc locus, actual → representative. */
+  locus?: AstrolabePoint[];
+  /** A promissor aspect on the natal ring: its own place → its aspect point. */
+  aspectArc?: AstrolabePdArc;
+  capability: AstrolabePdCapability;
+  role?: "promissor" | "significator";
+  aspect?: number;
+  offset?: number;
+  aspectGlyph?: string;
+  /** The theme's aspect colour: role first, resolved value as fallback. */
+  aspectColor?: string | null;
+  aspectColorRole?: string | null;
+  construction?: string;
+};
+export type AstrolabePdReprojection = {
+  system: number;
+  systemLabel: string;
+  natalEcliptic: AstrolabePoint[];
+  /** Chart-zodiac sign starts/middles on the fixed natal ecliptic. */
+  natalSigns?: Array<{
+    sign: number;
+    glyph: string;
+    start: AstrolabePoint & { tx: number; ty: number };
+    middle: AstrolabePoint & { tx: number; ty: number };
+  }>;
+  signedArc: number;
+  points: Array<Omit<AstrolabePdPair, "capability"> & {
+    key: string;
+    kind: string;
+    capabilities: { actualMotion: AstrolabePdCapability; reprojection: AstrolabePdCapability; aspectRay: AstrolabePdCapability };
+  }>;
+  events: AstrolabePdOverlayRow[];
+  /** PD targets resolved from the canonical rows, fixed on the natal ring. */
+  significators?: AstrolabePdSignificator[];
+  /** The requested focused significator's nearest `contacts` rows. */
+  focus?: { key: string; contacts?: number; events: AstrolabePdOverlayRow[] };
+};
+export type AstrolabePdOverlayRow = {
+  arc: number;
+  direct: boolean;
+  /** Display strength: 1 inside the orb, easing to 0 at the lead. */
+  strength?: number;
+  capability: AstrolabePdCapability;
+  rays: AstrolabePdPair[];
+  promissor?: string;
+  significator?: string;
+};
+export type AstrolabePdMark = AstrolabePoint & { tx: number; ty: number; longitude: number; position: string };
+/** Samples of the fixed natal ecliptic; `span` is the signed real width. */
+export type AstrolabePdArc = { start: number; end: number; span: number; points: AstrolabePoint[] };
+export type AstrolabePdSignificator = {
+  key: string;
+  kind: string;
+  metadata?: AstrolabePdPair["metadata"];
+  capability: AstrolabePdCapability;
+  construction?: string;
+  mark?: AstrolabePdMark;
+  /** Signed significator-aspect points that occur in the direction rows. */
+  aspects: Array<{
+    aspect: number;
+    offset: number | null;
+    aspectGlyph: string;
+    aspectColor?: string | null;
+    aspectColorRole?: string | null;
+    capability: AstrolabePdCapability;
+    construction?: string;
+    mark?: AstrolabePdMark;
+    /** The significator aspect itself, from the significator's mark. */
+    arc?: AstrolabePdArc;
+  }>;
+};
+
 export type AstrolabeGeometry = {
+  projection: "stereographic";
+  pdReprojection?: AstrolabePdReprojection;
+  asterisms?: AstrolabeAsterisms;
   name: string;
   lat: number;
   lon: number;
+  /** Celestial pole at the plate centre: the visible one (north for lat >= 0). */
+  pole: "north" | "south";
+  /** Latitude the tympan is drawn for: |lat|, nudged off the equator. */
+  plateLat: number;
   obliquity: number;
   ramc: number;
   delta: number;
   eramc: number;
+  /** Chart moment, UT Julian day. */
+  jd?: number;
   yearsPerDegree: number;
   center: { horizonOffset: number };
+  /** `capricorn` / `tropicCapricorn` are the outer tropic (the rim): the Tropic
+   * of Capricorn on a northern plate, of Cancer on a southern one. */
   radii: { equator: number; cancer: number; capricorn: number };
   tympan: {
     horizon: AstrolabeCircle;
@@ -3794,21 +4258,39 @@ export type AstrolabeGeometry = {
     tropicCancer: AstrolabeCircle;
     tropicCapricorn: AstrolabeCircle;
     meridian: AstrolabeLine;
-    horizonAxis: AstrolabeLine;
-    regioHouses: AstrolabeCircle[];
+    houseLines: Array<{
+      house: number;
+      longitude: number;
+      construction: string;
+      paths: AstrolabePoint[][];
+    }>;
+    /** Almucantars every 5°, as engraved on a plate. */
     almucantars: Array<AstrolabeCircle & { alt: number }>;
-    azimuths: Array<AstrolabeCircle & { az: number }>;
-    hourLines: Array<AstrolabeCircle & { hour: number }>;
+    /** Azimuths every 5°: whole great circles through the zenith, drawn in
+     * the sky only; those without `toZenith` stop at `azimuthStop` (85°). */
+    azimuths: Array<AstrolabeCircle & { az: number; toZenith?: boolean }>;
+    azimuthStop?: (AstrolabeCircle & { alt: number }) | null;
+    /** Unequal hours 1–11 of the day (above the horizon) and the night
+     * (below it), tropic to tropic; 0 and 12 are the horizon. */
+    hourLines: Array<{ hour: number; period?: "day" | "night"; paths: AstrolabePoint[][] }>;
   };
   rete: {
     ecliptic: AstrolabeCircle;
     signBoundaries: Array<{ sign: number; x: number; y: number; color: string; colorRole?: string | null }>;
     signGlyphLabels: Array<{ sign: number; glyph: string; x: number; y: number; color: string; colorRole?: string | null }>;
-    stars: Array<{ name: string; nom: string; ra: number; decl: number; x: number; y: number }>;
+    stars: Array<AstrolabeStarPointer & { nom: string }>;
+    markedStars: Array<AstrolabeStarPointer & { nom: string }>;
   };
   bodies: Array<{
+    dignity?: string | null;
+    minorDignityCount?: number;
+    hasTermDignity?: boolean;
+    hasFaceDignity?: boolean;
+    primaryTriplicityElement?: import("@/lib/chart/types").ZodiacElement | null;
     id: number;
     glyph: string;
+    name?: string;
+    position?: string;
     color: string;
     colorRole?: string | null;
     ra: number;
@@ -3818,9 +4300,19 @@ export type AstrolabeGeometry = {
     ecliptic: { x: number; y: number };
     above: boolean;
     isSun: boolean;
+    // Sun/Moon apparent semi-diameter in plate units; null for planets.
+    diskRadius?: number | null;
   }>;
+  // Directed angles on the turned rete: where the ecliptic meets the horizon
+  // (Asc/Dsc) and the meridian (MC/IC). Labels are localized by the daemon.
+  angles?: Array<{ id: string; label: string; name: string; position: string; x: number; y: number }>;
+  // Rete contacts read off the PD list within the two-month orb (as rete arc):
+  // a body's sphere ("body", mundane) or ecliptic foot ("ecliptic", zodiacal)
+  // reaching a house cusp line, the horizon or the meridian.
+  contactOrbDeg?: number;
+  contacts?: AstrolabeContact[];
   // Atmospheric view (DEFAULT): filled plate with sun-altitude-driven sky/ground.
-  atmospheric: { sunAltitude: number; sky: string; ground: string };
+  atmospheric: { sunAltitude: number; sunAzimuth: number; sky: string; ground: string };
   // Equator / Horizon / Ecliptic text anchors (astrolabechart.py:1007-1032).
   circleLabels: {
     equator: AstrolabePoint & { color: string };
@@ -3833,32 +4325,235 @@ export type AstrolabeGeometry = {
     ticks: Array<AstrolabePoint & { deg: number; level: number }>;
     glyphs: Array<{ sign: number; glyph: string; x: number; y: number; color: string; colorRole?: string | null }>;
   };
-  // Info label strings (Arc d°m's" + Age N yrs) computed in the engine.
-  infoLabel: { arc: string; age: string; deltaDeg: number; ageYears: number };
+  zodiacDivisions?: AstrolabeZodiacDivisions;
+  // Rete arc label (localized in the daemon) and the key-correct age.
+  infoLabel: AstrolabeArcLabel;
+  information: AstrolabeInformation;
+  symbolicTime: SymbolicTimeReadout;
   // PD stepper: arc-sorted snap targets + nearby-event overlay rows.
   pd: { snapArcs: number[]; nearbyEvents: AstrolabePdEvent[] };
 };
 
+/** A direct conjunction direction to an angle or cusp from the PD list,
+ * within the two-month orb of the current arc (arcToExact signed, degrees). */
+export type AstrolabeContact = {
+  pointId: number;
+  point: "body" | "ecliptic";
+  target:
+    | { kind: "houseLine"; house: number }
+    | { kind: "horizon"; angle: "asc" | "dsc" }
+    | { kind: "meridian"; angle: "mc" | "ic" };
+  arcToExact: number;
+};
+
+export type AstrolabeArcLabel = { arc: string; deltaDeg: number; ageYears: number };
+
+/** Chart-corner text for the astrolabe, formatted like the wheel's corners:
+ * top-left = real (signified) moment of the arc, bottom-left = symbolic moment
+ * (the sky turned by the arc), bottom-right = the house-system block. */
+export type AstrolabeInformation = {
+  showInformation: boolean;
+  showHouseSystem: boolean;
+  wheelTheme: number;
+  topLeft: string[];
+  bottomLeft: string[];
+  houseSystemLines: string[];
+};
+
+/** Polyline in projection space: [[x, y], ..]. */
+export type PolarPath = Array<[number, number]>;
+
+/** One chart object on the polar plate at its true RA/Dec. `ha` is the hour
+ * angle (deg, west positive), i.e. its clockwise angle from the upper meridian;
+ * the rim leader and label lane are laid out along it. */
+export type PolarAzimuthalObject = {
+  id: string;
+  family: "body" | "point" | "angle" | "aries" | "ring";
+  ra: number;
+  decl: number;
+  ha: number;
+  x: number;
+  y: number;
+  above: boolean;
+  glyph?: string | null;
+  glyphFont: "symbol" | "text";
+  segments?: Array<{ text: string; kind: string; seId?: number }> | null;
+  label?: string | null;
+  color?: string | null;
+  colorRole?: string | null;
+  isSun?: boolean;
+  bodyId?: number;
+  starCode?: string;
+  longitude?: number;
+  ringFamily?: string;
+  hoverName?: string;
+  hoverPosition?: string;
+  dignity?: string | null;
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("@/lib/chart/types").ZodiacElement | null;
+};
+
+/** Blackwell/Christen polar azimuthal equidistant plate: NCP centre, south
+ * pole at the rim (radius 2), declination linear in radius. */
+export type PolarAzimuthalGeometry = {
+  projection: "polarEquidistant";
+  pdReprojection?: AstrolabePdReprojection;
+  asterisms?: AstrolabeAsterisms;
+  name: string;
+  lat: number;
+  lon: number;
+  obliquity: number;
+  ramc: number;
+  delta: number;
+  eramc: number;
+  /** Chart moment, UT Julian day. */
+  jd?: number;
+  yearsPerDegree: number;
+  radii: {
+    equator: number;
+    rim: number;
+    cancer: number;
+    capricorn: number;
+    arctic: number;
+    antarctic: number;
+  };
+  frame: {
+    horizon: PolarPath[];
+    primeVertical: PolarPath[];
+    meridian: AstrolabeLine;
+    sixHour: AstrolabeLine;
+    almucantars: Array<{ alt: number; paths: PolarPath[] }>;
+    azimuths: Array<{ az: number; paths: PolarPath[] }>;
+    /** Circles of longitude through Asc/Dsc and MC/IC (zodiacal angularity). */
+    zodiacalHorizon: PolarPath[];
+    zodiacalMeridian: PolarPath[];
+  };
+  framePoints: Record<"zenith" | "nadir" | "east" | "west" | "ramc" | "eclipticPole", AstrolabePoint>;
+  skyContainsCenter: boolean;
+  ecliptic: PolarPath[];
+  /** Chart-zodiac sign starts and increasing-longitude unit tangents. */
+  zodiacSigns?: Array<AstrolabePoint & { sign: number; glyph: string; tx: number; ty: number }>;
+  /** Zoom-only 0°/10°/20° labels, on the same chart-zodiac ruler as the ticks. */
+  zodiacDegrees?: Array<AstrolabePoint & { sign: number; degree: number; label: string; tx: number; ty: number }>;
+  objects: PolarAzimuthalObject[];
+  ringMode: string;
+  /** Plate edge: -90 (south pole) on a full plate, else the fitted limit. */
+  rimDeclination: number;
+  stars: Array<AstrolabeStarPointer & { starName?: string }>;
+  atmospheric: { sunAltitude: number; sunAzimuth: number; sky: string; ground: string };
+  zodiacDivisions?: AstrolabeZodiacDivisions;
+  infoLabel: AstrolabeArcLabel;
+  information: AstrolabeInformation;
+  symbolicTime: SymbolicTimeReadout;
+  pd: { snapArcs: number[]; nearbyEvents: AstrolabePdEvent[] };
+};
+
+/** World outlines in the polar plate frame, flat [x0, y0, x1, y1, ..]. */
+export type PolarAzimuthalEarth = { lon: number; lines: number[][] };
+
+/** Viewport centre in the fitted, unzoomed viewport, independent of pane size. */
+export type AstrolabeCamera = { k: number; centerX: number; centerY: number };
+
 export type AstrolabeViewState = {
   deltaDeg: number;
+  /** Per-radix viewport memory, separate for each projection. */
+  cameras?: Partial<Record<AstrolabeProjection, AstrolabeCamera>>;
   atmospheric: boolean;
   regioHouses: boolean;
   zodiacWheel: boolean;
+  terms: boolean;
+  decans: boolean;
   almucantars: boolean;
   azimuths: boolean;
   hourLines: boolean;
+  /** Plate grid spacing: almucantars and azimuths every 10° instead of 5°. */
+  gridTenDegrees?: boolean;
   stars: boolean;
+  asterisms: boolean;
+  earthMap: boolean;
+  declinationCircles: boolean;
+  fullSphere: boolean;
+  zodiacalHorizon: boolean;
+  zodiacalMeridian: boolean;
+  /** PD reprojection overlay layer; off until tuned. */
+  pdReprojection: boolean;
+  /** The ground drawn over the plate on both projections, at earthOpacity (1 = solid). */
+  earthInFront: boolean;
+  /** Plate lines (both plates); the polar meridian includes the six-o'clock line. */
+  horizonLine?: boolean;
+  meridianLine?: boolean;
+  equatorLine?: boolean;
+  earthOpacity: number;
+  projection: AstrolabeProjection;
+  /** How the ecliptic is engraved where the zodiac ring is not drawn (always
+   * on the polar plate). */
+  eclipticStyle: "scale" | "dividedBand" | "line";
+  /** Fixed-star layer (display only): drawn field, which pointers carry
+   * names, and the stars marked with rim leaders. */
+  starField: AstrolabeStarField;
+  starLabels: AstrolabeStarLabels;
+  markedStars: string[];
+};
+
+export type AstrolabeStarField = "settings" | "bright" | "catalogue";
+export type AstrolabeStarLabels = "all" | "settings" | "none";
+
+/** Sampled figure arcs and their stars in daemon-owned projection space. */
+export type AstrolabeAsterisms = {
+  paths: Array<Array<[number, number]>>;
+  stars: Array<AstrolabeStarPointer & { nom: string }>;
+};
+
+/** One star pointer: `inSettings` = on the Settings › Fixed stars list. */
+export type AstrolabeStarPointer = {
+  name: string;
+  lon: number;
+  ra: number;
+  decl: number;
+  x: number;
+  y: number;
+  position?: string;
+  mag?: number | null;
+  inSettings?: boolean;
 };
 
 /** Planispheric astrolabe geometry for a radix. `delta` rotates the rete (the
- * primary-directions arc, degrees of RA); defaults to 0 (the radix moment). */
+ * primary-directions arc, degrees of RA); defaults to 0 (the radix moment).
+ * `projection` selects the stereographic astrolabe or the polar azimuthal
+ * equidistant plate; `lattice` ships the latter's altitude/azimuth curves and
+ * `fullSphere` extends it to the south pole instead of fitting it. */
 export async function fetchAstrolabe(
   name: string,
-  params: { delta?: number; source?: string; documentId?: string } = {},
+  params: {
+    delta?: number;
+    source?: string;
+    documentId?: string;
+    projection?: AstrolabeProjection;
+    lattice?: boolean;
+    fullSphere?: boolean;
+    asterisms?: boolean;
+    starField?: AstrolabeStarField;
+    /** Catalogue codes marked with rim leaders. */
+    marked?: string[];
+    /** Build the PD reprojection overlay (off: the daemon skips it). */
+    pdOverlay?: boolean;
+    /** Focused PD significator key; its next contacts join the overlay. */
+    pdFocus?: string | null;
+  } = {},
   signal?: AbortSignal,
-): Promise<AstrolabeGeometry> {
+): Promise<AstrolabeGeometry | PolarAzimuthalGeometry> {
   const search = new URLSearchParams({ name });
+  if (params.pdOverlay) search.set("pdOverlay", "true");
+  if (params.pdFocus) search.set("pdFocus", params.pdFocus);
   if (params.delta != null) search.set("delta", String(params.delta));
+  if (params.projection) search.set("projection", params.projection);
+  if (params.lattice) search.set("lattice", "true");
+  if (params.fullSphere) search.set("fullSphere", "true");
+  if (params.asterisms) search.set("asterisms", "true");
+  if (params.starField) search.set("starField", params.starField);
+  if (params.marked?.length) search.set("marked", params.marked.join(","));
   if (params.source) search.set("source", params.source);
   if (params.documentId) search.set("documentId", params.documentId);
   const response = await daemonFetch(`${daemonBaseUrl()}/api/astrolabe?${search.toString()}`, {
@@ -3869,13 +4564,38 @@ export async function fetchAstrolabe(
     const detail = await response.text().catch(() => "");
     throw new Error(`astrolabe request failed: ${response.status} ${detail}`);
   }
-  return (await response.json()) as AstrolabeGeometry;
+  return (await response.json()) as AstrolabeGeometry | PolarAzimuthalGeometry;
 }
+
+/** World outlines for the polar plate of a radix (fixed to the horizon frame;
+ * fetch once per chart place). */
+export async function fetchAstrolabeEarth(
+  name: string,
+  params: { source?: string; documentId?: string } = {},
+  signal?: AbortSignal,
+): Promise<PolarAzimuthalEarth> {
+  const search = new URLSearchParams({ name });
+  if (params.source) search.set("source", params.source);
+  if (params.documentId) search.set("documentId", params.documentId);
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/astrolabe/earth?${search.toString()}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`astrolabe earth request failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as PolarAzimuthalEarth;
+}
+
+// A remounted tab must read after its previous instance's final gesture save.
+const astrolabeViewStateWrites = new Map<string, Promise<void>>();
 
 export async function fetchAstrolabeViewState(
   documentId: string,
   signal?: AbortSignal,
 ): Promise<AstrolabeViewState> {
+  await astrolabeViewStateWrites.get(documentId)?.catch(() => undefined);
   const response = await daemonFetch(
     `${daemonBaseUrl()}/api/workspace/document/${encodeURIComponent(documentId)}/astrolabe/view-state`,
     { cache: "no-store", signal },
@@ -3887,16 +4607,32 @@ export async function fetchAstrolabeViewState(
   return ((await response.json()) as { state: AstrolabeViewState }).state;
 }
 
-export async function storeAstrolabeViewState(
+export function storeAstrolabeViewState(
   documentId: string,
-  state: AstrolabeViewState,
+  state: AstrolabeViewState | Promise<AstrolabeViewState>,
   signal?: AbortSignal,
 ): Promise<void> {
-  await workspacePost<{ ok: boolean }>(
-    `/api/workspace/document/${encodeURIComponent(documentId)}/astrolabe/view-state`,
-    { state },
-    signal,
-  );
+  const write = (astrolabeViewStateWrites.get(documentId) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => state)
+    .then((resolved) => workspacePost<{ ok: boolean }>(
+      `/api/workspace/document/${encodeURIComponent(documentId)}/astrolabe/view-state`,
+      { state: resolved },
+      signal,
+    ))
+    .then(() => undefined);
+  astrolabeViewStateWrites.set(documentId, write);
+  const release = () => {
+    if (astrolabeViewStateWrites.get(documentId) === write) astrolabeViewStateWrites.delete(documentId);
+  };
+  void write.then(release, release);
+  return write;
+}
+
+export async function waitForAstrolabeViewStateWrites(documentId: string): Promise<void> {
+  while (astrolabeViewStateWrites.has(documentId)) {
+    await astrolabeViewStateWrites.get(documentId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3907,6 +4643,11 @@ export async function storeAstrolabeViewState(
 // ---------------------------------------------------------------------------
 
 export type SquareChartPlanet = {
+  dignity?: string | null;
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("@/lib/chart/types").ZodiacElement | null;
   id: number;
   glyph: string;
   color: string;
@@ -3972,6 +4713,11 @@ export async function fetchSquareChart(
 // ---------------------------------------------------------------------------
 
 export type MundaneChartBody = {
+  dignity?: string | null;
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("@/lib/chart/types").ZodiacElement | null;
   ringItem?: import("@/lib/chart/types").OuterRingItem;
   labelSegments?: Array<import("@/lib/chart/types").RingLabelSegment & { colorRole?: string | null }>;
   labelFamily?: string;
@@ -4032,7 +4778,12 @@ export type MundaneChartData = {
   colors: MundaneChartColors;
   bodies: MundaneChartBody[];
   secondaryBodies?: MundaneChartBody[] | null;
-  outerRing?: { mode: string; chartRole: "primary" | "outer"; bodies: MundaneChartBody[] };
+  outerRing?: {
+    mode: string;
+    chartRole: "primary" | "outer";
+    bodies: MundaneChartBody[];
+    unavailablePoints?: Array<{ key: string; name: string; reason: "no_ascensional_position" }>;
+  };
   houses: Array<{ house: number; name: string; mundane: number; nameMundane: number }>;
   angles: Array<{ name: string; mundane: number; arrow: boolean }>;
   aspects?: MundaneChartAspect[];
@@ -4078,6 +4829,11 @@ export type AstrologSpherePolyline = {
 };
 
 export type AstrologSphereGlyphAnchor = {
+  dignity?: string | null;
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("@/lib/chart/types").ZodiacElement | null;
   glyph: string;
   color?: string;
   colorRole?: string | null;
@@ -4237,8 +4993,7 @@ export async function commitScratchNotes(
 // Options / Appearance — GET/POST /api/options + POST /api/options/theme.
 // The daemon ships ONE canonical options object (chart_service.options); a patch
 // mutates it and re-renders every open chart. Group shapes are verbatim from
-// options_service.get_options (options_service.py:162). Spec:
-// doc/migration/surfaces/settings.md + options.md.
+// options_service.get_options (options_service.py:162).
 // ---------------------------------------------------------------------------
 
 export type OptionsColors = {
@@ -4268,6 +5023,11 @@ export type OptionsColors = {
   clrindividual: (RGB | null)[]; // 13, SE-id order
   clraspect: (RGB | null)[]; // 12, aspect-index order
   useplanetcolors: boolean;
+  blendminordignities: boolean;
+  showdignityglyphs: boolean;
+  showtermglyphs: boolean;
+  useplanetcolorsforsubdivisions: boolean;
+  showfaceglyphs: boolean;
   usezodiacelementcolors: boolean;
   usezodiacelementfieldcolors: boolean;
   zodiacelementfieldopacity: number;
@@ -4283,6 +5043,8 @@ export type OptionsDisplay = {
   /** Local Space line labels show the bearing in degrees. */
   astrocart_local_space_bearings?: boolean;
   wheel_preset_id?: string;
+  /** Visible style identity of a theme working copy; distinct presentations can share a layout. */
+  wheel_preset_style_id?: string;
   wheel_compositions?: WheelCompositions;
   houses: boolean;
   showouterhouselines: boolean;
@@ -4301,6 +5063,8 @@ export type OptionsDisplay = {
   showaspectstoic: boolean;
   // Body show-toggles.
   showchiron: boolean;
+  showapogee: boolean;
+  meanapogee: boolean;
   shownodes: boolean;
   aspectstonodes: boolean;
   showlof: boolean;
@@ -4330,10 +5094,12 @@ export type OptionsDisplay = {
   multiwheel_show_minutes: boolean;
   multiwheel_sign_colors: boolean;
   multiwheel_show_angle_labels: boolean;
+  ascensional_equatorial_signs: boolean;
+  ascensional_readout: "mdo-quadrant" | "absolute" | "equatorial-signs";
+  ascensional_precession_measure: "ecliptic" | "equatorial";
   showfixstars: number;
   // --- Appearance-menu parity adds (appearance1dlg control delta) ---
   extendedradixstations: boolean; // "Modern Planets" (options.py:144)
-  aspect_flag_show_parties: boolean; // planets in aspect hover flag (options.py:152)
   aspect_thickness_mode: boolean; // orb via line thickness (options.py:400)
   aspect_opacity_mode: boolean; // orb via line opacity
   showfixstarsnodes: boolean; // FixStars→Nodes (options.py:161)
@@ -4350,6 +5116,18 @@ export type OptionsDisplay = {
   anglo_dense_label_layout: "leader-columns" | "routed-cusps" | "sign-locked";
   phasismode: number; // Phasis enum 0/1/2/3 (catalog.phasisModes)
   solarconditionmode: number; // solar-condition doctrine/profile (catalog.solarConditionModes)
+  voidcoursepolicy: number;
+  showvoidcourse: boolean;
+  chart_dashboard: boolean; // Tab dashboard on singleton charts
+  dashboard_aspect_grid: boolean;
+  dashboard_declination: boolean;
+  dashboard_moon: boolean;
+  dashboard_grid_orbs: boolean; // aspect grid: glyph + orb vs glyph only
+  dashboard_grid_large: boolean; // aspect grid: larger cells and lettering
+  dashboard_grid_parallels: boolean; // aspect grid: ∥ / # declination marks
+  dashboard_declination_mirrored: boolean;
+  dashboard_moon_all_bodies: boolean;
+  dashboard_declination_horizontal: boolean; // wide surfaces keep the horizontal bar // Moon Last/Next: all enabled bodies, not only Sun–Saturn
   showcazimi: boolean; // show Cazimi rows in radix overlay
   cazimimode: number; // Cazimi enum 0/1/2 (catalog.cazimiModes)
   synodicmode: number; // planetary-return Shift+Arrow event filter (catalog.synodicModes)
@@ -4370,10 +5148,17 @@ export type OptionsDisplay = {
   // Enum string + font profile.
   keyprompts_style: string; // catalog.keypromptStyles
   fontfamily: string; // catalog.fontProfiles[].value
+  inspector_text_size: InspectorTextSize;
+  inspector_speculum_precision: InspectorSpeculumPrecision;
 };
 
 export type PdfChartColorMode = "monochrome" | "colored-details";
 export type PdfChartRasterPreset = "clean" | "atkinson" | "blue-noise" | "newsprint";
+/** Portrait ISO page of a chart PDF. */
+export type PdfPageFormat = "A4" | "A3";
+/** Dashboard-view PNG shape: square, a portrait page, or "viewport", the chart
+ * area exactly as shown in the app. Every other PNG is square. */
+export type PngPageFormat = "square" | PdfPageFormat | "viewport";
 export type PngChartAppearance = "screen" | PdfChartColorMode;
 export type PngWatermarkStyle = "kosugi" | "flame";
 
@@ -4383,13 +5168,17 @@ export type OptionsExport = {
   pngWatermarkStyleChoices: { value: PngWatermarkStyle; labelKey: string }[];
   pngChartAppearance: PngChartAppearance;
   pngIncludeOverlays: boolean;
+  pngPageFormat: PngPageFormat;
+  pngPageFormatChoices: { value: PngPageFormat; labelKey: string }[];
   pngChartAppearanceChoices: { value: PngChartAppearance; labelKey: string }[];
   pdfChartColorMode: PdfChartColorMode;
   pdfChartRasterPreset: PdfChartRasterPreset;
+  pdfPageFormat: PdfPageFormat;
   pdfIncludeOverlays: boolean;
   listExportAspectSymbols: boolean;
   pdfChartColorModeChoices: { value: PdfChartColorMode; label: string }[];
   pdfChartRasterPresetChoices: { value: PdfChartRasterPreset; labelKey: string }[];
+  pdfPageFormatChoices: { value: PdfPageFormat; labelKey: string }[];
 };
 
 export type HouseSystemEntry = { code: string; label: string; labelKey?: string };
@@ -4413,6 +5202,18 @@ export type OptionsOrbs = {
   orbiscuspAscMC: number;
   exact: number;
   fixstarsOrbAll: number; // single "all stars" fixed-star conjunction orb
+  fixstarsOrbMode?: "uniform" | "traditional" | "individual";
+  fixstarsOrbMax?: number;
+  fixstarsOrbScale?: { magnitude: number; orb: number }[];
+  fixstarsOrbs?: { name: string; displayName?: string; orb: number; magnitude: number | null }[];
+  /** engine.orb_policy: "custom" or a moiety preset id. */
+  orbPolicy?: string;
+  /** Contributions the policy yields (same shape as orbis). */
+  effectiveOrbis?: number[][];
+  /** Source preset ids (engine.orb_policy.PRESETS). */
+  orbPresets?: string[];
+  /** [row, aspect] cells that differ from the selected base. */
+  orbEdited?: [number, number][];
 };
 
 // Essential-dignities grid: options.dignities[planet][type][sign] = bool, over
@@ -4450,16 +5251,23 @@ export type ThemePreset = {
   chrome: Record<string, [number, number, number]>;
 };
 
+export type InspectorTextSize = "normal" | "larger" | "extra-large";
+export type InspectorSpeculumPrecision = "degrees" | "minutes" | "seconds";
+
 export type ThemeState = {
   activePreset: string;
   mode: "light" | "dark";
   presentationCursor?: boolean;
+  inspectorTextSize?: InspectorTextSize;
+  inspectorSpeculumPrecision?: InspectorSpeculumPrecision;
   schemaVersion: number;
   version: number;
   styleRevision: number;
   paletteHash: string;
   styleHash: string;
   appTokens: Record<string, string>;
+  /** Language-free Settings typeface stack a theme without its own face inherits. */
+  uiTypefaceDefault?: string;
   chartPalette: Record<string, string>;
   activeProfile: StyleProfileSummary | null;
   profileOverrides: {
@@ -4476,6 +5284,11 @@ export type ThemeState = {
       aspects?: string[];
       signColors?: string[];
       usePlanetColors?: boolean;
+      blendMinorDignities?: boolean;
+      showDignityGlyphs?: boolean;
+      showTermGlyphs?: boolean;
+    usePlanetColorsForSubdivisions?: boolean;
+      showFaceGlyphs?: boolean;
       useZodiacElementColors?: boolean;
     };
   };
@@ -4623,10 +5436,16 @@ export type OptionsEclipses = {
 // fixstarsdlg.py:16-114). `code` is the catalog nomenclature (the
 // options.fixstars key); lon/lat are pre-formatted display strings, lonValue/
 // latValue the raw degrees for sorting. Empty `code` rows can't be selected.
+// `kind` is the daemon's stratum (options_service.fixstar_kind); `mag` is null
+// where the catalogue has no real visual magnitude.
+export type FixedStarKind = "star" | "deepSky" | "reference";
+
 export type FixedStarCatalogRow = {
   index: number;
   name: string;
   code: string;
+  kind: FixedStarKind;
+  mag: number | null;
   lon: string;
   lat: string;
   lonValue: number;
@@ -4661,6 +5480,12 @@ export type AsteroidCatalogPayload = {
 };
 
 export type OptionsAsteroids = {
+  userSelections?: {
+    revision: number;
+    selectedId: string | null;
+    dirty: boolean;
+    selections: { id: string; name: string }[];
+  } | null;
   selectedNumbers: number[];
   selectedRows: AsteroidCatalogRow[];
   defaultNumbers: number[];
@@ -4668,6 +5493,14 @@ export type OptionsAsteroids = {
   conjunctionOrb: number;
   oppositionOrb: number;
   outerRingAll: boolean;
+};
+
+export type AsteroidSelectionCommand = {
+  action: "save" | "select" | "rename" | "delete" | "clear" | "new" | "import";
+  baseRevision: number;
+  id?: string;
+  name?: string;
+  document?: unknown;
 };
 
 // Relationship-chart settings (compositeoptsdlg + synastry launcher radio).
@@ -4692,6 +5525,7 @@ export type OptionsLanguages = {
 // / secondaryLaunchModes / atReclickModes.
 export type OptionsQuickCharts = {
   quickcharts_prompt: boolean;
+  supplementary_location: "radix" | "default";
   quickcharts_anchor_to_radix: number; // 0=Auto, 1=Parent
   timed_chart_show_radix_default: boolean;
   event_table_time_basis: "default_location" | "ut" | string;
@@ -4777,11 +5611,15 @@ export type ArabicPartSpec = {
 /** Options > Planets/Points remainder (Nodes / Fortuna / Syzygy / Arabic
  * Parts) — options_service._read_planets_points. meannode is the bool
  * morin.onNodes writes (true=Mean Node). */
+/** options.lotoffortune codes (chart.py): Asc + Moon − Sun day and night
+ *  (Ptolemy), or reversed by night (the usual rule). */
+export const FORTUNE_SAME_DAY_NIGHT = 0;
+export const FORTUNE_REVERSED_BY_NIGHT = 2;
+
 export type OptionsPlanetsPoints = {
   meannode: boolean;
-  lotoffortune: number; // 0..2 (chart.py LFMOONSUN/LFDSUNMOON/LFDMOONSUN)
+  lotoffortune: number; // FORTUNE_SAME_DAY_NIGHT or FORTUNE_REVERSED_BY_NIGHT
   syzmoon: number; // 0..2 (options.Options MOON/ABOVEHOR/ABOVEHORNATAL)
-  arabicpartsref: number; // 0..11 (mtexts.partsreftxts)
   daynightorbdeg: number; // 0..6
   daynightorbmin: number; // 0..59
   parts: ArabicPartMeta[];
@@ -4858,6 +5696,7 @@ export type OptionsCatalog = {
   aspectGlyphs: string[]; // 12, Morinus chars aligned to aspectLabels
   fixstarsModes: EnumChoice[]; // showfixstars enum
   phasisModes: EnumChoice[]; // Phasis enum (options.Options.PHASIS_MODE_*)
+  voidCoursePolicies: Array<{ value: number; labelKey: string; descriptionKey: string }>;
   solarConditionModes: LocalizedDescribedEnumChoice[]; // combustion doctrine/profile choices
   cazimiModes: EnumChoice[]; // Cazimi enum (options.Options.CAZIMI_MODE_*)
   synodicModes: EnumChoice[]; // Synodic cycle event filter
@@ -4893,9 +5732,7 @@ export type OptionsCatalog = {
   eventTableTimeModes: StringEnumChoice[]; // event_table_time_basis choices
   // Planets/Points choice catalogs (mtexts labels; options_service)
   nodeModes: EnumChoice[]; // meannode as 1=Mean / 0=True
-  fortunaModes: (EnumChoice & { sublabel: string })[]; // lotoffortune 0..2
   syzygyModes: EnumChoice[]; // syzmoon 0..2
-  arabicPartsRefs: EnumChoice[]; // arabicpartsref 0..11
   // Lot-formula calculator catalogs (options_service._arabic_part_terms —
   // mtexts.partstxts/conv, the wx A/B/C combo oracle). kind marks tokens that
   // unlock the inline RE/DE sub-controls.
@@ -4929,6 +5766,7 @@ export type OptionsPrimaryDirections = {
     selectedId: string | null;
     dirty: boolean;
     presets: { id: string; name: string }[];
+    resetSettings?: Partial<OptionsPrimaryDirections> | null;
   };
   // House system + sub-mode
   primarydir: number;
@@ -4958,8 +5796,12 @@ export type OptionsPrimaryDirections = {
   pdsecmotion: boolean;
   pdsecmotioniter: number; // 0..2 (smiterList)
   pdpromchiron: boolean;
+  pdpromapogee: boolean;
   pdpromarabicparts: boolean;
   pdpromarabicpartname: string;
+  pdpromarabicpartnames: string[];
+  pdpromasteroids: boolean;
+  pdpromasteroidnumbers: number[];
   promlof: boolean; // pdlof[0]
   // Aspect grid
   pdaspects: boolean[]; // 12: Conjunction..Septile
@@ -4971,9 +5813,13 @@ export type OptionsPrimaryDirections = {
   siglof: boolean; // pdlof[1]
   pdsyzygy: boolean;
   pdsigchiron: boolean;
+  pdsigapogee: boolean;
   pdsigvertex: boolean;
   pdsigarabicparts: boolean;
   pdsigarabicpartname: string;
+  pdsigarabicpartnames: string[];
+  pdsigasteroids: boolean;
+  pdsigasteroidnumbers: number[];
   // Circumambulation method
   pdcircumoa: number; // 0=Ascensional Times, 1=Use PD Settings
   pdcircumprommode: number; // 0=Follow PD promissors/aspects, 1=Traditional classical set
@@ -4984,9 +5830,7 @@ export type OptionsPrimaryDirections = {
   pdlistmode: number; // 0=Paged, 1=Continuous
   pdlistglyphcolors: boolean; // colored Morinus glyph rows in direction lists
   // PDs-in-Chart (pdsinchartdlgopts / pdsinchartterrdlgopts)
-  pdincharttyp: 0 | 1; // 0=From the Planets, 1=Ecliptic Feet
   pdinchartterrsecmotion: boolean; // terrestrial chart secondary motion
-  pdinchartreverse: boolean; // converse frame: true=fixed radix/outer promissors move; false=outer promissors fixed/inner significators move
   // Keys block
   pdkeydyn: boolean; // true=Dynamic, false=Static
   pdkeyd: number; // dynamic preset index (typeListDyn)
@@ -4996,6 +5840,8 @@ export type OptionsPrimaryDirections = {
   pdkeysec: number;
   pdkeycoeff: number; // read-only derived
   useregressive: boolean;
+  // 0 modern converse, 1 traditional converse, 2 both (settings file only).
+  pdconverse: number;
   // Customer points (primarydirsdlg.py customer-point blocks; daemon payload
   // already ships these from options_service._primary_directions_payload).
   pdcustomer: boolean;
@@ -5008,6 +5854,7 @@ export type OptionsPrimaryDirections = {
   pdcustomer2southern: boolean;
   // Active Arabic-part names (promissor/significator picker source)
   arabicPartNames: string[];
+  pdAsteroidCatalog: { number: number; name: string }[];
 };
 
 export type SettingsRegistryTab = {
@@ -5049,7 +5896,7 @@ export type SettingsRegistry = {
 };
 
 export type SidebarListPreferencesPayload = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   aspectList: {
     mode: "primary" | "outer" | "outerToPrimary" | "primaryToOuter" | null;
     maxOrb: number;
@@ -5060,6 +5907,9 @@ export type SidebarListPreferencesPayload = {
     focusMatchMode: "or" | "and";
     rxFocusEnabled: boolean;
     includeHouseCusps: boolean;
+    includeMinorAspects: boolean;
+    includeDeclination: boolean;
+    ascensionalMaxOrbArcmin: number;
     secondaryRingEnabledByMode: Record<string, boolean>;
     filterDrawerOpen: boolean;
   };
@@ -5072,6 +5922,9 @@ export type SidebarListPreferencesPayload = {
     direction: "direct" | "converse" | "both";
   };
   synodicList: {
+    planetIds: number[];
+    ingressesEnabled: boolean;
+    synodicsEnabled: boolean;
     ingressPlanetIds: number[];
     synodicPlanetIds: number[];
     lunarCycleIds: string[];
@@ -5080,7 +5933,6 @@ export type SidebarListPreferencesPayload = {
     lunarDrawerOpen: boolean;
   };
   secondaryProgressions: {
-    pointFilterSide?: "from" | "to";
     pointRoles?: { fromIds: string[]; toIds: string[] } | null;
     planetIds: number[] | null;
     angleIds: string[] | null;
@@ -5106,6 +5958,8 @@ export type SidebarListPreferencesPatch = {
 export type RetainedListDisplay = {
   /** Canonical semantic object ids excluded only from resident row projections. */
   hiddenObjectIds: string[];
+  /** Directions lists paint their glyph runs in the rows' semantic colours. */
+  directionGlyphColors?: boolean;
 };
 
 export type OptionsAspectList = {
@@ -5142,6 +5996,13 @@ export type OptionsPayload = {
   languages: OptionsLanguages;
   planetsPoints: OptionsPlanetsPoints;
   retainedListDataKey: string;
+  /** Content key of the options the secondary progression list reads. */
+  secondaryProgressionsDataKey?: string;
+  primaryDirectionsContextKey: string;
+  /** Content key of every saved option a PD-engine list (Circum) reads. */
+  primaryDirectionsDataKey: string;
+  /** Build order of this payload; a higher serial reflects every earlier write. */
+  payloadSerial?: number;
   retainedListDisplay: RetainedListDisplay;
   themePresets: ThemePreset[];
   themeState: ThemeState;
@@ -5153,7 +6014,7 @@ export type RevolutionLocationPredicate = {
   kind: "solar-revolution" | "lunar-revolution" | "planetary-return";
   planetType?: number | null;
   optionAttr: string;
-  locationMode: "natal" | "ask";
+  locationMode: "natal" | "ask" | "default";
   locationModeValue: number;
   shouldPrompt: boolean;
 };
@@ -5163,9 +6024,15 @@ export type OptionsPatch = {
   colors?: Partial<Record<string, unknown>>;
   display?: Partial<OptionsDisplay>;
   aspectList?: Partial<OptionsAspectList>;
-  houseSystem?: { hsys?: string; housesystem?: boolean };
+  houseSystem?: { hsys?: string; housesystem?: boolean; cycle?: true };
   ayanamsha?: { ayanamsha?: number };
-  orbs?: Partial<OptionsOrbs>;
+  orbs?: Partial<OptionsOrbs> & {
+    fixstarsOrb?: { name: string; orb: number };
+    /** Edit or reset one body × aspect cell on the selected base. */
+    orbCell?: { row: number; aspect: number; value: number };
+    orbCellReset?: { row: number; aspect: number };
+    orbResetAll?: true;
+  };
   dignities?: Partial<Pick<
     OptionsDignities,
     "showterms" | "dignitylabelcolors" | "selterm" | "dignityscores" | "dignities" | "terms"
@@ -5177,6 +6044,7 @@ export type OptionsPatch = {
   export?: Partial<OptionsExport>;
   primaryDirections?: Partial<OptionsPrimaryDirections>;
   primaryDirectionPreset?: PrimaryDirectionPresetCommand;
+  asteroidSelection?: AsteroidSelectionCommand;
   revolutions?: Partial<OptionsRevolutions>;
   quickCharts?: Partial<OptionsQuickCharts>;
   stepAlerts?: Partial<OptionsStepAlerts>;
@@ -5228,7 +6096,6 @@ export type OptionsPatch = {
       | "meannode"
       | "lotoffortune"
       | "syzmoon"
-      | "arabicpartsref"
       | "daynightorbdeg"
       | "daynightorbmin"
     >
@@ -5335,6 +6202,15 @@ export async function fetchAsteroidCatalog(
     throw new Error(`asteroid catalog fetch failed: ${response.status}`);
   }
   return (await response.json()) as AsteroidCatalogPayload;
+}
+
+export async function exportAsteroidSelections(id?: string): Promise<string> {
+  const query = id ? `?${new URLSearchParams({ id }).toString()}` : "";
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/asteroids/selections/export${query}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`asteroid selections export failed: ${response.status}`);
+  return JSON.stringify(await response.json(), null, 2) + "\n";
 }
 
 export async function installAsteroidEphemeris(
@@ -5595,11 +6471,15 @@ export async function fetchRevolutionLocationPredicate(
 
 /** Apply a grouped partial patch; the daemon re-renders every open chart and
  * broadcasts options.changed. Returns the resulting full options payload. */
+/** `origin` is echoed on the resulting `options.changed` event, so the caller
+ * that applies this response can skip re-reading the same options. */
 export async function patchOptions(
   patch: OptionsPatch,
   signal?: AbortSignal,
+  origin?: string,
 ): Promise<OptionsPayload> {
-  const response = await daemonFetch(`${daemonBaseUrl()}/api/options`, {
+  const query = origin ? `?${new URLSearchParams({ origin })}` : "";
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options${query}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     cache: "no-store",
@@ -5711,13 +6591,11 @@ export async function cycleSecondaryView(
   return (await response.json()) as OptionsPayload & { showfixstars: number };
 }
 
-/** Toggle the "Houses" appearance option (H). Headless analogue of
- * morin.onToggleHouses — the daemon flips options.houses, re-renders open
- * charts, and broadcasts options.changed. Returns the options payload (+ the
- * new value). */
+/** Toggle canonical house visibility. The compact reply and options event
+ * carry a display delta; resident wheels project it onto existing geometry. */
 export async function toggleHouses(
   signal?: AbortSignal,
-): Promise<OptionsPayload & { houses: boolean }> {
+): Promise<{ houses: boolean; wheelPresetRevision: number }> {
   const response = await daemonFetch(`${daemonBaseUrl()}/api/options/toggle-houses`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -5728,7 +6606,7 @@ export async function toggleHouses(
     const detail = await response.text().catch(() => "");
     throw new Error(`toggle houses failed: ${response.status} ${detail}`);
   }
-  return (await response.json()) as OptionsPayload & { houses: boolean };
+  return (await response.json()) as { houses: boolean; wheelPresetRevision: number };
 }
 
 /** Toggle the Appearance Aspects master flag (A). The daemon preserves dependent
@@ -5751,11 +6629,13 @@ export async function toggleAspects(
 
 /** Toggle the Appearance minor-aspect draw flags as one group (M). The daemon
  * flips semisextile, semisquare, quintile, sesquisquare, biquintile, quincunx,
- * and septile, then refreshes open charts. */
+ * and septile, then refreshes open charts. With an exclusive body selected,
+ * toggle the independent exclusive-click minor filter instead. */
 export async function toggleMinorAspects(
   signal?: AbortSignal,
+  exclusive = false,
 ): Promise<OptionsPayload & { minorAspects: boolean }> {
-  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/toggle-minor-aspects`, {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/options/toggle-minor-aspects?exclusive=${exclusive}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     cache: "no-store",
@@ -5771,7 +6651,7 @@ export async function toggleMinorAspects(
 // ---------------------------------------------------------------------------
 // Workspace commands — the daemon owns ONE WorkspaceSessionController (slice 2).
 // React mirrors the daemon's tree; mutations are commands, not local Zustand
-// writes. Spec: doc/migration/surfaces/workspace-daemon.md.
+// writes.
 //
 // The daemon's per-document summary (workspace_service._document_summary) is the
 // canonical document identity. Every field below is verbatim from that payload
@@ -5780,6 +6660,8 @@ export async function toggleMinorAspects(
 
 export type DaemonDocumentSummary = {
   documentId: string;
+  savedEventId?: string | null;
+  radixDocumentId?: string | null;
   eventNoteContext?: { recordId: string; eventId: string; sourceName: string; documentId: string } | null;
   hasChart?: boolean;
   kind: string; // always "chart" today (the controller has one doc kind)
@@ -5796,6 +6678,7 @@ export type DaemonDocumentSummary = {
   featureKind: string | null; // engine feature kind (e.g. "solar_return")
   launcherKind: string | null; // launch route (e.g. "synastry", "astrocart")
   chartVisualMode?: "zodiac" | "mdo" | "mundane" | "ascensional_transits" | string;
+  chartPresentation?: import("@/lib/chart/types").ChartPresentation;
   comparisonName: string | null; // synastry partner / astrocart source name
   compoundKind?: string | null; // synastry/composite session kind, daemon-owned
   compositeVariant?: string | null; // midpoint | davison when compoundKind is composite
@@ -5803,6 +6686,7 @@ export type DaemonDocumentSummary = {
   editDirty: boolean;
   stepDirty: boolean;
   fpath: string;
+  saveName?: string;
   displayDatetime: string | null;
   symbolicTime?: SymbolicTimeReadout | null;
   tabSuffix: string | null;
@@ -5825,7 +6709,6 @@ export type DaemonDocumentSummary = {
   eclipseEvent?: { jdUt: number; retflag: number } | null;
   ascensionalEventJd?: number | null;
   ascensionalEventPlace?: Record<string, unknown> | null;
-  ascensionalFilterToActiveMoment?: boolean | null;
   ascensionalApplyPrecession?: boolean | null;
   // RUNTIME session gate keyed by skin dispatch id (workspace_service
   // ._enabled_actions, the wx-free twin of morin._workspace_navigation_state).
@@ -5867,6 +6750,9 @@ export type SidebarAction = {
   shortcut?: string;
   // planetary-return only: the bodies to offer in a body-picker before opening.
   bodies?: PlanetaryReturnBody[];
+  // The user hid this launcher (Edit Sidebar). Display-only: the action stays
+  // enabled for shortcuts and menus; only the sidebar row is omitted.
+  hidden?: boolean;
 };
 
 export type SidebarGroup = {
@@ -5905,6 +6791,9 @@ export type NativeMenuNode =
       // Stable i18n key (Options submenu); the frontend translates it from the
       // shared catalog when relabeling the native menu. Absent = use label.
       labelKey?: string;
+      // Leading object glyph (Chart layers); "morinus" = AriesMorinus char.
+      glyph?: string;
+      glyphFont?: "morinus" | "text";
       enabled?: boolean;
       checked?: boolean;
       accelerator?: string;
@@ -5919,6 +6808,8 @@ export type NativeMenuNode =
       id: string;
       label: string;
       labelKey?: string;
+      // Menu bar (native and browser) only; the titlebar drawer omits it.
+      menuBarOnly?: boolean;
       enabled?: boolean;
       status?: string;
       runtimeEnablement?: "active-chart";
@@ -5942,6 +6833,14 @@ export type WorkspaceManifest = {
   settingsRegistry?: SettingsRegistry;
 };
 
+export type WorkspaceContextMenuTrailingToggle = {
+  labelKey: string;
+  compactLabelKey: string;
+  checked: boolean;
+  actionId: string;
+  payload: Record<string, unknown>;
+};
+
 export type WorkspaceContextMenuNode =
   | { type: "separator" }
   | {
@@ -5960,6 +6859,7 @@ export type WorkspaceContextMenuNode =
       labelKey?: string;
       checked: boolean;
       inset?: boolean;
+      trailingToggle?: WorkspaceContextMenuTrailingToggle;
       disabled?: boolean;
       actionId?: string;
       payload?: Record<string, unknown>;
@@ -5977,12 +6877,7 @@ export type WorkspaceContextMenuNode =
       disabled?: boolean;
       actionId?: string;
       payload?: Record<string, unknown>;
-      trailingToggle?: {
-        labelKey: string;
-        checked: boolean;
-        actionId: string;
-        payload: Record<string, unknown>;
-      };
+      trailingToggle?: WorkspaceContextMenuTrailingToggle;
     }
   | {
       type: "submenu";
@@ -6065,6 +6960,40 @@ export async function setWorkspaceSidebarActionOrder(
   return (await response.json()) as WorkspaceManifest;
 }
 
+export async function setWorkspaceSidebarActionsHidden(
+  sectionLabel: string,
+  actionIds: string[],
+  hidden: boolean,
+  signal?: AbortSignal,
+): Promise<WorkspaceManifest> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/workspace/sidebar-actions-hidden`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    signal,
+    body: JSON.stringify({ sectionLabel, actionIds, hidden }),
+  });
+  if (!response.ok) {
+    throw new Error(`sidebar actions hidden failed: ${response.status}`);
+  }
+  return (await response.json()) as WorkspaceManifest;
+}
+
+export async function resetWorkspaceSidebarHiddenActions(
+  signal?: AbortSignal,
+): Promise<WorkspaceManifest> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/workspace/sidebar-actions-hidden/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`sidebar hidden reset failed: ${response.status}`);
+  }
+  return (await response.json()) as WorkspaceManifest;
+}
+
 export async function fetchWorkspaceContextMenu(
   params: { docId?: string | null; region?: unknown | null },
   signal?: AbortSignal,
@@ -6083,6 +7012,17 @@ export async function fetchWorkspaceDocumentContextMenu(
   return workspacePost<WorkspaceContextMenuPayload>(
     "/api/workspace/document-context-menu",
     { docId },
+    signal,
+  );
+}
+
+/** The chart menu's House System submenu alone (same radios and action). */
+export async function fetchHouseSystemMenu(
+  signal?: AbortSignal,
+): Promise<WorkspaceContextMenuPayload> {
+  return workspacePost<WorkspaceContextMenuPayload>(
+    "/api/workspace/context-menu/house-system",
+    {},
     signal,
   );
 }
@@ -6218,11 +7158,16 @@ export async function surveilOpenSource(
 
 export type WorkspaceOpenResult = {
   documentId: string | null;
+  stepped?: boolean;
+  astrolabeCursor?: { documentId: string; arc: number };
+  /** Spotlight current on a Graphic Ephemeris: its camera, centred on the typed moment. */
+  ephemerisCamera?: { documentId: string; camera: { startJd: number; spanDays: number } };
   activeDocumentId?: string | null;
   documents: DaemonDocumentSummary[];
   reused?: boolean;
   reclickBehavior?: string;
   chartVisualMode?: "zodiac" | "mdo" | "mundane" | "ascensional_transits" | string;
+  chartPresentation?: import("@/lib/chart/types").ChartPresentation;
   snapshot?: ChartRenderSnapshot;
 };
 
@@ -6272,6 +7217,8 @@ export type GenericTableCellRun = {
 
 export type GenericTableCell = {
   text?: string;
+  /** Right ascension rendered in hours, minutes and seconds. */
+  angleTime?: true;
   glyph?: string;
   runs?: GenericTableCellRun[];
   /** Localized semantic text for the canonical plain-text export. */
@@ -6284,6 +7231,9 @@ export type GenericTableCell = {
   sortValue?: string | number | null;
   /** Stable planet id when the cell is a planet-identity glyph. */
   planet?: number;
+  /** Speculum Moon only: the chart's Moon is void of course under the
+   * selected policy; renders a localized "(VOC)" after the Moon name. */
+  voidOfCourse?: boolean;
   /** Daemon-resolved CSS color (wx useplanetcolors/dignity palette). */
   color?: string;
   /** Stable chart-palette CSS role; `color` remains the literal fallback. */
@@ -6340,6 +7290,7 @@ export type AspectMatrixAxisEntry = {
  * (aspectswnd.py:265-457). Orb is always present; glyph only when shown. */
 export type AspectMatrixCell = {
   orb: string;
+  orbDegrees?: number;
   aspectType?: number;
   glyph?: string;
   glyphFont?: "morinus" | "text" | string;
@@ -6397,6 +7348,8 @@ export type AspectListEndpoint = {
   filterIds: string[];
 };
 
+export type AspectListAspectClass = "major" | "minor" | "declination";
+
 export type AspectListRow = {
   id: string;
   /** Calculation trajectory identity. Retained patch refreshes reuse an exact
@@ -6405,6 +7358,8 @@ export type AspectListRow = {
   left: AspectListEndpoint;
   aspect: {
     type: number;
+    /** Include-pill family; major rows always show. */
+    class?: AspectListAspectClass;
     glyph: string;
     glyphFont: "morinus" | "text" | string;
     name: string;
@@ -6422,6 +7377,9 @@ export type AspectListRow = {
   /** A projected actor is only the moving image of this direct source body. */
   actorSource?: { kind: "planet" | "ephemerisBody"; bodyId: number } | null;
   movingRole?: "outer" | null;
+  /** Ascensional view: the wheel contact this row lists (no perfection). */
+  method?: "mdo" | "ascensional-transits";
+  contactId?: string;
   filterIds: string[];
 };
 
@@ -6448,6 +7406,10 @@ export type AspectListPayload = {
   contextKey: string;
   /** Motion-timeline cursor used to validate retained exact roots. */
   perfectionAnchorJd: number;
+  /** Optional Include-pill families this view calculates (none in ascensional). */
+  aspectFamilies?: Array<"minor" | "declination">;
+  /** Ascensional contacts use an arcminute orb chooser; ecliptic rows use degrees. */
+  orbScale?: "ecliptic" | "ascensional";
   retainedListDataKey: string;
 };
 
@@ -6509,6 +7471,14 @@ export type GenericTablePayload = {
    * each body's within-sign degree + color + glyph — and the StripView owns
    * pixel placement + anti-overlap. */
   strip?: StripPayload;
+  /** Directed speculum: the signed arc and the radix-local moment it is read at. */
+  pdPositions?: {
+    signedArc: number;
+    momentDatetime?: string;
+    /** Localized PD system and key names for the Speculum header. */
+    systemLabel?: string;
+    keyLabel?: string;
+  };
 };
 
 /** capabilities.strip: bodies grouped by occupied sign for export/fallbacks,
@@ -6525,7 +7495,7 @@ export type StripSign = {
   bodies: StripBody[];
 };
 
-export type SynodicEventType = "station" | "cazimi" | "ingress" | "lunation" | "eclipse" | string;
+export type SynodicEventType = "station" | "conjunction" | "ingress" | "lunation" | "eclipse" | string;
 
 export type SynodicPlanetItem = {
   id: number;
@@ -6539,7 +7509,7 @@ export type SynodicPlanetItem = {
 };
 
 export type SynodicLunarItem = {
-  id: "draconic" | "anomalistic" | string;
+  id: "draconic" | "anomalistic" | "void-course" | string;
   label: string;
   glyph?: string;
   marker?: string;
@@ -6558,6 +7528,8 @@ export type SynodicCycleRow = {
   key: string;
   eventType: SynodicEventType;
   eventLabel: string;
+  eventShortLabel?: string;
+  cazimiLabel?: string;
   eventGlyph?: string;
   eventGlyphFont?: "morinus" | "text";
   detailLabel: string;
@@ -6581,6 +7553,7 @@ export type SynodicCycleRow = {
   canOpenChart: boolean;
   sign?: SynodicSignPayload | null;
   longitudeText?: string;
+  longitudeDegrees?: number | null;
   motionMarker?: string;
   metadata?: Record<string, unknown>;
   temporal?: TemporalRowMeta;
@@ -6744,12 +7717,21 @@ export type SpotlightChartMatch = {
   collection: string;
 };
 
+export type SpotlightPlaceSelection = { name: string; lon: number; lat: number };
+
 export type SpotlightPreview = {
   kind: "none" | "datetime" | "chart" | "synastry";
   primary: string;
   secondary: string;
+  searchExactPlaceName?: boolean;
+  geocodedPlace?: SpotlightPlaceSelection;
   parsed: SpotlightParsedDateTime | null;
   chart?: SpotlightChartMatch;
+  chartMatches?: {
+    primary: string;
+    secondary: string;
+    chart: SpotlightChartMatch;
+  }[];
   comparisonChart?: SpotlightChartMatch | null;
   actions: SpotlightPreviewAction[];
   defaultAction: "open-chart" | SpotlightActionId | null;
@@ -6766,11 +7748,13 @@ export async function spotlightPreview(
 export async function spotlightExecute(
   text: string,
   action: "default" | "open-chart" | SpotlightActionId = "default",
+  chart?: SpotlightChartMatch,
+  place?: SpotlightPlaceSelection,
   signal?: AbortSignal,
 ): Promise<WorkspaceOpenResult> {
   return workspacePost<WorkspaceOpenResult>(
     "/api/spotlight/execute",
-    { text, action },
+    { text, action, chart, place },
     signal,
   );
 }
@@ -6822,6 +7806,10 @@ export async function workspaceOpen(
     },
     signal,
   );
+}
+
+export function workspaceOpenWalkthroughChart(): Promise<WorkspaceOpenResult> {
+  return workspacePost<WorkspaceOpenResult>("/api/workspace/open-walkthrough-chart", {});
 }
 
 /** Set a Lewis CCG tab's progressed-angles reading; returns its map spec. */
@@ -7383,7 +8371,8 @@ export async function workspaceOpenMundaneChart(
  * Open the Graphic Ephemeris as a REAL view-only child document under the
  * parent radix (workspace_service.open_ephemeris; wx twin
  * morin._workspace_table_ephemeris, morin.py:16180-16195). The doc carries NO
- * chart session; GraphEphemerisView fetches /api/ephemeris curves itself.
+ * chart session; GraphEphemerisView fetches /api/ephemeris/meta, /blocks and
+ * /stations itself.
  */
 export async function workspaceOpenEphemeris(
   parentRadixId: string,
@@ -7397,14 +8386,16 @@ export async function workspaceOpenEphemeris(
 }
 
 // --- Graphic Ephemeris (launcherKind "ephemeris") -------------------------
-// The daemon (ephemeris_service via ephemcalc.EphemCalc) computes one sample
-// per day for 12 anchored months plus refined station events; the view only
-// renders. Oracle: graphephemwnd.py / graphephemframe.py.
+// The daemon (ephemeris_service via ephemcalc.EphemCalc) serves time-free
+// presentation meta, calendar-month data blocks (one sample per day, longitude
+// + declination, with the events each month owns) and one longitude station
+// layer per calendar year. Every event carries its absolute JD UT; the view
+// places it on its own continuous camera. Oracle: graphephemwnd.py.
+// Wire field names are decoded in one place: lib/chart/ephemeris-wire.ts.
 
 export type EphemerisStation = {
   planet: number;
   jd: number;
-  dayOffset: number;
   value: number;
   /** SR/SD (longitude stations), DN/DS (declination extrema), EQ (equator crossing). */
   code: string;
@@ -7414,7 +8405,6 @@ export type EphemerisStation = {
 export type EphemerisSignEvent = {
   planet: number;
   jd: number;
-  dayOffset: number;
   /** Boundary longitude in displayed zodiac degrees: 0, 30, ... 330. */
   value: number;
   targetSign: number;
@@ -7426,21 +8416,34 @@ export type EphemerisSignEvent = {
   date: string;
 };
 
+/** Exact geocentric new or full moon, placed on the Moon's plotted longitude
+ * (displayed zodiac) and declination at that moment. */
+export type EphemerisLunation = {
+  kind: "new" | "full";
+  jd: number;
+  longitude: number;
+  declination: number;
+  date: string;
+  /** Present when the engine finds an eclipse at this syzygy. */
+  eclipse?: "solar" | "lunar";
+  /** Engine-localized eclipse name, e.g. "Total Solar Eclipse". */
+  eclipseLabel?: string;
+};
+
+/** The furthest declination of one out-of-bounds excursion. */
 export type EphemerisOutOfBoundsMarker = {
   planet: number;
-  dayOffset: number;
+  jd: number;
   value: number;
 };
 
-export type EphemerisPlanetSeries = {
+export type EphemerisPlanetMeta = {
   id: number;
   /** Morinus glyph char for the planet (render in font-family "AriesMorinus"). */
   glyph: string;
   label: string;
   color: string;
   defaultVisible: { longitude: boolean; declination: boolean };
-  longitude: number[];
-  declination: number[];
 };
 
 export type EphemerisColors = {
@@ -7451,98 +8454,244 @@ export type EphemerisColors = {
   signs: string;
 };
 
-export type EphemerisPayload = {
-  year: number;
-  startMonth: number;
-  /** JD UT of <startMonth> 1, 00:00 Greenwich — the x-axis origin. */
-  startJd: number | null;
-  days: number;
-  monthOffsets: number[];
-  monthLabels: string[];
+/** GET /api/ephemeris/meta: everything presentation-level that does not
+ * depend on time. `dataKey` names the numeric/event data identity. */
+export type EphemerisMeta = {
+  dataKey: string;
+  styleRevision: string;
+  planets: EphemerisPlanetMeta[];
   /** 12 Morinus sign glyph chars (options.signs variant). */
   signGlyphs: string[];
   signNames: string[];
+  /** Jan..Dec abbreviations. */
+  monthLabels: string[];
   colors: EphemerisColors;
-  planets: EphemerisPlanetSeries[];
-  /** One glyph anchor at the furthest declination of each OOB excursion. */
-  outOfBounds: EphemerisOutOfBoundsMarker[];
-  stations: { longitude: EphemerisStation[]; declination: EphemerisStation[] };
-  signEvents: EphemerisSignEvent[];
+  /** Per planet id (string key): 12 dignity names, Aries..Pisces
+   * ("domicile" | "exaltation" | "detriment" | "fall" | "peregrine"). */
+  dignityBySign?: Record<string, string[]>;
+  /** The chart's "use planet colors" option, retained for the wheel; ephemeris ink modes do not read it. */
+  usePlanetColors?: boolean;
+  /** Localized zodiac name for the plate header; empty when not applicable. */
+  zodiacLabel?: string;
+  /** The app's chart colours for the hover flag's glyphs (the lists'
+   * colours): a literal and its semantic role. */
+  hoverGlyphColors?: EphemerisHoverGlyphColors;
 };
 
-export type EphemerisStationsPayload = {
+/** Role lists hold null where a literal has no matching semantic role. */
+export type EphemerisHoverGlyphColors = {
+  /** Per planet id (string key): the glyph colour by sign, Aries..Pisces. */
+  planets: Record<string, { bySign: string[]; roleBySign: (string | null)[] }>;
+  signs: { colors: string[]; roles: (string | null)[] };
+  /** By aspect type index (glyphs.ts ASP_*). */
+  aspects: { colors: string[]; roles: (string | null)[] };
+};
+
+/** One calendar month block as sent: arrays are base64 little-endian Float64,
+ * planet-major (planetIds × days); events keep the daemon's dict shape. */
+export type EphemerisBlockWire = Record<string, unknown>;
+
+export type EphemerisBlocksWire = {
+  dataKey: string;
+  planetIds: number[];
+  blocks: EphemerisBlockWire[];
+  /** Client annotation: response body length (dev timing). */
+  wireBytes?: number;
+};
+
+export type EphemerisYearStationsWire = {
+  dataKey: string;
   year: number;
-  startMonth: number;
-  stations: { longitude: EphemerisStation[]; declination: EphemerisStation[] };
-  signEvents: EphemerisSignEvent[];
+  longitude: Record<string, unknown>[];
+  /** Client annotation: response body length (dev timing). */
+  wireBytes?: number;
 };
 
-type EphemerisFetchOptions = {
-  signal?: AbortSignal;
-  includeStations?: boolean;
-};
-
-function isAbortSignal(options: AbortSignal | EphemerisFetchOptions): options is AbortSignal {
-  return (
-    typeof (options as AbortSignal).aborted === "boolean" &&
-    typeof (options as AbortSignal).addEventListener === "function"
-  );
-}
-
-function normalizeEphemerisFetchOptions(
-  options?: AbortSignal | EphemerisFetchOptions,
-): EphemerisFetchOptions {
-  if (!options) return {};
-  if (isAbortSignal(options)) {
-    return { signal: options };
-  }
-  return options;
-}
-
-export async function fetchGraphicEphemeris(
-  year: number,
-  startMonth: number,
-  options?: AbortSignal | EphemerisFetchOptions,
-): Promise<EphemerisPayload> {
-  const fetchOptions = normalizeEphemerisFetchOptions(options);
-  const includeStations = fetchOptions.includeStations ?? false;
-  const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/ephemeris?year=${year}&startMonth=${startMonth}&includeStations=${includeStations ? "true" : "false"}`,
-    { signal: fetchOptions.signal },
-  );
+async function ephemerisJson<T>(path: string, what: string, signal?: AbortSignal): Promise<T & { wireBytes: number }> {
+  const response = await daemonFetch(`${daemonBaseUrl()}${path}`, { signal });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`ephemeris request failed: ${response.status} ${detail}`);
+    throw new Error(`${what} request failed: ${response.status} ${detail}`);
   }
-  return (await response.json()) as EphemerisPayload;
+  const body = await response.text();
+  return { ...(JSON.parse(body) as T), wireBytes: body.length };
 }
 
-export async function fetchGraphicEphemerisStations(
+export function fetchEphemerisMeta(signal?: AbortSignal): Promise<EphemerisMeta> {
+  return ephemerisJson<EphemerisMeta>("/api/ephemeris/meta", "ephemeris meta", signal);
+}
+
+/** `count` (1..24) consecutive calendar months from (`year`, `month`). */
+export function fetchEphemerisBlocks(
   year: number,
-  startMonth: number,
+  month: number,
+  count: number,
   signal?: AbortSignal,
-): Promise<EphemerisStationsPayload> {
-  const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/ephemeris/stations?year=${year}&startMonth=${startMonth}`,
-    { signal },
+): Promise<EphemerisBlocksWire> {
+  return ephemerisJson<EphemerisBlocksWire>(
+    `/api/ephemeris/blocks?year=${year}&month=${month}&count=${count}`,
+    "ephemeris blocks",
+    signal,
   );
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`ephemeris station request failed: ${response.status} ${detail}`);
-  }
-  return (await response.json()) as EphemerisStationsPayload;
 }
 
-/** Per-radix ephemeris view state (year/start_month/display_mode/
- * visible_planets/show_grid — morin.py:5364-5426 twin). */
+/** The curves alone: `count` (1..24) calendar months of daily series. */
+export function fetchEphemerisSeries(
+  year: number,
+  month: number,
+  count: number,
+  signal?: AbortSignal,
+): Promise<EphemerisBlocksWire> {
+  return ephemerisJson<EphemerisBlocksWire>(
+    `/api/ephemeris/series?year=${year}&month=${month}&count=${count}`,
+    "ephemeris series",
+    signal,
+  );
+}
+
+/** Each month's marks without the series (the client holds the curves). */
+export function fetchEphemerisMarks(
+  year: number,
+  month: number,
+  count: number,
+  signal?: AbortSignal,
+): Promise<EphemerisBlocksWire> {
+  return ephemerisJson<EphemerisBlocksWire>(
+    `/api/ephemeris/blocks?year=${year}&month=${month}&count=${count}&series=false`,
+    "ephemeris marks",
+    signal,
+  );
+}
+
+/** Longitude SR/SD stations of one calendar year (the slow layer). */
+export function fetchEphemerisYearStations(
+  year: number,
+  signal?: AbortSignal,
+): Promise<EphemerisYearStationsWire> {
+  return ephemerisJson<EphemerisYearStationsWire>(
+    `/api/ephemeris/stations?year=${year}`,
+    "ephemeris station",
+    signal,
+  );
+}
+
+/** Per-radix ephemeris view state: the camera (left edge + visible days) and
+ * the display toggles (morin.py:5364-5426 twin). */
 export type EphemerisViewState = {
-  year?: number;
-  start_month?: number;
+  camera?: { startJd: number; spanDays: number };
   show_grid?: boolean;
   show_event_glyphs?: boolean;
+  show_lunations?: boolean;
+  show_equator?: boolean;
+  show_oob_range?: boolean;
+  show_sign_bands?: boolean;
   display_mode?: "longitude" | "declination";
   visible_planets?: Record<string, boolean>;
+  /** Longitude fold (default 45). */
+  modulus?: 360 | 90 | 45 | 30;
+  /** Curve ink (default "planets"; a stored legacy "chart" reads back as the default). */
+  ink_mode?: "tiers" | "planets" | "dignity";
+  mirrored?: boolean;
+  /** Radix layer (Tab): natal lines and their crossings. */
+  show_radix?: boolean;
+  /** Crossings of the Sun, Mercury and Venus as well. */
+  show_fast_contacts?: boolean;
+  show_radix_bands?: boolean;
+  show_radix_reading_glyphs?: boolean;
+  color_radix_labels?: boolean;
+  /** Planet-to-planet contacts as aspect glyphs. */
+  show_planet_contacts?: boolean;
+  /** Per-point radix line choices; absent keys follow the point's default. */
+  radix_points?: Record<string, boolean>;
+  /** The fixed cursor line at the plot's centre (default on). */
+  show_now_line?: boolean;
+  /** Hover flag planets in their curve's colour instead of the app's chart
+   * colours (default off). */
+  hover_line_colors?: boolean;
 };
+
+/** One radix reference line (daemon ephemeris_service.natal_points). */
+export type EphemerisNatalPoint = {
+  key: string;
+  kind: string;
+  lon: number;
+  /** One glyph, or two for a midpoint. */
+  glyphs: string[];
+  /** Per glyph: Morinus glyph, or written text (the angles). */
+  glyphFonts: ("morinus" | "text")[];
+  /** Per glyph: the list's colour and its semantic role. */
+  glyphColors?: string[];
+  glyphColorRoles?: (string | null)[];
+  label: string;
+  defaultVisible: boolean;
+  pair?: [string, string];
+  /** A body's SE id (its Inspector region); absent for points and midpoints. */
+  seId?: number;
+};
+
+export type EphemerisNatalWire = {
+  radixKey: string;
+  points: EphemerisNatalPoint[];
+  /** Orb bands half-width in degrees (the options' midpoint orb). */
+  orb?: number;
+};
+
+/** One calendar year of crossings: parallel arrays, `jd` base64 Float64. */
+export type EphemerisNatalCrossingsWire = {
+  dataKey: string;
+  radixKey: string;
+  year: number;
+  points: string[];
+  jd: string;
+  planet: number[];
+  point: number[];
+  aspect: number[];
+};
+
+async function ephemerisDocumentJson<T>(url: string, what: string, signal?: AbortSignal): Promise<T> {
+  const response = await daemonFetch(url, { signal });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`${what} request failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as T;
+}
+
+/** One calendar year of planet-to-planet contacts: `jd` and `lon` base64
+ * Float64, parallel `a`/`b` (SE ids) and `aspect` (degrees, a minus b). */
+export type EphemerisContactsWire = {
+  dataKey: string;
+  year: number;
+  jd: string;
+  lon: string;
+  a: number[];
+  b: number[];
+  aspect: number[];
+};
+
+export function fetchEphemerisContacts(year: number, signal?: AbortSignal): Promise<EphemerisContactsWire> {
+  return ephemerisDocumentJson(`${daemonBaseUrl()}/api/ephemeris/contacts?year=${year}`, "ephemeris planet contacts", signal);
+}
+
+export function fetchEphemerisNatal(documentId: string, signal?: AbortSignal): Promise<EphemerisNatalWire> {
+  return ephemerisDocumentJson(
+    `${daemonBaseUrl()}/api/workspace/document/${documentId}/ephemeris-natal`,
+    "ephemeris radix",
+    signal,
+  );
+}
+
+export function fetchEphemerisNatalCrossings(
+  documentId: string,
+  year: number,
+  signal?: AbortSignal,
+): Promise<EphemerisNatalCrossingsWire> {
+  return ephemerisDocumentJson(
+    `${daemonBaseUrl()}/api/workspace/document/${documentId}/ephemeris-natal-crossings?year=${year}`,
+    "ephemeris radix crossings",
+    signal,
+  );
+}
 
 export async function fetchEphemerisViewState(
   documentId: string,
@@ -7833,138 +8982,6 @@ export async function fetchSynodicCycles(
   return (await response.json()) as SynodicCyclePayload;
 }
 
-export type AscensionalListRow =
-  | { kind: "section"; title: string }
-  | {
-      kind: "data";
-      transitGlyph: string;
-      transitFont: "morinus" | "text" | string;
-      aspectGlyph: string;
-      aspectFont: "morinus" | "text" | string;
-      radixGlyph: string;
-      radixFont: "morinus" | "text" | string;
-      radixExtra: string;
-      orbText: string;
-      statusText: string;
-      dim: boolean;
-      pair?: Record<string, unknown> | null;
-    };
-
-export type AscensionalPointPayload = {
-  kind: "planet" | "cusp" | "angle" | "lof" | "node" | string;
-  idx: number;
-  label: string;
-  ra: number | null;
-  decl: number | null;
-  lon: number | null;
-  lat: number | null;
-  mdo: number | null;
-  quadrant: number | null;
-  aboveHorizon: boolean;
-  fixedInFrame: boolean;
-  pmp: number | null;
-};
-
-export type AscensionalPairPayload = {
-  transit: AscensionalPointPayload;
-  radix: AscensionalPointPayload;
-  aspect: string;
-  aspectGlyph: string;
-  aspectFont: "morinus" | "text" | string;
-  orbArcmin: number;
-  orbText: string;
-  dim: boolean;
-  statusText: string;
-};
-
-export type AscensionalSnapshotPayload = {
-  kind: "ascensional_transits";
-  radix: {
-    name: string;
-    recordIndex?: number | null;
-    jd: number;
-    datetime: Record<string, unknown>;
-    place: Record<string, unknown>;
-  };
-  event: {
-    jd: number;
-    datetime: {
-      isoUtc?: string;
-      year?: number;
-      month?: number;
-      day?: number;
-      hour?: number;
-      minute?: number;
-      second?: number;
-    };
-    source: string;
-    place: Record<string, unknown>;
-    ramc: number;
-    ramcUncorrected: number;
-    precessionCorrectionArcmin: number;
-    applyPrecession: boolean;
-    direction: string;
-  };
-  points: {
-    radix: AscensionalPointPayload[];
-    transit: AscensionalPointPayload[];
-  };
-  atPairs: AscensionalPairPayload[];
-  activeEclipticAspects: {
-    transitId: number;
-    transitLabel: string;
-    transitGlyph: string;
-    radixId: number;
-    radixLabel: string;
-    radixGlyph: string;
-    aspectDeg: number;
-    orbArcmin: number;
-    orbText: string;
-  }[];
-  twoTransitRule: {
-    isActiveMoment: boolean;
-    activeTransitBodyIds: number[];
-    aspectOrbFastArcmin: number;
-    aspectOrbSlowArcmin: number;
-    aspectMultiplesDeg: number[];
-  };
-  list: {
-    rows: AscensionalListRow[];
-    meta: Record<string, unknown>;
-    filterToActiveMoment: boolean;
-  };
-  meta: Record<string, unknown>;
-};
-
-export async function fetchAscensionalSnapshot(
-  params: {
-    documentId?: string | null;
-    sourceName: string;
-    eventJd?: number | null;
-    place?: Record<string, unknown> | null;
-    filterToActiveMoment?: boolean;
-    applyPrecession?: boolean;
-  },
-  signal?: AbortSignal,
-): Promise<AscensionalSnapshotPayload> {
-  const search = new URLSearchParams();
-  search.set("name", params.sourceName);
-  if (params.documentId) search.set("documentId", params.documentId);
-  if (params.eventJd != null) search.set("eventJd", String(params.eventJd));
-  if (params.place != null) search.set("place", JSON.stringify(params.place));
-  search.set("filterToActiveMoment", String(params.filterToActiveMoment ?? true));
-  search.set("applyPrecession", String(params.applyPrecession ?? true));
-  const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/ascensional/snapshot?${search.toString()}`,
-    { cache: "no-store", signal },
-  );
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`ascensional snapshot failed: ${response.status} ${detail}`);
-  }
-  return (await response.json()) as AscensionalSnapshotPayload;
-}
-
 /**
  * Open the transit search engine as a REAL view-only child document under the
  * active/reference chart. The search calculation remains Python-owned.
@@ -8225,6 +9242,29 @@ export async function workspaceNavigate(
   );
 }
 
+export type PdSpeculumMomentResult = WorkspaceOpenResult & {
+  momentDatetime?: string;
+  /** Moved PDs-in-Chart charts other than the active one, to repaint when shown. */
+  snapshotInvalidatedIds?: string[];
+};
+
+/** Step (`unit` × `delta`) or set (`date`, ISO day) the radix branch's
+ * primary-direction time from the directed speculum. Every PDs-in-Chart chart
+ * and the Astrolabe of that radix follow; the visible one's snapshot returns. */
+export async function workspaceSetPdSpeculumMoment(params: {
+  docId: string;
+  unit?: "day" | "month" | "year";
+  delta?: number;
+  date?: string;
+}): Promise<PdSpeculumMomentResult> {
+  return workspacePost<PdSpeculumMomentResult>(
+    "/api/workspace/pd-speculum/moment",
+    { docId: params.docId, unit: params.unit ?? null, delta: params.delta ?? 0, date: params.date ?? null },
+    undefined,
+    "native-preferred",
+  );
+}
+
 export type WorkspaceNavigateKeyResult = {
   documentId: string;
   stepped: boolean;
@@ -8236,7 +9276,16 @@ export type WorkspaceNavigateKeyResult = {
    * attached so the skin paints from the POST result and skips the second
    * snapshot GET. See WorkspaceNavigateResult.snapshot. */
   snapshot?: ChartRenderSnapshot;
+  /** Daemon handler timing for the step trace: navigation, live surfaces, total. */
+  stepTiming?: { navigateMs: number; liveSurfacesMs: number; handlerMs: number };
 };
+
+export async function workspaceAstrocartLayerNow(documentId: string): Promise<WorkspaceOpenResult> {
+  return workspacePost<WorkspaceOpenResult>(
+    `/api/workspace/document/${encodeURIComponent(documentId)}/astrocart/layer-now`,
+    {},
+  );
+}
 
 /**
  * Canonical arrow-key navigation — forwards the raw keypress + modifiers to the
@@ -8244,8 +9293,7 @@ export type WorkspaceNavigateKeyResult = {
  * day/hour/minute/week/lunar-phase chosen server-side) or the year/cycle stepper
  * for return/progression children. NO unit logic lives in JS — the session's
  * per-kind navigation_units + modifiers decide the unit on the Python side.
- * `key` is one of left|right|up|down|space. Spec:
- * doc/migration/surfaces/arrow-stepping.md.
+ * `key` is one of left|right|up|down|space.
  */
 export async function workspaceNavigateKey(
   docId: string,
@@ -8254,11 +9302,13 @@ export async function workspaceNavigateKey(
   alt: boolean,
   repeat = 1,
   includeSnapshot = true,
+  liveSurfaces: LiveSurfaceRequest[] = [],
+  dashboardVisible = true,
   signal?: AbortSignal,
 ): Promise<WorkspaceNavigateKeyResult> {
   return workspacePost<WorkspaceNavigateKeyResult>(
     "/api/workspace/navigate-key",
-    { docId, key, shift, alt, repeat, includeSnapshot },
+    { docId, key, shift, alt, repeat, includeSnapshot, liveSurfaces, dashboardVisible },
     signal,
     "native-preferred",
   );
@@ -8293,10 +9343,11 @@ export type WorkspaceSynastryCompositeResult = {
 export async function workspaceToggleComparison(
   docId: string,
   signal?: AbortSignal,
+  viewSide?: "left" | "right",
 ): Promise<WorkspaceToggleComparisonResult> {
   return workspacePost<WorkspaceToggleComparisonResult>(
     "/api/workspace/toggle-comparison",
-    { docId },
+    { docId, viewSide },
     signal,
   );
 }
@@ -8328,6 +9379,7 @@ export type DaemonEvent =
   | { type: "chart.events.changed"; documentIds: string[] }
   | { type: "chart.event-tags.changed"; tagCatalog: { id: string; name: string; lastUsed?: number }[]; catalogVersion: number }
   | { type: "daemon.ready" }
+  | { type: "style.draft.changed"; action: string; draftId?: string | null; revision?: number | null }
   | { type: "documents.changed"; tree: DaemonDocumentSummary[] }
   | {
       type: "document.changed";
@@ -8338,6 +9390,7 @@ export type DaemonEvent =
       stepDirty?: boolean;
     }
   | { type: "active_document.changed"; docId: string | null }
+  | { type: "pd_branch.changed"; radixId: string; momentDatetime: string; pdChartIds: string[] }
   | {
       type: "session.changed";
       docId: string | null;
@@ -8350,12 +9403,15 @@ export type DaemonEvent =
     }
   | {
       type: "options.changed";
+      houseVisibility?: boolean;
       refreshedDocumentIds: string[];
       refreshMode?: string | null;
       styleOnly?: boolean;
       listDataChanged?: boolean;
       retainedListTarget?: "aspect-list" | "speculum" | null;
+      listDataDomain?: ListDataDomain | null;
       retainedListDataKey?: string;
+      secondaryProgressionsDataKey?: string;
       ephemerisDataKey?: string;
       retainedListDisplay?: RetainedListDisplay;
       inspectorDataChanged?: boolean;
@@ -8366,6 +9422,7 @@ export type DaemonEvent =
       wheelPresetRevision?: number;
       paletteHash: string;
       styleHash?: string;
+      origin?: string;
     };
 
 export type WorkspaceEventSubscription = { close: () => void };
@@ -8505,4 +9562,9 @@ export async function fetchAbout(signal?: AbortSignal): Promise<AboutPayload> {
     throw new Error(`about request failed: ${response.status}`);
   }
   return (await response.json()) as AboutPayload;
+}
+
+/** Calculation intent belongs to the daemon session, independently of notation. */
+export async function setAscensionalMethod(documentId: string, applyPrecession: boolean): Promise<void> {
+  await workspacePost("/api/workspace/ascensional-method", { documentId, applyPrecession });
 }

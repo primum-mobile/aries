@@ -73,14 +73,11 @@ export type StyleTokenId =
   | "ephemFrameWidthSmall"
   | "ephemFrameWidthMedium"
   | "ephemFrameWidthLarge"
-  | "ephemCurveWidthSmall"
-  | "ephemCurveWidthLarge"
+  | "ephemCurveWidthInner"
+  | "ephemCurveWidthOuter"
   | "ephemGridLineWidth"
   | "ephemGridDashOn"
   | "ephemGridDashOff"
-  | "ephemStationTickMin"
-  | "ephemStationTickMax"
-  | "ephemStationTickLineWidth"
   | "ephemEventGlyphMin"
   | "ephemEventGlyphMax"
   | "ephemHoverFontSize"
@@ -425,10 +422,10 @@ export const STYLE_TOKENS: StyleToken[] = [
     label: "Frame width small",
     cssVar: "--aries-ephem-frame-width-small",
     kind: "number",
-    defaultValue: 2,
-    min: 1,
+    defaultValue: 1,
+    min: 0.5,
     max: 8,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
@@ -437,10 +434,10 @@ export const STYLE_TOKENS: StyleToken[] = [
     label: "Frame width medium",
     cssVar: "--aries-ephem-frame-width-medium",
     kind: "number",
-    defaultValue: 3,
-    min: 1,
+    defaultValue: 1,
+    min: 0.5,
     max: 9,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
@@ -449,34 +446,34 @@ export const STYLE_TOKENS: StyleToken[] = [
     label: "Frame width large",
     cssVar: "--aries-ephem-frame-width-large",
     kind: "number",
-    defaultValue: 4,
-    min: 1,
+    defaultValue: 1,
+    min: 0.5,
     max: 10,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
-    id: "ephemCurveWidthSmall",
+    id: "ephemCurveWidthInner",
     group: "Graphic Ephemeris",
-    label: "Curve width small",
-    cssVar: "--aries-ephem-curve-width-small",
+    label: "Inner planet curve",
+    cssVar: "--aries-ephem-curve-width-inner",
     kind: "number",
-    defaultValue: 1,
+    defaultValue: 1.15,
     min: 1,
     max: 6,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
-    id: "ephemCurveWidthLarge",
+    id: "ephemCurveWidthOuter",
     group: "Graphic Ephemeris",
-    label: "Curve width large",
-    cssVar: "--aries-ephem-curve-width-large",
+    label: "Outer planet curve",
+    cssVar: "--aries-ephem-curve-width-outer",
     kind: "number",
-    defaultValue: 2,
-    min: 1,
+    defaultValue: 1,
+    min: 0.5,
     max: 8,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
@@ -486,9 +483,9 @@ export const STYLE_TOKENS: StyleToken[] = [
     cssVar: "--aries-ephem-grid-line-width",
     kind: "number",
     defaultValue: 1,
-    min: 1,
+    min: 0.25,
     max: 5,
-    step: 1,
+    step: 0.25,
     unit: "px",
   },
   {
@@ -497,7 +494,7 @@ export const STYLE_TOKENS: StyleToken[] = [
     label: "Grid dash",
     cssVar: "--aries-ephem-grid-dash-on",
     kind: "number",
-    defaultValue: 6,
+    defaultValue: 1,
     min: 1,
     max: 16,
     step: 1,
@@ -512,42 +509,6 @@ export const STYLE_TOKENS: StyleToken[] = [
     defaultValue: 3,
     min: 1,
     max: 16,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemStationTickMin",
-    group: "Graphic Ephemeris",
-    label: "Station tick min",
-    cssVar: "--aries-ephem-station-tick-min",
-    kind: "number",
-    defaultValue: 4,
-    min: 2,
-    max: 14,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemStationTickMax",
-    group: "Graphic Ephemeris",
-    label: "Station tick max",
-    cssVar: "--aries-ephem-station-tick-max",
-    kind: "number",
-    defaultValue: 9,
-    min: 4,
-    max: 24,
-    step: 1,
-    unit: "px",
-  },
-  {
-    id: "ephemStationTickLineWidth",
-    group: "Graphic Ephemeris",
-    label: "Station tick line",
-    cssVar: "--aries-ephem-station-tick-line-width",
-    kind: "number",
-    defaultValue: 1,
-    min: 1,
-    max: 5,
     step: 1,
     unit: "px",
   },

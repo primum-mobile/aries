@@ -13,15 +13,21 @@ import copy
 import datetime
 import hashlib
 import json
+import pickle
+import threading
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 
 import chartfile
+import chartcollectionsearchbackend
 import chart_session
 import dateformat
 import mtexts
 import note_storage
-from engine import chart_factory
+import searchcatalog
+from engine import chart_factory, supplementary_adapter
+from engine.workspace_chart_naming import specialized_chart_name
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.supplementary_service import PUBLIC_TO_FEATURE_KIND
 from webapp.daemon.event_tags import EventTags
@@ -37,10 +43,51 @@ def _signature(nodes):
     return hashlib.sha256(json.dumps(nodes, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def _semantic_search_catalog(chrt):
+    """Use the chart's complete enabled points, including the active ring."""
+    from webapp.daemon.aspect_list_service import _technique_ring_items
+    from webapp.daemon.display_palette import effective_display_options
+
+    base = searchcatalog.SearchCatalog(chrt)
+    present = {obj.id for obj in base.objects}
+    bodies = {obj.planet_index: obj.id for obj in base.objects if obj.planet_index is not None}
+    aliases = {}
+    custom = []
+    for item in _technique_ring_items(chrt, 'primary', effective_display_options(chrt.options)):
+        try:
+            longitude = float(item['longitude'])
+            label = str(item.get('listLabel') or item['label'])
+            point_id = 'outer:%s:%s' % (
+                item.get('family') or 'point', item.get('semanticId') or item['id'])
+            ref = item.get('motionRef') or {}
+            canonical_id = None
+            if ref.get('kind') == 'ephemerisBody':
+                canonical_id = bodies.get(int(ref['bodyId']))
+            elif ref.get('kind') == 'arabicPart':
+                canonical_id = item.get('searchObjectId')
+            if canonical_id in present:
+                aliases[point_id] = canonical_id
+                continue
+            if point_id in present:
+                continue
+            present.add(point_id)
+            custom.append({'id': point_id, 'label': label, 'longitude': longitude})
+        except (KeyError, TypeError, ValueError):
+            continue
+    catalog = searchcatalog.SearchCatalog(chrt, custom_points=custom) if custom else base
+    # Saved queries can still resolve old overlay ids, while Any and the chooser
+    # see one semantic point per body/lot rather than a second overlay copy.
+    catalog.objects_by_id.update({alias: catalog.get(target) for alias, target in aliases.items()})
+    return catalog
+
+
 class ChartEventsService:
     def __init__(self, workspace):
         self.workspace = workspace
         self.tags = EventTags()
+        self._search_cache = OrderedDict()
+        self._search_cache_lock = threading.RLock()
+        self._copied_event = None
 
     def owner(self, document_id):
         controller = self.workspace._controller
@@ -61,18 +108,23 @@ class ChartEventsService:
         cs = session.get('chart_session')
         if cs is None or getattr(cs, 'chart', None) is None:
             return []
+        paste = [{
+            'type': 'item', 'label': 'Paste event',
+            'labelKey': 'chartEvents.paste', 'actionId': 'workspace.paste_event',
+            'payload': {'documentId': document_id},
+        }] if self._copied_event is not None else []
         if session.get('parent_document_id'):
             return [{
                 'type': 'item', 'label': 'Add event',
                 'labelKey': 'chartEvents.save', 'actionId': 'workspace.save_event',
                 'payload': {'documentId': document_id, 'ownerDocumentId': self.owner(document_id)[0]},
-            }]
+            }, *paste]
         _, owner, _ = self.owner(document_id)
         return [{
             'type': 'submenu', 'label': 'Events', 'labelKey': 'chartEvents.title',
             'eventsDocumentId': document_id,
             'eventCount': len(owner.get('saved_events', [])), 'children': [],
-        }]
+        }, *paste]
 
     def _capture_node(self, session):
         cs = session.get('chart_session')
@@ -81,7 +133,7 @@ class ChartEventsService:
         chrt = cs.chart
         node = {
             'chart': _record(chrt),
-            'label': str(session.get('custom_title_root') or session.get('base_title') or chrt.name or mtexts.txts.get('Chart', 'Chart')),
+            'label': str(specialized_chart_name(session, recipe=True) or session.get('custom_title_root') or session.get('base_title') or chrt.name or mtexts.txts.get('Chart', 'Chart')),
             'feature': session.get('supplementary_feature_kind'),
             'launcher': session.get('launcher_kind'),
             'binding': copy.deepcopy(session.get('supplementary_binding')),
@@ -125,6 +177,16 @@ class ChartEventsService:
         nodes.reverse()
         return nodes
 
+    def _transit_node(self, chrt, radix, name):
+        cs = chart_session.ChartSession(chrt, radix, chart_snapshot_service.options,
+            navigation_units=('day', 'hour', 'minute', 'second'))
+        binding = supplementary_adapter.TransitSupplementaryAdapter().capture_binding(
+            None, current_chart=chrt, feature_kind='transits')
+        binding.parent_source_datetime = cs.display_datetime
+        return self._capture_node({'chart_session': cs, 'base_title': name,
+            'supplementary_feature_kind': 'transits',
+            'supplementary_binding': binding.to_payload()})
+
     def save(self, document_id):
         owner_id, owner, radix = self.owner(document_id)
         if owner_id == document_id:
@@ -164,9 +226,7 @@ class ChartEventsService:
             raise ValueError('An event needs a name')
         markdown = record.pop('notes', '')
         chrt = chart_factory.chart_from_record(record, chart_snapshot_service.options)
-        cs = chart_session.ChartSession(chrt, radix, chart_snapshot_service.options)
-        node = self._capture_node({'chart_session': cs, 'base_title': name,
-                                  'supplementary_feature_kind': 'transits', 'launcher_kind': 'transits'})
+        node = self._transit_node(chrt, radix, name)
         events = copy.deepcopy(owner.get('saved_events', []))
         # A retry after a failed note write must not add a second event.
         event = next((item for item in events if item['id'] == event_id), None)
@@ -177,6 +237,159 @@ class ChartEventsService:
         self._persist(owner_id, owner, radix, events)
         write_note_state(name, markdown, record_id=owner['chart_id'], event_id=event_id)
         return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': event_id}
+
+    def copy_saved_chart(self, source_document_id, target_document_id, event_id):
+        """Snapshot any open chart as an independent event on another radix."""
+        from webapp.daemon.notes_service import read_note_state, write_note_state
+        event_id = str(uuid.UUID(str(event_id)))
+        controller = self.workspace._controller
+        source = controller.session(source_document_id)
+        target = controller.session(target_document_id)
+        if not source or not target or target.get('parent_document_id'):
+            raise ValueError('The event target must be an open parent chart')
+        cs = source.get('chart_session')
+        if cs is None or getattr(cs, 'chart', None) is None:
+            raise ValueError('The source tab does not contain a chart')
+        if source_document_id == target_document_id:
+            raise ValueError('A chart cannot be its own event')
+        source_owner_id, source_owner, _ = self.owner(source_document_id)
+        source_path = str(source.get('fpath') or '')
+        source_id = str(source.get('chart_id') or '')
+        if source_owner_id == source_document_id and source_path and source_id and not source.get('dirty'):
+            try:
+                index, _ = chartfile.find_jsonl_record_index(source_path, {'chart_id': source_id})
+            except FileNotFoundError:
+                index = None
+            if index is not None:
+                record = chartfile.read_jsonl_record(source_path, index)
+                record.pop('events', None)
+                name = str(record.get('name') or '').strip()
+                chrt = chart_factory.chart_from_record(record, chart_snapshot_service.options)
+                source_cs = chart_session.ChartSession(chrt, chrt, chart_snapshot_service.options,
+                    navigation_units=('day', 'hour', 'minute', 'second'))
+                nodes = [self._capture_node({'chart_session': source_cs, 'base_title': name})]
+            else:
+                # The tab is still a usable chart if its collection record was
+                # moved or deleted after opening it.
+                nodes = [self._capture_node(source)]
+                name = nodes[-1]['label'].strip()
+        elif source_owner_id == source_document_id:
+            # A stepped, edited, or scratch radix is copied from its current
+            # chart, leaving its original collection record untouched.
+            nodes = [self._capture_node(source)]
+            name = nodes[-1]['label'].strip()
+        else:
+            saved = next((item for item in source_owner.get('saved_events', [])
+                if item.get('id') == source.get('saved_event_id')), None)
+            if saved and not source.get('dirty'):
+                # An opened event already has a portable recipe. Runtime
+                # comparison defaults can otherwise add a spurious parent node.
+                nodes = copy.deepcopy(saved['nodes'])
+                name = str(saved['name']).strip()
+            else:
+                nodes = self._nodes(source_document_id, source_owner_id)
+                name = nodes[-1]['label'].strip()
+            first = nodes[0]
+            if not first.get('independentRadix') and (
+                len(nodes) > 1 or any(first.get(key) for key in (
+                    'feature', 'launcher', 'binding', 'pd', 'participants', 'comparisonRole'
+                ))
+            ):
+                self._insert_source_radix(nodes, source_owner_id, source_owner)
+        if source_owner_id != source_document_id or not source_id:
+            source_id = str(nodes[-1]['chart'].get('id') or source_id)
+        if not name:
+            raise ValueError('The source chart needs a name')
+        owner_id, owner, radix = self.owner(target_document_id)
+        if source_owner_id == source_document_id and source_id == str(owner.get('chart_id') or ''):
+            raise ValueError('A chart cannot be its own event')
+        events = copy.deepcopy(owner.get('saved_events', []))
+        signature = _signature(nodes)
+        existing = next((item for item in events if item.get('signature') == signature), None)
+        if existing is not None:
+            return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': existing['id'], 'alreadyExists': True}
+        note_context = self.note_context(source_document_id)
+        if note_context:
+            markdown = read_note_state(note_context['sourceName'],
+                record_id=note_context['recordId'], event_id=note_context['eventId'])['content']
+        elif source_owner_id != source_document_id:
+            markdown = ''
+        elif source_path and source_id:
+            markdown = read_note_state(name, record_id=source_id)['content']
+        else:
+            markdown = read_note_state(name, document_id=source_document_id, scratch=True)['content']
+        event = {'v': 1, 'id': event_id, 'name': name, 'signature': signature,
+                 'nodes': nodes, 'sourceChartId': source_id}
+        events.append(event)
+        # A failed note write leaves the target collection untouched. A retry
+        # uses the same event ID and may safely overwrite its private sidecar.
+        write_note_state(name, markdown, record_id=owner['chart_id'], event_id=event_id)
+        self._persist(owner_id, owner, radix, events)
+        return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': event_id}
+
+    def _insert_source_radix(self, nodes, source_owner_id, source_owner):
+        # Derived children need their own source radix and ancestry so
+        # replay does not silently substitute the receiving radix.
+        # A stepped root's visible chart is not its calculation radix.
+        source_radix = self.workspace._parent_radix(source_owner_id)
+        radix_cs = chart_session.ChartSession(source_radix, source_radix,
+            chart_snapshot_service.options,
+            navigation_units=('day', 'hour', 'minute', 'second'))
+        source_node = self._capture_node({'chart_session': radix_cs,
+            'base_title': source_owner.get('base_title') or source_radix.name})
+        # Only an inserted context node owns a separate calculation
+        # radix. Ordinary attached events retain their owner semantics.
+        source_node['independentRadix'] = True
+        nodes.insert(0, source_node)
+
+    def copy_event(self, document_id, event_id):
+        """Remember one saved event so another chart can paste it."""
+        from webapp.daemon.notes_service import read_note_state
+        owner_id, owner, _ = self.owner(document_id)
+        event = next((item for item in owner.get('saved_events', []) or []
+            if item.get('id') == event_id), None)
+        if event is None:
+            raise ValueError('Unknown saved event')
+        nodes = copy.deepcopy(event['nodes'])
+        first = nodes[0]
+        # A plain moment (one transit node, compared with whatever radix it
+        # opens under) is the same moment on any chart. Anything derived
+        # keeps the radix it was calculated from.
+        plain_moment = len(nodes) == 1 and first.get('feature') == 'transits' and not any(
+            first.get(key) for key in ('launcher', 'pd', 'participants'))
+        if not plain_moment and not first.get('independentRadix'):
+            self._insert_source_radix(nodes, owner_id, owner)
+        notes = read_note_state(event['name'], record_id=str(owner.get('chart_id') or ''),
+            event_id=event['id'])['content']
+        self._copied_event = {'name': event['name'], 'nodes': nodes,
+            'tags': copy.deepcopy(event.get('tags') or []), 'notes': notes,
+            'sourceChartId': event.get('sourceChartId')}
+        return {'ok': True}
+
+    def paste_event(self, document_id):
+        """Add the copied event to this chart's radix."""
+        from webapp.daemon.notes_service import write_note_state
+        copied = self._copied_event
+        if copied is None:
+            raise ValueError('No event has been copied')
+        owner_id, owner, radix = self.owner(document_id)
+        events = copy.deepcopy(owner.get('saved_events', []))
+        nodes = copy.deepcopy(copied['nodes'])
+        signature = _signature(nodes)
+        existing = next((item for item in events if item.get('signature') == signature), None)
+        if existing is not None:
+            return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': existing['id'], 'alreadyExists': True}
+        event = {'v': 1, 'id': str(uuid.uuid4()), 'name': copied['name'],
+                 'signature': signature, 'nodes': nodes}
+        if copied['tags']:
+            event['tags'] = copy.deepcopy(copied['tags'])
+        if copied.get('sourceChartId'):
+            event['sourceChartId'] = copied['sourceChartId']
+        events.append(event)
+        if copied['notes']:
+            write_note_state(event['name'], copied['notes'], record_id=owner['chart_id'], event_id=event['id'])
+        self._persist(owner_id, owner, radix, events)
+        return {'ok': True, 'ownerDocumentId': owner_id, 'eventId': event['id']}
 
     def update_from_editor(self, document_id, name):
         """Replace the attached recipe while retaining its identity and metadata."""
@@ -269,16 +482,149 @@ class ChartEventsService:
         stop = start + min(256, max(1, int(limit)))
         rows = []
         for event in ordered[start:stop]:
-            node = event['nodes'][-1]
-            y, m, d, h, mi, s = node['display']
-            rows.append({'id': event['id'], 'name': event['name'], 'tags': self.tags.resolve(event.get('tags')),
-                         'date': dateformat.date_text(y, m, d, chart_snapshot_service.options,
-                                                     bc=node['chart'].get('bc', False)),
-                         'time': f'{h:02d}:{mi:02d}', 'datetime': dateformat.iso_datetime_text(node['display']),
-                         'kind': node['feature'] or node['launcher'] or node['chart']['type']})
+            rows.append(self._summary_row(event))
         return {'ownerDocumentId': owner_id, 'recordId': str(owner.get('chart_id') or getattr(radix, 'chart_id', '') or ''),
                 'sourceName': radix.name, **self.tag_metadata(events),
                 'rows': rows, 'total': len(ordered), 'offset': start}
+
+    def _summary_row(self, event):
+        node = event['nodes'][-1]
+        y, m, d, h, mi, s = node['display']
+        return {'id': event['id'], 'name': event['name'], 'tags': self.tags.resolve(event.get('tags')),
+                'date': dateformat.date_text(y, m, d, chart_snapshot_service.options,
+                                             bc=node['chart'].get('bc', False)),
+                'time': f'{h:02d}:{mi:02d}', 'datetime': dateformat.iso_datetime_text(node['display']),
+                'kind': node['feature'] or node['launcher'] or node['chart']['type']}
+
+    def search_catalog(self, document_id):
+        from webapp.daemon.chart_picker_service import ChartPickerService
+        with self.workspace._lock:
+            _, _, radix = self.owner(document_id)
+            objects = _semantic_search_catalog(radix).objects
+        catalog = ChartPickerService().search_catalog()
+        known = {choice['value'] for choice in catalog['objects']}
+        catalog['objects'].extend({'value': obj.id, 'label': obj.label}
+                                  for obj in objects if obj.id not in known)
+        # Station at an event's saved cursor is a trajectory question, not a
+        # chart-snapshot motion property; keep it out until that role is wired.
+        catalog['motions'] = [choice for choice in catalog['motions']
+                              if not choice['value'].startswith('station_')]
+        return catalog
+
+    def search_batch(self, document_id, payload):
+        """Search a bounded slice of one radix's attachments, off the live workspace.
+
+        The saved recipe is authoritative. In particular, a progression's visible
+        date is not its ephemeris date, and harmonic positions cannot be recovered
+        by decoding its last chart record as an ordinary chart.
+        """
+        from webapp.daemon.chart_picker_service import ChartPickerService
+        from webapp.daemon.workspace_service import WorkspaceService
+
+        query = ChartPickerService.build_search_query(payload)
+        if not query.is_active():
+            raise ValueError('Set at least one placement or aspect')
+        if any(motion.startswith('station_') for clause in query.active_placement_clauses()
+               for motion in clause.motions):
+            raise ValueError('Station searches need an event motion trajectory')
+        for clause in query.active_placement_clauses():
+            if clause.motions and any(not (object_id.startswith('planet:') or object_id.startswith('asteroid:'))
+                                      for object_id in clause.object_ids):
+                raise ValueError('Direct and retrograde motion require an ephemeris body')
+        with self.workspace._lock:
+            owner_id, owner, radix = self.owner(document_id)
+            events = owner.get('saved_events', [])
+            needle = str(payload.get('nameTagQuery') or '').strip().casefold()
+            tag_ids = set(str(value) for value in payload.get('tagIds') or [])
+            tag_match = payload.get('tagMatch') or 'any'
+            untagged = payload.get('untagged') is True
+            ordered = []
+            for event in events:
+                tags = self.tags.resolve(event.get('tags'))
+                event_tag_ids = {tag['id'] for tag in tags}
+                if needle and not any(needle in value.casefold() for value in
+                                      [event['name'], *(tag['name'] for tag in tags)]):
+                    continue
+                if untagged and tags:
+                    continue
+                if tag_ids and not (tag_ids <= event_tag_ids if tag_match == 'all'
+                                    else tag_ids & event_tag_ids):
+                    continue
+                ordered.append(event)
+            sort = payload.get('sort') or 'date'
+            if sort not in ('date', 'added'):
+                raise ValueError('Unknown event sort')
+            if sort == 'date':
+                ordered.sort(key=lambda event: event['nodes'][-1]['cursorJd'])
+            if payload.get('descending') is True:
+                ordered.reverse()
+            offset = max(0, int(payload.get('offset') or 0))
+            limit = min(8, max(1, int(payload.get('limit') or 8)))
+            selected = copy.deepcopy(ordered[offset:offset + limit])
+            total = len(ordered)
+            root_record = _record(radix)
+
+        if not selected:
+            return {'rows': [], 'nextOffset': min(offset, total), 'totalCandidates': total,
+                    'errors': 0, 'done': True, 'ownerDocumentId': owner_id}
+
+        # Cache only reconstructed semantic charts, never authoritative event
+        # records. A calculation-option or owner-radix change changes the key.
+        opts = chart_snapshot_service.options
+        try:
+            options_key = hashlib.sha256(pickle.dumps(opts, protocol=4)).digest()
+        except (TypeError, pickle.PickleError):
+            options_key = hashlib.sha256(repr(vars(opts)).encode()).digest()
+        root_key = hashlib.sha256(json.dumps(root_record, sort_keys=True, default=str).encode()).digest()
+        shadow = None
+        root_id = None
+        rows = []
+        errors = 0
+        for event in selected:
+            key = (root_key, _signature(event['nodes']), options_key)
+            with self._search_cache_lock:
+                cached = self._search_cache.get(key)
+                if cached is not None:
+                    self._search_cache.move_to_end(key)
+            created = []
+            try:
+                if cached is None:
+                    if shadow is None:
+                        # This private controller replays the same ancestry and
+                        # Binding path as Open event, without visible documents.
+                        shadow = WorkspaceService(register_options_controller=False)
+                        shadow._controller.set_event_listener(None)
+                        shadow.chart_events.tags = self.tags
+                        root_chart = chart_factory.chart_from_record(root_record, opts)
+                        root_id = shadow._controller.open_document(root_chart, radix=root_chart).document_id
+                    parent_id = root_id
+                    for index, node in enumerate(event['nodes']):
+                        parent_id = shadow.chart_events._open_node(
+                            parent_id, node, event['name'] if index == len(event['nodes']) - 1 else node['label'])
+                        created.append(parent_id)
+                    chrt = shadow._controller.session(parent_id)['chart_session'].chart
+                    catalog = _semantic_search_catalog(chrt)
+                    with self._search_cache_lock:
+                        self._search_cache[key] = (chrt, catalog)
+                        self._search_cache.move_to_end(key)
+                        while len(self._search_cache) > 16:
+                            self._search_cache.popitem(last=False)
+                else:
+                    chrt, catalog = cached
+                matches = chartcollectionsearchbackend._match_chart(
+                    chrt, catalog, query.active_placement_clauses(),
+                    query.active_aspect_clauses(), query)
+                if matches is not None:
+                    rows.append({**self._summary_row(event), 'matches': matches})
+            except Exception:
+                errors += 1
+            finally:
+                for created_id in reversed(created):
+                    if shadow is not None and shadow._controller.session(created_id) is not None:
+                        shadow._controller.close_document(created_id)
+        next_offset = min(total, offset + len(selected))
+        return {'rows': rows, 'nextOffset': next_offset, 'totalCandidates': total,
+                'errors': errors, 'done': next_offset >= total, 'ownerDocumentId': owner_id}
 
     def tag_metadata(self, events):
         resolved = [self.tags.resolve(event.get('tags')) for event in events]
@@ -401,13 +747,25 @@ class ChartEventsService:
         from webapp.daemon.workspace_service import SupplementaryStepper
         workspace = self.workspace
         opts = chart_snapshot_service.options
+        # Older sidebar-created transits had no Binding.
+        # Normalize at the persistence boundary; live sessions use ordinary
+        # supplementary ownership, steppers and projections thereafter.
+        node = copy.deepcopy(node)
+        if (node.get('feature') == 'transits' and not node.get('binding')
+            and not node.get('pd') and not node.get('participants')):
+            chrt = chart_factory.chart_from_record(node['chart'], opts)
+            node['binding'] = self._transit_node(chrt, workspace._parent_radix(parent_id), label)['binding']
         display = tuple(node['display'])
         comparison = chart_factory.chart_from_record(node['comparison'], opts) if node.get('comparison') else None
         if node.get('comparisonRole') == 'parent':
             comparison = workspace._controller._comparison_chart_for_parent(workspace._controller.session(parent_id))
         elif node.get('comparisonRole') == 'radix':
             comparison = self.owner(parent_id)[2]
-        if node.get('pd'):
+        if node.get('launcher') == 'ascensional_transits':
+            result = workspace.open_ascensional_transits(
+                parent_id, source_document_id=parent_id, publish=False)
+            doc_id = result['documentId']
+        elif node.get('pd'):
             pd = node['pd']
             result = workspace.open_directions_pd_in_chart(
                 directions_document_id=parent_id, arc=pd['currentArc'],
@@ -438,10 +796,11 @@ class ChartEventsService:
         else:
             chrt = chart_factory.chart_from_record(node['chart'], opts)
             document = workspace._controller.open_document(chrt,
-                radix=workspace._parent_radix(parent_id), parent_document_id_override=parent_id,
+                radix=chrt if node.get('independentRadix') else workspace._parent_radix(parent_id),
+                parent_document_id_override=parent_id,
                 session_label=label, display_datetime=display,
                 comparison_chart=comparison, view_mode=node['viewMode'],
-                navigation_units=tuple(node['navigationUnits']) or None,
+                navigation_units=tuple(node['navigationUnits']) or ('day', 'hour', 'minute', 'second'),
                 launcher_kind=node['launcher'], supplementary_feature_kind=node['feature'], dirty=False)
             doc_id = document.document_id
         session = workspace._controller.session(doc_id)
@@ -469,5 +828,7 @@ class ChartEventsService:
             stepper._initial_binding_payload = copy.deepcopy(session.get('supplementary_binding'))
             stepper._initial_parent_source_datetime = session.get('parent_source_datetime')
         cs.view_mode = node['viewMode']
+        if workspace._is_at_visual_session(session):
+            workspace._sync_ascensional_session_metadata(session)
         workspace._controller._sync_runtime_title(session)
         return doc_id

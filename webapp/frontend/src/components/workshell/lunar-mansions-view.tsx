@@ -3,12 +3,11 @@
 
 "use client";
 
+import { TablePrecisionMenu, useTablePrecision } from "./table-precision-menu";
 import * as React from "react";
+import { useRetainedTablePayload } from "@/lib/table/use-retained-table-payload";
 
-import { isAbortError } from "@/lib/abort-error";
 import {
-  fetchGenericTablePayload,
-  type GenericTablePayload,
   type GenericTableRow,
 } from "@/lib/daemon/client";
 import { useT } from "@/lib/i18n/i18n";
@@ -19,10 +18,6 @@ import {
   useFixedRowHeightAnchor,
   useListRowHeight,
 } from "@/lib/list-tokens";
-import {
-  getCachedGenericTablePayload,
-  rememberGenericTablePayload,
-} from "@/lib/table/payload-cache";
 import { cn } from "@/lib/utils";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 
@@ -49,11 +44,6 @@ const COLUMN_KEYS = [
 
 export function LunarMansionsView({ documentId, parentDocumentId, sourceName, onClose }: Props) {
   const t = useT();
-  const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
-    getCachedGenericTablePayload(TABLE_ID, documentId),
-  );
-  const [error, setError] = React.useState<string | null>(null);
-  const requestSeqRef = React.useRef(0);
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const lastCurrentRowRef = React.useRef<string | null>(null);
   const rowHeight = useListRowHeight("standard");
@@ -67,25 +57,9 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
     lastSessionChange,
     lastOptionsChange,
   });
+  const { payload, error } = useRetainedTablePayload(TABLE_ID, documentId, refreshSeq);
   useFixedRowHeightAnchor(scrollerRef, payload?.rows.length ?? 0, rowHeight);
 
-  React.useEffect(() => {
-    const controller = new AbortController();
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    fetchGenericTablePayload(TABLE_ID, documentId, controller.signal)
-      .then((next) => {
-        if (requestSeq !== requestSeqRef.current) return;
-        rememberGenericTablePayload(TABLE_ID, documentId, next);
-        setPayload(next);
-        setError(null);
-      })
-      .catch((err) => {
-        if (isAbortError(err, controller.signal) || requestSeq !== requestSeqRef.current) return;
-        setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => controller.abort();
-  }, [documentId, refreshSeq]);
 
   const currentRowId = payload?.rows.find((row) => row.current)?.id ?? null;
   React.useLayoutEffect(() => {
@@ -119,7 +93,7 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
       headerDensity="compact"
       sourceGap="standard"
     >
-      <div ref={scrollerRef} className={LIST_PANE_CLASSES.scroller}>
+      <TablePrecisionMenu><div ref={scrollerRef} className={LIST_PANE_CLASSES.scroller}>
         {!payload ? (
           <div className={error ? LIST_PANE_CLASSES.error : LIST_PANE_CLASSES.loading}>
             {error ? t("manzilTable.loadFailed") : t("manzilTable.loading")}
@@ -150,12 +124,13 @@ export function LunarMansionsView({ documentId, parentDocumentId, sourceName, on
             </tbody>
           </table>
         )}
-      </div>
+      </div></TablePrecisionMenu>
     </RetainedPaneShell>
   );
 }
 
 function MansionRow({ row, rowHeight }: { row: GenericTableRow; rowHeight: number }) {
+  const precision = useTablePrecision();
   const aliasesAr = Array.isArray(row.meta?.aliasesAr) ? row.meta.aliasesAr.join(" · ") : "";
   const aliasesTranslit = Array.isArray(row.meta?.aliasesTranslit)
     ? row.meta.aliasesTranslit.join(" · ")
@@ -181,7 +156,7 @@ function MansionRow({ row, rowHeight }: { row: GenericTableRow; rowHeight: numbe
           )}
           title={index === 1 ? aliasesAr : index === 2 ? aliasesTranslit : undefined}
         >
-          <CellView cell={cell} />
+          <CellView cell={cell} precision={precision} />
         </td>
       ))}
     </tr>

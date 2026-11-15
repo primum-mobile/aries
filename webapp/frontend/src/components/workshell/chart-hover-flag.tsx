@@ -5,8 +5,11 @@
 
 "use client";
 
+import { regionObjectId } from "@/lib/inspector-region-identity";
+
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { InspectorValueSpans } from "./inspector-value-spans";
 
 import {
   fetchInspectorFlagPayload,
@@ -18,6 +21,12 @@ import {
   type SupplementaryBindingPayload,
 } from "@/lib/daemon/client";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
+import {
+  LIVE_SURFACE_PRIORITY,
+  liveSurfaceResult,
+  useFreshLivePayload,
+  useLiveSurfaceRequest,
+} from "@/lib/live-surfaces";
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import { useLocale } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
@@ -42,34 +51,6 @@ export type FlagAnchor = {
   token: number;
 };
 
-/** Region → the object_id the daemon flag route expects. Identical mapping to
- * inspector-panel.regionObjectId (inspector-panel.tsx:144) — same /api/inspector
- * region contract, reused by /api/inspector/flag. */
-function regionObjectId(region: HoverRegion): string | null {
-  if (region.kind === "planet") return String(region.seId);
-  // Vertex object id = the CHART_OBJECT_VERTEX SE id (common.py:42 =
-  // SE_CHIRON+1). The daemon routes kind='vertex' to the same planet-region
-  // builder with this index, which build_flag_payload resolves to 'Vertex'.
-  if (region.kind === "vertex") return "vertex";
-  if (region.kind === "fortune") return "fortune";
-  if (region.kind === "syzygy") return "syzygy";
-  if (region.kind === "eclipse") return "eclipse";
-  if (region.kind === "angle") return region.angleId;
-  if (region.kind === "house") return String(region.houseIndex);
-  if (region.kind === "sign") return String(region.signIndex);
-  if (region.kind === "secondary_ring") {
-    return `${region.family}|${region.longitude}|${region.label}`;
-  }
-  if (region.kind === "aspect") {
-    if (region.scope === "interchart") {
-      return `interchart:${region.p1}:${region.p2}:${region.aspectType}`;
-    }
-    return `${region.p1}:${region.p2}:${region.aspectType}`;
-  }
-  if (region.kind === "drishti") return region.relationId;
-  if (region.kind === "pd_event") return region.eventId;
-  return null;
-}
 
 function rgbCss(rgb: RGB | null | undefined): string | undefined {
   if (!rgb || rgb.length !== 3) return undefined;
@@ -162,14 +143,22 @@ function retainDeferredFlagSlots(
   current: InspectorFlagPayload | null,
   next: InspectorFlagPayload,
 ): InspectorFlagPayload {
-  if (!next.deferredSlots?.includes("stations") || !current?.nextStationRow) {
-    return next;
+  let retained = next;
+  if (next.deferredSlots?.includes("void-course") && current?.voidCourseRow) {
+    retained = {
+      ...retained,
+      voidCourseRow: current.voidCourseRow,
+      rows: [...retained.rows, current.voidCourseRow],
+    };
   }
-  return {
-    ...next,
-    nextStationRow: current.nextStationRow,
-    rows: [...next.rows, current.nextStationRow],
-  };
+  if (next.deferredSlots?.includes("stations") && current?.nextStationRow) {
+    retained = {
+      ...retained,
+      nextStationRow: current.nextStationRow,
+      rows: [...retained.rows, current.nextStationRow],
+    };
+  }
+  return retained;
 }
 
 /**
@@ -261,7 +250,7 @@ export function ChartHoverFlag({
     supplementaryKind,
     comparisonName,
     viewMode,
-  })}:${locale}`;
+  })}:${locale}:${snapshotDoc?.chartPresentation?.coordinateMode ?? "zodiacal"}:${snapshotDoc?.chartPresentation?.revision ?? 0}`;
 
   const canFetch = Boolean(region && kind && objectId != null && (docId || sourceName));
   const payload = payloadState?.identityKey === identityKey ? payloadState.payload : null;
@@ -269,6 +258,31 @@ export function ChartHoverFlag({
   React.useEffect(() => {
     payloadRef.current = payload;
   }, [payload]);
+
+  // A showing flag follows arrow stepping from the step snapshot itself
+  // (live_surface_service) instead of refetching after each stepped paint.
+  const liveKey = payload && canFetch && docId && kind && objectId != null
+    ? `flag:${JSON.stringify([docId, kind, objectId, chartRole ?? "primary", ringIndex ?? null])}`
+    : null;
+  useLiveSurfaceRequest(
+    liveKey && docId && kind && objectId != null
+      ? { key: liveKey, kind: "inspector-flag", documentId: docId, regionKind: kind, objectId: String(objectId), chartRole, ringIndex }
+      : null,
+    LIVE_SURFACE_PRIORITY.hoverFlag,
+  );
+  const liveResult = liveSurfaceResult(chart, liveKey);
+  const liveShownRef = React.useRef<{ result: unknown; identityKey: string } | null>(null);
+  useFreshLivePayload<InspectorFlagPayload>(liveResult, (livePayload, result) => {
+    liveShownRef.current = { result, identityKey };
+    setPayloadState((current) => ({
+      identityKey,
+      payload: retainDeferredFlagSlots(
+        current?.identityKey === identityKey ? current.payload : null,
+        livePayload,
+      ),
+    }));
+  });
+  const requestedRefreshRef = React.useRef({ retryTick, semanticOptionsSeq });
 
   // Mirror the wx show/clear lifecycle: arm a one-shot delay on hover-enter,
   // fetch the flag payload, then show. Once visible, a same-identity live chart
@@ -278,6 +292,19 @@ export function ChartHoverFlag({
   // it on every keypress, but the hovered object is still the same flag.
   React.useEffect(() => {
     if (!canFetch || !kind || objectId == null || !identityKey) return;
+    const requested = requestedRefreshRef.current;
+    const refreshRequested =
+      requested.retryTick !== retryTick || requested.semanticOptionsSeq !== semanticOptionsSeq;
+    requestedRefreshRef.current = { retryTick, semanticOptionsSeq };
+    // This step's own flag is already shown; only a semantic refresh refetches.
+    const liveShown = liveShownRef.current;
+    if (
+      !refreshRequested &&
+      liveShown?.result === liveResult &&
+      liveShown?.identityKey === identityKey
+    ) {
+      return;
+    }
     const controller = new AbortController();
     let retryTimer: number | null = null;
     const query: InspectorRegionQuery = {
@@ -345,7 +372,7 @@ export function ChartHoverFlag({
       if (retryTimer != null) window.clearTimeout(retryTimer);
       controller.abort();
     };
-  }, [canFetch, kind, objectId, docId, chartRole, ringIndex, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding, bindingKey, deferSignals, identityKey, retryTick, semanticOptionsSeq]);
+  }, [canFetch, kind, objectId, docId, chartRole, ringIndex, sourceName, hereNow, supplementaryKind, comparisonName, viewMode, when, binding, bindingKey, deferSignals, identityKey, retryTick, semanticOptionsSeq, liveResult]);
 
   React.useEffect(() => {
     const updateViewport = () => {
@@ -368,6 +395,7 @@ export function ChartHoverFlag({
   const title = (payload.title ?? "").trim();
   const glyph = (payload.glyph ?? "").trim();
   const rows = payload.rows ?? [];
+  const hasRowLabels = rows.some((row) => String(row[0] ?? "").trim().length > 0);
   if (!title && rows.length === 0) return null;
 
   const compact = Boolean(payload.compact);
@@ -409,6 +437,26 @@ export function ChartHoverFlag({
   if (viewportHeight > 0 && top + cardHeight + margin > viewportHeight) {
     top = Math.max(margin, viewportHeight - cardHeight - margin);
   }
+  const rowContent = rows.length > 0 ? (
+    <div
+      className="grid items-baseline gap-x-[var(--aries-inspector-section-gap)] gap-y-[var(--aries-inspector-row-gap)]"
+      style={{
+        gridTemplateColumns: hasRowLabels ? "auto 1fr" : "1fr",
+        fontSize: compact
+          ? "var(--aries-font-size-section)"
+          : "var(--aries-font-size-small)",
+        marginTop: payload.signGlyph
+          ? undefined
+          : compact
+            ? "var(--aries-control-gap-compact)"
+            : "var(--aries-control-gap)",
+      }}
+    >
+      {rows.map((row, idx) => (
+        <FlagRow key={idx} row={row} showLabel={hasRowLabels} />
+      ))}
+    </div>
+  ) : null;
 
   // Anchor the card near the symbol centre, like the wx overlay, but render it
   // fixed at the document body level. That keeps it above panes/inspectors and
@@ -447,37 +495,60 @@ export function ChartHoverFlag({
         }}
       >
         <div
-          className="flex items-baseline whitespace-nowrap"
+          className={payload.signGlyph
+            ? "grid grid-cols-[max-content_minmax(0,1fr)] items-center"
+            : payload.titleSpans?.length
+            ? "flex flex-wrap items-baseline"
+            : "flex items-baseline whitespace-nowrap"}
           style={{
-            gap: compact
+            columnGap: payload.signGlyph
+              ? "var(--aries-control-gap)"
+              : compact
               ? "var(--aries-control-gap-compact)"
               : "var(--aries-inspector-section-gap)",
+            rowGap: payload.signGlyph ? "var(--aries-control-gap-compact)" : undefined,
           }}
         >
-          {glyph ? (
+          {payload.signGlyph || glyph ? (
             <span
               style={{
-                color: compact
-                  ? semanticChartColor(payload.accentRole, rgbCss(payload.accent))
-                  : undefined,
-                fontSize: compact
+                fontSize: compact || payload.signGlyph
                   ? "var(--aries-font-size-large)"
                   : "var(--aries-font-size-dialog-title)",
               }}
-              className="font-symbols leading-none text-foreground/90"
+              className="inline-flex shrink-0 items-center gap-[var(--aries-control-gap-compact)] font-symbols leading-none text-foreground/90"
             >
-              {glyph}
+              {payload.signGlyph ? (
+                <span
+                  style={{ color: semanticChartColor(payload.signColourRole, null) }}
+                  aria-label={payload.signLabel}
+                  title={payload.signLabel}
+                >
+                  {payload.signGlyph}
+                </span>
+              ) : null}
+              {glyph ? (
+                <span style={{
+                  color: compact || payload.signGlyph
+                    ? semanticChartColor(payload.accentRole, rgbCss(payload.accent))
+                    : undefined,
+                }}>
+                  {glyph}
+                </span>
+              ) : null}
             </span>
           ) : null}
           <span
-            className="font-semibold leading-tight text-foreground/90"
+            className="min-w-0 font-semibold leading-tight text-foreground/90"
+            aria-label={payload.titleLabel}
+            title={payload.titleLabel}
             style={{
               fontSize: compact
                 ? "var(--aries-font-size-small)"
                 : "var(--aries-font-size-reading)",
             }}
           >
-            {title}
+            {payload.titleSpans?.length ? <InspectorValueSpans spans={payload.titleSpans} /> : title}
           </span>
           {payload.motionGlyph ? (
             <span
@@ -498,30 +569,11 @@ export function ChartHoverFlag({
               {payload.motionGlyph}
             </span>
           ) : null}
+          {payload.signGlyph && rowContent ? (
+            <div className="col-start-2 min-w-0">{rowContent}</div>
+          ) : null}
         </div>
-        {rows.length > 0 ? (
-          // One shared grid (not per-row flex) so every value sits in a single
-          // column whose left edge is the widest label — mirroring wx's constant
-          // value_x = pad_x + label_w + LABEL_GAP (workspace_shell.py:5550).
-          // Empty-label rows (aspect continuations, dignity-status flags) still
-          // indent to that column instead of collapsing to the left margin.
-          <div
-            className="grid items-baseline gap-x-[var(--aries-inspector-section-gap)] gap-y-[var(--aries-inspector-row-gap)]"
-            style={{
-              gridTemplateColumns: "auto 1fr",
-              fontSize: compact
-                ? "var(--aries-font-size-section)"
-                : "var(--aries-font-size-small)",
-              marginTop: compact
-                ? "var(--aries-control-gap-compact)"
-                : "var(--aries-control-gap)",
-            }}
-          >
-            {rows.map((row, idx) => (
-              <FlagRow key={idx} row={row} />
-            ))}
-          </div>
-        ) : null}
+        {!payload.signGlyph ? rowContent : null}
       </div>
     </div>,
     portalTarget,
@@ -531,7 +583,7 @@ export function ChartHoverFlag({
 /** One flag row: a label column + a value (plain text, coloured text, or a span
  * run of glyph/text segments). Renders the tuple shape verbatim — no derivation.
  * Tuple layout: [label, value] | [label, value, colour] | [label, "", null, spans]. */
-function FlagRow({ row }: { row: InspectorFlagRow }) {
+function FlagRow({ row, showLabel }: { row: InspectorFlagRow; showLabel: boolean }) {
   const label = String(row[0] ?? "");
   const value = String(row[1] ?? "");
   const colour = row.length >= 3 ? (row[2] as RGB | null) : null;
@@ -543,26 +595,20 @@ function FlagRow({ row }: { row: InspectorFlagRow }) {
   // column width across every row so the values line up.
   return (
     <>
-      <span className="whitespace-nowrap leading-tight text-foreground/45">
-        {label}
-      </span>
+      {showLabel ? (
+        <span className="whitespace-nowrap leading-tight text-foreground/45">
+          {label}
+        </span>
+      ) : null}
       {spans && spans.length > 0 ? (
-        <span className="whitespace-nowrap leading-tight text-foreground/85">
-          {spans.map((span, i) => (
-            <span
-              key={i}
-              style={{
-                color: semanticChartColor(span.colourRole, rgbCss(span.colour)),
-                fontFamily: span.glyph ? "var(--aries-font-symbols)" : undefined,
-              }}
-            >
-              {span.text}
-            </span>
-          ))}
+        <span className={spans.some((span) => span.wrapGroup !== undefined)
+          ? "min-w-0 whitespace-normal leading-tight text-foreground/85"
+          : "whitespace-nowrap leading-tight text-foreground/85"}>
+          <InspectorValueSpans spans={spans} />
         </span>
       ) : (
         <span
-          className="whitespace-nowrap leading-tight text-foreground/85"
+          className="whitespace-pre leading-tight text-foreground/85"
           style={{ color: semanticChartColor(colourRole, rgbCss(colour)) }}
         >
           {value}

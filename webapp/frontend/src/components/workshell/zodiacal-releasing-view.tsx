@@ -21,6 +21,7 @@ import { LIST_PANE_CLASSES, LIST_ROW_CLASSES } from "@/lib/list-tokens";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
+import { renderTemplate } from "@/lib/i18n/template-nodes";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 
 import { TimedChartContextMenu } from "./directions-view";
@@ -69,7 +70,6 @@ type ZrHeader = {
   labelToken?: string;
   releaserHeading?: string;
   releaserLabel?: string;
-  inLabel?: string;
   signIndex?: number;
   signGlyph?: string;
   signName?: string;
@@ -351,35 +351,28 @@ export function ZodiacalReleasingView({ documentId, parentDocumentId, sourceName
         ) : null}
       </PaneControlBar>
 
-      {/* Releaser info line — "Releaser: <label> in <glyph> <name> <deg>"
-          (ZRWnd._draw_releaser_header, zodiacalreleasingwnd.py:518-566). */}
+      {/* Releaser info line — one localized template, "Releaser: <label> in
+          <glyph> <name> <deg>" in English (ZRWnd._draw_releaser_header,
+          zodiacalreleasingwnd.py:518-566). */}
       <PaneInfoBar>
         <span>
-          {zr.releaserHeading ?? t("zrview.releaser")}: {zr.releaserLabel ?? ""}
-        </span>
-        <span className="text-[color:var(--aries-text-muted)]">{zr.inLabel ?? t("zrview.in")}</span>
-        <span
-          style={{
-            fontFamily: "'AriesMorinus'",
-            color: semanticChartColor(
-              signColorRoles[zr.signIndex ?? 0],
-              signColors[zr.signIndex ?? 0],
+          {renderTemplate(t("zrview.releaserLine"), {
+            releaser: zr.releaserLabel ?? "",
+            sign: (
+              <span
+                style={{
+                  color: semanticChartColor(
+                    signColorRoles[zr.signIndex ?? 0],
+                    signColors[zr.signIndex ?? 0],
+                  ),
+                }}
+              >
+                <span style={{ fontFamily: "'AriesMorinus'" }}>{zr.signGlyph ?? ""}</span> {zr.signName ?? ""}
+              </span>
             ),
-          }}
-        >
-          {zr.signGlyph ?? ""}
+            degree: zr.degreeText ?? "",
+          })}
         </span>
-        <span
-          style={{
-            color: semanticChartColor(
-              signColorRoles[zr.signIndex ?? 0],
-              signColors[zr.signIndex ?? 0],
-            ),
-          }}
-        >
-          {zr.signName ?? ""}
-        </span>
-        {zr.degreeText ? <span>{zr.degreeText}</span> : null}
       </PaneInfoBar>
 
       {/* Main table: interleaved L1 + L2 (build_main; click L2 to drill). */}
@@ -562,6 +555,7 @@ function ZrRow({
         <SidebarListCell className="!p-0">
           <span
             className="block min-h-[var(--aries-list-row-height)] w-[6px]"
+            data-aries-true-color=""
             style={{
               backgroundColor: semanticChartColor(
                 signColorRoles[ribbonSign],

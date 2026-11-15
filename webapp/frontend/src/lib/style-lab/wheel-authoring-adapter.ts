@@ -2,6 +2,8 @@ import { WHEEL_ARROW_STYLES, type WheelArrowStyle } from "../chart/wheel-render-
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import Color from "colorjs.io";
+
 import {
   DEFAULT_WHEEL_AUTHORING_OVERRIDES,
   WHEEL_AUTHORING_FILL_CLASSES,
@@ -11,6 +13,7 @@ import {
   WHEEL_BAND_SPAN_SCALE_RANGE,
   WHEEL_RULER_DEPTH_RANGE,
   WHEEL_RULER_IDS,
+  WHEEL_PAINTED_RING_ROLES,
   WHEEL_SCALE_RANGE,
   WHEEL_TICK_LENGTH_RANGE,
   projectWheelAuthoringStyle,
@@ -20,10 +23,14 @@ import {
   resolveWheelBandSpanFields,
   resolveWheelBandSpanScale,
   resolveWheelPaintedRingRadius,
-  resolveCanonicalWheelRingSet,
+  resolveWheelBandLayout,
+  resolveWheelContentSizingReference,
+  resolveWheelBandGlyphSize,
+  resolveWheelCuspTickLength,
+  wheelCuspTickReferenceDepth,
   resolveWheelRingSet,
-  resolveWheelTickLength,
   resolveScaledWheelStroke,
+  resolveMorinusStroke,
   resolveWheelStrokeMetrics,
   resolveWheelTypographyMetrics,
   type ResolvedWheelLinePaint,
@@ -37,6 +44,7 @@ import {
   type WheelAuthoringStrokeStyle,
   type WheelAuthoringTypographyClass,
   type WheelAuthoringTypographyOverride,
+  type WheelVintageAuthoringOverrides,
   type WheelGeometryInput,
   type WheelLinePaintRole,
   type WheelPaintedRingRole,
@@ -64,7 +72,13 @@ import {
 
 export const WHEEL_AUTHORING_OVERRIDE_PREFIX = "authoring.wheel." as const;
 
-export type WheelAuthoringEditScope = "base" | WheelTypographyProfile;
+/**
+ * `vintage` is the Vintage magazine wheel's own appearance scope. It shares
+ * the Cusp wheel's layout but not its edits, and nothing folds into it.
+ */
+export const WHEEL_VINTAGE_AUTHORING_SCOPE = "vintage" as const;
+
+export type WheelAuthoringEditScope = "base" | WheelTypographyProfile | typeof WHEEL_VINTAGE_AUTHORING_SCOPE;
 
 export type WheelAuthoringFlatProperty =
   | "fontRef"
@@ -104,6 +118,11 @@ export type WheelAuthoringFlatProperty =
   | "lineJoin"
   | "radius"
   | "scale"
+  | "radiusPriority"
+  | "recipeRadius"
+  | "radiusAuthored"
+  | "recipeVersion"
+  | "outerDegreeBinding"
   | "bandWidth"
   | "spanInner"
   | "spanScale"
@@ -215,6 +234,11 @@ const FLAT_PROPERTY_NAMES: readonly WheelAuthoringFlatProperty[] = [
   "lineJoin",
   "radius",
   "scale",
+  "radiusPriority",
+  "recipeRadius",
+  "radiusAuthored",
+  "recipeVersion",
+  "outerDegreeBinding",
   "spanInner",
   "bandWidth",
   "spanScale",
@@ -247,6 +271,7 @@ function flatWheelAuthoringClassMaps(
     anglo: {},
     houses: {},
     cusps: {},
+    vintage: {},
   };
   for (const [semanticId, rawValue] of Object.entries(overrides)) {
     if (!semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX)) continue;
@@ -304,6 +329,18 @@ function flatWheelAuthoringClassMaps(
       patch = { ...current, shadowBlur: chartPx(numericValue) };
     } else if (property === "radius" && numericValue != null) {
       patch = { ...current, radius: chartPx(numericValue) };
+    } else if (property === "recipeRadius" && numericValue != null && RING_CLASS_TO_ROLE[classId]) {
+      patch = { ...current, recipeRadius: chartPx(numericValue) };
+    } else if (property === "radiusAuthored" && typeof rawValue === "boolean" && RING_CLASS_TO_ROLE[classId]) {
+      patch = { ...current, radiusAuthored: rawValue };
+    } else if (property === "recipeVersion" && classId === WHEEL_CHART_CLASS_ID && rawValue === 1) {
+      patch = { ...current, recipeVersion: 1 };
+    } else if (property === "radiusPriority" && classId === WHEEL_CHART_CLASS_ID
+      && WHEEL_PAINTED_RING_ROLES.includes(rawValue as WheelPaintedRingRole)) {
+      patch = { ...current, radiusPriority: rawValue as WheelPaintedRingRole };
+    } else if (property === "outerDegreeBinding" && classId === WHEEL_CHART_CLASS_ID
+      && (rawValue === "degree" || rawValue === "cuspLabels")) {
+      patch = { ...current, outerDegreeBinding: rawValue };
     } else if (property === "bandWidth" && numericValue != null) {
       patch = { ...current, bandWidth: chartPx(numericValue) };
     } else if (property === "spanInner" && numericValue != null) {
@@ -502,6 +539,21 @@ function chartStyleFontRef(rawValue: unknown): ChartStyleFontRef | null {
 }
 
 function chartStyleColor(rawValue: unknown): ChartStyleColor | null {
+  // Role references resolve against theme CSS colors; direct picker edits
+  // already carry RGB arrays. Both must enter the same profile color contract.
+  if (typeof rawValue === "string") {
+    try {
+      const color = new Color(rawValue).to("srgb").toGamut();
+      rawValue = [
+        ...color.coords.map((channel) =>
+          Math.max(0, Math.min(255, Math.round(Number(channel ?? 0) * 255))),
+        ),
+        color.alpha,
+      ];
+    } catch {
+      return null;
+    }
+  }
   if (!Array.isArray(rawValue) || (rawValue.length !== 3 && rawValue.length !== 4)) {
     return null;
   }
@@ -544,6 +596,7 @@ export function createChartStyleProfileV2FromFlatOverrides(
       anglo: Object.freeze(variants.anglo),
       houses: Object.freeze(variants.houses),
       cusps: Object.freeze(variants.cusps),
+      ...(Object.keys(variants.vintage).length ? { vintage: Object.freeze(variants.vintage) } : {}),
     }),
   });
 }
@@ -843,7 +896,10 @@ export function compileWheelAuthoringClassMaps(
   const linePaint: Record<string, Record<string, WheelAuthoringLinePaintOverride>> = {};
   const fillPaint: Record<string, Record<string, WheelAuthoringFillPaintOverride>> = {};
   const ringRadii: Record<string, Record<string, number>> = {};
+  const recipeRadii: Record<string, Record<string, number>> = {};
   const wheelScale: Record<string, number> = {};
+  const radiusPriority: Partial<Record<WheelTypographyProfile, WheelPaintedRingRole>> = {};
+  const outerDegreeBinding: Partial<Record<WheelTypographyProfile, "degree" | "cuspLabels">> = {};
   const bandSpanInner: Record<string, Record<string, number>> = {};
   const bandSpanScale: Record<string, Record<string, number>> = {};
   const rulerDepth: Record<string, Record<string, number>> = {};
@@ -851,6 +907,11 @@ export function compileWheelAuthoringClassMaps(
   const tickLength: Record<string, Record<string, number>> = {};
   for (const profile of ["classic", "compact", "anglo", "houses", "cusps"] as const) {
     const classes = classMaps[profile];
+    const priority = classes[WHEEL_CHART_CLASS_ID]?.radiusPriority;
+    const hasRecipe = classes[WHEEL_CHART_CLASS_ID]?.recipeVersion === 1;
+    if (priority && WHEEL_PAINTED_RING_ROLES.includes(priority)) radiusPriority[profile] = priority;
+    const outerTarget = classes[WHEEL_CHART_CLASS_ID]?.outerDegreeBinding;
+    if (outerTarget === "degree" || outerTarget === "cuspLabels") outerDegreeBinding[profile] = outerTarget;
     ringWidths[profile] = Object.fromEntries(Object.entries(classes)
       .filter(([id, props]) => id.startsWith("canvas.ring.") && props.bandWidth != null)
       .map(([id, props]) => [id.slice("canvas.ring.".length), props.bandWidth!.value]));
@@ -865,6 +926,7 @@ export function compileWheelAuthoringClassMaps(
     const profileLines: Record<string, WheelAuthoringLinePaintOverride> = {};
     const profileFills: Record<string, WheelAuthoringFillPaintOverride> = {};
     const profileRadii: Record<string, number> = {};
+    const profileRecipe: Record<string, number> = {};
     const spanInners: Record<string, number> = {};
     for (const spanId of Object.keys(WHEEL_BAND_SPANS)) {
       const authored = classes[wheelBandSpanClassId(spanId)]?.spanInner;
@@ -905,8 +967,16 @@ export function compileWheelAuthoringClassMaps(
         if (directFill) profileFills[classId] = directFill;
       }
       const ringRole = RING_CLASS_TO_ROLE[classId];
-      if (ringRole && properties.radius != null) {
-        profileRadii[ringRole] = properties.radius.value;
+      if (ringRole) {
+        if (hasRecipe) {
+          if (properties.recipeRadius != null) profileRecipe[ringRole] = properties.recipeRadius.value;
+          if (properties.radiusAuthored && properties.radius != null) profileRadii[ringRole] = properties.radius.value;
+        } else if (properties.radius != null) {
+          // Legacy radii describe preferred recipe dimensions. The previous
+          // sparse priority format identifies its one explicit live boundary.
+          if (priority === ringRole) profileRadii[ringRole] = properties.radius.value;
+          else profileRecipe[ringRole] = properties.radius.value;
+        }
       }
     }
     // Profiles authored before Terms and Decans became independent physical
@@ -922,6 +992,9 @@ export function compileWheelAuthoringClassMaps(
     if (Object.keys(profileLines).length) linePaint[profile] = profileLines;
     if (Object.keys(profileFills).length) fillPaint[profile] = profileFills;
     if (Object.keys(profileRadii).length) ringRadii[profile] = profileRadii;
+    // Presence distinguishes a normalized empty factory basis from direct
+    // renderer callers that still supply only explicit ringRadii.
+    recipeRadii[profile] = profileRecipe;
   }
   return Object.freeze({
     referenceRadius: Number.isFinite(referenceRadius) && referenceRadius > 0
@@ -931,7 +1004,10 @@ export function compileWheelAuthoringClassMaps(
     linePaint: Object.freeze(linePaint),
     fillPaint: Object.freeze(fillPaint),
     ringRadii: Object.freeze(ringRadii),
+    recipeRadii: Object.freeze(recipeRadii),
     wheelScale: Object.freeze(wheelScale),
+    radiusPriority: Object.freeze(radiusPriority),
+    outerDegreeBinding: Object.freeze(outerDegreeBinding),
     bandSpanInner: Object.freeze(bandSpanInner),
     bandSpanScale: Object.freeze(bandSpanScale),
     rulerDepth: Object.freeze(rulerDepth),
@@ -959,7 +1035,26 @@ export function compileWheelAuthoringOverrides(
       ),
     ]),
   ) as Record<WheelTypographyProfile, ChartStyleClassMap>;
-  return compileWheelAuthoringClassMaps(classMaps, profile.referenceSpace.wheelRadius);
+  const compiled = compileWheelAuthoringClassMaps(classMaps, profile.referenceSpace.wheelRadius);
+  const vintage = compileVintageAuthoringOverrides(profile.variants.vintage);
+  return vintage ? Object.freeze({ ...compiled, vintage }) : compiled;
+}
+
+/** The Vintage wheel's sparse edits, exactly as authored: no Base fold. */
+function compileVintageAuthoringOverrides(
+  classes: ChartStyleClassMap | undefined,
+): WheelVintageAuthoringOverrides | undefined {
+  if (!classes) return undefined;
+  const typography: Record<string, WheelAuthoringTypographyOverride> = {};
+  const linePaint: Record<string, WheelAuthoringLinePaintOverride> = {};
+  for (const [classId, properties] of Object.entries(classes)) {
+    const text = isTypographyClass(classId) ? typographyOverride(properties) : undefined;
+    if (text) typography[classId] = text;
+    const line = isLineClass(classId) ? lineOverride(properties) : undefined;
+    if (line) linePaint[classId] = line;
+  }
+  if (!Object.keys(typography).length && !Object.keys(linePaint).length) return undefined;
+  return Object.freeze({ typography: Object.freeze(typography), linePaint: Object.freeze(linePaint) });
 }
 
 export type WheelAuthoringClassDefaults = Readonly<{
@@ -1115,7 +1210,7 @@ function typographyColorFallback(
   return style.palette.peregrin;
 }
 
-function portableFontRef(
+export function portableFontRef(
   role: "text" | "symbols",
   cssFamily: string,
   weight: number,
@@ -1139,9 +1234,10 @@ function typographyFallback(
   classId: WheelAuthoringTypographyClass,
   targetRadius: number,
   explicitFallback?: number,
+  geometry?: WheelGeometryInput,
 ): number {
   if (explicitFallback != null) return explicitFallback;
-  const metrics = resolveWheelTypographyMetrics(style, profile, targetRadius);
+  const metrics = resolveWheelTypographyMetrics(style, profile, targetRadius, geometry);
   if (classId === "zodiac.signGlyph") return metrics.signSize;
   if (classId === "subdivisions.term.glyph") return metrics.termSize;
   if (classId === "subdivisions.decan.glyph") return metrics.decanSize;
@@ -1153,6 +1249,7 @@ function typographyFallback(
   if (classId === "bodies.outer.glyph") return metrics.outerSize;
   if (classId === "bodies.inner.motion") return metrics.motionSize;
   if (classId === "bodies.outer.position") return metrics.outerPositionSize;
+  if (classId === "bodies.outer.position.minute") return metrics.outerPositionMinuteSize;
   if (classId === "bodies.outer.motion") return metrics.outerMotionSize;
   if (classId.endsWith("position.degree")) {
     if (classId.startsWith("houses.")) return isAngloFamilyProfile(profile)
@@ -1217,22 +1314,22 @@ function defaultReferenceLineWidth(
     || classId === "rings.innerBoundary"
     || classId === "zodiac.spoke"
   ) {
-    return resolveScaledWheelStroke(
-      style,
-      chartSize,
-      style.strokes.chartRing.fallbackBase,
-    );
+    return isAngloFamilyProfile(profile)
+      ? resolveScaledWheelStroke(style, chartSize, style.strokes.chartRing.fallbackBase)
+      : resolveMorinusStroke(chartSize, style.strokes.chartRing.fallbackBase, "ring");
   }
   if (classId === "rings.base" || classId.startsWith("angles.")) {
     return isAngloFamilyProfile(profile)
       ? style.strokes.angloStructural
-      : resolveScaledWheelStroke(style, chartSize, style.strokes.ascMcDefaultBase);
+      : resolveMorinusStroke(chartSize, style.strokes.ascMcDefaultBase, "angle");
   }
   if (classId.endsWith("10deg")) {
     return resolveWheelStrokeMetrics(style, chartSize).degreeTick;
   }
   if (classId.startsWith("bodies.")) {
-    return resolveWheelStrokeMetrics(style, chartSize).medium;
+    return isAngloFamilyProfile(profile)
+      ? resolveWheelStrokeMetrics(style, chartSize).medium
+      : resolveMorinusStroke(chartSize, style.strokes.mediumBase, "medium");
   }
   if (classId.startsWith("aspects.")) {
     return isAngloFamilyProfile(profile)
@@ -1325,6 +1422,7 @@ export function readWheelAuthoringClassDefaults(
       classId,
       targetRadius,
       context.runtimeFontSizePx,
+      context.geometry,
     );
     const runtimeFont = context.runtimeFont
       ?? typographyFontFallback(style, classId);
@@ -1360,7 +1458,13 @@ export function readWheelAuthoringClassDefaults(
     output.fontStyle = resolvedFontStyle === "italic" || resolvedFontStyle.startsWith("oblique")
       ? "italic"
       : "normal";
-    output.fontSizePx = unprojectChartPx(paint.size, projection);
+    const bandGlyph = ["zodiac.signGlyph", "subdivisions.term.glyph", "subdivisions.decan.glyph"].includes(classId);
+    const fittedSize = bandGlyph && context.runtimeFontSizePx != null ? context.runtimeFontSizePx
+      : bandGlyph && context.geometry
+        ? resolveWheelBandGlyphSize(style, profile, classId, paint.size,
+          resolveWheelBandLayout(style, context.geometry, resolveWheelRingSet(style, context.geometry)).bands,
+          resolveWheelContentSizingReference(style, context.geometry)) : paint.size;
+    output.fontSizePx = unprojectChartPx(fittedSize, projection);
     output.trackingPx = unprojectChartPx(paint.tracking, projection);
     output.color = paint.color;
     output.opacityPercent = opacityToEditorPercent(paint.opacity);
@@ -1452,9 +1556,10 @@ export function readWheelAuthoringClassDefaults(
     // The span's inner edge is a resolved radius like a ring's, so the
     // inspector can show and type the same reference-space number the diamond
     // on the wheel drags. Without this the class had a handle and no row.
-    const fields = resolveWheelBandSpanFields(context.geometry, spanId);
+    const rings = resolveWheelRingSet(style, context.geometry);
+    const fields = resolveWheelBandSpanFields(context.geometry, spanId, rings);
     const inner = fields
-      ? resolveWheelRingSet(style, context.geometry)[fields.innerField]
+      ? rings[fields.innerField]
       : undefined;
     if (typeof inner === "number" && Number.isFinite(inner) && inner > 0) {
       output.spanInnerPx = unprojectChartPx(inner, {
@@ -1482,26 +1587,12 @@ export function readWheelAuthoringClassDefaults(
     // this is the tick length that matters there. Reported whether authored or
     // not, so the row shows the share the tick actually occupies.
     const rings = resolveWheelRingSet(style, context.geometry);
-    const canonicalRings = resolveCanonicalWheelRingSet(style, context.geometry);
-    const band = (rings.rCuspOuter ?? 0) - (rings.rCuspLabelOuter ?? 0);
-    const canonicalBand =
-      (canonicalRings.rCuspOuter ?? 0) - (canonicalRings.rCuspLabelOuter ?? 0);
+    const bands = resolveWheelBandLayout(style, context.geometry, rings).bands;
+    const reference = resolveWheelContentSizingReference(style, context.geometry);
+    const depth = wheelCuspTickReferenceDepth(bands, reference);
     const ticks = style.geometry.anglo.cuspRulerTicks;
-    const canonical = (rings.r30 ?? 0) * (
-      classId.endsWith("10deg") ? ticks.long
-        : classId.endsWith("5deg") ? ticks.medium
-          : ticks.short
-    );
-    if (band > 0) {
-      output.tickLengthPercent = (resolveWheelTickLength(
-        style,
-        "anglo",
-        classId,
-        band,
-        canonicalBand,
-        canonical,
-      ) / band) * 100;
-    }
+    const scale = classId.endsWith("10deg") ? ticks.long : classId.endsWith("5deg") ? ticks.medium : ticks.short;
+    if (depth > 0) output.tickLengthPercent = resolveWheelCuspTickLength(style, classId, scale, bands, reference) / depth * 100;
   }
   const rulerId = wheelRulerIdForClass(classId);
   if (rulerId && context.geometry) {

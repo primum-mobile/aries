@@ -4,12 +4,12 @@
 import { executeWorkspaceContextMenuAction, type WorkspaceOpenResult } from "@/lib/daemon/client";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
 import { useChartEventsStore } from "@/stores/chart-events-store";
+import { useChartEventSearchStore } from "@/stores/chart-event-search-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 
 /** Tab actions consume the daemon's owner, never a picker. */
 export async function handleChartEventsMenuAction(actionId: string, payload?: Record<string, unknown>) {
-  if (!["workspace.show_events", "workspace.save_event", "workspace.open_event"].includes(actionId)) return false;
+  if (!["workspace.show_events", "workspace.save_event", "workspace.open_event", "workspace.paste_event"].includes(actionId)) return false;
   let documentId = String(payload?.ownerDocumentId ?? payload?.documentId ?? "");
   if (!documentId) return true;
   const cache = useChartEventsStore.getState();
@@ -27,18 +27,27 @@ export async function handleChartEventsMenuAction(actionId: string, payload?: Re
     try {
       const result = await executeWorkspaceContextMenuAction(actionId, payload);
       documentId = String(result.ownerDocumentId);
-      cache.patch(documentId, { error: null });
+      // The event is saved under its automatic name; the pane opens on it
+      // with that name selected for renaming (Enter keeps, Escape accepts).
+      cache.patch(documentId, { error: null, renameEventId: String(result.eventId ?? "") || null });
       cache.invalidate([documentId]);
-      return true;
     } catch (error) {
       console.error("[chart-events-save]", error);
       cache.patch(documentId, { error: "chartEvents.saveError" });
     }
   }
-  const frame = useFrameLayoutStore.getState();
-  frame.setInspectorOpen(false);
-  frame.setNotesPaneOpen(false);
-  frame.setStyleEditorOpen(false);
+  if (actionId === "workspace.paste_event") {
+    try {
+      const result = await executeWorkspaceContextMenuAction(actionId, payload);
+      documentId = String(result.ownerDocumentId);
+      cache.patch(documentId, { error: null });
+      cache.invalidate([documentId]);
+    } catch (error) {
+      console.error("[chart-events-paste]", error);
+      cache.patch(documentId, { error: "chartEvents.pasteError" });
+    }
+  }
+  if (payload?.search === true) useChartEventSearchStore.getState().patch(documentId, { open: true });
   useWorkspaceStore.getState().openChartEventsPane({ documentId });
   return true;
 }

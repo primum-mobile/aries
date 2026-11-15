@@ -1140,7 +1140,7 @@ export function AstrocartControls({
               />
               <SegmentedSetting
                 label={t("astrocart.config.lineLabels")}
-                value={appearanceOptions?.display.astrocart_line_labels ?? "names"}
+                value={appearanceOptions?.display.astrocart_line_labels ?? "glyphs"}
                 disabled={!appearanceOptions}
                 options={(["names", "glyphs"] as const).map((labels) => ({
                   value: labels,

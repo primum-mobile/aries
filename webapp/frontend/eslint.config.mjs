@@ -12,7 +12,6 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    ".next-style-lab/**",
     "out/**",
     "build/**",
     "src-tauri/target/**",
@@ -20,7 +19,14 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Gitignored scratch/debug output, never shipped.
     ".tmp/**",
+    // Gitignored browser-build output (`make web`).
+    ".next-wasm/**",
   ]),
+  // CommonJS scripts load modules with require by definition.
+  {
+    files: ["**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 ]);
 
 export default eslintConfig;

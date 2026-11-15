@@ -4,26 +4,23 @@
 "use client";
 
 import * as React from "react";
-import { Settings } from "lucide-react";
+import { useRetainedTablePayload } from "@/lib/table/use-retained-table-payload";
+import { SPECULUM_LAYER_TABLE_IDS, withSpeculumLayers } from "@/lib/table/speculum-layers";
 
 import {
-  fetchGenericTablePayload,
   workspaceUpdateTableBinding,
   type GenericTableCell,
   type GenericTableColumn,
-  type GenericTablePayload,
   type GenericTableRow,
+  type InspectorSpeculumPrecision,
 } from "@/lib/daemon/client";
-import { isAbortError } from "@/lib/abort-error";
+import { formatTableAngleText } from "@/lib/table/angle-precision";
 import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
-import {
-  getCachedGenericTablePayload,
-  rememberGenericTablePayload,
-} from "@/lib/table/payload-cache";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
+import { AsteroidTableSearch } from "./asteroid-table-search";
 import { TimeLordTableView } from "./time-lord-table-view";
 import { AspectMatrixView } from "./aspect-matrix-view";
 import { SectionedTableView } from "./sectioned-table-view";
@@ -37,8 +34,8 @@ import {
 } from "./list-column-layout";
 import { useSettledWorkspaceRefreshSeq } from "./step-refresh";
 import { buildTableExportDocument, tableExportBaseName } from "./table-pdf-export";
+import { TablePrecisionMenu, useTablePrecision } from "./table-precision-menu";
 import { TextExportActions } from "./text-export-actions";
-import { PaneToolbarButton } from "./list-controls";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import {
   compactListAngleText,
@@ -59,15 +56,11 @@ type Props = {
 
 export function GenericTableView({ documentId, parentDocumentId, tableId, onOpenAsteroidSettings }: Props) {
   const t = useT();
-  const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
-    getCachedGenericTablePayload(tableId, documentId),
-  );
-  const [error, setError] = React.useState<string | null>(null);
+  const precision = useTablePrecision();
   const [sortState, setSortState] = React.useState<{ columnId: string; direction: "asc" | "desc" } | null>(null);
-  const requestSeqRef = React.useRef(0);
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
   const lastOptionsChange = useDaemonWorkspaceStore((s) =>
-    tableId === "positions" ? s.lastSpeculumOptionsChange : s.lastRetainedDataOptionsChange,
+    tableId === "positions" || tableId === "pd_speculum" ? s.lastSpeculumOptionsChange : s.lastRetainedDataOptionsChange,
   );
   const layoutPreset = useListLayoutPreset();
 
@@ -77,34 +70,22 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
     lastSessionChange,
     lastOptionsChange,
   });
-  React.useEffect(() => {
-    const controller = new AbortController();
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    fetchGenericTablePayload(tableId, documentId, controller.signal)
-      .then((nextPayload) => {
-        if (requestSeq !== requestSeqRef.current) return;
-        rememberGenericTablePayload(tableId, documentId, nextPayload);
-        setPayload(nextPayload);
-        setError(null);
-      })
-      .catch((err) => {
-        if (isAbortError(err, controller.signal)) return;
-        if (requestSeq !== requestSeqRef.current) return;
-        setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => controller.abort();
-  }, [documentId, tableId, refreshSeq]);
+  const { payload: sourcePayload, error, refresh: refreshPayload } = useRetainedTablePayload(tableId, documentId, refreshSeq);
+  // Speculum layer rows are a display lens: a layer toggle repaints them.
+  const hiddenObjectIds = useDaemonWorkspaceStore((s) => s.retainedListDisplay.hiddenObjectIds);
+  const extraPointsTitle = t("pdPositions.extraPoints");
+  const payload = React.useMemo(
+    () => sourcePayload && SPECULUM_LAYER_TABLE_IDS.has(tableId)
+      ? withSpeculumLayers(sourcePayload, hiddenObjectIds, extraPointsTitle)
+      : sourcePayload,
+    [extraPointsTitle, hiddenObjectIds, sourcePayload, tableId],
+  );
 
   const updateTableBinding = React.useCallback(
     async (binding: Record<string, unknown>) => {
-      await workspaceUpdateTableBinding(documentId, binding);
-      const nextPayload = await fetchGenericTablePayload(tableId, documentId);
-      rememberGenericTablePayload(tableId, documentId, nextPayload);
-      setPayload(nextPayload);
-      setError(null);
+      await refreshPayload(() => workspaceUpdateTableBinding(documentId, binding));
     },
-    [documentId, tableId],
+    [documentId, refreshPayload],
   );
 
   const displayColumnOrder = React.useMemo(
@@ -118,6 +99,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
   const flatResize = useResizableTableColumns({
     storageKey: `generic:${tableId}`,
     columnIds: flatColumnIds,
+    fitWidth: tableId === "user_speculum",
   });
 
   if (error && !payload) {
@@ -137,7 +119,6 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
   }
 
   const sortingEnabled = payload.capabilities?.sorting !== false;
-  const preserveAngleSeconds = payload.capabilities?.anglePrecision === "seconds";
   const sortedRows = sortingEnabled ? sortRows(payload.rows, payload.columns, sortState) : payload.rows;
   const flatLayout =
     payload.capabilities?.timeLord !== true &&
@@ -146,7 +127,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
     !(payload.capabilities?.sections === true && payload.sections?.length);
   const showLayoutControl = flatLayout && hasListDateTimeColumns(payload.columns);
   return (
-    <div className="font-morinus-text flex h-full min-h-0 flex-col bg-background">
+    <TablePrecisionMenu><div className="font-morinus-text flex h-full w-full min-h-0 min-w-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between gap-[var(--aries-pane-control-gap-y)] border-b border-[color:var(--aries-border-subtle)] bg-background px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
         <div className="flex min-w-0 items-center gap-[var(--aries-pane-control-gap-y)]">
           {showLayoutControl ? <ListLayoutPresetControl /> : null}
@@ -160,19 +141,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
-          {tableId === "asteroids" && onOpenAsteroidSettings ? (
-            <PaneToolbarButton
-              type="button"
-              square
-              appearance="ghost"
-              onClick={onOpenAsteroidSettings}
-              aria-label={t("table.asteroidSettings")}
-              title={t("table.asteroidSettings")}
-              className="border-transparent hover:border-transparent"
-            >
-              <Settings className="size-[var(--aries-control-icon-size)]" strokeWidth={1.5} />
-            </PaneToolbarButton>
-          ) : null}
+          {tableId === "asteroids" ? <AsteroidTableSearch onOpenSettings={onOpenAsteroidSettings} /> : null}
           <TextExportActions
             sourceName={payload.sourceName}
             fileStem={tableExportBaseName(payload.title)}
@@ -191,11 +160,11 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
       ) : payload.capabilities?.strip === true && payload.strip ? (
         <StripView payload={payload} />
       ) : payload.capabilities?.sections === true && payload.sections?.length ? (
-        <SectionedTableView payload={payload} onBindingChange={updateTableBinding} />
+        <SectionedTableView payload={payload} precision={precision} speculum={SPECULUM_LAYER_TABLE_IDS.has(tableId)} onBindingChange={updateTableBinding} />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto p-[var(--aries-pane-content-padding)]">
           <table
-            className={cn(LIST_ROLE_CLASSES.standard, "border-collapse", flatResize.tableClassName)}
+            className={cn(LIST_ROLE_CLASSES.standard, "border-collapse", tableId === "user_speculum" && "w-full max-w-full table-auto", flatResize.tableClassName)}
             style={flatResize.tableStyle}
           >
             {flatResize.colGroup}
@@ -273,7 +242,7 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
                           payload.unavailable && "text-[color:var(--aries-text-muted)]",
                         )}
                       >
-                        <CellView cell={cell} preserveAngleSeconds={preserveAngleSeconds} />
+                        <CellView cell={cell} precision={precision} />
                       </td>
                     );
                   })}
@@ -290,21 +259,44 @@ export function GenericTableView({ documentId, parentDocumentId, tableId, onOpen
           ) : null}
         </div>
       )}
-    </div>
+    </div></TablePrecisionMenu>
+  );
+}
+
+/** Localized parenthetical suffix after the Speculum Moon name. */
+export function VoidOfCourseSuffix({ visible = true }: { visible?: boolean }) {
+  const t = useT();
+  const title = t("voc.title");
+  return (
+    <span
+      className={cn("text-[color:var(--aries-text-muted)]", !visible && "invisible")}
+      title={visible ? title : undefined}
+      aria-label={visible ? title : undefined}
+      aria-hidden={!visible}
+    >
+      {"\u00a0("}{t("voc.marker")}{")"}
+    </span>
   );
 }
 
 export function CellView({
   cell,
   preserveAngleSeconds = false,
+  precision,
 }: {
   cell?: GenericTableCell;
   preserveAngleSeconds?: boolean;
+  precision?: InspectorSpeculumPrecision;
 }) {
   if (!cell) return null;
-  const angleText = preserveAngleSeconds
-    ? (text: string) => text
-    : compactListAngleText;
+  const angleText = precision
+    ? (text: string) => formatTableAngleText(text, precision, cell.angleTime === true)
+    : preserveAngleSeconds ? (text: string) => text : compactListAngleText;
+  const shortened = precision && precision !== "seconds" && (
+    (cell.text && cell.text !== angleText(cell.text)) ||
+    cell.runs?.some((run) => !run.glyph && run.text !== angleText(run.text))
+  );
+  const title = shortened ? tableCellText(cell, { preserveAngleSeconds: true }) : undefined;
   // Cross-cutting channels every daemon builder can use: per-planet color
   // identity (wx useplanetcolors/dignity palette) and bold emphasis.
   const color = semanticChartColor(cell.colorRole, cell.color);
@@ -318,7 +310,7 @@ export function CellView({
       : undefined;
   if (cell.runs?.length) {
     return (
-      <span style={channelStyle}>
+      <span style={channelStyle} title={title}>
         {cell.runs.map((run, index) => (
           <span
             key={`${index}:${run.text}`}
@@ -333,7 +325,7 @@ export function CellView({
                 : undefined
             }
           >
-            {angleText(run.text)}
+            {run.glyph ? run.text : angleText(run.text)}
           </span>
         ))}
       </span>
@@ -341,14 +333,15 @@ export function CellView({
   }
   if (cell.glyph) {
     return (
-      <span style={channelStyle}>
+      <span style={channelStyle} title={title}>
         <span style={{ fontFamily: "'AriesMorinus'" }}>{cell.glyph}</span>
-        {cell.text ? <span>{angleText(cell.text)}</span> : null}
+        {cell.text ? <span>{angleText(cell.text)}</span> : cell.voidOfCourse ? <span>{" "}{cell.exportText}</span> : null}
+        {cell.voidOfCourse ? <VoidOfCourseSuffix /> : null}
       </span>
     );
   }
-  if (channelStyle || cell.dir) {
-    return <span dir={cell.dir} style={channelStyle}>{angleText(cell.text ?? "")}</span>;
+  if (channelStyle || cell.dir || title) {
+    return <span dir={cell.dir} style={channelStyle} title={title}>{angleText(cell.text ?? "")}</span>;
   }
   return <>{angleText(cell.text ?? "")}</>;
 }

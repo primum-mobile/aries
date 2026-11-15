@@ -24,6 +24,7 @@ import math
 import numpy as np
 
 import astrology
+from aries.astrology.transit_fast import api as transit_fast_api
 import util
 
 # Reuse the body-sampling and segment infrastructure from cheby_progressions.
@@ -97,6 +98,7 @@ def _fit_transit_segments(samples, values, span_start, span_end, max_segment_day
 	segments = []
 	degree = int(degree)
 	for seg_lo, seg_hi in _transit_segment_breakpoints(span_start, span_end, max_segment_days):
+		transit_fast_api.check_search_cancellation()
 		mask = (samples >= seg_lo - 1e-9) & (samples <= seg_hi + 1e-9)
 		seg_jds = samples[mask]
 		seg_vals = values[mask]
@@ -134,6 +136,7 @@ class TransitFit(object):
 		self._segment_coefs = {}            # body_id -> list of np.ndarray
 
 	def fit(self, body_id, planet_index):
+		transit_fast_api.check_search_cancellation()
 		if body_id in self._segments:
 			return
 		kind = _kind_for_body(body_id, planet_index)
@@ -168,6 +171,7 @@ class TransitFit(object):
 		else:
 			raise ValueError('cannot fit body without planet_index: %r' % (body_id,))
 
+		transit_fast_api.check_search_cancellation()
 		unwrapped = _unwrap_longitude(lons)
 		segments = _fit_transit_segments(jds, unwrapped, self.jd_start, self.jd_end, max_segment_days, degree)
 		self._segments[body_id] = segments
@@ -257,6 +261,7 @@ class TransitFit(object):
 		number k that the difference range covers, find sign changes of
 		(diff − 360k) and bisect each to refine.
 		"""
+		transit_fast_api.check_search_cancellation()
 		if prom_id not in self._segments:
 			raise KeyError('promittor not fitted: %r' % (prom_id,))
 		if sig_id not in self._segments:
@@ -287,12 +292,14 @@ class TransitFit(object):
 		hits = []
 		offset_f = float(offset_deg)
 		for k in range(k_min, k_max + 1):
+			transit_fast_api.check_search_cancellation()
 			target = 360.0 * k
 			residuals = diff - target
 			sign_change = (residuals[:-1] * residuals[1:]) < 0.0
 			zero_at = residuals[:-1] == 0.0
 			candidate = np.where(sign_change | zero_at)[0]
 			for idx in candidate:
+				transit_fast_api.check_search_cancellation()
 				if zero_at[idx]:
 					hits.append(float(jds[idx]))
 					continue
@@ -304,6 +311,7 @@ class TransitFit(object):
 				# 18 iters → 2^-18 of bracket = ~5 seconds for a 0.1-day bracket.
 				# Polynomial fit residual is sub-arcsec, so finer than that is wasted.
 				for _ in range(18):
+					transit_fast_api.check_search_cancellation()
 					mid = 0.5 * (lo + hi)
 					mid_r = self._evaluate_scalar(prom_id, mid) - self._evaluate_scalar(sig_id, mid) - offset_f - target
 					if math.fabs(mid_r) < 1e-9:

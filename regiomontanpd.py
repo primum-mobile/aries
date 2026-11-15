@@ -157,6 +157,37 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 				)
 
 
+	def _traditional_converse_mundane_aspect_arc(self, plprom, rasig, declsig, aspect):
+		# toPlanet's Regiomontanus mundane aspect branch, with the aspect place
+		# taken from the promissor (W_prom - aspect) and the significator moving.
+		wtarget = util.normalize(plprom.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.W]-aspect)
+		med = math.fabs(self.ramc-wtarget)
+		if med > 180.0:
+			med = 360.0-med
+		icd = math.fabs(self.raic-wtarget)
+		if icd > 180.0:
+			icd = 360.0-icd
+		md = med
+		if icd < med:
+			md = icd
+
+		val = math.tan(math.radians(declsig))*self.tanlat*math.sin(math.radians(md))
+		if math.fabs(val) > 1.0:
+			raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+		q = math.degrees(math.asin(val))
+
+		eastern = True
+		if self.ramc > self.raic:
+			if wtarget > self.raic and wtarget < self.ramc:
+				eastern = False
+		else:
+			if (wtarget > self.raic and wtarget < 360.0) or (wtarget < self.ramc and wtarget > 0.0):
+				eastern = False
+
+		wsig = rasig-q if eastern else rasig+q
+		return util.normalize(wsig)-wtarget
+
+
 	def toHCs(self, mundane, idprom, raprom, declprom, aspect, asp=0.0):
 		'''Calculates directions of the Promissor to intermediate house cusps'''
 
@@ -274,7 +305,7 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 
 #####################################Moon's SecMotion
 	def calcArcWithSM(self, mundane, idprom, latprom, sig, sigasp, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		raprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
 		declprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
@@ -363,7 +394,7 @@ class RegiomontanPD(regiocampbasepd.RegioCampBasePD):
 
 
 	def calcHArcWithSM(self, mundane, idprom, h, hcps, arc, aspect, asp=0.0):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]

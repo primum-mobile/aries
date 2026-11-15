@@ -4,6 +4,7 @@
 # Modified for Aries in 2026 by Max Lange.
 
 import astrology
+import chart_bodies
 import calendar
 import chart
 import planets
@@ -58,6 +59,8 @@ class EphemCalc:
 			planet_ids.append(astrology.SE_PLUTO)
 		if getattr(opts, 'showchiron', True):
 			planet_ids.append(astrology.SE_CHIRON)
+		if getattr(opts, 'showapogee', True):
+			planet_ids.append(chart_bodies.apogee_id(opts))
 		return planet_ids
 
 

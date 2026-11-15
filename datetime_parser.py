@@ -26,6 +26,7 @@ from engine.calendar_policy import (
     GREGORIAN_CUTOVER,
     calendar_for_date,
 )
+from engine.geo_coordinates import parse_coordinate_pair
 
 MONTHS = {
     'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
@@ -386,6 +387,24 @@ def parse(raw: str) -> Optional[ParsedDateTime]:
 
 def parse_spotlight(raw: str) -> Optional[ParsedDateTime]:
     """Parse spotlight input with optional freeform location before/after datetime."""
+    text = (raw or '').strip()
+    try:
+        if parse_coordinate_pair(text, spotlight=True) is not None:
+            return ParsedDateTime(location_query=text)
+
+        # Try coordinates before the date parser can interpret their digits as time.
+        for split in re.finditer(r'\s+', text):
+            left = text[:split.start()].strip(' ,')
+            right = text[split.end():].strip(' ,')
+            for location, date in ((left, right), (right, left)):
+                if parse_coordinate_pair(location, spotlight=True) is not None:
+                    parsed = parse(date)
+                    if parsed is not None:
+                        parsed.location_query = location
+                        return parsed
+    except ValueError:
+        return None
+
     def _looks_like_location(text):
         text = (text or '').strip()
         if not text or any(ch.isdigit() for ch in text):
@@ -424,7 +443,6 @@ def parse_spotlight(raw: str) -> Optional[ParsedDateTime]:
     if base is not None and has_letters is False:
         return base
 
-    text = (raw or '').strip()
     if not text:
         return base
 

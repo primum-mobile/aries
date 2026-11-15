@@ -21,25 +21,11 @@ import {
   type LicenseState,
   type LicenseStatus,
 } from "@/lib/licensing/client";
+import { licenseErrorKey as errorKey } from "@/lib/licensing/errors.mjs";
 import { useLicenseStateStore } from "@/stores/license-state-store";
 
 const ACTIVE_STATES = new Set<LicenseState>(["active", "grace"]);
 
-function errorKey(error: unknown): string {
-  const code = String(error);
-  if (code.includes("seat_limit_reached")) return "license.seatLimit";
-  if (
-    code.includes("provider_unavailable") ||
-    code.includes("license_server_unavailable") ||
-    code.includes("license_server_unconfigured")
-  ) {
-    return "license.serverUnavailable";
-  }
-  if (code.includes("license_not_found") || code.includes("license_inactive")) {
-    return "license.invalidKey";
-  }
-  return "license.genericError";
-}
 
 function statusKey(state: LicenseState): string {
   return `license.status${state[0].toUpperCase()}${state.slice(1)}`;
@@ -69,9 +55,13 @@ export function LicenseManagementPanel({
   const locale = useLocale();
   const status = useLicenseStateStore((state) => state.status);
   const setStatus = useLicenseStateStore((state) => state.setStatus);
+  const startupError = useLicenseStateStore((state) => state.startupError);
   const [devices, setDevices] = React.useState<LicenseDevices | null>(null);
   const [licenseKey, setLicenseKey] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
+  // A failed startup renewal (clock, proxy, certificate) explains the gate.
+  const [error, setError] = React.useState<string | null>(() =>
+    startupError && !(status && ACTIVE_STATES.has(status.state)) ? errorKey(startupError) : null,
+  );
   const [busy, setBusy] = React.useState<string | null>("load");
 
   const dateFormatter = React.useMemo(

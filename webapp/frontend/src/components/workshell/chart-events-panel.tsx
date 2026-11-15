@@ -4,23 +4,28 @@
 "use client";
 
 import * as React from "react";
-import { FolderOpen, Pencil, Plus, ArrowDownWideNarrow } from "lucide-react";
+import { FolderOpen, Pencil, Plus, ArrowDownWideNarrow, Search } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from "@/components/ui/resizable";
+import { useContentFitPanel } from "./content-fit-panel";
+import { DrawerCloseBar } from "./list-pane-split";
 import { Input } from "@/components/ui/input";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useT } from "@/lib/i18n/i18n";
 import { executeWorkspaceContextMenuAction, fetchEditorCursorSeed, type WorkspaceOpenResult } from "@/lib/daemon/client";
-import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
+import { LIST_BUTTON_PROPS, LIST_DATE_LINK_CLASSES, LIST_PANE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { recordChartPerf, perfNow } from "@/lib/chart/perf";
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
+import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { EMPTY_EVENT_VIEW, filteredChartEvents, rankedEventTags, useChartEventsStore, type EventTag, type SavedChartEvent } from "@/stores/chart-events-store";
+import { EMPTY_EVENT_SEARCH, activeEventAspects, activeEventPlacements, useChartEventSearchStore } from "@/stores/chart-event-search-store";
 import { ChartEventNote } from "./chart-event-note";
 import { eventNoteKey, useEventNotesStore } from "@/stores/event-notes-store";
 import { EventTagEditor, EventTagPill } from "./chart-event-tags";
+import { ChartEventSearchControls } from "./chart-event-search-controls";
 import { ListSegmentedControl } from "./list-controls";
 import { RetainedPaneShell } from "./retained-pane-shell";
 import { buildStableRowKeys, useEdgeExtend } from "./stitched-list-harness";
@@ -30,7 +35,19 @@ import { SidebarListTable, SidebarListBody,
 export function ChartEventsPanel({ documentId }: { documentId: string }) {
   const t = useT();
   const view = useChartEventsStore((s) => s.views[documentId] ?? EMPTY_EVENT_VIEW);
+  const {
+    panelRef: tagFitPanelRef,
+    contentRef: tagFitContentRef,
+    footerRef: tagFitFooterRef,
+    handleProps: tagFitHandleProps,
+    minSize: tagFitMinSize,
+    maxSize: tagFitMaxSize,
+    resultsMinSize: tagFitResultsMinSize,
+  } = useContentFitPanel(view.tagsOpen);
+  const search = useChartEventSearchStore((s) => s.views[documentId] ?? EMPTY_EVENT_SEARCH);
+  const optionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
   const tagDrawerId = React.useId();
+  const searchDrawerId = React.useId();
   const catalog = React.useMemo(() => rankedEventTags(view.tagCatalog, view.tagCounts), [view.tagCatalog, view.tagCounts]);
   const visibleTags = React.useMemo(() => catalog.filter((tag) => tag.name.toLocaleLowerCase().includes(view.tagQuery.trim().toLocaleLowerCase())), [catalog, view.tagQuery]);
   const close = useWorkspaceStore((s) => s.closeChartEventsPane);
@@ -60,6 +77,12 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   const [editingEvent, setEditingEvent] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
   const [pending, setPending] = React.useState(false);
+  const [dropActive, setDropActive] = React.useState(false);
+  React.useEffect(() => {
+    const onDrag = (event: Event) => setDropActive(Boolean((event as CustomEvent<{ over: boolean }>).detail.over));
+    window.addEventListener("aries:chart-event-drag", onDrag);
+    return () => window.removeEventListener("aries:chart-event-drag", onDrag);
+  }, []);
   const openedAt = React.useRef(perfNow());
   const recordedPaint = React.useRef(false);
 
@@ -67,17 +90,49 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
     void useChartEventsStore.getState().load(documentId);
   }, [documentId, view.revision]);
 
-  const { rows, query, untagged, tagIds, tagMatch } = view;
+  React.useEffect(() => {
+    if (search.open) void useChartEventSearchStore.getState().loadCatalog(documentId);
+  }, [documentId, search.open]);
+  React.useEffect(() => {
+    if (search.open && optionsChange) void useChartEventSearchStore.getState().loadCatalog(documentId, true);
+  }, [documentId, search.open, optionsChange]);
+  React.useEffect(() => () => { useChartEventSearchStore.getState().pause(documentId); }, [documentId]);
+
+  const searchInput = React.useMemo(() => ({
+    includeAsteroids: search.includeAsteroids, stationWindowDays: search.stationWindowDays,
+    placements: activeEventPlacements(search.placements), aspects: activeEventAspects(search.aspects),
+    nameTagQuery: view.query, tagIds: view.tagIds, tagMatch: view.tagMatch,
+    untagged: view.untagged, sort: view.sort, descending: view.descending,
+  }), [search.includeAsteroids, search.stationWindowDays, search.placements, search.aspects,
+    view.query, view.tagIds, view.tagMatch, view.untagged, view.sort, view.descending]);
+  const searchKey = React.useMemo(() => JSON.stringify({ searchInput, eventRevision: view.revision,
+    tags: view.tagCatalog, tagCounts: view.tagCounts, optionsSeq: optionsChange?.seq ?? 0 }),
+  [searchInput, view.revision, view.tagCatalog, view.tagCounts, optionsChange?.seq]);
+  React.useEffect(() => {
+    if (!search.active || !searchInput.placements.length && !searchInput.aspects.length) return;
+    const timer = window.setTimeout(() => {
+      void useChartEventSearchStore.getState().start(documentId, searchKey, searchInput);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [documentId, search.active, searchKey, searchInput]);
+  React.useEffect(() => {
+    if (!search.active || search.loading || search.done || search.error) return;
+    const timer = window.setTimeout(() => { void useChartEventSearchStore.getState().next(documentId); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [documentId, search.active, search.loading, search.done, search.error, search.offset]);
+
+  const { query, untagged, tagIds, tagMatch } = view;
+  const rows = search.active && search.ready ? search.rows : view.rows;
   const filtered = React.useMemo(() => {
     const matches = new Set(filteredChartEvents({ rows, query, untagged, tagIds, tagMatch }).map((row) => row.id));
-    return rows.filter((row) => matches.has(row.id) || row.id === editingEvent || row.id === editingNote);
-  }, [rows, query, untagged, tagIds, tagMatch, editingEvent, editingNote]);
-  const filtering = Boolean(view.query.trim() || view.tagIds.length || view.untagged);
+    return rows.filter((row) => matches.has(row.id) || row.id === editingEvent || row.id === editingNote || row.id === renaming?.id);
+  }, [rows, query, untagged, tagIds, tagMatch, editingEvent, editingNote, renaming?.id]);
+  const filtering = Boolean(view.query.trim() || view.tagIds.length || view.untagged || search.active);
   React.useEffect(() => {
-    if (filtering && view.loaded && !view.loading && !view.stale && !view.error && view.rows.length < view.total) {
+    if (!search.active && filtering && view.loaded && !view.loading && !view.stale && !view.error && view.rows.length < view.total) {
       void useChartEventsStore.getState().load(documentId, true);
     }
-  }, [documentId, filtering, view.loaded, view.loading, view.stale, view.error, view.rows.length, view.total]);
+  }, [documentId, search.active, filtering, view.loaded, view.loading, view.stale, view.error, view.rows.length, view.total]);
 
   React.useLayoutEffect(() => {
     const scroller = scrollerRef.current;
@@ -119,10 +174,12 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   }, [view.loaded, view.rows.length, view.total]);
 
   const extend = React.useCallback(() => {
-    void useChartEventsStore.getState().load(documentId, true);
+    if (!useChartEventSearchStore.getState().views[documentId]?.active) {
+      void useChartEventsStore.getState().load(documentId, true);
+    }
   }, [documentId]);
   useEdgeExtend({ scrollerRef, rowCount: filtered.length, thresholdPx: rowHeight * 16,
-    canExtendBackward: false, canExtendForward: !view.loading && !view.stale && !view.error && view.rows.length < view.total,
+    canExtendBackward: false, canExtendForward: !search.active && !view.loading && !view.stale && !view.error && view.rows.length < view.total,
     onExtend: extend, recheckToken: view.loading });
 
   const openEvent = async (row: SavedChartEvent, edit = false) => {
@@ -187,10 +244,66 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
     } finally { setPending(false); }
   };
   const virtual = useEventRowWindow(documentId, filtered, scrollerRef, view.scrollTop, viewportHeight, rowHeight, view.rowHeights);
+  // A just-added event opens straight into inline rename with its automatic
+  // name selected. Extend the loaded span until the row is resident.
+  const renameHint = search.active ? null : view.renameEventId;
+  const hintRow = renameHint ? view.rows.find((item) => item.id === renameHint) : undefined;
+  const [consumedRename, setConsumedRename] = React.useState<string | null>(null);
+  if (hintRow && consumedRename !== hintRow.id) {
+    setConsumedRename(hintRow.id);
+    setSelectedEventKey(`${documentId}:${hintRow.id}`);
+    setRenamingTag(null); setRenaming(hintRow); setName(hintRow.name);
+  } else if (!view.renameEventId && consumedRename) setConsumedRename(null);
+  React.useEffect(() => {
+    const eventId = view.renameEventId;
+    if (!eventId || !view.loaded || view.loading || view.stale) return;
+    const resident = view.rows.some((item) => item.id === eventId);
+    if (!resident && !search.active && !view.error && view.rows.length < view.total) {
+      void useChartEventsStore.getState().load(documentId, true);
+      return;
+    }
+    useChartEventsStore.getState().patch(documentId, { renameEventId: null });
+  }, [documentId, search.active, view.renameEventId, view.loaded, view.loading, view.stale, view.error, view.rows, view.total]);
+  const renamingId = renaming?.id;
+  const renameIndex = renamingId ? filtered.findIndex((row) => row.id === renamingId) : -1;
+  const renameOffset = renameIndex >= 0 ? virtual.offsetOf(renameIndex) : null;
+  // Reveal the row once when its rename starts; later measurements never move the view.
+  const revealedRenameRef = React.useRef<string | null>(null);
+  React.useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!renamingId) { revealedRenameRef.current = null; return; }
+    if (!scroller || renameOffset === null || revealedRenameRef.current === renamingId) return;
+    revealedRenameRef.current = renamingId;
+    if (renameOffset < scroller.scrollTop || renameOffset + rowHeight > scroller.scrollTop + scroller.clientHeight) {
+      scroller.scrollTop = Math.max(0, renameOffset - scroller.clientHeight / 3);
+    }
+  }, [renamingId, renameOffset, rowHeight]);
   const visibleRows = filtered.slice(virtual.start, virtual.end);
   const keys = buildStableRowKeys(visibleRows, (row) => row.id);
   const setTagContext = (tag: EventTag) => { setSelectedTag(tag); setSelected(null); };
   const filters = (patch: Partial<typeof view>) => useChartEventsStore.getState().patch(documentId, patch);
+  const runSearch = () => {
+    if (!searchInput.placements.length && !searchInput.aspects.length) return;
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+    filters({ scrollTop: 0 });
+    void useChartEventSearchStore.getState().start(documentId, searchKey, searchInput);
+  };
+  const showAll = () => {
+    useChartEventSearchStore.getState().stop(documentId);
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+    filters({ scrollTop: 0 });
+  };
+  const copyEvent = async (row: SavedChartEvent) => {
+    try {
+      // The copy carries the event's note, so save any typing first.
+      await useEventNotesStore.getState().flush(eventNoteKey({ recordId: view.recordId, eventId: row.id, name: row.name }));
+      await executeWorkspaceContextMenuAction("workspace.copy_event", { documentId, eventId: row.id });
+      useChartEventsStore.getState().patch(documentId, { error: null });
+    } catch (error) {
+      console.error("[chart-events-copy]", error);
+      useChartEventsStore.getState().patch(documentId, { error: "chartEvents.copyError" });
+    }
+  };
   const confirmRemove = (row: SavedChartEvent) => {
     deleteReturnFocusRef.current = scrollerRef.current?.querySelector<HTMLElement>(`[data-event-row="${CSS.escape(row.id)}"]`) ?? null;
     filters({ error: null });
@@ -200,9 +313,10 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
   return (
     <>
     <ContextMenu onOpenChange={(open) => { if (!open) { setSelected(null); setSelectedTag(null); } }}>
-    <ContextMenuTrigger render={<div className="h-full min-h-0" />}>
+    <ContextMenuTrigger render={<div className="relative h-full min-h-0" data-aries-chart-events-drop={documentId} />}>
     <RetainedPaneShell title={t("chartEvents.title")} sourceName={view.sourceName}
       closeLabel={t("chartEvents.close")} onClose={close} closeAppearance="list" headerDensity="compact">
+      <div className={`flex min-h-0 flex-1 flex-col ${search.open ? "overflow-y-auto" : ""}`}>
       <div className={LIST_PANE_CLASSES.compactHeader}>
         <Input value={view.query} placeholder={t("chartEvents.search")} aria-label={t("chartEvents.search")}
           onChange={(event) => {
@@ -215,6 +329,12 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
             aria-expanded={view.tagsOpen} aria-controls={tagDrawerId}
             aria-pressed={view.tagIds.length > 0 || view.untagged}
             onClick={() => filters({ tagsOpen: !view.tagsOpen })}>{t("chartEvents.tags")}</Button>
+          <Button type="button" {...LIST_BUTTON_PROPS.command}
+            variant={search.active ? "default" : LIST_BUTTON_PROPS.command.variant}
+            aria-expanded={search.open} aria-controls={searchDrawerId} aria-pressed={search.active}
+            onClick={() => useChartEventSearchStore.getState().patch(documentId, { open: !search.open })}>
+            <Search aria-hidden="true" />{t("picker.search")}
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs"
               aria-label={t("chartEvents.sort")} title={t("chartEvents.sort")} />}>
@@ -256,12 +376,31 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
           </form>
         ) : null}
       </div>
+      <div id={searchDrawerId} className="shrink-0">
+        <ChartEventSearchControls documentId={documentId} onSearch={runSearch} onShowAll={showAll} />
+      </div>
       {view.error ? <div role="alert" className={LIST_PANE_CLASSES.error}>{t(view.error)}</div> : null}
-      <ResizablePanelGroup direction="vertical" autoSaveId="aries.chart-events-tags-vs-results" className="min-h-0 min-w-0">
+      {search.open && !search.catalog && search.error ? <div role="alert" className={LIST_PANE_CLASSES.error}>
+        {t("picker.searchFailed")}
+      </div> : null}
+      {search.active ? <div role="status" className="flex flex-wrap gap-[var(--aries-control-gap)] px-[var(--aries-pane-header-padding-x)] py-[var(--aries-control-gap-compact)] aries-list-secondary-text">
+        {search.error ? <span>{t("picker.searchFailed")}</span>
+          : !search.done ? <span>{t("picker.searching")}</span> : null}
+        {search.ready && (search.offset > 0 || search.done) ? <span>{t("chartEvents.searchSummary", {
+          matches: search.rows.length, scanned: search.offset, total: search.total,
+        })}</span> : null}
+        {search.errors ? <span>{t("picker.skippedSuffix", { errors: search.errors })}</span> : null}
+      </div> : null}
+      <ResizablePanelGroup direction="vertical" id="aries.chart-events-tags-vs-results"
+        className={search.open ? "min-h-[16rem] min-w-0 flex-1" : "min-h-0 min-w-0"}
+        style={search.open ? { height: "auto" } : undefined}>
         {view.tagsOpen ? <>
-          <ResizablePanel id="event-tags" order={1} defaultSize={40} minSize={20} className="min-h-0 min-w-0">
-            <div id={tagDrawerId} role="group" aria-label={t("chartEvents.tags")}
-              className="h-full min-h-0 overflow-auto px-[var(--aries-pane-header-padding-x)] py-[var(--aries-pane-header-padding-y)]">
+          <ResizablePanel ref={tagFitPanelRef} id="event-tags" order={1} defaultSize={40}
+            minSize={tagFitMinSize ?? 10} maxSize={tagFitMaxSize} className="min-h-0 min-w-0">
+            <div className="flex h-full min-h-0 flex-col">
+            <div className="aries-list-scroller min-h-0 flex-1 overflow-auto">
+            <div ref={tagFitContentRef} id={tagDrawerId} role="group" aria-label={t("chartEvents.tags")}
+              className="px-[var(--aries-pane-header-padding-x)] py-[var(--aries-pane-header-padding-y)]">
               <Input value={view.tagQuery} placeholder={t("chartEvents.findTag")} aria-label={t("chartEvents.findTag")}
                 onChange={(event) => filters({ tagQuery: event.target.value })} />
               <div className="mt-[var(--aries-control-gap)] flex flex-wrap gap-[var(--aries-control-gap)]" aria-label={t("chartEvents.tags")}>
@@ -281,12 +420,15 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                   value={view.tagMatch} onChange={(tagMatch) => filters({ tagMatch })} /> : null}
               </div>
             </div>
+            </div>
+            <DrawerCloseBar ref={tagFitFooterRef} onClose={() => filters({ tagsOpen: false })} />
+            </div>
           </ResizablePanel>
-          <ResizableHandle aria-label={t("chartEvents.tags")} />
+          <ResizableHandle aria-label={t("chartEvents.tags")} {...tagFitHandleProps} />
         </> : null}
-        <ResizablePanel id="event-results" order={2} minSize={20} className="flex min-h-0 min-w-0 flex-col">
+        <ResizablePanel id="event-results" order={2} minSize={tagFitResultsMinSize ?? 20} className="flex min-h-0 min-w-0 flex-col">
           <div ref={scrollerRef} className={`${LIST_PANE_CLASSES.scroller} [container-type:inline-size]`}>
-              <SidebarListTable profile="directions-titled" aria-busy={view.loading || pending}>
+              <SidebarListTable profile="directions-titled" aria-busy={view.loading || search.loading || pending}>
                 <SidebarListBody data-rendered-row-count={visibleRows.length} data-total-row-count={filtered.length}>
                   {virtual.before > 0 ? <SidebarListSpacerRow colSpan={3} height={virtual.before} /> : null}
                   {visibleRows.map((row, index) => (
@@ -336,10 +478,19 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                             }
                           }} /> : null}
                         </div>
-                        <div onDoubleClick={(event) => event.stopPropagation()}><EventTagEditor documentId={documentId} event={row} catalog={catalog}
+                        {row.matches?.length ? <div className="aries-list-secondary-text whitespace-normal [overflow-wrap:anywhere]">
+                          {row.matches.join("; ")}
+                        </div> : null}
+                        <div><EventTagEditor documentId={documentId} event={row} catalog={catalog}
                           onTagContext={setTagContext} onEditing={setEditingEvent} /></div>
                       </SidebarListCell>
-                      <SidebarListDateCell title={row.datetime}>{row.date}</SidebarListDateCell>
+                      <SidebarListDateCell title={row.datetime}>
+                        <button type="button" disabled={pending} className={LIST_DATE_LINK_CLASSES}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation(); setSelectedEventKey(`${documentId}:${row.id}`); void openEvent(row);
+                          }}>{row.date}</button>
+                      </SidebarListDateCell>
                       <SidebarListTimeCell title={row.datetime}>
                         <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]">
                           {row.time}
@@ -368,14 +519,18 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
                   ))}
                   {virtual.after > 0 ? <SidebarListSpacerRow colSpan={3} height={virtual.after} /> : null}
                   {filtered.length === 0 ? <SidebarListRow><SidebarListCell colSpan={3} className="whitespace-normal [overflow-wrap:anywhere]">
-                    {(view.loading || view.rows.length < view.total) ? t("chartEvents.loading") : filtering ? t("chartEvents.noMatches") : t("chartEvents.empty")}
+                    {search.active ? (search.error ? t("picker.searchFailed") : !search.done ? t("picker.searching") : t("chartEvents.noMatches"))
+                      : (view.loading || view.rows.length < view.total) ? t("chartEvents.loading") : filtering ? t("chartEvents.noMatches") : t("chartEvents.empty")}
                   </SidebarListCell></SidebarListRow> : null}
                 </SidebarListBody>
               </SidebarListTable>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+      </div>
     </RetainedPaneShell>
+    {dropActive ? <div className="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-background/85 text-center text-sm font-medium text-foreground"
+      role="status">{t("chartEvents.dropChart")}</div> : null}
     </ContextMenuTrigger>
         <ContextMenuContent>
           {selectedTag ? <>
@@ -390,6 +545,7 @@ export function ChartEventsPanel({ documentId }: { documentId: string }) {
           <ContextMenuItem disabled={!selected || pending} onClick={() => {
             if (selected) { setRenamingTag(null); setRenaming(selected); setName(selected.name); }
           }}>{t("chartEvents.rename")}</ContextMenuItem>
+          <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) void copyEvent(selected); }}>{t("chartEvents.copy")}</ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem disabled={!selected || pending} onClick={() => { if (selected) confirmRemove(selected); }}>{t("chartEvents.remove")}</ContextMenuItem>
           </>}
@@ -452,5 +608,6 @@ function useEventRowWindow(documentId: string, rows: SavedChartEvent[], scroller
     elements.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [documentId, scroller, rows, first, start, end, offsets, estimate, heights]);
-  return { start, end, before: offsets[start], after: offsets[rows.length] - offsets[end] };
+  const offsetOf = React.useCallback((index: number) => offsets[index] ?? 0, [offsets]);
+  return { start, end, offsetOf, before: offsets[start], after: offsets[rows.length] - offsets[end] };
 }

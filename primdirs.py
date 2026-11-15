@@ -4,10 +4,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Modified for Aries in 2026 by Max Lange.
 
+import bisect
 import copy
 import math
 import datetime
+import operator
 import astrology
+import chart_bodies
 import houses
 import chart
 import fortune
@@ -168,6 +171,12 @@ class PrimDir:
 		self.system = None
 		self.domain = 'mundane'
 		self.event_kind = 'direction'
+		# None for direct rows and for the modern converse (the sphere turned
+		# against the primary motion, the historical Aries/Morinus 'C' row).
+		# 'traditional' marks a converse calculated with the forward primary
+		# motion: the significator carried to the promissor's circle of
+		# position, under the promissor's pole (PrimDirs.TRADITIONALCONVERSE).
+		self.converse_kind = None
 		self.arc = 0.0
 		self.direct = True
 		self.parallelaxis = 0
@@ -286,6 +295,19 @@ def filter_morin_promittor_set(pds):
 	return out
 
 
+class TraditionalConverseUnsupported(ValueError):
+	'''A row family for which the traditional converse is not calculated.
+
+	``reason`` is a stable token; PrimDirs counts them per calculation in
+	``traditional_converse_unsupported`` so consumers and tests can see which
+	candidate rows were left out and why (doc: primary-directions-math-and-
+	terminology.md section 1.6).'''
+
+	def __init__(self, reason):
+		ValueError.__init__(self, reason)
+		self.reason = reason
+
+
 class PrimDirs:
 	'''Implements the PDs that are common in all systems (directions to Asc-MC) and also implements the MidPoints and Rapt Parallels'''
 
@@ -344,6 +366,16 @@ class PrimDirs:
 	CONVERSE = 1
 	BOTHDC = 2
 
+	#Converse calculations (option pdconverse)
+	# MODERNCONVERSE: negative arc under the significator's pole, i.e. the
+	# sphere turned against the primary motion (the shipped default).
+	# TRADITIONALCONVERSE: the significator carried by the forward primary
+	# motion to the promissor, measured in the promissor's circle of position
+	# (Morin AG 22 ch. 7; Gansten APT; Louis Primer ch. 9).
+	MODERNCONVERSE = 0
+	TRADITIONALCONVERSE = 1
+	BOTHCONVERSES = 2
+
 	@staticmethod
 	def is_angle_antiscion_promissor(prom):
 		return prom in (
@@ -364,6 +396,25 @@ class PrimDirs:
 		if primarydir == PrimDirs.TOPOCENTRIC:
 			return 'T'
 		return None
+
+	@staticmethod
+	def pd_system_houses(chrt, opts):
+		"""The chart's houses in the PD system's own geometry (P/R/C/T).
+
+		Directions never read the house system shown on the wheel: the PD
+		cusps, the cusps of the directed speculum and Circum, and every Lot
+		built from a cusp come from these houses.  Returns the chart's own
+		houses when they already are the PD system's.
+		"""
+		hsys = PrimDirs.house_system_for_primarydir(getattr(opts, 'primarydir', None))
+		own = chrt.houses
+		if hsys is None or getattr(own, 'hsys', None) == hsys:
+			return own
+		_pflag, hflag, _fsflag, _astflag = chrt._zodiac_flags()
+		return houses.Houses(
+			chrt.time.jd, hflag, chrt.place.lat, chrt.place.lon, hsys,
+			chrt.obl[0], chrt.options.ayanamsha, chrt.ayanamsha_offset,
+		)
 
 	#Range
 	RANGE25 = 0
@@ -395,6 +446,61 @@ class PrimDirs:
 		# significators and is retained only as a legacy persistence field.
 		return options
 
+	@staticmethod
+	def pd_meannode(options):
+		"""The node the PD engine directs: the chart's node (Morinus)."""
+		return bool(getattr(options, 'meannode', True))
+
+	@staticmethod
+	def pd_topocentric(options):
+		"""Whether the PD engine directs topocentric bodies: the chart's
+		Moon parallax correction (``topocentric``), applied to every body as
+		chart.create() and Morinus do.  PD presets set it."""
+		return bool(getattr(options, 'topocentric', False))
+
+	@staticmethod
+	def pd_body_flag(chrt, opts):
+		"""Swiss flag for the PD bodies of ``chrt``: ``pd_position_flag`` plus
+		SEFLG_TOPOCTR when ``pd_topocentric``, with the chart's place set as
+		the observer first (a topocentric flag without it zero-fills every
+		position: BUG-3)."""
+		flag = PrimDirs.pd_position_flag(getattr(opts, 'ayanamsha', 0))
+		if PrimDirs.pd_topocentric(opts):
+			astrology.swe_set_topo(chrt.place.lon, chrt.place.lat, chrt.place.altitude)
+			flag |= astrology.SEFLG_TOPOCTR
+		return flag
+
+	@staticmethod
+	def pd_planets(chrt, opts, pflag):
+		"""The radix bodies as the PD engine directs them (both logical nodes
+		follow ``pd_meannode``)."""
+		return planets.Planets(
+			chrt.time.jd,
+			PrimDirs.pd_meannode(opts),
+			pflag,
+			chrt.place.lat,
+			chrt.houses.ascmc2,
+			chrt.raequasc,
+			getattr(chrt, 'nolat', False),
+			chrt.obl[0],
+		)
+
+
+	@staticmethod
+	def pd_position_flag(ayanamsha):
+		'''Swiss flag for every primary-direction body position: geocentric,
+		in the chart's zodiac.
+
+		Never ``SEFLG_TOPOCTR``: the topocentric observer is set only inside
+		a chart's own ephemeris context, so the flag would fail outside it and
+		Swiss would zero-fill the position (BUG-3). ``pd_body_flag`` adds it
+		with the observer set when the chart is topocentric. The caller owns
+		the sidereal mode.
+		'''
+		pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
+		if ayanamsha:
+			pflag |= astrology.SEFLG_SIDEREAL
+		return pflag
 
 	def _refresh_chart_pd_dependencies(self):
 		"""Refresh chart caches that primary directions read directly.
@@ -415,27 +521,16 @@ class PrimDirs:
 			# (= 0) and ``ayanamsha_offset`` carries the actual value
 			# for the few consumers that genuinely need it (e.g.
 			# placidiansapd tropical-recovery for term arcs).
-			pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
 			chrt.ayanamsha = 0.0
 			chrt.ayanamsha_offset = 0.0
 			if opts.ayanamsha != 0:
 				astrology.swe_set_sid_mode(astrology.ayanamsha_swe_mode(opts.ayanamsha), 0, 0)
 				chrt.ayanamsha_offset = astrology.effective_ayanamsha_ut(chrt.time.jd, opts.ayanamsha)
-				pflag |= astrology.SEFLG_SIDEREAL
-			# Do NOT add SEFLG_TOPOCTR here. Per Polich/Page, topocentric
-			# primary directions use the cone/pole house formula, not
-			# topocentric planet positions.
-
-			chrt.planets = planets.Planets(
-				chrt.time.jd,
-				opts.meannode,
-				pflag,
-				chrt.place.lat,
-				chrt.houses.ascmc2,
-				chrt.raequasc,
-				getattr(chrt, 'nolat', False),
-				chrt.obl[0],
-			)
+			# The chart's node and Moon parallax correction, as in Morinus
+			# (all bodies topocentric, observer set: BUG-3). Polich/Page
+			# keep it off; their presets and rectification set it so.
+			pflag = PrimDirs.pd_body_flag(chrt, opts)
+			chrt.planets = PrimDirs.pd_planets(chrt, opts, pflag)
 			if hasattr(chrt, '_rebuild_dynamic_chart_bodies'):
 				chrt._rebuild_dynamic_chart_bodies(pflag)
 
@@ -467,7 +562,7 @@ class PrimDirs:
 				chrt.calcMidPoints()
 			else:
 				import midpoints
-				chrt.midpoints = midpoints.MidPoints(chrt.planets, chiron=getattr(chrt, 'chiron', None))
+				chrt.midpoints = midpoints.MidPoints(chrt.planets, chiron=getattr(chrt, 'chiron', None), apogee=getattr(chrt, 'apogee', None))
 
 			import zodpars
 			chrt.zodpars = zodpars.ZodPars(chrt.planets, chrt.obl[0])
@@ -492,6 +587,11 @@ class PrimDirs:
 				chrt.obl[0],
 			)
 
+			# Optional bodies follow the same PD-local zodiac/epoch as the planets.
+			if getattr(opts, 'pdpromasteroids', False) or getattr(opts, 'pdsigasteroids', False):
+				import asteroids
+				chrt.asteroids = asteroids.Asteroids(chrt.time.jd, pflag, chrt.place.lat, chrt.houses.ascmc2, getattr(opts, 'asteroids', None))
+
 			needs_syzygy = (
 				getattr(chrt, 'syzygy', None) is not None
 				or bool(getattr(opts, 'pdsyzygy', False))
@@ -507,7 +607,9 @@ class PrimDirs:
 				or bool(getattr(opts, 'pdsigarabicparts', False))
 			)
 			if needs_parts and hasattr(chrt, 'calcArabicParts'):
-				chrt.calcArabicParts()
+				# Lots built from a cusp use the PD system's houses, never
+				# the house system displayed on the wheel.
+				chrt.calcArabicParts(PrimDirs.pd_system_houses(chrt, opts))
 
 			if getattr(chrt, 'fixstars', None) is not None or bool(getattr(opts, 'pdfixstars', False)):
 				if hasattr(chrt, 'rebuildFixStars'):
@@ -537,13 +639,17 @@ class PrimDirs:
 				chrt.options = original_options
 
 	def __init__(self, chrt, options, pdrange, direction, abort):
-		self.chart = chrt
+		# The engine re-reads the bodies with its own node and Moon parallax
+		# (_refresh_chart_pd_dependencies), so it works on a copy: the caller's
+		# chart keeps the chart's own positions.
+		self.chart = copy.copy(chrt)
 
 		self.options = options if options is not None else getattr(self.chart, 'options', None)
 		self.pdrange = pdrange
 		self.direction = direction
 		self.abort = abort
 		self.pds = []
+		self.traditional_converse_unsupported = {}
 		self._range_bounds_override = getattr(self.options, '_pd_range_bounds_override', None)
 		self._max_age_limit_override = getattr(self.options, '_pd_max_age_limit_override', None)
 		self._pd_cycle_age_cache = {}
@@ -645,6 +751,7 @@ class PrimDirs:
 		age,
 		promasp_offset=0.0,
 		sigasp_offset=0.0,
+		converse_kind=None,
 	):
 		if PrimDirs.is_angle_antiscion_promissor(prom):
 			return
@@ -671,6 +778,7 @@ class PrimDirs:
 		pd.parallelaxis = parallelaxis
 		pd.time = time
 		pd.age = age
+		pd.converse_kind = converse_kind
 
 		self.pds.append(pd)
 
@@ -704,11 +812,29 @@ class PrimDirs:
 		else:
 			pd.event_kind = 'direction'
 
+	def _converse_mode(self):
+		try:
+			mode = int(getattr(self.options, 'pdconverse', PrimDirs.MODERNCONVERSE))
+		except (TypeError, ValueError):
+			return PrimDirs.MODERNCONVERSE
+		if mode in (PrimDirs.TRADITIONALCONVERSE, PrimDirs.BOTHCONVERSES):
+			return mode
+		return PrimDirs.MODERNCONVERSE
+
 	def _direction_allowed(self, direct):
+		'''Direction filter for direct and modern-converse rows.'''
+		if not direct and self._converse_mode() == PrimDirs.TRADITIONALCONVERSE:
+			return False
 		return (
 			self.direction == PrimDirs.BOTHDC
 			or (self.direction == PrimDirs.DIRECT and direct)
 			or (self.direction == PrimDirs.CONVERSE and not direct)
+		)
+
+	def _traditional_converse_allowed(self):
+		return (
+			self._converse_mode() != PrimDirs.MODERNCONVERSE
+			and self.direction in (PrimDirs.CONVERSE, PrimDirs.BOTHDC)
 		)
 
 	def _append_windowed_radix_pd(
@@ -724,12 +850,19 @@ class PrimDirs:
 		parallelaxis,
 		promasp_offset=0.0,
 		sigasp_offset=0.0,
+		converse_kind=None,
 	):
-		if not self._direction_allowed(direct):
-			return
-		time, age = self.calcTime(arc, direct)
+		if converse_kind == PrimDirs.TRADITIONAL_CONVERSE:
+			# Forward primary motion: time it like a direct arc (never the
+			# regressive solar arc, which belongs to the modern converse).
+			time_direct = True
+		else:
+			if not self._direction_allowed(direct):
+				return
+			time_direct = direct
+		time, age = self.calcTime(arc, time_direct)
 		lo, hi = self._range_bounds()
-		cycle_age = self._cycle_age(direct)
+		cycle_age = self._cycle_age(time_direct)
 		cycle_time = cycle_age * 365.2421904
 		cycle = 0
 		if cycle_age > 0.0 and age < lo:
@@ -753,6 +886,7 @@ class PrimDirs:
 					projected_age,
 					promasp_offset,
 					sigasp_offset,
+					converse_kind,
 				)
 			cycle += 1
 
@@ -936,6 +1070,8 @@ class PrimDirs:
 			idx = int(body_id)
 		except Exception:
 			return False
+		if idx in (astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
+			return bool(getattr(self.options, 'pdpromapogee', False)) and self.chart.get_planet_body(idx) is not None
 		if idx == astrology.SE_CHIRON:
 			return bool(getattr(self.options, 'pdpromchiron', False)) and getattr(self.chart, 'chiron', None) is not None
 		try:
@@ -951,6 +1087,8 @@ class PrimDirs:
 			return self._get_dynamic_point_label(dyn_key, promissor)
 		if body_context:
 			try:
+				if int(body_id) in chart_bodies.APOGEE_IDS:
+					return mtexts.txts['Apogee']
 				if int(body_id) == astrology.SE_CHIRON:
 					return mtexts.txts.get('Chiron', 'Chiron')
 			except Exception:
@@ -1175,6 +1313,12 @@ class PrimDirs:
 					self.calcAntiscia2HouseCusps(False)
 		if self.options.pdterms:
 			self.calcZodTerms()
+			# Terms belong to the same PD stream as every other promissor.
+			# Include configured point and cusp significators here so consumers
+			# can project the canonical directions without a second calculation.
+			self._for_each_dynamic_significator([lambda: self.calcZodTerms(True)])
+			if self.options.sighouses and self._use_global_house_cusp_significators():
+				self._for_each_global_house_cusp_significator([lambda: self.calcZodTerms(True)])
 		if self.chart.htype == chart.Chart.RADIX and self.options.pdfixstars:
 			self.calcZodFixStars2AscMC()
 			self.calcZodFixStars2Planets()
@@ -1385,7 +1529,7 @@ class PrimDirs:
 
 
 	def calcSM(self, idp, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		ra = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.RA]
 		adlat = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
 
@@ -1610,14 +1754,10 @@ class PrimDirs:
 				rapl = 0.0
 				adlat = 0.0
 				if self.options.subzodiacal == PrimDirs.SZPROMISSOR or self.options.subzodiacal == PrimDirs.SZBOTH:
-					latprom = 0.0
-					if self.options.bianchini:
-						val = self.getBianchini(pllat, chart.Chart.Aspects[j])
-						if math.fabs(val) > 1.0:
-							continue
-						latprom = math.degrees(math.asin(val))
-					else:
-						latprom = pllat
+					# Antiscia have no circle of aspects of their own.
+					ok, lon, latprom = self._zodiacal_aspect_position(i if ioffs == 0 else -1, pllon, pllat, j, aspectus)
+					if not ok:
+						continue
 
 					#calc real(wahre)ra and adlat
 #					rapl, declpl = util.getRaDecl(lon, latprom, self.chart.obl[0])
@@ -1682,7 +1822,7 @@ class PrimDirs:
 
 
 	def calcZodSM(self, idp, j, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idp, arc, self.chart.place.lat, self.chart.houses.ascmc2, PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 
@@ -1692,14 +1832,9 @@ class PrimDirs:
 		rapl = 0.0
 		adlat = 0.0
 		if self.options.subzodiacal == PrimDirs.SZPROMISSOR or self.options.subzodiacal == PrimDirs.SZBOTH:
-			latprom = 0.0
-			if self.options.bianchini:
-				val = self.getBianchini(pllat, chart.Chart.Aspects[j])
-				if math.fabs(val) > 1.0:
-					return False, 0.0, 0.0
-				latprom = math.degrees(math.asin(val))
-			else:
-				latprom = pllat
+			ok, lon, latprom = self._zodiacal_aspect_position(idp, pllon, pllat, j, aspect)
+			if not ok:
+				return False, 0.0, 0.0
 
 			#calc real(wahre)ra and adlat
 #			rapl, declpl = util.getRaDecl(lon, latprom, self.chart.obl[0])
@@ -2090,6 +2225,22 @@ class PrimDirs:
 				self.create(False, i+OFFS, PrimDir.NONE, PrimDir.DESC, chart.Chart.CONJUNCTIO, chart.Chart.CONJUNCTIO, dostar-self.dodesc)
 
 
+	def _mundane_midpoint_body_pairs(self):
+		# Retain the historical pairs/order, then include each dynamic body.
+		bodies = list(enumerate(self.chart.planets.planets))
+		legacy_count = len(bodies)
+		bodies.extend(chart_bodies.iter_dynamic_bodies(self.chart))
+		for index, (p1, body1) in enumerate(bodies):
+			if not self._promissor_body_enabled(p1):
+				continue
+			for second, (p2, body2) in enumerate(bodies[index+1:], index+1):
+				if second < legacy_count and index >= legacy_count-2:
+					continue
+				if not self._promissor_body_enabled(p2):
+					continue
+				yield p1, p2, body1, body2
+
+
 	def calcMidPoints(self):
 		'''Computes mundane midpoints to significators'''
 
@@ -2107,82 +2258,65 @@ class PrimDirs:
 			MP = planets.Planet.CMP
 			SPECULUM = PrimDirs.REGIOSPECULUM
 
-		#Promissor1
-		for p1 in range(len(self.chart.planets.planets)-NODES):
-			if not self._promissor_body_enabled(p1):
-				continue
-
-			plprom1 = self.chart.planets.planets[p1]
+		for p1, p2, plprom1, plprom2 in self._mundane_midpoint_body_pairs():
 			raprom1 = plprom1.speculums[SPECULUM][planets.Planet.RA]
 			declprom1 = plprom1.speculums[SPECULUM][planets.Planet.DECL]
+			raprom2 = plprom2.speculums[SPECULUM][planets.Planet.RA]
+			declprom2 = plprom2.speculums[SPECULUM][planets.Planet.DECL]
 
-			#Promissor2
-			for p2 in range(p1+1, len(self.chart.planets.planets)):
-				if not self._promissor_body_enabled(p2):
+			ramid = util.normalize((raprom1+raprom2)/2.0)
+
+			#Significator
+			for s in range(len(self.chart.planets.planets)):
+				if not self.options.sigplanets[s]:
 					continue
 
-				# exclude midpoint of Node and its opposite (mean/true 모드 모두 안전)
-				NODE_IDX = astrology.SE_PLUTO + 1      # 10: 선택된 노드(Mean 또는 True)
-				if p1 == NODE_IDX and p2 == NODE_IDX + 1:  # 11: 반대 노드(노드 + 180°)
-					continue
+				if self.abort.abort:
+					return
 
-				plprom2 = self.chart.planets.planets[p2]
-				raprom2 = plprom2.speculums[SPECULUM][planets.Planet.RA]
-				declprom2 = plprom2.speculums[SPECULUM][planets.Planet.DECL]
+				plsig = self.chart.planets.planets[s]
 
-				ramid = util.normalize((raprom1+raprom2)/2.0)
+#					print 'p1=%d, p2=%d, s=%d' % (p1, p2, s)#
 
-				#Significator
-				for s in range(len(self.chart.planets.planets)):
-					if not self.options.sigplanets[s]:
-						continue
+				rasig = plsig.speculums[SPECULUM][planets.Planet.RA]
+				declsig = plsig.speculums[SPECULUM][planets.Planet.DECL]
+				mpsig = plsig.speculums[SPECULUM][MP]
+
+				if math.fabs(ramid-rasig) > 90.0:
+					ramid += 180.0
+					if ramid >= 360.0:
+						ramid -= 360.0
+
+				arc = self.getDiff(ramid-rasig)
+#					print 'ramid=%f, rasig=%f, arc=%f' % (ramid, rasig, arc)
+#					print '********'
+
+				LIM = 30
+				x = 0
+				good = True
+				while x < LIM:
+					initarc = arc
+					ok, arc = self.iterate(raprom1, declprom1, raprom2, declprom2, mpsig, arc, plsig)
+					if not ok:
+						good = False
+						break
+					arc = self.getDiff(arc)#
+
+#						print '%d: initarc=%f, arc=%f' % (x, initarc, arc)
+					x += 1
+					if math.fabs(math.fabs(arc)-initarc) < 0.001:
+						break
 
 					if self.abort.abort:
 						return
 
-					plsig = self.chart.planets.planets[s]
+				if not good:
+					continue
 
-#					print 'p1=%d, p2=%d, s=%d' % (p1, p2, s)#
+				if x == LIM:
+					arc = (arc+initarc)/2.0 #Is this OK!?
 
-					rasig = plsig.speculums[SPECULUM][planets.Planet.RA]
-					declsig = plsig.speculums[SPECULUM][planets.Planet.DECL]
-					mpsig = plsig.speculums[SPECULUM][MP]
-
-					if math.fabs(ramid-rasig) > 90.0:
-						ramid += 180.0
-						if ramid >= 360.0:
-							ramid -= 360.0
-
-					arc = self.getDiff(ramid-rasig)
-#					print 'ramid=%f, rasig=%f, arc=%f' % (ramid, rasig, arc)
-#					print '********'
-
-					LIM = 30
-					x = 0
-					good = True
-					while x < LIM:
-						initarc = arc
-						ok, arc = self.iterate(raprom1, declprom1, raprom2, declprom2, mpsig, arc, plsig)
-						if not ok:
-							good = False
-							break
-						arc = self.getDiff(arc)#
-
-#						print '%d: initarc=%f, arc=%f' % (x, initarc, arc)
-						x += 1
-						if math.fabs(math.fabs(arc)-initarc) < 0.001:
-							break
-
-						if self.abort.abort:
-							return
-
-					if not good:
-						continue
-
-					if x == LIM:
-						arc = (arc+initarc)/2.0 #Is this OK!?
-
-					self.create(True, p1, p2, s, chart.Chart.MIDPOINT, chart.Chart.CONJUNCTIO, arc)
+				self.create(True, p1, p2, s, chart.Chart.MIDPOINT, chart.Chart.CONJUNCTIO, arc)
 
 
 	def calcMidPoints2Customer2(self):
@@ -2202,77 +2336,60 @@ class PrimDirs:
 			MP = customerpd.CustomerPD.CMP
 			SPECULUM = PrimDirs.REGIOSPECULUM
 
-		#Promissor1
-		for p1 in range(len(self.chart.planets.planets)-NODES):
-			if not self._promissor_body_enabled(p1):
-				continue
-
-			plprom1 = self.chart.planets.planets[p1]
+		for p1, p2, plprom1, plprom2 in self._mundane_midpoint_body_pairs():
 			raprom1 = plprom1.speculums[SPECULUM][planets.Planet.RA]
 			declprom1 = plprom1.speculums[SPECULUM][planets.Planet.DECL]
+			raprom2 = plprom2.speculums[SPECULUM][planets.Planet.RA]
+			declprom2 = plprom2.speculums[SPECULUM][planets.Planet.DECL]
 
-			#Promissor2
-			for p2 in range(p1+1, len(self.chart.planets.planets)):
-				if not self._promissor_body_enabled(p2):
-					continue
+			ramid = util.normalize((raprom1+raprom2)/2.0)
 
-				# exclude midpoint of Node and its opposite (mean/true 모드 모두 안전)
-				NODE_IDX = astrology.SE_PLUTO + 1      # 10: 선택된 노드(Mean 또는 True)
-				if p1 == NODE_IDX and p2 == NODE_IDX + 1:  # 11: 반대 노드(노드 + 180°)
-					continue
+			if self.abort.abort:
+				return
 
-				plprom2 = self.chart.planets.planets[p2]
-				raprom2 = plprom2.speculums[SPECULUM][planets.Planet.RA]
-				declprom2 = plprom2.speculums[SPECULUM][planets.Planet.DECL]
+			#Significator
+			point = self._get_active_dynamic_sig_point()
+			if point == None:
+				return
+			rasig = point.speculums[SPECULUM][customerpd.CustomerPD.RA]
+			declsig = point.speculums[SPECULUM][customerpd.CustomerPD.DECL]
+			mpsig = point.speculums[SPECULUM][MP]
 
-				ramid = util.normalize((raprom1+raprom2)/2.0)
+			if math.fabs(ramid-rasig) > 90.0:
+				ramid += 180.0
+				if ramid >= 360.0:
+					ramid -= 360.0
+
+			arc = self.getDiff(ramid-rasig)
+#				print 'ramid=%f, rasig=%f, arc=%f' % (ramid, rasig, arc)
+#				print '********'
+
+			LIM = 30
+			x = 0
+			good = True
+			while x < LIM:
+				initarc = arc
+				ok, arc = self.iterate(raprom1, declprom1, raprom2, declprom2, mpsig, arc, plprom1)
+				if not ok:
+					good = False
+					break
+				arc = self.getDiff(arc)#
+
+#					print '%d: initarc=%f, arc=%f' % (x, initarc, arc)
+				x += 1
+				if math.fabs(math.fabs(arc)-initarc) < 0.001:
+					break
 
 				if self.abort.abort:
 					return
 
-				#Significator
-				point = self._get_active_dynamic_sig_point()
-				if point == None:
-					return
-				rasig = point.speculums[SPECULUM][customerpd.CustomerPD.RA]
-				declsig = point.speculums[SPECULUM][customerpd.CustomerPD.DECL]
-				mpsig = point.speculums[SPECULUM][MP]
+			if not good:
+				continue
 
-				if math.fabs(ramid-rasig) > 90.0:
-					ramid += 180.0
-					if ramid >= 360.0:
-						ramid -= 360.0
+			if x == LIM:
+				arc = (arc+initarc)/2.0 #Is this OK!?
 
-				arc = self.getDiff(ramid-rasig)
-#				print 'ramid=%f, rasig=%f, arc=%f' % (ramid, rasig, arc)
-#				print '********'
-
-				LIM = 30
-				x = 0
-				good = True
-				while x < LIM:
-					initarc = arc
-					ok, arc = self.iterate(raprom1, declprom1, raprom2, declprom2, mpsig, arc, plprom1)
-					if not ok:
-						good = False
-						break
-					arc = self.getDiff(arc)#
-
-#					print '%d: initarc=%f, arc=%f' % (x, initarc, arc)
-					x += 1
-					if math.fabs(math.fabs(arc)-initarc) < 0.001:
-						break
-
-					if self.abort.abort:
-						return
-
-				if not good:
-					continue
-
-				if x == LIM:
-					arc = (arc+initarc)/2.0 #Is this OK!?
-
-				self.create(True, p1, p2, PrimDir.CUSTOMERPD, chart.Chart.MIDPOINT, chart.Chart.CONJUNCTIO, arc)
+			self.create(True, p1, p2, PrimDir.CUSTOMERPD, chart.Chart.MIDPOINT, chart.Chart.CONJUNCTIO, arc)
 
 
 	def iterate(self, raprom1, declprom1, raprom2, declprom2, mpsig, arc, pl):
@@ -2369,6 +2486,22 @@ class PrimDirs:
 		return math.sin(math.radians(lat))*math.cos(math.radians(asp))
 
 
+	def _zodiacal_aspect_position(self, planet_idx, lon_base, lat_base, aspect_idx, aspect):
+		'''(ok, lon, lat) of a planet's aspect ray with latitude: Morin's
+		excentric, Bianchini's latitude, or the planet's own latitude.'''
+		lon = util.normalize(lon_base+aspect)
+		lat = lat_base
+		if self.options.morin_excentric and 0 <= planet_idx <= astrology.SE_PLUTO:
+			lon, lat = self.getMorinExcentric(planet_idx, lon_base, lat_base, aspect)
+		elif self.options.bianchini:
+			val = self.getBianchini(lat_base, chart.Chart.Aspects[aspect_idx])
+			if math.fabs(val) > 1.0:
+				return False, lon, lat
+			lat = math.degrees(math.asin(val))
+
+		return True, lon, lat
+
+
 	def getMorinExcentric(self, planet_idx, lon_p, lat_p, asp_signed_deg):
 		'''Returns (corrected_lon_deg, corrected_lat_deg) for the aspect terminus
 		of planet ``planet_idx`` (Planets index, 0=Sun..9=Pluto) under Morin's
@@ -2399,10 +2532,24 @@ class PrimDirs:
 		if planet_idx < 0 or planet_idx >= len(_PLANET_TO_SE):
 			return util.normalize(lon_p + asp_signed_deg), lat_p
 		pId = _PLANET_TO_SE[planet_idx]
-		flag = self.chart._planet_calc_flag() if hasattr(self.chart, '_planet_calc_flag') else (astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED)
+		# Morin builds the circle from ephemeris (geocentric) places
+		# (AG 16 §I ch. 9): a topocentric scan follows the Moon's daily
+		# parallax and finds an impossible inclination near 6 deg.  With the
+		# parallax correction on, the circle is built on the geocentric
+		# place, shifted by the PD body's parallax in longitude.
+		opts = getattr(self, 'options', None) or getattr(self.chart, 'options', None)
+		flag = PrimDirs.pd_position_flag(getattr(opts, 'ayanamsha', 0))
 		tjd = self.chart.time.jd
+		if PrimDirs.pd_topocentric(opts):
+			geo = astrology.swe_calc_ut(tjd, pId, astrology.SEFLG_SWIEPH)[1]
+			topo_flag = PrimDirs.pd_body_flag(self.chart, opts) & ~astrology.SEFLG_SIDEREAL
+			topo = astrology.swe_calc_ut(tjd, pId, topo_flag)[1]
+			lon_p = util.normalize(lon_p + geo[0] - topo[0])
+			lat_p = geo[1]
+		if _morin_aspects.half_revolution_info(tjd, pId, flag, lat_p, cache_key=('pd', tjd)) is None:
+			return util.normalize(lon_p + asp_signed_deg), lat_p
 		dlon, lat_a = _morin_aspects.aspect_correction(
-			tjd, pId, flag, lon_p, lat_p, asp_signed_deg, cache_key=tjd)
+			tjd, pId, flag, lon_p, lat_p, asp_signed_deg, cache_key=('pd', tjd))
 		return util.normalize(lon_p + asp_signed_deg + dlon), lat_a
 
 
@@ -2423,6 +2570,19 @@ class PrimDirs:
 
 		if PrimDirs.is_angle_antiscion_promissor(prom):
 			return
+
+		if self._traditional_converse_allowed():
+			self._create_traditional_converse(
+				mundane,
+				prom,
+				prom2,
+				sig,
+				promasp,
+				sigasp,
+				parallelaxis,
+				promasp_offset,
+				sigasp_offset,
+			)
 
 		if not self._uses_revolution_time():
 			#Just for safety
@@ -2453,11 +2613,7 @@ class PrimDirs:
 
 			lim = PrimDirs.REVOLUTIO
 
-			if (arc < lim or arc > -lim) and (
-				self.direction == PrimDirs.BOTHDC
-				or (self.direction == PrimDirs.DIRECT and direct)
-				or (self.direction == PrimDirs.CONVERSE and not direct)
-			):
+			if (arc < lim or arc > -lim) and self._direction_allowed(direct):
 
 				time, age = self.calcTimeRev(arc)
 
@@ -2553,6 +2709,267 @@ class PrimDirs:
 		)
 
 
+	# Traditional converse ------------------------------------------------
+	#
+	# Morin AG 22 ch. 7: in a converse direction "the significator, which
+	# follows, moves toward the promittor, which precedes, by the same motion
+	# of the primum mobile", and the ascensions are "taken in the circle of
+	# position of the preceding terminus".  The row keeps its roles; only the
+	# geometry is swapped: the significator terminus is the moving point and
+	# the promissor terminus owns the pole and system-native coordinate.  The
+	# result is the direct arc of the same pair with the roles exchanged
+	# (Gansten APT App. III; Louis Primer ch. 9).
+
+	TRADITIONAL_CONVERSE = 'traditional'
+
+	def _note_traditional_converse_unsupported(self, reason):
+		counts = self.traditional_converse_unsupported
+		counts[reason] = counts.get(reason, 0) + 1
+
+	def _create_traditional_converse(
+		self,
+		mundane,
+		prom,
+		prom2,
+		sig,
+		promasp,
+		sigasp,
+		parallelaxis,
+		promasp_offset,
+		sigasp_offset,
+	):
+		try:
+			raw = self._traditional_converse_raw_arc(
+				mundane,
+				prom,
+				prom2,
+				sig,
+				promasp,
+				sigasp,
+				parallelaxis,
+				promasp_offset,
+				sigasp_offset,
+			)
+		except TraditionalConverseUnsupported as exc:
+			self._note_traditional_converse_unsupported(exc.reason)
+			return
+
+		# Forward rotation that carries the significator onto the promissor's
+		# circle of position.  There is no backwards branch: a rotation above
+		# 180 degrees is a long forward arc, never a short reversed one.
+		arc = math.fmod(float(raw), 360.0)
+		if arc < 0.0:
+			arc += 360.0
+		if arc <= 0.0 or arc >= 360.0:
+			# Coincident circles perfect at birth, with the direct row.
+			return
+		kind = PrimDirs.TRADITIONAL_CONVERSE
+
+		if self._uses_revolution_time():
+			time, age = self.calcTimeRev(arc)
+			self._append_pd(
+				mundane,
+				prom,
+				prom2,
+				sig,
+				promasp,
+				sigasp,
+				arc,
+				False,
+				parallelaxis,
+				time,
+				age,
+				promasp_offset,
+				sigasp_offset,
+				kind,
+			)
+			return
+
+		if self._range_bounds_override is not None:
+			self._append_windowed_radix_pd(
+				mundane,
+				prom,
+				prom2,
+				sig,
+				promasp,
+				sigasp,
+				arc,
+				False,
+				parallelaxis,
+				promasp_offset,
+				sigasp_offset,
+				kind,
+			)
+			return
+
+		if arc > 180.0 or arc >= self._max_age_limit():
+			return
+		time, age = self.calcTime(arc, True)
+		lo, hi = self._range_bounds()
+		if age < lo or age >= hi:
+			return
+		self._append_pd(
+			mundane,
+			prom,
+			prom2,
+			sig,
+			promasp,
+			sigasp,
+			arc,
+			False,
+			parallelaxis,
+			time,
+			age,
+			promasp_offset,
+			sigasp_offset,
+			kind,
+		)
+
+	def _traditional_converse_raw_arc(
+		self,
+		mundane,
+		prom,
+		prom2,
+		sig,
+		promasp,
+		sigasp,
+		parallelaxis,
+		promasp_offset,
+		sigasp_offset,
+	):
+		"""Signed forward rotation carrying the significator to the promissor.
+
+		Raises TraditionalConverseUnsupported(reason) for a family without a
+		traditional converse (or not yet implemented)."""
+		rapt = (chart.Chart.RAPTPAR, chart.Chart.RAPTCONTRAPAR)
+		if promasp in rapt or sigasp in rapt:
+			raise TraditionalConverseUnsupported('rapt-parallel')
+		if PrimDir.TERM <= prom < PrimDir.FIXSTAR:
+			# No converse through the bounds: distribution is direct motion
+			# only (doctrine decision, terminology doc 1.6).  prom2 carries
+			# the bound's ruler, not a midpoint partner.
+			raise TraditionalConverseUnsupported('bound')
+		if prom2 != PrimDir.NONE or chart.Chart.MIDPOINT in (promasp, sigasp):
+			raise TraditionalConverseUnsupported('midpoint')
+		parallels = (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL)
+		if promasp in parallels or sigasp in parallels:
+			raise TraditionalConverseUnsupported('parallel')
+
+		if mundane:
+			frame = (PrimDir.ASC, PrimDir.DESC, PrimDir.MC, PrimDir.IC)
+			if sig in frame or PrimDir.HC2 <= sig <= PrimDir.HC12:
+				raise TraditionalConverseUnsupported('mundane-frame-significator')
+			PrimDirs._traditional_converse_family_gap(prom)
+			PrimDirs._traditional_converse_family_gap(sig)
+			if PrimDir.LOF in (prom, sig):
+				raise TraditionalConverseUnsupported('mundane-lot')
+			return self._traditional_converse_mundane_raw_arc(
+				prom, sig, promasp, sigasp, promasp_offset, sigasp_offset
+			)
+
+		# Significator first, so an unsupported significator family (a house
+		# cusp) is reported as such rather than as its promissor's ray.
+		sig_lon, sig_lat = self._traditional_converse_terminus(
+			sig, sigasp, sigasp_offset, False
+		)
+		prom_lon, prom_lat = self._traditional_converse_terminus(
+			prom, promasp, promasp_offset, True
+		)
+		# Imported here: engine.pd_row_geometry imports this module.
+		from engine import pd_row_geometry
+		try:
+			# The evaluator's "promissor" is the moving point and its
+			# "significator" the pole owner; here they are the row's
+			# significator and promissor termini respectively.
+			return pd_row_geometry.evaluate_ecliptic_point_arc(
+				self.options.primarydir,
+				self.chart,
+				sig_lon,
+				sig_lat,
+				prom_lon,
+				prom_lat,
+			)
+		except pd_row_geometry.PDRowGeometryUndefined:
+			raise TraditionalConverseUnsupported('geometry-undefined')
+		except ValueError:
+			raise TraditionalConverseUnsupported('system')
+
+	def _traditional_converse_mundane_raw_arc(
+		self, prom, sig, promasp, sigasp, promasp_offset, sigasp_offset
+	):
+		# Overridden by the Placidian semi-arc engine, which also computes the
+		# Topocentric mundane (PMP) rows.  Regiomontanus/Campanus RMP/CMP
+		# mundane rows are not yet implemented.
+		raise TraditionalConverseUnsupported('mundane-system')
+
+	@staticmethod
+	def _traditional_converse_family_gap(point):
+		"""Raise for point families without a traditional converse, in any role."""
+		if PrimDir.HC2 <= point <= PrimDir.HC12:
+			raise TraditionalConverseUnsupported('house-cusp')
+		if point == PrimDir.CUSTOMERPD:
+			raise TraditionalConverseUnsupported('custom-point')
+		if PrimDir.ANTISCION <= point < PrimDir.TERM:
+			raise TraditionalConverseUnsupported('antiscion')
+		if PrimDir.TERM <= point < PrimDir.FIXSTAR:
+			raise TraditionalConverseUnsupported('bound')
+
+	def _traditional_converse_terminus(self, point, aspect, offset, promissor):
+		"""Ecliptic (lon, lat) of one terminus as the direct calculation places it.
+
+		Latitude follows the row's role (subzodiacal), not the moving/fixed
+		swap; ray latitude follows the Bianchini/Morin option."""
+		PrimDirs._traditional_converse_family_gap(point)
+		policy = self.options.subzodiacal
+		if promissor:
+			keep_lat = policy in (PrimDirs.SZPROMISSOR, PrimDirs.SZBOTH)
+		else:
+			keep_lat = policy in (PrimDirs.SZSIGNIFICATOR, PrimDirs.SZBOTH)
+		if aspect != chart.Chart.CONJUNCTIO:
+			if not chart.Chart.CONJUNCTIO < aspect <= chart.Chart.SEPTILE:
+				raise TraditionalConverseUnsupported('non-aspect-ray')
+			if not 0 <= point < len(self.chart.planets.planets):
+				raise TraditionalConverseUnsupported('point-ray')
+			if float(offset) == 0.0:
+				raise TraditionalConverseUnsupported('missing-ray-side')
+
+		if 0 <= point < len(self.chart.planets.planets):
+			pl = self.chart.planets.planets[point]
+			lon = pl.data[planets.Planet.LONG]
+			lat = pl.speculums[PrimDirs.PLACSPECULUM][planets.Planet.LAT]
+			if aspect == chart.Chart.CONJUNCTIO:
+				return lon, (lat if keep_lat else 0.0)
+			ray = util.normalize(lon+float(offset))
+			if not keep_lat:
+				return ray, 0.0
+			if self.options.morin_excentric:
+				return self.getMorinExcentric(point, lon, lat, float(offset))
+			if self.options.bianchini:
+				val = self.getBianchini(lat, chart.Chart.Aspects[aspect])
+				if math.fabs(val) > 1.0:
+					raise TraditionalConverseUnsupported('geometry-undefined')
+				return ray, math.degrees(math.asin(val))
+			return ray, lat
+
+		ascmc2 = self.chart.houses.ascmc2
+		if point == PrimDir.ASC:
+			return ascmc2[houses.Houses.ASC][houses.Houses.LON], 0.0
+		if point == PrimDir.DESC:
+			return util.normalize(ascmc2[houses.Houses.ASC][houses.Houses.LON]+180.0), 0.0
+		if point == PrimDir.MC:
+			return ascmc2[houses.Houses.MC][houses.Houses.LON], 0.0
+		if point == PrimDir.IC:
+			return util.normalize(ascmc2[houses.Houses.MC][houses.Houses.LON]+180.0), 0.0
+		if point == PrimDir.LOF:
+			return self.chart.fortune.fortune[fortune.Fortune.LON], 0.0
+		if point == PrimDir.SYZ:
+			return self.chart.syzygy.speculum[syzygy.Syzygy.LON], 0.0
+		if point >= PrimDir.FIXSTAR:
+			star = self.chart.fixstars.data[point-PrimDir.FIXSTAR]
+			return star[fixstars.FixStars.LON], (star[fixstars.FixStars.LAT] if keep_lat else 0.0)
+		raise TraditionalConverseUnsupported('unknown-point')
+
+
 	def calcTime(self, arc, direct):
 		'''Calculates time from arc according to the selected key (dynamic or static)'''
 
@@ -2583,6 +3000,20 @@ class PrimDirs:
 
 
 	def calcTrueSolarArc(self, arc):
+		return self._true_solar_arc_days(arc, 1)
+
+
+	def calcTrueSolarArcRegressive(self, arc):
+		return self._true_solar_arc_days(arc, -1)
+
+
+	def _true_solar_arc_days(self, arc, step):
+		"""Days from birth until the Sun's RA (or longitude) moves ``arc``.
+
+		``step`` 1 walks forward, -1 regressively. The day is the first 0h UT
+		position past the target; the crossing instant inside the day comes
+		from ``_sun_crossing_time`` (the ``Transits.day`` second-exact search).
+		"""
 		y = self.chart.time.year
 		m = self.chart.time.month
 		d = self.chart.time.day
@@ -2590,133 +3021,185 @@ class PrimDirs:
 		h, mi, s = util.decToDeg(self.chart.time.time)
 		tt = 0.0
 
-		#Add arc to Suns's pos (long or ra)
-		prSunPos = self.chart.planets.planets[astrology.SE_SUN].dataEqu[planets.Planet.RAEQU]
-		if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-			prSunPos = self.chart.planets.planets[astrology.SE_SUN].data[planets.Planet.LONG]
+		prSunPos = self._true_solar_position(self.chart.planets.planets[astrology.SE_SUN])
+		prSunPosEnd = prSunPos+arc*step
 
-		prSunPosEnd = prSunPos+arc
+		if (prSunPos <= prSunPosEnd) if step > 0 else (prSunPos >= prSunPosEnd):
+			walk = self._true_solar_walk(step, prSunPosEnd)
+			if walk is None:
+				return 0.0
+			dates, positions = walk
+			if step > 0:
+				index = bisect.bisect_right(positions, prSunPosEnd)
+			else:
+				index = bisect.bisect_right(positions, -prSunPosEnd, key=operator.neg)
+			(y, m, d), prSunPos = dates[index], positions[index]
 
-#		Find day in ephemeris
-		while (prSunPos <= prSunPosEnd):
-			y, m, d = util.incrDay(y, m, d)
-			ti = chart.Time(y, m, d, 0, 0, 0, False, self.chart.time.cal, chart.Time.GREENWICH, True, 0, 0, False, self.chart.place, False)
-			sun = planets.Planet(ti.jd, astrology.SE_SUN, astrology.SEFLG_SWIEPH)
-			
-			pos = sun.dataEqu[planets.Planet.RAEQU]
+		if (prSunPos != prSunPosEnd):
+			if step > 0:
+				y, m, d = util.decrDay(y, m, d)
+
+			prSunPosEnd = util.normalize(prSunPosEnd)
+
+			trlon = 0.0
 			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-				pos = sun.data[planets.Planet.LONG]
+				trlon = prSunPosEnd
+			else:
+				#to Longitude...
+				trlon = util.ra2ecl(prSunPosEnd, self.chart.obl[0])
 
+			crossing = self._sun_crossing_time(y, m, d, trlon)
+			if crossing is not None:
+				tt = crossing
+		else:
+			#the time is midnight
+			tt = 0.0
+
+		#difference
+		birth = datetime.datetime(self.chart.time.year, self.chart.time.month, self.chart.time.day, h, mi, s) #in GMT
+		th, tm, ts = util.decToDeg(tt)
+		moment = datetime.datetime(y, m, d, th, tm, ts) #in GMT
+		diff = moment-birth if step > 0 else birth-moment
+		ddays = diff.days
+		dtime = diff.seconds/3600.0
+		#dtime to days
+		dtimeindays = dtime/24.0
+
+		tt = ddays+dtimeindays
+
+		return tt
+
+
+	def _true_solar_position(self, sun):
+		if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
+			return sun.data[planets.Planet.LONG]
+		return sun.dataEqu[planets.Planet.RAEQU]
+
+
+	def _true_solar_walk(self, step, target):
+		"""Unwrapped 0h UT Sun positions on successive days from birth.
+
+		Every direction timed by a true solar arc walks the same days, so one
+		walk per direction of time is kept for the calculation and extended
+		only until it passes ``target``. Returns (dates, positions), or None
+		when the calculation is aborted.
+		"""
+		walk = self.__dict__.setdefault('_true_solar_walks', {}).get(step)
+		if walk is None:
+			walk = self.__dict__.setdefault('_true_solar_walks', {})[step] = ([], [])
+		dates, positions = walk
+		if positions:
+			(y, m, d), prSunPos = dates[-1], positions[-1]
+		else:
+			y, m, d = self.chart.time.year, self.chart.time.month, self.chart.time.day
+			prSunPos = self._true_solar_position(self.chart.planets.planets[astrology.SE_SUN])
+		while (prSunPos <= target) if step > 0 else (prSunPos >= target):
+			y, m, d = util.incrDay(y, m, d) if step > 0 else util.decrDay(y, m, d)
+			ti = chart.Time(y, m, d, 0, 0, 0, False, self.chart.time.cal, chart.Time.GREENWICH, True, 0, 0, False, self.chart.place, False)
+			pos = self._true_solar_position(planets.Planet(ti.jd, astrology.SE_SUN, astrology.SEFLG_SWIEPH))
 			# Keep consecutive daily positions on the same continuous turn.
 			# A fixed 120-degree wrap window can never reach targets >= 480.
 			pos += 360.0 * round((prSunPos - pos) / 360.0)
 			prSunPos = pos
+			dates.append((y, m, d))
+			positions.append(pos)
 
 			if self.abort.abort:
-				return 0.0
+				return None
+		return walk
 
-		if (prSunPos != prSunPosEnd):
-			y, m, d = util.decrDay(y, m, d)
 
-			prSunPosEnd = util.normalize(prSunPosEnd)
+	def _sun_crossing_time(self, y, m, d, target):
+		"""``Transits.day(y, m, d, chart, SE_SUN, target)``'s time, or None.
 
-			trlon = 0.0
-			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-				trlon = prSunPosEnd
+		``Transits.get`` scans hours, then minutes, then seconds for the first
+		pair of instants the Sun crosses ``target`` between. The Sun's
+		longitude only increases, so bisection over the same instants with the
+		same ``check`` finds that pair; any other order falls back to the scan.
+		"""
+		if self.__dict__.get('_sun_search') is None:
+			search = transits.Transits()
+			context = transits.Transits._ephemeris_context(self.chart)
+			search.flags = context.flags
+			self._sun_search = (search, context)
+		search, context = self._sun_search
+		lon = util.normalize(target)
+		with context.activate():
+			if not search.check(self._sun_lon((y, m, d, 0, 0, 0)), self._sun_lon((y, m, d+1, 0, 0, 0)), lon):
+				return None
+			next_day = util.incrDay(y, m, d) + (0, 0, 0)
+
+			def hour_point(k):
+				return (y, m, d, k, 0, 0) if k < 24 else next_day
+			hour = self._first_sun_crossing(hour_point, 24, lon)
+			if hour is None:
+				return None
+			next_hour = (y, m, d, hour+1, 0, 0) if hour+1 < 24 else next_day
+
+			def minute_point(k):
+				return (y, m, d, hour, k, 0) if k < 60 else next_hour
+			minute = self._first_sun_crossing(minute_point, 60, lon)
+			if minute is None:
+				return None
+			next_minute = (y, m, d, hour, minute+1, 0) if minute+1 < 60 else next_hour
+
+			def second_point(k):
+				return (y, m, d, hour, minute, k) if k < 60 else next_minute
+			second = self._first_sun_crossing(second_point, 60, lon)
+			if second is None:
+				return None
+			return self._sun_time(second_point(second)).time
+
+
+	def _first_sun_crossing(self, point, count, lon):
+		"""First ``k < count`` whose interval ``point(k)..point(k+1)`` passes ``check``."""
+		search = self._sun_search[0]
+
+		def crosses(k):
+			return search.check(self._sun_lon(point(k)), self._sun_lon(point(k+1)), lon)
+
+		lo, hi = 0, count-1
+		while lo < hi:
+			mid = (lo+hi)//2
+			# Signed offset from the interval's end to the target, as in check.
+			if (lon - util.normalize(self._sun_lon(point(mid+1))) + 540.0) % 360.0 - 180.0 <= 0.0:
+				hi = mid
 			else:
-				#to Longitude...
-				trlon = util.ra2ecl(prSunPosEnd, self.chart.obl[0])
-
-			trans = transits.Transits()
-			trans.day(y, m, d, self.chart, astrology.SE_SUN, trlon)
-
-			if len(trans.transits) > 0:
-				tt = trans.transits[0].time
-		else:
-			#the time is midnight
-			tt = 0.0
-
-		#difference
-		d1 = datetime.datetime(self.chart.time.year, self.chart.time.month, self.chart.time.day, h, mi, s) #in GMT
-		th, tm, ts = util.decToDeg(tt)
-		d2 = datetime.datetime(y, m, d, th, tm, ts) #in GMT
-		diff = d2-d1
-		ddays = diff.days
-		dtime = diff.seconds/3600.0
-		#dtime to days
-		dtimeindays = dtime/24.0
-
-		tt = ddays+dtimeindays
-
-		return tt
+				lo = mid+1
+		if crosses(lo) and (lo == 0 or not crosses(lo-1)):
+			return lo
+		for k in range(count):
+			if crosses(k):
+				return k
+		return None
 
 
-	def calcTrueSolarArcRegressive(self, arc):
-		y = self.chart.time.year
-		m = self.chart.time.month
-		d = self.chart.time.day
+	def _sun_time(self, fields):
+		time = self.__dict__.setdefault('_sun_times', {}).get(fields)
+		if time is None:
+			y, m, d, hour, minute, second = fields
+			time = self.__dict__.setdefault('_sun_times', {})[fields] = chart.Time(y, m, d, hour, minute, second, False, self.chart.time.cal, chart.Time.GREENWICH, True, 0, 0, False, self.chart.place, False)
+		return time
 
-		h, mi, s = util.decToDeg(self.chart.time.time)
-		tt = 0.0
 
-		#Subtract arc from Suns's pos (long or ra)
-		prSunPos = self.chart.planets.planets[astrology.SE_SUN].dataEqu[planets.Planet.RAEQU]
-		if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-			prSunPos = self.chart.planets.planets[astrology.SE_SUN].data[planets.Planet.LONG]
-
-		prSunPosEnd = prSunPos-arc
-
-#		Find day in ephemeris
-		while (prSunPos >= prSunPosEnd):
-			y, m, d = util.decrDay(y, m, d)
-			ti = chart.Time(y, m, d, 0, 0, 0, False, self.chart.time.cal, chart.Time.GREENWICH, True, 0, 0, False, self.chart.place, False)
-			sun = planets.Planet(ti.jd, astrology.SE_SUN, astrology.SEFLG_SWIEPH)
-			
-			pos = sun.dataEqu[planets.Planet.RAEQU]
-			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-				pos = sun.data[planets.Planet.LONG]
-			# Unwrap backwards continuously, including starts beyond 120 degrees.
-			pos += 360.0 * round((prSunPos - pos) / 360.0)
-			prSunPos = pos
-
-			if self.abort.abort:
-				return 0.0
-
-		if (prSunPos != prSunPosEnd):
-			prSunPosEnd = util.normalize(prSunPosEnd)
-
-			trlon = 0.0
-			if self.options.pdkeyd == PrimDirs.TRUESOLARECLIPTICALARC:
-				trlon = prSunPosEnd
-			else:
-				#to Longitude...
-				trlon = util.ra2ecl(prSunPosEnd, self.chart.obl[0])
-
-			trans = transits.Transits()
-			trans.day(y, m, d, self.chart, astrology.SE_SUN, trlon)
-
-			if len(trans.transits) > 0:
-				tt = trans.transits[0].time
-		else:
-			#the time is midnight
-			tt = 0.0
-
-		#difference
-		th, tm, ts = util.decToDeg(tt)
-		d1 = datetime.datetime(y, m, d, th, tm, ts) #in GMT
-		d2 = datetime.datetime(self.chart.time.year, self.chart.time.month, self.chart.time.day, h, mi, s) #in GMT
-		diff = d2-d1
-		ddays = diff.days
-		dtime = diff.seconds/3600.0
-		#dtime to days
-		dtimeindays = dtime/24.0
-
-		tt = ddays+dtimeindays
-
-		return tt
+	def _sun_lon(self, fields):
+		jd = self._sun_time(fields).jd
+		lon = self.__dict__.setdefault('_sun_lons', {}).get(jd)
+		if lon is None:
+			lon = self.__dict__.setdefault('_sun_lons', {})[jd] = planets.Planet(jd, astrology.SE_SUN, self._sun_search[0].flags).data[planets.Planet.LONG]
+		return lon
 
 
 	def calcBirthSolarArc(self, arc):
+		# The rate is the Sun's motion on the birthday: one value per key.
+		key = self.options.pdkeyd
+		coeff = self.__dict__.setdefault('_birthday_solar_rates', {}).get(key)
+		if coeff is None:
+			coeff = self.__dict__.setdefault('_birthday_solar_rates', {})[key] = self._birthday_solar_rate()
+		return arc*coeff
+
+
+	def _birthday_solar_rate(self):
 		y = self.chart.time.year
 		m = self.chart.time.month
 		d = self.chart.time.day
@@ -2739,7 +3222,7 @@ class PrimDirs:
 		if diff != 0.0:
 			coeff = 1.0/diff
 
-		return arc*coeff
+		return coeff
 
 
 	def calcTimeRev(self, arc):
@@ -2801,7 +3284,7 @@ class PrimDirs:
 		# Save-As-Text path. Body builder lives in format2text() so the daemon
 		# (and any non-wx caller) can reuse the exact wx file formatting without
 		# touching the filesystem. Signature unchanged; this only delegates.
-		f = open(fname, 'w')
+		f = open(fname, 'w', encoding='utf-8')
 		f.write(self.format2text())
 		f.close()
 

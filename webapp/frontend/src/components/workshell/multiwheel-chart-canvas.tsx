@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChartContextMenu } from "./chart-context-menu";
 import { ChartHoverFlag, type FlagAnchor } from "./chart-hover-flag";
+import { multiwheelOuterScene, paintMultiwheelOuterRing } from "@/lib/chart/multiwheel-outer-ring";
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import {
@@ -27,7 +28,9 @@ import {
   withSettingsColorPreview,
 } from "@/lib/chart/palette";
 import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
-import { perfNow, recordChartPerf } from "@/lib/chart/perf";
+import { chartPerfEnabled, perfNow, recordChartPerf } from "@/lib/chart/perf";
+import { overlayPerfState, semanticFrameSignature } from "@/lib/chart/overlay-perf-state";
+import { sameCanvasRenderState } from "@/lib/chart/snapshot-render-equivalence";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import {
   projectWheelAuthoringStyle,
@@ -38,15 +41,18 @@ import { assembleWheelGeometryPreview, resolveWheelGeometryPresetStyle } from "@
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { cn } from "@/lib/utils";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
+import { onCopyEditorRepaint } from "@/lib/i18n/copy-editor/copy-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useColorSettingsPreviewStore, withZodiacFieldOpacityPreview } from "@/stores/color-settings-preview-store";
 import { hoverRegionKey, useWorkspaceStore, type HoverRegion } from "@/stores/workspace-store";
 
 function multiwheelHitToHover(hit: MultiwheelHitRegion): HoverRegion {
   const identity = {
+    viewDocumentId: hit.viewDocumentId, coordinateMode: hit.coordinateMode, coordinateRevision: hit.coordinateRevision,
     chartRole: hit.chartRole,
     ringIndex: hit.ringIndex,
   } as const;
+  if (hit.kind === "secondary_ring") return {kind: "secondary_ring", itemId: hit.itemId, family: hit.family, label: hit.label, longitude: hit.longitude, searchObjectId: hit.searchObjectId, ...identity};
   if (hit.kind === "planet") {
     return {
       kind: "planet",
@@ -109,6 +115,7 @@ export function MultiwheelChartCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const hitRegionsRef = useRef<MultiwheelHitRegion[]>([]);
+  const paintedRef = useRef<{snapshot: ChartRenderSnapshot; width: number; height: number; style: string} | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const flagAnchorRef = useRef<FlagAnchor | null>(null);
@@ -126,7 +133,15 @@ export function MultiwheelChartCanvas({
   const geometryProfile = useChartStyleEditorStore((state) => state.geometryProfile);
   const geometryOverrides = useChartStyleEditorStore((state) => state.geometryOverrides);
   const syncedGeometryOverrides = useChartStyleEditorStore((state) => state.syncedGeometryOverrides);
-  const geometryBaseRevision = useChartStyleEditorStore((state) => state.wheelPresetState?.revision ?? -1);
+  const wheelGeometryReceipts = useChartStyleEditorStore((state) => state.wheelGeometryReceipts);
+  const wheelAppearanceBaseline = useChartStyleEditorStore(state => state.wheelAppearanceBaseline);
+  const resolvedOverrides = useChartStyleEditorStore(state => state.resolvedOverrides);
+  const semanticOverrides = useChartStyleEditorStore(state => state.semanticOverrides);
+  const tokenMetadata = useChartStyleEditorStore(state => state.tokenMetadata);
+  const liveAppThemePreview = useChartStyleEditorStore(state => state.liveAppThemePreview);
+  const pendingWheelCompositions = useChartStyleEditorStore((state) => state.pendingWheelCompositions);
+  const wheelContextSource = useChartStyleEditorStore((state) => state.wheelPresetState?.context?.sourceThemeName);
+  const wheelContextRevision = useChartStyleEditorStore((state) => state.wheelPresetState?.revision ?? -1);
   const gestureActive = useChartStyleEditorStore((state) => state.gestureStart != null);
   const editorRevision = useChartStyleEditorStore((state) => state.revision);
   const theme = useMemo(
@@ -163,15 +178,21 @@ export function MultiwheelChartCanvas({
       {
         profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
         presets: chart.primaryChart.options.wheelGeometryPresets,
+        readAppearanceValue: cssVar => theme?.chartPalette?.[cssVar] ?? theme?.appTokens?.[cssVar],
         appearanceOverrides: theme?.profileOverrides?.wheelAuthoring ?? {},
         preview: assembleWheelGeometryPreview({
+          resolvedOverrides, semanticOverrides, tokenMetadata, wheelAppearanceBaseline, liveAppThemePreview,
           geometryProfile, geometryOverrides, syncedGeometryOverrides,
-          wheelPresetState: {revision: geometryBaseRevision}, revision: editorRevision,
+          wheelPresetState: {revision: wheelContextRevision, context: wheelContextSource ? {sourceThemeName: wheelContextSource} : undefined},
+          wheelGeometryReceipts, pendingWheelCompositions,
+          revision: editorRevision,
           gestureStart: gestureActive ? true : null,
         }),
       },
     ),
-    [fontSymbols, fontUi, palette, theme, chart.primaryChart.options, geometryProfile, geometryOverrides, syncedGeometryOverrides, geometryBaseRevision, gestureActive, editorRevision],
+    [fontSymbols, fontUi, palette, theme, chart.primaryChart.options, geometryProfile, geometryOverrides, syncedGeometryOverrides, wheelGeometryReceipts,
+      resolvedOverrides, semanticOverrides, tokenMetadata, wheelAppearanceBaseline, liveAppThemePreview,
+      pendingWheelCompositions, wheelContextSource, wheelContextRevision, gestureActive, editorRevision],
   );
 
   const setTrackedFlagAnchor = useCallback((next: FlagAnchor | null) => {
@@ -255,6 +276,22 @@ export function MultiwheelChartCanvas({
       if (rect.width <= 0 || rect.height <= 0) return;
       const rings = renderSnapshot.rings ?? [];
       if (rings.length < 3) return;
+      const perfEnabled = chartPerfEnabled();
+      const bodyLayoutSignature = () => hitRegionsRef.current.filter(hit => hit.kind !== 'secondary_ring')
+        .map(hit => `${hit.ringIndex}:${hit.kind}:${hit.kind === 'planet' ? hit.planetId : hit.kind === 'angle' ? hit.angleId : hit.kind}:${hit.x.toFixed(1)}:${hit.y.toFixed(1)}`).sort().join('|');
+      const paintDetail = () => ({docId: chart.document?.documentId ?? null, mode: chart.overlayRenderMode,
+        renderer: "multiwheel", overlay: perfEnabled ? overlayPerfState(renderSnapshot) : undefined,
+        bodyLayoutSignature: perfEnabled ? bodyLayoutSignature() : undefined,
+        semanticFrameSignature: perfEnabled ? semanticFrameSignature(renderSnapshot) : undefined,
+        settleOverlayOnly: chart.settleOverlayOnly === true});
+      const painted = paintedRef.current;
+      if (chart.settleOverlayOnly && painted && painted.width === rect.width && painted.height === rect.height
+          && painted.style === String(wheelRenderStyle.revision) && sameCanvasRenderState(painted.snapshot, renderSnapshot)) {
+        acknowledgePaintedDocumentSnapshot(chart.document?.documentId, chart);
+        recordChartPerf('chart-canvas-paint', {...paintDetail(), geometryMs: 0, dynamicMs: 0, fillMs: 0,
+          outerLabelMs: 0, hitMs: 0, totalMs: 0, dynamicProfile: {'body-layout': {ms: 0}}});
+        return;
+      }
       const draw = new CanvasDraw(canvas);
       draw.resize(rect.width, rect.height);
       const title = document.querySelector<HTMLElement>("[data-aries-titlebar-title]");
@@ -267,21 +304,26 @@ export function MultiwheelChartCanvas({
       const profile = wheelTypographyProfileForTheme(renderSnapshot.primaryChart.options.theme);
       // The chart-wide preset scale applies to this renderer too. Its own
       // tri/quad body-band solver still owns individual ring thicknesses.
-      const maxRadius = Math.max(80, side * 0.475 * resolveWheelScale(wheelRenderStyle, profile));
+      let maxRadius = Math.max(80, side * 0.475 * resolveWheelScale(wheelRenderStyle, profile));
       const center: [number, number] = [
         rect.width / 2,
         topBoundary + availableHeight / 2,
       ];
+      const outerOptions = {width: rect.width, height: rect.height, center, renderStyle: wheelRenderStyle};
+      const requestedOuter = multiwheelOuterScene(renderSnapshot, outerOptions, maxRadius);
+      if (requestedOuter) maxRadius = Math.max(80, maxRadius - Math.max(0, requestedOuter.scene.paintRadius - maxRadius));
       const rootOptions = rings[0].options;
       const layout = resolveMultiwheelLayout({
         maxRadius,
         ringCount: rings.length,
         ringZodiac: renderSnapshot.ringZodiac ?? "rim",
         bodiesPerRing: rings.map((ring) => ring.planets.length),
+        showZodiac: rings[0].coordinateFrame?.showEquatorialSigns,
         showTerms: Boolean(rootOptions.showTerms && rootOptions.terms?.length),
         showDecans: Boolean(rootOptions.showDecans && rootOptions.decans?.length),
       });
       const projectedStyle = projectWheelAuthoringStyle(wheelRenderStyle, layout.maxRadius, profile);
+      let bodyLayoutMs = 0;
       hitRegionsRef.current = drawMultiwheel(
         draw,
         center,
@@ -291,16 +333,19 @@ export function MultiwheelChartCanvas({
         { symbols: fontSymbols, ui: fontUi },
         { width: rect.width, height: rect.height, topBoundary },
         projectedStyle,
+        perfEnabled ? ms => { bodyLayoutMs += ms; } : undefined,
       );
+      hitRegionsRef.current.push(...paintMultiwheelOuterRing(draw,
+        multiwheelOuterScene(renderSnapshot, outerOptions, layout.maxRadius)));
       const lastPointer = lastPointerClientRef.current;
       if (lastPointer) {
         updateHoverFromClientPoint(lastPointer.x, lastPointer.y);
       }
       acknowledgePaintedDocumentSnapshot(chart.document?.documentId, chart);
+      paintedRef.current = {snapshot: renderSnapshot, width: rect.width, height: rect.height, style: String(wheelRenderStyle.revision)};
       recordChartPerf("chart-canvas-paint", {
-        docId: chart.document?.documentId ?? null,
-        mode: chart.overlayRenderMode,
-        renderer: "multiwheel",
+        ...paintDetail(),
+        dynamicProfile: {'body-layout': {ms: bodyLayoutMs}},
         ringCount: rings.length,
         width: Math.round(rect.width),
         height: Math.round(rect.height),
@@ -320,9 +365,11 @@ export function MultiwheelChartCanvas({
     else void document.fonts?.ready.then(schedule, schedule);
     const observer = new ResizeObserver(schedule);
     observer.observe(wrap);
+    const stopCopyEditorRepaint = onCopyEditorRepaint(schedule);
     return () => {
       cancelled = true;
       observer.disconnect();
+      stopCopyEditorRepaint();
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, [chart, fontSymbols, fontUi, palette, renderSnapshot, updateHoverFromClientPoint, wheelRenderStyle]);
@@ -355,6 +402,7 @@ export function MultiwheelChartCanvas({
   const canvas = (
     <div
       ref={wrapRef}
+      data-aries-chart-document={chart.document?.documentId}
       className={cn(
         className ?? "relative flex h-full w-full flex-1 items-center justify-center",
         paintEffectsActive && "aries-chart-paint-effects",

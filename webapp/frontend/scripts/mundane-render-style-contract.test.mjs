@@ -119,12 +119,21 @@ const EXPECTED_PALETTE = {
 async function mundaneFunctions() {
   const source = await readFile(new URL("../src/components/workshell/mundane-chart-view.tsx", import.meta.url), "utf8");
   const ast = ts.createSourceFile("mundane.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = new Set(["degToRad", "mundaneXY", "textSize", "bodyLabelRuns", "bodyTextSize", "bodyLabelRect", "overlaps", "arrangeBodies"]);
+  const names = new Set(["degToRad", "mundaneXY", "textSize", "bodyLabelRuns", "bodyDecoration", "bodyTextSize", "bodyLabelRect", "overlaps", "arrangeBodies"]);
   const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
   const js = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return new Function(`${js}; return { bodyTextSize, bodyLabelRect, bodyLabelRuns, arrangeBodies, overlaps };`)();
+  // These baseline placement fixtures use the default, undecorated appearance.
+  // Decoration geometry itself is covered by wheel-render-style-contract tests.
+  return new Function("useThemeStore", "resolveMinorDignityDecoration",
+    `${js}; return { bodyTextSize, bodyLabelRect, bodyLabelRuns, arrangeBodies, overlaps };`)(
+      { getState: () => ({ theme: { profileOverrides: { chartData: {} } } }) },
+      (_body, _bounds, _size, _style, glyphs) => {
+        assert.deepEqual(glyphs, {});
+        return undefined;
+      },
+    );
 }
 
 test("point names use the text font while body symbols retain Morinus", async () => {
@@ -583,6 +592,8 @@ test("one resolved object feeds paint, collision, hover geometry, and overlays",
     source,
     /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/,
   );
-  assert.match(source, /semanticChartColor\(span\.colourRole, rgbCss\(span\.colour\)\)/);
+  assert.match(source, /<InspectorValueSpans spans=\{spans\} \/>/);
+  const valueSpans = await readFile(new URL("../src/components/workshell/inspector-value-spans.tsx", import.meta.url), "utf8");
+  assert.match(valueSpans, /semanticChartColor\(\s*span\.colourRole,\s*span\.colour \? `rgb\(\$\{span\.colour\.join/);
   assert.match(source, /semanticChartColor\(colourRole, rgbCss\(colour\)\)/);
 });

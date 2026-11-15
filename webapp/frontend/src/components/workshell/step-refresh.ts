@@ -5,13 +5,13 @@
 
 import * as React from "react";
 
-import type { DaemonWorkspaceState } from "@/stores/daemon-workspace-store";
+import { useStepBurst } from "@/lib/chart/step-burst";
+import { useDaemonWorkspaceStore, type DaemonWorkspaceState } from "@/stores/daemon-workspace-store";
 
 // Retained data is deliberately lower priority than the chart's visible step
-// lane.  This window is outside ordinary native key-repeat cadence; resident
-// lists still follow by viewport on every frame and only daemon recalculation
-// waits for quiet.
-export const STEP_SETTLE_REFRESH_MS = 320;
+// lane. Resident lists still follow by viewport on every frame; daemon
+// recalculation waits for the step burst's completion edge (release + drain,
+// lib/chart/step-burst.ts), never for a quiet-window timer.
 
 export type WorkspaceSessionChange = NonNullable<DaemonWorkspaceState["lastSessionChange"]>;
 export type WorkspaceOptionsChange = NonNullable<DaemonWorkspaceState["lastOptionsChange"]>;
@@ -25,7 +25,6 @@ type RefreshSeqArgs = {
   lastOptionsChange: WorkspaceOptionsChange | null;
   refreshOnAnySessionChange?: boolean;
   refreshOnInspectorDataChange?: boolean;
-  debounceStepMs?: number;
 };
 
 export type WorkspaceSemanticRefreshState = Readonly<{
@@ -130,10 +129,42 @@ export function optionsTouchIds(
   return change.refreshedDocumentIds.some((id) => ids.includes(id));
 }
 
+/** Already classified by the daemon store; never restart at zero on remount. */
+export function useRetainedListOptionsRevision(): number {
+  return useDaemonWorkspaceStore((state) => state.lastRetainedDataOptionsChange?.seq ?? 0);
+}
+
+/** For a list whose rows never read houses or cusps: a house-system switch is
+ * not a new revision, so the list neither refetches nor moves. */
+export function useHouseFreeListOptionsRevision(): number {
+  return useDaemonWorkspaceStore((state) => state.lastHouseFreeListOptionsChange?.seq ?? 0);
+}
+
+/** Durable semantic revisions survive batched events and unmounted panes.
+ * Cursor steps and display-only changes are deliberately excluded by the store.
+ */
+export function useRetainedListRevision(ids: readonly (string | null | undefined)[], any = false): number {
+  return useDaemonWorkspaceStore((state) => {
+    const revisions = state.listDataRevisionByDocument;
+    return Math.max(0, ...(any ? Object.values(revisions) : ids.map((id) => id ? revisions[id] ?? 0 : 0)));
+  });
+}
+
+/** For lists whose rows read the radix itself: the durable revision plus steps
+ * that replaced the radix. The store changes it once per step burst, on its
+ * completion edge, so no subscriber re-renders per step. */
+export function useRadixListRevision(ids: readonly (string | null | undefined)[]): number {
+  return useDaemonWorkspaceStore((state) => {
+    const revisions = state.radixListDataRevisionByDocument;
+    return Math.max(0, ...ids.map((id) => id ? revisions[id] ?? 0 : 0));
+  });
+}
+
 /**
  * Secondary surfaces should not compete with chart stepping. Chart snapshots are
- * painted immediately from the navigate POST; tables/companions refresh after a
- * step burst settles, while non-step changes and options remain immediate.
+ * painted immediately from the navigate POST; tables/companions refresh once on
+ * the step burst's completion edge, while non-step changes and options remain
+ * immediate.
  */
 export function useSettledWorkspaceRefreshState({
   documentId,
@@ -144,7 +175,6 @@ export function useSettledWorkspaceRefreshState({
   lastOptionsChange,
   refreshOnAnySessionChange = false,
   refreshOnInspectorDataChange = false,
-  debounceStepMs = STEP_SETTLE_REFRESH_MS,
 }: RefreshSeqArgs): WorkspaceSemanticRefreshState {
   const ids = React.useMemo(
     () => [...new Set([documentId, parentDocumentId, comparisonDocumentId, ...(relatedDocumentIds ?? [])].filter(nonEmpty))],
@@ -157,12 +187,14 @@ export function useSettledWorkspaceRefreshState({
   const sessionTouched = sessionTouchesIds(lastSessionChange, ids, refreshOnAnySessionChange);
   const sessionStepSeq =
     sessionTouched && lastSessionChange?.changeReason === "step"
+      && !lastSessionChange.stepEcho
       ? lastSessionChange.seq
       : 0;
-  const immediateSessionSeq =
+  const durableSessionSeq = useRetainedListRevision(ids, refreshOnAnySessionChange);
+  const immediateSessionSeq = Math.max(durableSessionSeq,
     sessionTouched && lastSessionChange?.changeReason !== "step"
       ? (lastSessionChange?.seq ?? 0)
-      : 0;
+      : 0);
   const optionsSeq = optionsTouchIds(
     lastOptionsChange,
     ids,
@@ -196,19 +228,11 @@ export function useSettledWorkspaceRefreshState({
     setRefreshState(nextRefreshState);
   }
   const pendingStepSeq = nextRefreshState.pendingStepSeq;
-
-  React.useEffect(() => {
-    if (pendingStepSeq === 0 || pendingStepSeq <= settledStepSeq) return;
-    const timer = window.setTimeout(() => {
-      setSettledStep((current) => ({
-        scopeKey,
-        seq: current.scopeKey === scopeKey
-          ? Math.max(current.seq, pendingStepSeq)
-          : pendingStepSeq,
-      }));
-    }, debounceStepMs);
-    return () => window.clearTimeout(timer);
-  }, [scopeKey, pendingStepSeq, settledStepSeq, debounceStepMs]);
+  const { active: stepBurstActive } = useStepBurst();
+  // Settle on the burst's completion edge, in the same render that sees it.
+  if (!stepBurstActive && pendingStepSeq > settledStepSeq) {
+    setSettledStep({ scopeKey, seq: pendingStepSeq });
+  }
 
   return nextRefreshState;
 }
@@ -218,31 +242,13 @@ export function useSettledWorkspaceRefreshSeq(args: RefreshSeqArgs): number {
 }
 
 /**
- * Holds fast-changing per-document values, such as displayDatetime, steady
- * during step bursts. This keeps inspector/companion fetches from aborting and
- * restarting on every keystroke, then catches them up once stepping settles.
+ * Holds fast-changing values, such as displayDatetime, steady while a step
+ * burst is active. This keeps inspector/companion fetches from aborting and
+ * restarting on every keystroke, then catches them up on the completion edge.
  */
-export function useStepSettledValue<T>(
-  value: T,
-  documentId: string | null | undefined,
-  lastSessionChange: WorkspaceSessionChange | null,
-  debounceStepMs = STEP_SETTLE_REFRESH_MS,
-): T {
+export function useStepSettledValue<T>(value: T): T {
+  const { active } = useStepBurst();
   const [settledValue, setSettledValue] = React.useState(value);
-  const stepSeq =
-    documentId &&
-    lastSessionChange?.changeReason === "step" &&
-    (lastSessionChange.docId === documentId ||
-      lastSessionChange.rebuiltChildIds.includes(documentId))
-      ? lastSessionChange.seq
-      : 0;
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSettledValue(value);
-    }, stepSeq === 0 ? 0 : debounceStepMs);
-    return () => window.clearTimeout(timer);
-  }, [value, stepSeq, debounceStepMs]);
-
-  return stepSeq === 0 ? value : settledValue;
+  if (!active && !Object.is(settledValue, value)) setSettledValue(value);
+  return active ? settledValue : value;
 }

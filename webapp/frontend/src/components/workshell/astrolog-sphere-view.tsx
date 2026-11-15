@@ -4,6 +4,8 @@
 "use client";
 
 import * as React from "react";
+import { resolveMinorDignityDecoration, triplicityColorRole } from "@/lib/chart/wheel-render-style";
+import { createResolvedSemanticChartColorResolver } from "@/lib/theme/semantic-color";
 
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import {
@@ -32,6 +34,7 @@ import {
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useT } from "@/lib/i18n/i18n";
+import { wheelPinchScale } from "@/lib/wheel-pinch";
 
 type Layers = {
   houses: boolean;
@@ -242,8 +245,22 @@ function drawCenteredGlyph(
   const [w, h] = draw.textsize(anchor.glyph, { font: style.typography.fontSymbols, size });
   draw.ctx.save();
   draw.ctx.globalAlpha = opacity;
+  const appearance = useThemeStore.getState().theme?.profileOverrides?.chartData;
+  const resolveColor = createResolvedSemanticChartColorResolver();
+  const ink = draw.textbounds(anchor.glyph, { font: style.typography.fontSymbols, size });
+  const outline = resolveMinorDignityDecoration(anchor,
+    { ...ink, x: Math.round(x - w / 2) + ink.x, y: Math.round(y - h / 2) + ink.y }, size,
+    { font: style.typography.fontUi,
+      dignityColor: resolveColor("--morinus-dignity-domicil", fill) ?? fill,
+      triplicityColor: resolveColor(triplicityColorRole(anchor.primaryTriplicityElement,
+        Boolean(appearance?.useZodiacElementColors)), fill) ?? fill,
+      measure: (text, markerSize, font, weight) => {
+        const ink = draw.textbounds(text, { font, size: markerSize, weight, baseline: "alphabetic" });
+        return [ink.w, ink.h];
+      } }, appearance ?? {});
   draw.text([x - w / 2, y - h / 2], anchor.glyph, {
     fill,
+    markers: outline?.markers,
     font: style.typography.fontSymbols,
     size,
   });
@@ -620,7 +637,8 @@ export function AstrologSphereView({
 
   const handleWheel = React.useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const factor = Math.exp(-event.deltaY * 0.001);
+    // A Windows touchpad pinch arrives as Ctrl + wheel and follows the fingers.
+    const factor = wheelPinchScale(event) ?? Math.exp(-event.deltaY * 0.001);
     setView((current) => ({ ...current, zoom: clamp(current.zoom * factor, MIN_ZOOM, MAX_ZOOM) }));
   }, []);
 

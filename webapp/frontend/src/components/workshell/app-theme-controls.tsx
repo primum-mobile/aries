@@ -44,6 +44,7 @@ import {
   type LinkedPaletteSurfaceRole,
 } from "@/lib/theme/linked-palette";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
+import { useThemeStore } from "@/stores/theme-store";
 
 type AppSurfaceId =
   | "global"
@@ -174,6 +175,10 @@ const UI_TYPEFACE_OPTIONS: readonly {
   {
     value: "'DotGothic16', 'FreeSans', ui-sans-serif, system-ui, sans-serif",
     label: "DotGothic16",
+  },
+  {
+    value: "'M PLUS 1 Code', 'FreeSans', ui-sans-serif, system-ui, sans-serif",
+    label: "M PLUS 1 Code",
   },
   {
     value: "system-ui, sans-serif",
@@ -568,6 +573,7 @@ export function AppThemeControls() {
   const cssOverrides = useChartStyleEditorStore((state) => state.cssOverrides);
   const tokenMetadata = useChartStyleEditorStore((state) => state.tokenMetadata);
   const baseTheme = useChartStyleEditorStore((state) => state.styleLabBaseTheme);
+  const uiTypefaceDefault = useThemeStore((state) => state.theme?.uiTypefaceDefault);
   const beginGesture = useChartStyleEditorStore((state) => state.beginGesture);
   const setOverride = useChartStyleEditorStore((state) => state.setOverride);
   const endGesture = useChartStyleEditorStore((state) => state.endGesture);
@@ -640,12 +646,12 @@ export function AppThemeControls() {
   const currentAccent = colorHex(
     scalarValue(CORE_PALETTE_TOKEN.accent, "#1d63a8"),
   );
+  // The effective --aries-font-ui also carries the UI language's script face,
+  // so an inherited typeface reads the daemon's language-free Settings stack.
   const currentTypeface = String(
-    scalarValue(
-      UI_TYPEFACE_TOKEN,
-      baseTheme.appTokens["--aries-font-ui"]
-        ?? "'FreeSans', ui-sans-serif, system-ui, sans-serif",
-    ),
+    semanticOverrides[UI_TYPEFACE_TOKEN]
+      ?? uiTypefaceDefault
+      ?? "'FreeSans', ui-sans-serif, system-ui, sans-serif",
   );
   const typefaceOptions = UI_TYPEFACE_OPTIONS.some(
     (option) => option.value === currentTypeface,
@@ -1237,19 +1243,6 @@ export function AppThemeControls() {
           {textureDetailsVisible ? (
             <>
               <NumberRow
-                label={t("styleLab.app.material.density")}
-                value={Number(inheritedMaterialValue(surface, "density"))}
-                min={0}
-                max={100}
-                step={1}
-                unit="%"
-                overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "density"))}
-                onChange={(value) => setOverride(materialOverrideId(surface, "density"), value)}
-                onReset={() => resetProperty(materialOverrideId(surface, "density"))}
-                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
-                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
-              />
-              <NumberRow
                 label={t("styleLab.app.material.cellSize")}
                 value={Number(inheritedMaterialValue(surface, "cellSize"))}
                 min={0.5}
@@ -1272,6 +1265,19 @@ export function AppThemeControls() {
                 overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "dotSize"))}
                 onChange={(value) => setOverride(materialOverrideId(surface, "dotSize"), value)}
                 onReset={() => resetProperty(materialOverrideId(surface, "dotSize"))}
+                onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
+                onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
+              />
+              <NumberRow
+                label={t("styleLab.app.material.density")}
+                value={Number(inheritedMaterialValue(surface, "density"))}
+                min={0}
+                max={100}
+                step={1}
+                unit="%"
+                overridden={Object.hasOwn(semanticOverrides, materialOverrideId(surface, "density"))}
+                onChange={(value) => setOverride(materialOverrideId(surface, "density"), value)}
+                onReset={() => resetProperty(materialOverrideId(surface, "density"))}
                 onGestureStart={() => beginGesture(APP_THEME_GESTURE_OWNER)}
                 onGestureEnd={() => endGesture(APP_THEME_GESTURE_OWNER)}
               />

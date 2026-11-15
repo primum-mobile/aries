@@ -75,6 +75,7 @@ DEFAULT_SECTIONS = (
 			WorkspaceAction('astrolabe', 'Astrolabe', shortcut=''),
 			WorkspaceAction('astrolog_sphere', 'Astrolog Sphere', shortcut=''),
 			WorkspaceAction('astrocart', 'Astrocartography', shortcut=_action_shortcut('astrocart')),
+			WorkspaceAction('ephemeris', 'Graphic Ephemeris', shortcut=_action_shortcut('ephemeris', 'HMEphemeris')),
 		),
 	),
 	WorkspaceSection(
@@ -87,6 +88,7 @@ DEFAULT_SECTIONS = (
 				mtexts.txts.get('TMPositions', 'Speculum\tF1').split('\t', 1)[0].replace('&', ''),
 				shortcut=_action_shortcut('positions', 'TMPositions'),
 			),
+			WorkspaceAction('pd_positions', 'pd_positions'),
 			WorkspaceAction('lunar_mansions', mtexts.txts.get('LunarMansions', 'Lunar Mansions...').rstrip('. …')),
 			WorkspaceAction('aspects', 'Aspects', shortcut=_action_shortcut('aspects', 'TMAspects')),
 			WorkspaceAction('aspect_list', 'aspect_list', shortcut=_action_shortcut('aspect_list')),
@@ -100,7 +102,6 @@ DEFAULT_SECTIONS = (
 			WorkspaceAction('planetary_hours', 'Planetary Hours', shortcut=_action_shortcut('planetary_hours', 'TMPlanetaryHours')),
 			WorkspaceAction('almuten_zodiacal', 'Almuten Zodiacal', shortcut=_action_shortcut('almuten_zodiacal', 'TMAlmutenZodiacal')),
 			WorkspaceAction('almuten_chart', 'Almuten Chart', shortcut=_action_shortcut('almuten_chart', 'TMAlmutenChart')),
-			WorkspaceAction('ephemeris', 'Graphic Ephemeris', shortcut=_action_shortcut('ephemeris', 'HMEphemeris')),
 			WorkspaceAction('synodic_cycles', 'Synodic Cycles', shortcut=_action_shortcut('synodic_cycles')),
 			WorkspaceAction('speeds', 'Planetary Speeds', shortcut=_action_shortcut('speeds', 'TMSpeeds')),
 			WorkspaceAction('strip', 'Strip', shortcut=_action_shortcut('strip', 'TMStrip')),
@@ -217,11 +218,33 @@ class WorkspaceState(object):
 		self._documents = []
 		self._active_document_id = None
 		self._sequence = 0
+		self._preferred_document_id = None
+
+	def document_sequence(self):
+		return self._sequence
+
+	def advance_document_sequence(self, sequence):
+		"""Never hand out an id at or below *sequence* again (dev reload handoff)."""
+		self._sequence = max(self._sequence, int(sequence or 0))
+
+	def prefer_next_document_id(self, document_id):
+		"""Give the next opened document this id once, if no live document has it."""
+		self._preferred_document_id = document_id or None
+
+	def _next_document_id(self):
+		preferred = self._preferred_document_id
+		self._preferred_document_id = None
+		if preferred and self.find_document(preferred) is None:
+			return preferred
+		while True:
+			self._sequence += 1
+			document_id = 'page-%d' % self._sequence
+			if self.find_document(document_id) is None:
+				return document_id
 
 	def open_document(self, kind, title, subtitle='', path='', parent_document_id=None, indent_level=0, insert_index=None):
-		self._sequence += 1
 		document = WorkspaceDocument(
-			document_id='page-%d' % self._sequence,
+			document_id=self._next_document_id(),
 			kind=kind,
 			title=title,
 			subtitle=subtitle,

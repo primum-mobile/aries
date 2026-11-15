@@ -16,6 +16,7 @@ type UseResizableTableColumnsOptions = {
   storageKey: string;
   columnIds: readonly string[];
   minWidth?: number;
+  fitWidth?: boolean;
 };
 
 function captureHeaderWidths(
@@ -70,6 +71,7 @@ export function useResizableTableColumns({
   storageKey,
   columnIds,
   minWidth = DEFAULT_MIN_WIDTH,
+  fitWidth = false,
 }: UseResizableTableColumnsOptions) {
   const [widths, setWidths] = React.useState<ColumnWidths>(() => readColumnWidths(storageKey));
 
@@ -118,9 +120,7 @@ export function useResizableTableColumns({
         const header = (event.currentTarget as HTMLElement).closest("th") as HTMLElement | null;
         const startX = event.clientX;
         const capturedWidths = captureHeaderWidths(header, columnIds, minWidth);
-        const startWidths = columnIds.some((id) => widths[id] == null)
-          ? { ...capturedWidths, ...widths }
-          : { ...widths };
+        const startWidths = fitWidth ? capturedWidths : { ...capturedWidths, ...widths };
         const startWidth = startWidths[columnId] ?? header?.getBoundingClientRect().width ?? minWidth;
         const onPointerMove = (moveEvent: PointerEvent) => {
           const nextWidth = Math.max(minWidth, Math.round(startWidth + moveEvent.clientX - startX));
@@ -134,30 +134,32 @@ export function useResizableTableColumns({
         document.addEventListener("pointerup", onPointerUp, { once: true });
       },
     }),
-    [columnIds, commitColumnWidths, minWidth, setColumnWidth, widths],
+    [columnIds, commitColumnWidths, fitWidth, minWidth, setColumnWidth, widths],
   );
 
   const colGroup = React.useMemo(() => {
-    if (!hasWidths) return null;
+    if (!tableWidth) return null;
     return (
       <colgroup>
         {columnIds.map((columnId) => (
-          <col key={columnId} style={{ width: `${Math.max(minWidth, widths[columnId] ?? minWidth)}px` }} />
+          <col key={columnId} style={{ width: fitWidth
+            ? `${100 * Math.max(minWidth, widths[columnId] ?? minWidth) / tableWidth}%`
+            : `${Math.max(minWidth, widths[columnId] ?? minWidth)}px` }} />
         ))}
       </colgroup>
     );
-  }, [columnIds, hasWidths, minWidth, widths]);
+  }, [columnIds, fitWidth, minWidth, tableWidth, widths]);
 
   const tableStyle = React.useMemo<React.CSSProperties | undefined>(() => {
-    if (!tableWidth) return undefined;
+    if (!tableWidth || fitWidth) return undefined;
     return { tableLayout: "fixed", width: `${tableWidth}px` };
-  }, [tableWidth]);
+  }, [fitWidth, tableWidth]);
 
   return {
     colGroup,
     getResizeHandleProps,
     hasWidths,
-    tableClassName: hasWidths ? "aries-table--resized" : undefined,
+    tableClassName: hasWidths && !fitWidth ? "aries-table--resized" : undefined,
     tableStyle,
   };
 }

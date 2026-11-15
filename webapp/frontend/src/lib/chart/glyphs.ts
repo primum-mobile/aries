@@ -22,6 +22,8 @@ export const SE_PLUTO = 9;
 export const SE_MEAN_NODE = 10;
 export const SE_TRUE_NODE = 11;
 export const SE_CHIRON = 15;
+export const SE_MEAN_APOG = 12;
+export const SE_OSCU_APOG = 13;
 
 export const PLANETS_ORDER = [
   SE_SUN, SE_MOON, SE_MERCURY, SE_VENUS, SE_MARS, SE_JUPITER,
@@ -48,6 +50,8 @@ export const PLANET_GLYPHS: Record<number, string> = {
   [SE_MEAN_NODE]: "K",
   [SE_TRUE_NODE]: "L",
   [SE_CHIRON]: "}",
+  [SE_MEAN_APOG]: "⚸",
+  [SE_OSCU_APOG]: "⚸",
 };
 
 // Uranus/Pluto variant RULE logic moved daemon-side: the snapshot now ships a
@@ -58,7 +62,12 @@ export const PLANET_GLYPHS: Record<number, string> = {
 export const VERTEX_GLYPH = "!";
 export const FORTUNE_GLYPH = "4";
 export const RETROGRADE_GLYPH = "Z";
+// Text markers used by the chart payload for these calculated points.
+export const SYZYGY_MARKER = "Sy";
+export const ECLIPSE_MARKER = "Ec";
 
+// Display rule: angles are always text (Asc, Dsc, MC, IC);
+// do not use these slots for display.
 // common.py:CHART_ANGLE_GLYPHS; Morinus angle glyph slots. Do not index these
 // through planet arrays: IC is the "2" angle slot, not a body id fallback.
 export type AngleGlyphId = "asc" | "dsc" | "mc" | "ic";

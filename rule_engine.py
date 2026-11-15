@@ -145,8 +145,7 @@ def theme_labels_for(discipline_slug):
     blocks. Built-ins come first; pack themes are appended in pack-id sort
     order. Duplicate labels are filtered.
 
-    See doc/corpus-packs.md "Manifest schema" and the aries-pack-author
-    skill for how a pack registers a new theme."""
+    A pack registers a new theme in its manifest."""
     info = _DISCIPLINE_REGISTRY.get(discipline_slug)
     labels = list(info['theme_labels']) if info else []
     built_in_slugs = dict((info or {}).get('theme_slugs') or {})
@@ -359,24 +358,90 @@ def packs_for_discipline(discipline):
     return out
 
 
+def _ordered_inspector_packs():
+    """Presentation order only; rule evaluation retains its own ordering."""
+    def display_key(item):
+        pack_id, pack = item
+        metadata = pack.manifest.get('pack') or {}
+        spec = (pack.manifest.get('content') or {}).get('inspector') or {}
+        default_order = 0 if pack_id == 'valens' else 100
+        order = spec.get('display_order', default_order)
+        # Non-strict loading must not let malformed presentation metadata
+        # break otherwise usable source passages.
+        if type(order) is not int:
+            order = default_order
+        label = metadata.get('short_label') or metadata.get('name') or pack_id
+        return order, str(label).casefold(), pack_id
+
+    return sorted(
+        ((pack_id, pack) for pack_id, pack in active_packs().items()
+         if getattr(pack, 'inspector_content', None)),
+        key=display_key,
+    )
+
+
+def _inspector_content_keys(kind, object_id):
+    """Angles and cardinal houses share source-text tokens, not geometry.
+
+    House tokens are canonical. Existing angle-authored entries remain usable
+    as fallbacks for either hit target without duplicating a source card.
+    """
+    key = (str(kind), str(object_id))
+    angle_houses = {'asc': '1', 'ic': '4', 'desc': '7', 'mc': '10'}
+    if key[0] == 'angle':
+        angle = {'dc': 'desc', 'dsc': 'desc'}.get(key[1], key[1])
+        house = angle_houses.get(angle)
+    elif key[0] == 'house':
+        house = key[1]
+        angle = next((a for a, h in angle_houses.items() if h == house), None)
+    else:
+        return [key]
+    if house is None or angle is None:
+        return [key]
+    keys = [('house', house), ('angle', angle)]
+    if angle == 'desc':
+        keys.extend([('angle', 'dsc'), ('angle', 'dc')])
+    return keys
+
+
 def active_inspector_content(kind, object_id):
     """Return the first active passive-content selector for an inspector target.
 
     Content-only packs participate in the same persisted on/off filter as rule
     packs, but they never register a discipline or enter ``evaluate()``.
     """
-    key = (str(kind), str(object_id))
+    keys = _inspector_content_keys(kind, object_id)
     first_pack_id = None
-    for pack_id, pack in sorted(active_packs().items()):
+    for pack_id, pack in _ordered_inspector_packs():
         content = getattr(pack, 'inspector_content', None) or {}
         if not content:
             continue
         if first_pack_id is None:
             first_pack_id = pack_id
-        selector = content.get(key)
-        if selector is not None:
-            return pack_id, selector
+        for key in keys:
+            selector = content.get(key)
+            if selector is not None:
+                return pack_id, selector
     return first_pack_id, None
+
+
+def active_inspector_contents(kind, object_id, *, fallback_targets=()):
+    """All enabled source passages, with each pack's most specific match.
+
+    Ordered fallbacks let a source describe a fixed star's constellation when
+    it has no individual entry. Each pack still contributes only one card.
+    """
+    keys = _inspector_content_keys(kind, object_id)
+    for target_kind, target_id in fallback_targets:
+        keys.extend(_inspector_content_keys(target_kind, target_id))
+    contents = []
+    for pack_id, pack in _ordered_inspector_packs():
+        for key in keys:
+            selector = pack.inspector_content.get(key)
+            if selector is not None:
+                contents.append((pack_id, selector))
+                break
+    return contents
 
 
 def active_theme_slugs(discipline, exclude_ui_hidden=True):
@@ -404,7 +469,7 @@ def get_active_pack_ids():
 
 
 def get_semantic_profile_id():
-    """Global corpus interpretation profile; current-chart is the default."""
+    """Global corpus interpretation profile; source-native is the default."""
     return _SEMANTIC_PROFILE['id']
 
 

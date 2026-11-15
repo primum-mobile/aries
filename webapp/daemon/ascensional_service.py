@@ -24,6 +24,7 @@ import ascensional_transits as at_engine
 import astrology
 import default_location as default_location_model
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.ascensional_method import precession_measure
 from webapp.frontend.scripts import export_chart_json
 
 
@@ -206,14 +207,13 @@ def _aspect_chart_index(aspect_name: str) -> Optional[int]:
     return {
         at_engine.CONJUNCTION: chart_cls.CONJUNCTIO,
         at_engine.OPPOSITION: chart_cls.OPPOSITIO,
-        at_engine.PARALLEL: chart_cls.PARALLEL,
-        at_engine.CONTRAPARALLEL: chart_cls.CONTRAPARALLEL,
     }.get(aspect_name)
 
 
 def _aspect_glyph_and_font(aspect_name: str) -> tuple[str, str]:
-    if aspect_name == at_engine.ANTISCIA:
-        return "ant.", "text"
+    if aspect_name in (at_engine.ANTISCIA, at_engine.CONTRA_ANTISCIA):
+        key = "AntisciaAbbrev" if aspect_name == at_engine.ANTISCIA else "ContraAntisciaAbbrev"
+        return export_chart_json.mtexts.txts[key], "text"
     idx = _aspect_chart_index(aspect_name)
     common_obj = getattr(export_chart_json.common, "common", None)
     glyphs = getattr(common_obj, "Aspects", None)
@@ -270,11 +270,11 @@ def _orb_for_aspect(pmp_t: float, pmp_r: float, aspect: str) -> Optional[float]:
         return d * 60.0
     if aspect == at_engine.OPPOSITION:
         return abs(d - 180.0) * 60.0
-    if aspect == at_engine.ANTISCIA:
+    if aspect in (at_engine.ANTISCIA, at_engine.CONTRA_ANTISCIA):
         smod = (pmp_t + pmp_r) % 360.0
         a1 = min(smod, 360.0 - smod)
         a2 = abs(smod - 180.0)
-        return min(a1, a2) * 60.0
+        return (a2 if aspect == at_engine.ANTISCIA else a1) * 60.0
     return None
 
 
@@ -286,6 +286,7 @@ def _near_miss_pairs(
     max_orb_arcmin: float = 90.0,
     dt_minutes: float = 2.0,
     apply_precession: bool = True,
+    precession_measure: str = at_engine.DEFAULT_PRECESSION_MEASURE,
 ):
     snap = at_engine.ATSnapshot(
         radix,
@@ -293,6 +294,7 @@ def _near_miss_pairs(
         event_place,
         include_parallels=True,
         apply_precession=apply_precession,
+        precession_measure=precession_measure,
     )
     already = {_pair_id(pair.transit, pair.radix, pair.aspect) for pair in snap.at_pairs}
 
@@ -303,6 +305,7 @@ def _near_miss_pairs(
         event_place,
         include_parallels=True,
         apply_precession=apply_precession,
+        precession_measure=precession_measure,
     )
     fwd_transit = {(pt.kind, pt.idx): pt for pt in snap_fwd.transit_points}
     fwd_radix = {(pt.kind, pt.idx): pt for pt in snap_fwd.radix_points}
@@ -476,7 +479,7 @@ def _list_rows(
     deduped = _dedup_cusp_pair_duplicates(snapshot.at_pairs)
     filtered_out_count = 0
     if filter_to_active_moment:
-        active_transit_bodies = {tid for tid, _radix, _aspect, _orb in snapshot.active_ecliptic}
+        active_transit_bodies = snapshot.active_transit_body_ids
         before = len(deduped)
         deduped = [
             pair
@@ -488,9 +491,8 @@ def _list_rows(
     order = {
         at_engine.CONJUNCTION: 0,
         at_engine.OPPOSITION: 1,
-        at_engine.PARALLEL: 2,
-        at_engine.CONTRAPARALLEL: 3,
-        at_engine.ANTISCIA: 4,
+        at_engine.ANTISCIA: 2,
+        at_engine.CONTRA_ANTISCIA: 3,
     }
     deduped.sort(key=lambda pair: (order.get(pair.aspect, 99), pair.orb_arcmin))
 
@@ -501,9 +503,7 @@ def _list_rows(
     ]
     if not deduped:
         if filtered_out_count > 0:
-            placeholder = mtexts.txts.get(
-                "FilteredNotInActiveEcliptic", "(filtered: {count} not in active ecliptic)"
-            ).format(count=filtered_out_count)
+            placeholder = mtexts.txts["FilteredNotInActiveEcliptic"].format(count=filtered_out_count)
         elif not snapshot.is_active_moment:
             placeholder = mtexts.txts.get("PassiveMomentTrivial", "(passive moment - AT alone is trivial)")
         else:
@@ -520,9 +520,10 @@ def _list_rows(
             event_place,
             max_orb_arcmin=near_miss_max_orb_arcmin,
             apply_precession=apply_precession,
+            precession_measure=snapshot.precession_measure,
         )
         if filter_to_active_moment:
-            active = {tid for tid, _radix, _aspect, _orb in snapshot.active_ecliptic}
+            active = snapshot.active_transit_body_ids
             near_misses = [
                 row for row in near_misses
                 if row[1].kind == "planet" and row[1].idx in active
@@ -584,6 +585,21 @@ def _active_ecliptic_payload(snapshot) -> list[dict[str, Any]]:
     return out
 
 
+def _active_declination_payload(snapshot) -> list[dict[str, Any]]:
+    return [{
+        "transitId": int(pair.transit.idx),
+        "transitLabel": pair.transit.label,
+        "radixLabel": pair.radix.label,
+        "radixGlyph": _planet_glyph_text(pair.radix.idx) if pair.radix.kind == "planet" else "",
+        "aspect": pair.aspect,
+        "aspectLabel": export_chart_json.mtexts.txts[
+            "Parallel" if pair.aspect == at_engine.PARALLEL else "Contraparallel"
+        ],
+        "orbArcmin": float(pair.orb_arcmin),
+        "orbText": _format_orb(pair.orb_arcmin),
+    } for pair in snapshot.active_declination]
+
+
 class AscensionalTransitService:
     """Build AT snapshot/list payloads for React renderers and future UI routes."""
 
@@ -613,6 +629,12 @@ class AscensionalTransitService:
             chart_b_place = None
             chart_b_place_source = None
             if document_id:
+                from webapp.daemon.workspace_service import workspace_service
+                from webapp.daemon.ascensional_method import apply_precession as session_method, comparison_purpose
+                session = workspace_service._controller.session(str(document_id))
+                if not session or comparison_purpose(session) != "event":
+                    raise ValueError("ascensional event list requires an event comparison")
+                apply_precession = session_method(session)
                 (
                     radix,
                     resolved_index,
@@ -654,6 +676,7 @@ class AscensionalTransitService:
                 float(event_jd),
                 event_place,
                 apply_precession=apply_precession,
+                precession_measure=precession_measure(opts),
             )
             rows, row_meta = _list_rows(
                 radix,
@@ -694,7 +717,8 @@ class AscensionalTransitService:
         event_place = None
         place_source = "chart_b"
         if (
-            session.get("launcher_kind") == "ascensional_transits"
+            session.get("supplementary_feature_kind") == "transits"
+            or session.get("launcher_kind") == "ascensional_transits"
             or session.get("chart_visual_mode") == "ascensional_transits"
         ):
             if chart_b is not None:
@@ -748,6 +772,7 @@ class AscensionalTransitService:
                 max_minutes=max_minutes,
                 threshold_arcmin=threshold_arcmin,
                 apply_precession=apply_precession,
+                precession_measure=precession_measure(opts),
             )
             payload: dict[str, Any] = {
                 "kind": "ascensional_transits_snap",
@@ -799,6 +824,7 @@ class AscensionalTransitService:
         chart_b_place_source: Optional[str] = None,
     ) -> dict[str, Any]:
         active = _active_ecliptic_payload(snapshot)
+        declination = _active_declination_payload(snapshot)
         return {
             "kind": "ascensional_transits",
             "radix": {
@@ -817,6 +843,7 @@ class AscensionalTransitService:
                 "ramcUncorrected": float(snapshot.event_ramc_uncorrected),
                 "precessionCorrectionArcmin": float(snapshot.precession_correction_arcmin),
                 "applyPrecession": bool(apply_precession),
+                "precessionMeasure": snapshot.precession_measure,
                 "direction": snapshot.direction,
             },
             "points": {
@@ -825,11 +852,13 @@ class AscensionalTransitService:
             },
             "atPairs": [_pair_payload(pair) for pair in snapshot.at_pairs],
             "activeEclipticAspects": active,
+            "activeDeclinationAspects": declination,
             "twoTransitRule": {
                 "isActiveMoment": bool(snapshot.is_active_moment),
-                "activeTransitBodyIds": sorted({row["transitId"] for row in active}),
+                "activeTransitBodyIds": sorted(snapshot.active_transit_body_ids),
                 "aspectOrbFastArcmin": float(at_engine.ECLIPTIC_ORB_FAST_ARCMIN),
                 "aspectOrbSlowArcmin": float(at_engine.ECLIPTIC_ORB_SLOW_ARCMIN),
+                "declinationOrbArcmin": float(at_engine.ORB_PARALLEL_ARCMIN),
                 "aspectMultiplesDeg": [float(15 * k) for k in range(1, 13)],
             },
             "list": {
@@ -841,11 +870,13 @@ class AscensionalTransitService:
                 "orbs": {
                     "conjunctionOppositionArcmin": float(at_engine.ORB_CONJ_OPP_ARCMIN),
                     "antisciaArcmin": float(at_engine.ORB_ANTISCIA_ARCMIN),
-                    "parallelArcmin": float(at_engine.ORB_PARALLEL_ARCMIN),
+                    "contraAntisciaArcmin": float(at_engine.ORB_ANTISCIA_ARCMIN),
                 },
                 "precession": {
                     "applied": bool(apply_precession),
                     "correctionArcmin": float(snapshot.precession_correction_arcmin),
+                    "measure": snapshot.precession_measure,
+                    "rateArcsecPerYear": float(at_engine.precession_rate_arcsec(snapshot.precession_measure)),
                 },
                 "rowSemantics": {
                     "source": "ascensional_transit_wnd.py:_populate_at_list",

@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Max Lange
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import wx
+from shortcut_registry import NAVIGATION_KEYCODES, NAVIGATION_NUMPAD_KEYCODES
 import astrology
 import chart
 import chartalerts
@@ -52,10 +52,10 @@ class ChartSession(object):
 	POSITIONS = 2
 	SQUARE = 3
 
-	UP_KEYS = tuple(k for k in (getattr(wx, 'WXK_UP', None), getattr(wx, 'WXK_NUMPAD_UP', None), 315) if k is not None)
-	DOWN_KEYS = tuple(k for k in (getattr(wx, 'WXK_DOWN', None), getattr(wx, 'WXK_NUMPAD_DOWN', None), 317) if k is not None)
-	LEFT_KEYS = tuple(k for k in (getattr(wx, 'WXK_LEFT', None), getattr(wx, 'WXK_NUMPAD_LEFT', None), 314) if k is not None)
-	RIGHT_KEYS = tuple(k for k in (getattr(wx, 'WXK_RIGHT', None), getattr(wx, 'WXK_NUMPAD_RIGHT', None), 316) if k is not None)
+	UP_KEYS = (NAVIGATION_KEYCODES['up'], NAVIGATION_NUMPAD_KEYCODES['up'])
+	DOWN_KEYS = (NAVIGATION_KEYCODES['down'], NAVIGATION_NUMPAD_KEYCODES['down'])
+	LEFT_KEYS = (NAVIGATION_KEYCODES['left'], NAVIGATION_NUMPAD_KEYCODES['left'])
+	RIGHT_KEYS = (NAVIGATION_KEYCODES['right'], NAVIGATION_NUMPAD_KEYCODES['right'])
 
 	def __init__(self, chrt, radix, options, view_mode=0,
 				 navigation_units=None, navigation_title_label=None,
@@ -88,13 +88,13 @@ class ChartSession(object):
 
 	def _normalized_nav_key(self, keycode):
 		if keycode in self.UP_KEYS:
-			return wx.WXK_UP
+			return NAVIGATION_KEYCODES['up']
 		if keycode in self.DOWN_KEYS:
-			return wx.WXK_DOWN
+			return NAVIGATION_KEYCODES['down']
 		if keycode in self.LEFT_KEYS:
-			return wx.WXK_LEFT
+			return NAVIGATION_KEYCODES['left']
 		if keycode in self.RIGHT_KEYS:
-			return wx.WXK_RIGHT
+			return NAVIGATION_KEYCODES['right']
 		return keycode
 
 	def _get_navigation_unit(self, shift_down=False, alt_down=False):
@@ -112,20 +112,20 @@ class ChartSession(object):
 
 	def _navigate_intrinsically(self, keycode, shift_down=False, alt_down=False):
 		keycode = self._normalized_nav_key(keycode)
-		if keycode in (wx.WXK_UP, wx.WXK_DOWN):
+		if keycode in (NAVIGATION_KEYCODES['up'], NAVIGATION_KEYCODES['down']):
 			if tuple((self.navigation_units or ())[:3]) != ('day', 'hour', 'minute'):
 				return False
 			if shift_down and not alt_down:
-				delta = 1 if keycode == wx.WXK_UP else -1
+				delta = 1 if keycode == NAVIGATION_KEYCODES['up'] else -1
 				return self.navigate_to_classical_phase(delta)
-			delta = 1 if keycode == wx.WXK_UP else -1
+			delta = 1 if keycode == NAVIGATION_KEYCODES['up'] else -1
 			return self.navigate_relative('week', delta)
-		if keycode not in (wx.WXK_LEFT, wx.WXK_RIGHT):
+		if keycode not in (NAVIGATION_KEYCODES['left'], NAVIGATION_KEYCODES['right']):
 			return False
 		unit = self._get_navigation_unit(shift_down=shift_down, alt_down=alt_down)
 		if unit is None:
 			return False
-		delta = -1 if keycode == wx.WXK_LEFT else 1
+		delta = -1 if keycode == NAVIGATION_KEYCODES['left'] else 1
 		return self.navigate_relative(unit, delta)
 
 	def _forward_stepper_arrow(self, keycode, shift_down=False, alt_down=False, control_down=False, cmd_down=False, repeat=1):
@@ -146,10 +146,10 @@ class ChartSession(object):
 					)
 				if handled:
 					return True
-			if keycode == wx.WXK_LEFT and hasattr(stepper, 'step_backward'):
+			if keycode == NAVIGATION_KEYCODES['left'] and hasattr(stepper, 'step_backward'):
 				stepper.step_backward()
 				return True
-			if keycode == wx.WXK_RIGHT and hasattr(stepper, 'step_forward'):
+			if keycode == NAVIGATION_KEYCODES['right'] and hasattr(stepper, 'step_forward'):
 				stepper.step_forward()
 				return True
 		except Exception:
@@ -203,7 +203,7 @@ class ChartSession(object):
 		return True
 
 	def _reuse_step_syzygy_if_valid(self, newchart):
-		"""Retain the exact prenatal lunation inside its proven phase interval.
+		"""Retain exact lunation times inside their proven phase interval.
 
 		Syzygy's expensive backward search changes only when the Sun/Moon phase
 		classification crosses conjunction or opposition. The stepped chart has
@@ -241,7 +241,9 @@ class ChartSession(object):
 				return False
 			if ready:
 				return False
-			newchart.syzygy = previous
+			# Rebuild fields that depend on the stepped horizon and obliquity;
+			# only the two exact event times remain invariant within this phase.
+			newchart.calcSyzygy(previous_same_phase=previous)
 			return True
 		except Exception:
 			return False

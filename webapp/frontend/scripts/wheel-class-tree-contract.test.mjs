@@ -4,7 +4,7 @@
 /**
  * The class hierarchy the style editor renders.
  *
- * Stage 1 of doc/ui-specs/style-editor-families-and-swatches.md. The tree is
+ * The tree is
  * derived from the dotted class ids rather than hand-written, so these tests
  * pin the derivation against the real manifest: every class must appear
  * exactly once, group nodes must not masquerade as selectable classes, and the

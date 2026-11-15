@@ -293,6 +293,8 @@ export function planetColorRole(planetId: number): string | null {
     10: "--morinus-body-nodes",
     11: "--morinus-body-nodes",
     15: "--morinus-body-chiron",
+    12: "--morinus-body-moon",
+    13: "--morinus-body-moon",
   };
   return roles[planetId] ?? null;
 }

@@ -1000,7 +1000,7 @@ class TemporalMapService:
 
     @staticmethod
     def _build_time_lord(job: _TemporalMapJob, lane: _LaneState) -> _BuildResult:
-        from .tables_service import tables_service
+        from .tables_service import MATERIALIZE_ALL_LEVELS, tables_service
         from .workspace_service import workspace_service
 
         table_id = TIME_LORD_SOURCES[lane.source_id]
@@ -1032,7 +1032,12 @@ class TemporalMapService:
             for age_offset in range(0, life_years, 12):
                 page_binding = dict(binding)
                 page_binding["age_offset"] = age_offset
+                page_binding[MATERIALIZE_ALL_LEVELS] = True
                 payloads.append((age_offset, build_payload(page_binding)))
+        elif table_id == "decennials":
+            # The canonical table materializes children only for the current
+            # path and opened rows; the map indexes every real period.
+            payloads = [(None, build_payload({**binding, MATERIALIZE_ALL_LEVELS: True}))]
         else:
             payloads = [(None, build_payload(binding))]
         payload = payloads[-1][1]

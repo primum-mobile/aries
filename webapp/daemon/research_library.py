@@ -18,6 +18,7 @@ import tempfile
 import yaml
 
 import note_storage
+import platform_compat
 from webapp.daemon.file_transaction import exclusive_file_transaction
 
 
@@ -31,7 +32,9 @@ def identity_token(value):
     value = str(value or '')
     if not value:
         raise ValueError('Missing chart identity')
-    if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', value):
+    if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', value) and not (
+        platform_compat.IS_WINDOWS and platform_compat.is_windows_reserved_name(value)
+    ):
         return value
     return hashlib.sha256(value.encode()).hexdigest()
 

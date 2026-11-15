@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 import { useDraggableOverlay } from "@/hooks/use-draggable-overlay"
+import { useMobileLayout } from "@/hooks/use-mobile-layout"
 import { useT } from "@/lib/i18n/i18n"
 
 type DialogMotion = "default" | "none"
@@ -91,7 +92,7 @@ function DialogContent(props: DialogContentProps) {
 
 function isOutsideDragHeader(target: EventTarget | null) {
   return !(target instanceof Element)
-    || !target.closest('[data-slot="dialog-header"]')?.parentElement?.hasAttribute("data-floating-dialog")
+    || !target.closest('[data-slot="dialog-header"]')?.closest("[data-floating-dialog]")
     || Boolean(target.closest('button, input, textarea, select, a, [role="button"]'))
 }
 
@@ -124,6 +125,23 @@ function FloatingDialogPopup({ className, ...props }: DialogContentProps) {
     handleLostPointerCapture,
     handleDoubleClick,
   } = useDraggableOverlay({ isBlockedTarget: isOutsideDragHeader })
+  // Phone: the panel becomes a full-screen sheet (globals.css
+  // [data-aries-mobile-dialog]) whose backdrop blocks the app behind it, so
+  // there is nothing to drag and nothing behind it stays live.
+  const mobile = useMobileLayout()
+  if (mobile) {
+    return (
+      <div className="aries-mobile-dialog-backdrop fixed inset-0 z-50">
+        <DialogPopup
+          {...props}
+          data-floating-dialog=""
+          data-aries-mobile-dialog=""
+          motion="none"
+          className={cn("translate-none", className)}
+        />
+      </div>
+    )
+  }
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
       <DialogPopup
@@ -131,7 +149,7 @@ function FloatingDialogPopup({ className, ...props }: DialogContentProps) {
         data-floating-dialog=""
         ref={overlayRef}
         motion="none"
-        className={cn("pointer-events-auto translate-none [transform:translate(-50%,-50%)] [&_[data-slot=dialog-header]]:cursor-grab [&_[data-slot=dialog-header]]:touch-none [&_[data-slot=dialog-header]]:select-none", className)}
+        className={cn("pointer-events-auto translate-none [transform:translate(-50%,-50%)] shadow-[var(--aries-material-window-shadow)] [&_[data-slot=dialog-header]]:cursor-grab [&_[data-slot=dialog-header]]:touch-none [&_[data-slot=dialog-header]]:select-none", className)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

@@ -7,7 +7,9 @@ use std::fs::{self, OpenOptions};
 use std::io::Write as IoWrite;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
+#[cfg(not(target_os = "windows"))]
+use std::process::Stdio;
 #[cfg(unix)]
 use std::sync::atomic::AtomicU64;
 use std::sync::{
@@ -32,9 +34,28 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
+mod bug_report;
+#[cfg(all(feature = "ci-licence-bypass", target_os = "windows"))]
+mod ci_licence_bypass;
+mod daemon_backoff;
+mod diagnostics;
+mod distribution;
+mod frontend_media;
+mod launch_args;
+mod license_network;
 mod licensing;
 mod native_menu_readiness;
+#[cfg(all(feature = "update-rehearsal", target_os = "windows"))]
+mod update_rehearsal;
+mod vanilla;
 use native_menu_readiness::NativeMenuReadiness;
+mod window_geometry;
+#[cfg(target_os = "windows")]
+mod windows_crash_dump;
+#[cfg(target_os = "windows")]
+mod windows_foreground;
+#[cfg(target_os = "windows")]
+mod windows_job;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
 
@@ -49,6 +70,8 @@ struct DaemonProcess {
     daemon_base_url: String,
     daemon_token: String,
     native_started_at: Instant,
+    /// Paces supervisor restarts after repeated start-up failures.
+    restart_backoff: Mutex<daemon_backoff::DaemonRestartBackoff>,
 }
 
 impl DaemonProcess {
@@ -72,7 +95,16 @@ impl DaemonProcess {
             daemon_base_url,
             daemon_token,
             native_started_at,
+            restart_backoff: Mutex::new(daemon_backoff::DaemonRestartBackoff::default()),
         }
+    }
+
+    /// Records a daemon exit; returns the wait before the supervisor restarts it.
+    fn note_daemon_exit(&self) -> Duration {
+        self.restart_backoff
+            .lock()
+            .map(|mut backoff| backoff.note_exit(Instant::now()))
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -99,6 +131,8 @@ struct NativeDaemonTransport {
     #[cfg(unix)]
     socket_path: PathBuf,
     #[cfg(unix)]
+    reconnect_window: Duration,
+    #[cfg(unix)]
     generation: AtomicU64,
     #[cfg(unix)]
     connection: tokio::sync::Mutex<NativeDaemonConnection>,
@@ -121,6 +155,13 @@ impl NativeDaemonTransport {
             ));
             Self {
                 socket_path,
+                reconnect_window: if cfg!(debug_assertions)
+                    && std::env::var("ARIES_DEV_RELOAD").as_deref() == Ok("1")
+                {
+                    Duration::from_secs(5)
+                } else {
+                    Duration::ZERO
+                },
                 generation: AtomicU64::new(0),
                 connection: tokio::sync::Mutex::new(NativeDaemonConnection {
                     generation: 0,
@@ -171,6 +212,28 @@ impl NativeDaemonTransport {
     }
 
     #[cfg(unix)]
+    async fn connect_unix(&self) -> std::io::Result<UnixStream> {
+        let deadline = tokio::time::Instant::now() + self.reconnect_window;
+        loop {
+            match UnixStream::connect(&self.socket_path).await {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                    ) && tokio::time::Instant::now() < deadline =>
+                {
+                    // The dev daemon closes the listener while restoring charts.
+                    tokio::time::sleep_until(
+                        (tokio::time::Instant::now() + Duration::from_millis(50)).min(deadline),
+                    )
+                    .await;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    #[cfg(unix)]
     async fn request_unix(
         &self,
         request: &NativeDaemonRequest,
@@ -197,38 +260,6 @@ impl NativeDaemonTransport {
             ));
         }
 
-        let generation = self.generation.load(Ordering::SeqCst);
-        let mut connection = self.connection.lock().await;
-        if connection.generation != generation {
-            connection.stream = None;
-            connection.generation = generation;
-        }
-        if connection.stream.is_none() {
-            let stream = match tokio::time::timeout(
-                NATIVE_REQUEST_TIMEOUT,
-                UnixStream::connect(&self.socket_path),
-            )
-            .await
-            {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(error)) => {
-                    return Err(NativeTransportError::Unavailable(format!(
-                        "native daemon socket is unavailable: {error}"
-                    )));
-                }
-                Err(_) => {
-                    return Err(NativeTransportError::Unavailable(
-                        "native daemon socket connection timed out".to_string(),
-                    ));
-                }
-            };
-            connection.stream = Some(stream);
-        }
-        let stream = connection
-            .stream
-            .as_mut()
-            .expect("native daemon stream was just connected");
-
         let mut frame = Vec::with_capacity(11 + path.len() + body.len());
         frame.extend_from_slice(NATIVE_REQUEST_MAGIC);
         frame.push(method);
@@ -236,45 +267,63 @@ impl NativeDaemonTransport {
         frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
         frame.extend_from_slice(path);
         frame.extend_from_slice(body);
-        let exchange = async {
-            stream
-                .write_all(&frame)
+
+        let generation = self.generation.load(Ordering::SeqCst);
+        let mut connection = self.connection.lock().await;
+        if connection.generation != generation {
+            connection.stream = None;
+            connection.generation = generation;
+        }
+        // A retained stream outlives a daemon that restarted in place (the dev
+        // reloader re-execs it). Writing into the closed peer fails before the
+        // daemon has a complete frame, so one resend on a fresh stream cannot
+        // repeat a request; read failures are never retried.
+        let mut reused = connection.stream.is_some();
+        let (status, body) = loop {
+            if connection.stream.is_none() {
+                let stream = match tokio::time::timeout(
+                    NATIVE_REQUEST_TIMEOUT,
+                    self.connect_unix(),
+                )
                 .await
-                .map_err(|error| format!("native daemon request write failed: {error}"))?;
-            let mut header = [0_u8; NATIVE_RESPONSE_HEADER_BYTES];
-            stream
-                .read_exact(&mut header)
+                {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(error)) => {
+                        return Err(NativeTransportError::Unavailable(format!(
+                            "native daemon socket is unavailable: {error}"
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(NativeTransportError::Unavailable(
+                            "native daemon socket connection timed out".to_string(),
+                        ));
+                    }
+                };
+                connection.stream = Some(stream);
+            }
+            let stream = connection
+                .stream
+                .as_mut()
+                .expect("native daemon stream was just connected");
+            match tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, native_exchange(stream, &frame))
                 .await
-                .map_err(|error| format!("native daemon response header failed: {error}"))?;
-            if &header[..4] != NATIVE_RESPONSE_MAGIC {
-                return Err("native daemon response protocol is invalid".to_string());
-            }
-            let status = u16::from_be_bytes([header[4], header[5]]);
-            let body_length =
-                u32::from_be_bytes([header[6], header[7], header[8], header[9]]) as usize;
-            if body_length > NATIVE_MAX_BODY_BYTES {
-                return Err("native daemon response is too large".to_string());
-            }
-            let mut response_body = vec![0_u8; body_length];
-            stream
-                .read_exact(&mut response_body)
-                .await
-                .map_err(|error| format!("native daemon response body failed: {error}"))?;
-            let body = String::from_utf8(response_body)
-                .map_err(|error| format!("native daemon response is not UTF-8: {error}"))?;
-            Ok::<(u16, String), String>((status, body))
-        };
-        let (status, body) = match tokio::time::timeout(NATIVE_REQUEST_TIMEOUT, exchange).await {
-            Ok(Ok(response)) => response,
-            Ok(Err(error)) => {
-                connection.stream = None;
-                return Err(NativeTransportError::Failed(error));
-            }
-            Err(_) => {
-                connection.stream = None;
-                return Err(NativeTransportError::Failed(
-                    "native daemon request timed out".to_string(),
-                ));
+            {
+                Ok(Ok(response)) => break response,
+                Ok(Err(NativeExchangeError::Write(error))) if reused => {
+                    log::info!("{error}; reconnecting to the restarted daemon");
+                    connection.stream = None;
+                    reused = false;
+                }
+                Ok(Err(NativeExchangeError::Write(error) | NativeExchangeError::Read(error))) => {
+                    connection.stream = None;
+                    return Err(NativeTransportError::Failed(error));
+                }
+                Err(_) => {
+                    connection.stream = None;
+                    return Err(NativeTransportError::Failed(
+                        "native daemon request timed out".to_string(),
+                    ));
+                }
             }
         };
         Ok(NativeDaemonResponse {
@@ -284,6 +333,48 @@ impl NativeDaemonTransport {
             transport: "unix-ipc",
         })
     }
+}
+
+#[cfg(unix)]
+enum NativeExchangeError {
+    /// The frame did not reach the daemon whole, so it was never dispatched.
+    Write(String),
+    Read(String),
+}
+
+#[cfg(unix)]
+async fn native_exchange(
+    stream: &mut UnixStream,
+    frame: &[u8],
+) -> Result<(u16, String), NativeExchangeError> {
+    use NativeExchangeError::{Read, Write};
+    stream
+        .write_all(frame)
+        .await
+        .map_err(|error| Write(format!("native daemon request write failed: {error}")))?;
+    let mut header = [0_u8; NATIVE_RESPONSE_HEADER_BYTES];
+    stream
+        .read_exact(&mut header)
+        .await
+        .map_err(|error| Read(format!("native daemon response header failed: {error}")))?;
+    if &header[..4] != NATIVE_RESPONSE_MAGIC {
+        return Err(Read(
+            "native daemon response protocol is invalid".to_string(),
+        ));
+    }
+    let status = u16::from_be_bytes([header[4], header[5]]);
+    let body_length = u32::from_be_bytes([header[6], header[7], header[8], header[9]]) as usize;
+    if body_length > NATIVE_MAX_BODY_BYTES {
+        return Err(Read("native daemon response is too large".to_string()));
+    }
+    let mut response_body = vec![0_u8; body_length];
+    stream
+        .read_exact(&mut response_body)
+        .await
+        .map_err(|error| Read(format!("native daemon response body failed: {error}")))?;
+    let body = String::from_utf8(response_body)
+        .map_err(|error| Read(format!("native daemon response is not UTF-8: {error}")))?;
+    Ok((status, body))
 }
 
 // App-quit guard (policy-chart-lifecycle §3; wx onClose/onExit, morin.py:15615,
@@ -314,6 +405,15 @@ const CHART_PICKER_INITIAL_WIDTH: f64 = 552.0;
 const CHART_PICKER_MIN_WIDTH: f64 = 276.0;
 const DAEMON_READY_TIMEOUT_SECS: u64 = 60;
 const APP_ABOUT_MENU_ID: &str = "menu.app.about";
+// macOS convention: app settings live in the application menu as "Settings…"
+// with Cmd+, (Apple HIG, Settings). The frontend opens the retained window.
+const APP_SETTINGS_MENU_ID: &str = "menu.app.settings";
+// Windows draws the daemon menu inside the unified titlebar (the frontend's
+// in-page app menu). A Win32 menu bar would sit beneath the extended DWM frame,
+// attach to every tool window (Tauri assigns the app menu to each window), and
+// carry macOS app-menu items: Hide binds Ctrl+H to SW_HIDE and Quit posts
+// WM_QUIT past the quit preflight.
+const NATIVE_MENU_BAR: bool = cfg!(not(target_os = "windows"));
 const ARIES_ABOUT_COMMAND_ID: &str = "menu.help.about";
 // Last-resort fallback only. The LIVE menu is fetched from the daemon at startup
 // (see setup() -> fetch_native_menu_manifest), so editing the JSON file or
@@ -323,6 +423,29 @@ const NATIVE_MENU_MANIFEST_JSON: &str = include_str!("../native-menu-manifest.js
 const MAIN_WINDOW_STATE_FILE: &str = "main-window-size.json";
 const MAIN_WINDOW_MIN_WIDTH: f64 = 1024.0;
 const MAIN_WINDOW_MIN_HEIGHT: f64 = 720.0;
+// WebView2 requires one scrollbar style for every webview sharing a data
+// directory, so the Rust-built windows use the main window's config value
+// (tauri.conf.json `scrollBarStyle`; a test keeps the two equal). Fluent
+// overlay scrollbars take no layout width, like macOS overlay scrollbars, so
+// the table-fit policy sees the same content box. Tauri defines the Fluent
+// variant only on Windows; macOS and Linux keep their default scrollbars.
+#[cfg(target_os = "windows")]
+const WEBVIEW_SCROLL_BAR_STYLE: tauri::webview::ScrollBarStyle =
+    tauri::webview::ScrollBarStyle::FluentOverlay;
+#[cfg(not(target_os = "windows"))]
+const WEBVIEW_SCROLL_BAR_STYLE: tauri::webview::ScrollBarStyle =
+    tauri::webview::ScrollBarStyle::Default;
+// Matches tauri.conf.json `identifier`, which the NSIS installer writes as the
+// AppUserModelID of the Start menu and desktop shortcuts. The process must use
+// the same ID or a pinned shortcut and the running window get two taskbar
+// buttons.
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_APP_USER_MODEL_ID: &str = "sh.aries.desktop";
+// WebView2 browser shortcuts (F5/Ctrl+R reload, Ctrl+F find, Ctrl+P print,
+// Alt+Left/Right history, Ctrl+Shift+I/F12 DevTools) collide with Aries
+// commands and can reload the app. Debug builds keep them for DevTools.
+#[cfg(target_os = "windows")]
+const WEBVIEW2_BROWSER_ACCELERATOR_KEYS: bool = cfg!(debug_assertions);
 const DESKTOP_WEBVIEW_GUARD_SCRIPT: &str = r#"
 (function () {
   if (window.__ARIES_DESKTOP_WEBVIEW_GUARD__) return;
@@ -616,6 +739,76 @@ fn restore_main_window_frame(window: &WebviewWindow<Wry>) -> Result<(), String> 
         .map_err(|e| e.to_string())
 }
 
+// Docking, undocking or a changed display arrangement can leave the saved
+// frame off-screen or larger than the screen, and a small high-DPI work area
+// (1080p at 150 %) is shorter than the design minimum. Runs once at startup on
+// the outer frame in physical pixels, after the titlebar subclass is installed.
+#[cfg(target_os = "windows")]
+fn fit_main_window_to_work_area(window: &WebviewWindow<Wry>) -> Result<(), String> {
+    use tauri::{PhysicalPosition, PhysicalSize};
+    use window_geometry::{fit_frame_to_work_areas, min_size_within, Rect};
+
+    let monitors = window.available_monitors().map_err(|e| e.to_string())?;
+    let areas: Vec<Rect> = monitors
+        .iter()
+        .map(|monitor| {
+            let area = monitor.work_area();
+            Rect {
+                x: f64::from(area.position.x),
+                y: f64::from(area.position.y),
+                width: f64::from(area.size.width),
+                height: f64::from(area.size.height),
+            }
+        })
+        .collect();
+    let outer_position = window.outer_position().map_err(|e| e.to_string())?;
+    let outer_size = window.outer_size().map_err(|e| e.to_string())?;
+    let inner_size = window.inner_size().map_err(|e| e.to_string())?;
+    let frame = Rect {
+        x: f64::from(outer_position.x),
+        y: f64::from(outer_position.y),
+        width: f64::from(outer_size.width),
+        height: f64::from(outer_size.height),
+    };
+    let Some(fitted) = fit_frame_to_work_areas(frame, &areas) else {
+        return Ok(());
+    };
+    let scale = monitors[fitted.area].scale_factor();
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let area = areas[fitted.area];
+    let (min_width, min_height) = min_size_within(
+        MAIN_WINDOW_MIN_WIDTH,
+        MAIN_WINDOW_MIN_HEIGHT,
+        area.width / scale,
+        area.height / scale,
+    );
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize {
+            width: min_width,
+            height: min_height,
+        })))
+        .map_err(|e| e.to_string())?;
+    if fitted.frame == frame {
+        return Ok(());
+    }
+    log::info!("moving restored main window onto the visible work area: {frame:?} -> {:?}", fitted.frame);
+    window
+        .set_position(Position::Physical(PhysicalPosition {
+            x: fitted.frame.x.round() as i32,
+            y: fitted.frame.y.round() as i32,
+        }))
+        .map_err(|e| e.to_string())?;
+    // set_size takes the client size; keep the current frame thickness.
+    let frame_width = f64::from(outer_size.width.saturating_sub(inner_size.width));
+    let frame_height = f64::from(outer_size.height.saturating_sub(inner_size.height));
+    window
+        .set_size(Size::Physical(PhysicalSize {
+            width: (fitted.frame.width - frame_width).max(1.0).round() as u32,
+            height: (fitted.frame.height - frame_height).max(1.0).round() as u32,
+        }))
+        .map_err(|e| e.to_string())
+}
+
 fn save_main_window_frame(window: &Window<Wry>) -> Result<(), String> {
     let size = window.inner_size().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
@@ -648,6 +841,12 @@ fn save_main_window_frame(window: &Window<Wry>) -> Result<(), String> {
 
 fn choose_daemon_port() -> std::io::Result<u16> {
     if cfg!(debug_assertions) {
+        if let Ok(port) = std::env::var("ARIES_DAEMON_PORT") {
+            return port
+                .parse::<std::num::NonZeroU16>()
+                .map(std::num::NonZeroU16::get)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error));
+        }
         return Ok(8765);
     }
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
@@ -745,17 +944,30 @@ fn apply_daemon_environment(
         .env("ARIES_DAEMON_PARENT_PID", daemon_parent_pid())
         .env("ARIES_DAEMON_BASE_DIR", base_dir)
         .env("ARIES_DAEMON_CORS_ORIGINS", cors_origins);
+    #[cfg(target_os = "windows")]
+    windows_job::apply_parent_identity(command);
     if let Some(path) = native_socket_path {
         command.env("ARIES_DAEMON_SOCKET", path);
     }
+    vanilla::apply_daemon_environment(command);
 }
 
-fn attach_daemon_logs(command: &mut Command, handle: &tauri::AppHandle) {
-    let log_dir = handle
-        .path()
-        .app_log_dir()
-        .or_else(|_| handle.path().app_config_dir().map(|path| path.join("logs")));
-    let Ok(log_dir) = log_dir else {
+/// Where this platform's shell and daemon logs live (bug reports read them
+/// back): Tauri's log folder on macOS, `%LOCALAPPDATA%\Aries\logs` on Windows.
+fn app_log_dir(handle: &AppHandle) -> Option<PathBuf> {
+    diagnostics::log_dir(handle)
+}
+
+/// Windows: stdout/stderr are piped into size-capped, rotated UTF-8 files in
+/// `%LOCALAPPDATA%\Aries\logs` (`diagnostics::capture_daemon_output`).
+#[cfg(target_os = "windows")]
+fn attach_daemon_logs(command: &mut Command, _handle: &AppHandle) {
+    diagnostics::pipe_daemon_output(command);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn attach_daemon_logs(command: &mut Command, handle: &AppHandle) {
+    let Some(log_dir) = app_log_dir(handle) else {
         return;
     };
     if let Err(error) = fs::create_dir_all(&log_dir) {
@@ -800,18 +1012,21 @@ fn attach_daemon_logs(command: &mut Command, handle: &tauri::AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn configure_daemon_process(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-
+fn spawn_daemon_process(command: &mut Command) -> std::io::Result<Child> {
     // PyInstaller produces a console executable so redirected startup errors
     // remain available in the app log. Suppress only the separate console
     // window when Tauri launches that sidecar.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
+    // The daemon and its helpers die with the app, however the app exits.
+    let mut child = windows_job::spawn_in_kill_on_close_job(command, CREATE_NO_WINDOW)?;
+    diagnostics::capture_daemon_output(&mut child);
+    Ok(child)
 }
 
 #[cfg(not(target_os = "windows"))]
-fn configure_daemon_process(_command: &mut Command) {}
+fn spawn_daemon_process(command: &mut Command) -> std::io::Result<Child> {
+    command.spawn()
+}
 
 fn fallback_resource_dir_from_current_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -963,7 +1178,13 @@ async fn native_daemon_request(
         #[cfg(unix)]
         Err(NativeTransportError::Failed(error)) => Err(error),
         Err(NativeTransportError::Unavailable(error)) => {
+            // On Unix this is a real fallback worth a warning. Windows has no
+            // socket lane, so HTTP is the transport itself: logging there wrote
+            // a WARN line (and periodic log rotation) on every step.
+            #[cfg(unix)]
             log::warn!("{error}; using local HTTP compatibility transport");
+            #[cfg(not(unix))]
+            let _ = error;
             let http_agent = state.http_agent.clone();
             let daemon_base_url = state.daemon_base_url.clone();
             let daemon_token = state.daemon_token.clone();
@@ -1003,6 +1224,11 @@ fn spawn_daemon(
         command
             .args(["-m", "webapp.daemon"])
             .current_dir(&repo_root);
+        // The packaged Windows daemon runs in Python UTF-8 mode (PyInstaller
+        // `X utf8`); give Windows development launches the same text defaults
+        // instead of the ANSI code page. macOS launches are unchanged.
+        #[cfg(target_os = "windows")]
+        command.env("PYTHONUTF8", "1");
         let mut python_paths = vec![repo_root.join("SWEP").join("src")];
         if let Some(existing) = std::env::var_os("PYTHONPATH") {
             python_paths.extend(std::env::split_paths(&existing));
@@ -1039,8 +1265,7 @@ fn spawn_daemon(
                 native_socket_path,
             );
             attach_daemon_logs(&mut command, handle);
-            configure_daemon_process(&mut command);
-            return command.spawn();
+            return spawn_daemon_process(&mut command);
         }
         let adjacent_sidecar = std::env::current_exe()
             .ok()
@@ -1055,10 +1280,17 @@ fn spawn_daemon(
                 native_socket_path,
             );
             attach_daemon_logs(&mut command, handle);
-            configure_daemon_process(&mut command);
-            return command.spawn();
+            return spawn_daemon_process(&mut command);
         }
         let bin_path = resource_dir.join("binaries").join(daemon_binary);
+        #[cfg(target_os = "windows")]
+        if !bin_path.exists() {
+            log::error!(
+                "aries daemon executable not found at {} or {}",
+                resource_sidecar.display(),
+                bin_path.display()
+            );
+        }
         let mut command = Command::new(bin_path);
         apply_daemon_environment(
             &mut command,
@@ -1070,8 +1302,7 @@ fn spawn_daemon(
         command
     };
     attach_daemon_logs(&mut command, handle);
-    configure_daemon_process(&mut command);
-    command.spawn()
+    spawn_daemon_process(&mut command)
 }
 
 fn terminate_daemon_child(state: &DaemonProcess, reason: &str) {
@@ -1088,6 +1319,8 @@ fn terminate_daemon_child(state: &DaemonProcess, reason: &str) {
     match daemon.try_wait() {
         Ok(Some(status)) => {
             log::info!("aries daemon already exited during {reason}: {status}");
+            #[cfg(target_os = "windows")]
+            windows_job::release_daemon_job();
             return;
         }
         Ok(None) => {}
@@ -1103,6 +1336,9 @@ fn terminate_daemon_child(state: &DaemonProcess, reason: &str) {
         Ok(status) => log::info!("stopped aries daemon pid {pid} during {reason}: {status}"),
         Err(error) => log::warn!("failed to reap aries daemon pid {pid} during {reason}: {error}"),
     }
+    // Ends helpers the daemon started (table PDF export, pmtiles).
+    #[cfg(target_os = "windows")]
+    windows_job::release_daemon_job();
 }
 
 fn stop_daemon(app: &AppHandle<Wry>, reason: &str) {
@@ -1135,6 +1371,7 @@ fn start_daemon_if_permitted(app: &AppHandle<Wry>, reason: &str) -> Result<Optio
             Ok(None) => return Ok(None),
             Ok(Some(status)) => {
                 log::info!("aries daemon had exited before {reason}: {status}");
+                state.note_daemon_exit();
                 let _ = child_guard.take();
             }
             Err(error) => {
@@ -1146,13 +1383,30 @@ fn start_daemon_if_permitted(app: &AppHandle<Wry>, reason: &str) -> Result<Optio
     }
 
     state.native_transport.mark_daemon_starting();
-    let mut daemon = spawn_daemon(
+    let mut daemon = match spawn_daemon(
         app,
         state.port,
         &state.daemon_token,
         state.native_transport.socket_path(),
-    )
-    .map_err(|error| format!("failed to spawn aries daemon: {error}"))?;
+    ) {
+        Ok(daemon) => daemon,
+        Err(error) => {
+            if let Ok(mut backoff) = state.restart_backoff.lock() {
+                let delay = backoff.note_spawn_error(Instant::now());
+                if !delay.is_zero() {
+                    log::warn!("next aries daemon start attempt in {}s", delay.as_secs());
+                }
+            }
+            #[cfg(target_os = "windows")]
+            diagnostics::note_daemon_spawn_error(app, &error);
+            return Err(format!("failed to spawn aries daemon: {error}"));
+        }
+    };
+    let spawn_generation = state
+        .restart_backoff
+        .lock()
+        .map(|mut backoff| backoff.note_spawned())
+        .unwrap_or_default();
     let pid = daemon.id();
     if state.stopping.load(Ordering::SeqCst) || !state.access_allowed.load(Ordering::SeqCst) {
         let _ = daemon.kill();
@@ -1163,11 +1417,14 @@ fn start_daemon_if_permitted(app: &AppHandle<Wry>, reason: &str) -> Result<Optio
     drop(child_guard);
 
     log::info!("started aries daemon pid {pid} during {reason}");
+    #[cfg(target_os = "windows")]
+    diagnostics::watch_daemon_startup(app.clone(), state.daemon_base_url.clone());
     install_daemon_native_menu_when_ready(
         app.clone(),
         state.daemon_base_url.clone(),
         state.daemon_token.clone(),
         state.native_started_at,
+        spawn_generation,
     );
     Ok(Some(pid))
 }
@@ -1197,7 +1454,7 @@ pub(crate) fn reconcile_daemon_license_gate(app: &AppHandle<Wry>) {
 
 fn start_daemon_supervisor(app: AppHandle<Wry>) {
     thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(2));
+        thread::sleep(daemon_backoff::SUPERVISOR_TICK);
         let Some(state) = app.try_state::<DaemonProcess>() else {
             return;
         };
@@ -1219,7 +1476,17 @@ fn start_daemon_supervisor(app: AppHandle<Wry>) {
             match guard.as_mut() {
                 Some(child) => match child.try_wait() {
                     Ok(Some(status)) => {
-                        log::warn!("aries daemon exited unexpectedly: {status}; restarting");
+                        let delay = state.note_daemon_exit();
+                        if delay.is_zero() {
+                            log::warn!("aries daemon exited unexpectedly: {status}; restarting");
+                        } else {
+                            log::warn!(
+                                "aries daemon exited before it was ready: {status}; restarting in {}s",
+                                delay.as_secs()
+                            );
+                        }
+                        #[cfg(target_os = "windows")]
+                        diagnostics::note_daemon_exit(&app, status);
                         let _ = guard.take();
                         true
                     }
@@ -1238,6 +1505,13 @@ fn start_daemon_supervisor(app: AppHandle<Wry>) {
         {
             continue;
         }
+        let may_restart = state
+            .restart_backoff
+            .lock()
+            .map_or(true, |backoff| backoff.may_restart(Instant::now()));
+        if !may_restart {
+            continue;
+        }
 
         match start_daemon_if_permitted(&app, "supervisor restart") {
             Ok(Some(pid)) => {
@@ -1252,10 +1526,41 @@ fn start_daemon_supervisor(app: AppHandle<Wry>) {
     });
 }
 
+/// Raw connect budget for the Windows readiness probe. A loopback listener
+/// completes the handshake in well under a millisecond, even while the daemon
+/// is still busy, so this only bounds the wait on a port that is not listening.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+const DAEMON_READY_CONNECT_PROBE: Duration = Duration::from_millis(100);
+
+/// Whether something accepts TCP connections at the daemon URL's address.
+///
+/// Windows answers a loopback RST by retransmitting the SYN (after ~0.5 s,
+/// then ~1 s) and reports the refusal only after ~2 s. A health GET started
+/// before the daemon listens therefore notices it up to a second late; a short
+/// raw connect fails fast instead. Unparseable URLs report `true` so the
+/// health GET still decides.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn daemon_port_accepting(daemon_base_url: &str, budget: Duration) -> bool {
+    let Some(address) = Url::parse(daemon_base_url)
+        .ok()
+        .and_then(|url| url.socket_addrs(|| None).ok())
+        .and_then(|addresses| addresses.into_iter().next())
+    else {
+        return true;
+    };
+    std::net::TcpStream::connect_timeout(&address, budget).is_ok()
+}
+
 fn wait_for_daemon_ready(daemon_base_url: &str, timeout: Duration) -> std::io::Result<()> {
     let started_at = Instant::now();
     let health_url = format!("{daemon_base_url}/health");
     while started_at.elapsed() < timeout {
+        // Unix refuses a closed loopback port at once; only Windows needs the probe.
+        #[cfg(target_os = "windows")]
+        if !daemon_port_accepting(daemon_base_url, DAEMON_READY_CONNECT_PROBE) {
+            thread::sleep(Duration::from_millis(20));
+            continue;
+        }
         match ureq::get(&health_url)
             .timeout(Duration::from_secs(2))
             .call()
@@ -1312,9 +1617,17 @@ fn apply_native_window_theme(
     window
         .set_theme(Some(native_theme))
         .map_err(|e| e.to_string())?;
+    let background = chart_picker_background(native_theme, background);
     window
-        .set_background_color(Some(chart_picker_background(native_theme, background)))
+        .set_background_color(Some(background))
         .map_err(|e| e.to_string())?;
+    // The caption buttons sit on DWM's frame; give it the page colour.
+    #[cfg(target_os = "windows")]
+    if window.label() == "main" {
+        if let Ok(hwnd) = window.hwnd() {
+            windows_titlebar::set_caption_color(hwnd, background.0, background.1, background.2);
+        }
+    }
     Ok(())
 }
 
@@ -1330,9 +1643,69 @@ fn show_main_window(
     }
     apply_native_window_theme(&window, theme.as_deref(), background)?;
     window.show().map_err(|error| error.to_string())?;
+    // DWM measures caption buttons only once the frame is shown.
+    #[cfg(target_os = "windows")]
+    publish_windows_caption_inset(&window.as_ref().window());
     #[cfg(debug_assertions)]
     log::info!("main-window-ready visible={}", window.is_visible().map_err(|e| e.to_string())?);
     Ok(())
+}
+
+/// Keeps the native window appearance in step with the Aries theme after the
+/// startup reveal. On Windows the DWM caption buttons draw white glyphs on a
+/// dark window and dark glyphs on a light one, so a light Aries theme on a
+/// window left at `Dark` makes minimize/maximize/close invisible. The frontend
+/// calls this only on Windows; macOS keeps its startup appearance.
+#[tauri::command]
+fn set_main_window_theme(
+    window: WebviewWindow<Wry>,
+    theme: Option<String>,
+    background: Option<Vec<u8>>,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("main window theme must come from the main webview".into());
+    }
+    apply_native_window_theme(&window, theme.as_deref(), background)?;
+    #[cfg(target_os = "windows")]
+    publish_windows_caption_inset(&window.as_ref().window());
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+const WINDOWS_CAPTION_INSET_EVENT: &str = "aries://windows-caption-inset";
+
+/// Width, in CSS px, of the Windows caption buttons the titlebar must leave
+/// free: DWM's measured bounds for this window, else the system estimate.
+#[tauri::command]
+fn get_windows_caption_inset(window: WebviewWindow<Wry>) -> Result<i32, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        Ok(windows_titlebar::current_caption_controls_inset(hwnd))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+        Ok(0)
+    }
+}
+
+/// Re-measures the main window's caption buttons and tells its page when the
+/// width changed (shown, maximized/restored, moved to another DPI, re-themed).
+#[cfg(target_os = "windows")]
+fn publish_windows_caption_inset(window: &Window<Wry>) {
+    if window.label() != "main" {
+        return;
+    }
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    windows_titlebar::refresh_caption_cutout(hwnd);
+    if let Some(inset) = windows_titlebar::refresh_caption_controls_inset(hwnd) {
+        if let Err(error) = window.emit_to("main", WINDOWS_CAPTION_INSET_EVENT, inset) {
+            log::warn!("failed to publish the Windows caption inset: {error}");
+        }
+    }
 }
 
 fn build_chart_picker_window(
@@ -1343,7 +1716,7 @@ fn build_chart_picker_window(
     background: Option<Vec<u8>>,
 ) -> Result<(), String> {
     let native_theme = chart_picker_theme(theme);
-    let builder = WebviewWindowBuilder::new(app, CHART_PICKER_WINDOW, WebviewUrl::App(path.into()))
+    let builder = vanilla::isolate(WebviewWindowBuilder::new(app, CHART_PICKER_WINDOW, WebviewUrl::App(path.into())))
         .title(title)
         .inner_size(CHART_PICKER_INITIAL_WIDTH, 660.0)
         .min_inner_size(CHART_PICKER_MIN_WIDTH, 480.0)
@@ -1355,14 +1728,29 @@ fn build_chart_picker_window(
         .background_color(chart_picker_background(native_theme, background))
         .center()
         .focused(false)
-        .visible(false);
+        .visible(false)
+        .scroll_bar_style(WEBVIEW_SCROLL_BAR_STYLE);
     #[cfg(target_os = "macos")]
     let builder = builder
         .decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true);
-    builder.build().map_err(|e| e.to_string())?;
+    let window = builder.build().map_err(|e| e.to_string())?;
+    detach_app_menu(&window);
     Ok(())
+}
+
+/// Tauri hands the app-wide menu to every window that has none of its own. On
+/// Windows that is a Win32 menu bar (with Ctrl+H Hide and a Quit that skips
+/// the quit preflight) inside a frameless tool window. Windows builds install
+/// no app menu today; this keeps tool windows menu-free if one is ever added.
+fn detach_app_menu(window: &WebviewWindow<Wry>) {
+    #[cfg(target_os = "windows")]
+    if let Err(error) = window.remove_menu() {
+        log::warn!("failed to detach the app menu from {}: {error}", window.label());
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = window;
 }
 
 fn show_chart_picker_window(window: WebviewWindow<Wry>) -> Result<(), String> {
@@ -1516,6 +1904,10 @@ fn build_native_menu_from_manifest(
     let app_about = MenuItemBuilder::with_id(APP_ABOUT_MENU_ID, "About Aries")
         .enabled(true)
         .build(handle)?;
+    let app_settings = MenuItemBuilder::with_id(APP_SETTINGS_MENU_ID, "Settings…")
+        .accelerator("CmdOrCtrl+,")
+        .enabled(true)
+        .build(handle)?;
     let app_services = PredefinedMenuItem::services(handle, None)?;
     let app_hide = PredefinedMenuItem::hide(handle, None)?;
     let app_hide_others = PredefinedMenuItem::hide_others(handle, None)?;
@@ -1523,6 +1915,8 @@ fn build_native_menu_from_manifest(
     let app_quit = PredefinedMenuItem::quit(handle, None)?;
     let app_menu = SubmenuBuilder::new(handle, "Aries")
         .item(&app_about)
+        .separator()
+        .item(&app_settings)
         .separator()
         .item(&app_services)
         .separator()
@@ -1601,13 +1995,32 @@ fn build_native_menu(handle: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>
     build_native_menu_from_manifest(handle, &baked_native_menu_manifest())
 }
 
+#[cfg(target_os = "macos")]
+fn scope_transit_search_accelerator(menu: &tauri::menu::Menu<Wry>, settings_focused: bool) -> tauri::Result<()> {
+    // The Settings webview handles Cmd+F while it owns focus. The menu item
+    // still opens Transit Search when clicked.
+    if let Some(MenuItemKind::Submenu(tables)) = menu.get("menu.tables") {
+        if let Some(MenuItemKind::MenuItem(search)) = tables.get("transit-search") {
+            search.set_accelerator((!settings_focused).then_some("CmdOrCtrl+F"))?;
+        }
+    }
+    Ok(())
+}
+
 // Fetches the live menu tree from the daemon and swaps it in; on any failure,
 // leaves the baked fallback menu (already installed by the `.menu()` builder
 // callback) in place so the app is never menu-less.
 fn install_daemon_native_menu(app: &AppHandle, daemon_base_url: &str, daemon_token: &str) -> Result<(), String> {
+    if !NATIVE_MENU_BAR {
+        return Ok(());
+    }
     let manifest = fetch_native_menu_manifest(daemon_base_url, daemon_token)
         .map_err(|error| error.to_string())?;
     let menu = build_native_menu_from_manifest(app, &manifest).map_err(|error| error.to_string())?;
+    #[cfg(target_os = "macos")]
+    if app.get_webview_window(SETTINGS_WINDOW).is_some_and(|window| window.is_focused().unwrap_or(false)) {
+        scope_transit_search_accelerator(&menu, true).map_err(|error| error.to_string())?;
+    }
     app.set_menu(menu).map_err(|error| error.to_string())?;
     app.state::<NativeMenuCommandIds>().replace_from_manifest(&manifest)?;
     Ok(())
@@ -1618,6 +2031,7 @@ fn install_daemon_native_menu_when_ready(
     daemon_base_url: String,
     daemon_token: String,
     native_started_at: Instant,
+    spawn_generation: u64,
 ) {
     app.state::<NativeMenuReadiness>().begin();
     thread::spawn(move || {
@@ -1630,6 +2044,11 @@ fn install_daemon_native_menu_when_ready(
             );
             app.state::<NativeMenuReadiness>().finish(Err(error.to_string()));
             return;
+        }
+        if let Some(state) = app.try_state::<DaemonProcess>() {
+            if let Ok(mut backoff) = state.restart_backoff.lock() {
+                backoff.note_ready(spawn_generation);
+            }
         }
         record_native_startup_perf(
             "daemon-health-ready-rust",
@@ -1888,7 +2307,9 @@ fn build_manifest_submenu(
         SubmenuBuilder::with_id(handle, id, label).enabled(node.enabled.unwrap_or(true));
 
     for child in &node.children {
-        if child.id.as_deref() == Some(ARIES_ABOUT_COMMAND_ID) {
+        if child.id.as_deref() == Some(ARIES_ABOUT_COMMAND_ID)
+            || (!bug_report::ENABLED && child.id.as_deref() == Some("menu.help.report-bug"))
+        {
             continue;
         }
         match child.node_type.as_str() {
@@ -2120,21 +2541,27 @@ fn build_tool_window(
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err("invalid tool window dimensions".into());
     }
-    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into()))
+    let builder = vanilla::isolate(WebviewWindowBuilder::new(app, label, WebviewUrl::App(path.into())))
         .title(title).inner_size(width, height)
         .min_inner_size(min_width.min(width), min_height.min(height))
         .decorations(false).shadow(true).resizable(true).skip_taskbar(true)
-        .center().visible(false).focused(false);
+        .center().visible(false).focused(false)
+        .scroll_bar_style(WEBVIEW_SCROLL_BAR_STYLE);
     // Retained tools must receive open requests even after a long hidden spell.
     let builder = builder.background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+    // Windows release rehearsal builds only (src/ci_licence_bypass.rs).
+    #[cfg(all(feature = "ci-licence-bypass", target_os = "windows"))]
+    let builder = match ci_licence_bypass::runtime_webview_args() {
+        Some(args) => builder.additional_browser_args(&args),
+        None => builder,
+    };
     #[cfg(target_os = "macos")]
     let builder = builder.decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
     let window = builder.build().map_err(|e| e.to_string())?;
+    detach_app_menu(&window);
     #[cfg(debug_assertions)]
     log::info!("tool-window-created label={label} visible={}", window.is_visible().map_err(|e| e.to_string())?);
-    #[cfg(not(debug_assertions))]
-    let _ = window;
     Ok(())
 }
 
@@ -2200,9 +2627,10 @@ async fn hide_chart_editor_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn open_settings_window(
-    app: tauri::AppHandle, tab: String, title: String, width: f64, height: f64, prewarm: Option<bool>,
+    app: tauri::AppHandle, tab: Option<String>, title: String, width: f64, height: f64, prewarm: Option<bool>,
+    focus_search: Option<bool>,
 ) -> Result<(), String> {
-    if tab.is_empty() || !tab.bytes().all(|c| c.is_ascii_lowercase()) {
+    if tab.as_ref().is_some_and(|tab| tab.is_empty() || !tab.bytes().all(|c| c.is_ascii_lowercase())) {
         return Err("invalid settings window request".into());
     }
     if prewarm.unwrap_or(false) {
@@ -2213,7 +2641,10 @@ async fn open_settings_window(
         }
         return Ok(());
     }
-    let intent = set_tool_window_intent(&app, SETTINGS_WINDOW, true, serde_json::json!({"tab": tab}));
+    let intent = set_tool_window_intent(&app, SETTINGS_WINDOW, true, serde_json::json!({
+        "tab": tab,
+        "focusSearch": focus_search.unwrap_or(false),
+    }));
     if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) {
         window.set_title(&title).map_err(|e| e.to_string())?;
         return window.emit("aries://settings-open", intent).map_err(|e| e.to_string());
@@ -2323,6 +2754,9 @@ fn native_menu_command_for_event<'a>(app: &AppHandle, id: &'a str) -> Option<&'a
     if id == APP_ABOUT_MENU_ID {
         return Some(ARIES_ABOUT_COMMAND_ID);
     }
+    if id == APP_SETTINGS_MENU_ID {
+        return Some(id);
+    }
     should_emit_native_menu_command(app, id).then_some(id)
 }
 
@@ -2428,7 +2862,8 @@ async fn set_wheel_styles(
 fn wheel_style_command_ids(entries: &[WheelStyleMenuEntry]) -> Result<Vec<String>, String> {
     let mut ids = HashSet::new();
     for entry in entries {
-        if !entry.id.starts_with("quick.options.wheel-preset:user.") || entry.label.trim().is_empty()
+        if !(entry.id.starts_with("quick.options.wheel-preset:user.")
+            || entry.id.starts_with("quick.options.wheel-preset:factory.")) || entry.label.trim().is_empty()
             || !ids.insert(entry.id.clone()) {
             return Err("invalid saved wheel style menu entry".into());
         }
@@ -2506,19 +2941,124 @@ async fn record_frontend_perf(event: FrontendPerfEvent) -> Result<(), String> {
     Ok(())
 }
 
+/// Applies WebView2 settings that Tauri does not expose, for every webview
+/// (main, tool windows, chart picker) on each page load.
+#[cfg(target_os = "windows")]
+fn configure_webview2(webview: &tauri::Webview<Wry>) {
+    let label = webview.label().to_string();
+    if let Err(error) = webview.with_webview(move |platform| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+        use windows::core::Interface;
+
+        // SAFETY: Tauri runs this closure on the WebView2 UI thread with a live
+        // controller; COM calls on its settings object are valid there.
+        let result = unsafe {
+            platform
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.Settings())
+                .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
+                .and_then(|settings| {
+                    settings.SetAreBrowserAcceleratorKeysEnabled(WEBVIEW2_BROWSER_ACCELERATOR_KEYS)
+                })
+        };
+        if let Err(error) = result {
+            log::warn!("failed to configure WebView2 browser keys for {label}: {error}");
+        }
+    }) {
+        log::warn!("failed to reach WebView2 for {}: {error}", webview.label());
+    }
+}
+
+/// A second launch (Start menu, taskbar, Explorer) brings the running Aries to
+/// the front instead of starting a second daemon on the same options folder.
+/// Files named on that launch's command line go to the main webview as
+/// `aries://open-files` (absolute paths). Aries registers no file association
+/// yet, so no page handler consumes them today.
+#[cfg(target_os = "windows")]
+fn focus_existing_main_window(app: &AppHandle<Wry>, argv: &[String], cwd: &str) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let files = launch_args::forwarded_file_args(argv, cwd);
+    if !files.is_empty() {
+        if let Err(error) = window.emit_to("main", launch_args::OPEN_FILES_EVENT, &files) {
+            log::warn!("failed to forward {} launch file(s) to the running Aries: {error}", files.len());
+        }
+    }
+    // Before the themed reveal the window is hidden on purpose; it shows
+    // itself when ready.
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    // On the window handle directly: tao's set_focus skips a window it still
+    // believes minimized, and Windows' foreground lock needs the fallbacks
+    // in windows_foreground.rs.
+    match window.hwnd() {
+        Ok(hwnd) => {
+            if !windows_foreground::bring_to_front(hwnd) {
+                log::warn!("the running Aries window could not take the foreground");
+            }
+        }
+        Err(error) => log::warn!("failed to focus the running Aries window: {error}"),
+    }
+}
+
+fn app_context() -> tauri::Context<Wry> {
+    #[cfg_attr(
+        not(all(feature = "ci-licence-bypass", target_os = "windows")),
+        allow(unused_mut)
+    )]
+    let mut context = tauri::generate_context!();
+    // Windows release rehearsal builds only (src/ci_licence_bypass.rs).
+    #[cfg(all(feature = "ci-licence-bypass", target_os = "windows"))]
+    ci_licence_bypass::open_webview_debugging(&mut context);
+    context
+}
+
 pub fn verify_licensed_build_contract() -> Result<(), String> {
     licensing::validate_compiled_license_contract()
 }
 
+pub fn verify_store_distribution_contract() -> Result<(), String> {
+    distribution::validate_store_distribution()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Shell panics land in %LOCALAPPDATA%\Aries\logs\aries-crash.log with a
+    // backtrace before the release build aborts.
+    #[cfg(target_os = "windows")]
+    diagnostics::install_crash_logging();
+    // Rehearsal builds only: the crash-dump scenario's deliberate crash.
+    #[cfg(all(feature = "ci-licence-bypass", target_os = "windows"))]
+    ci_licence_bypass::crash_if_requested();
     install_macos_scrollbar_policy();
+    // Before any window exists, so taskbar grouping matches the NSIS
+    // shortcuts. The Store MSIX package supplies its own AppUserModelID.
+    #[cfg(target_os = "windows")]
+    if distribution::current() == distribution::Distribution::Direct {
+        // SAFETY: called once on the main thread before any window exists,
+        // with a valid NUL-terminated wide string.
+        if let Err(error) = unsafe {
+            windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID(
+                &windows::core::HSTRING::from(WINDOWS_APP_USER_MODEL_ID),
+            )
+        } {
+            eprintln!("failed to set the Windows AppUserModelID: {error}");
+        }
+    }
 
     let native_started_at = Instant::now();
     let daemon_port = match choose_daemon_port() {
         Ok(port) => port,
         Err(error) => {
             eprintln!("failed to choose aries daemon port: {error}");
+            // A release Windows build has no console for eprintln.
+            #[cfg(target_os = "windows")]
+            diagnostics::append_crash_record(&format!(
+                "failed to choose aries daemon port: {error}"
+            ));
             return;
         }
     };
@@ -2531,16 +3071,31 @@ pub fn run() {
     };
     let speedlog = if speedlog_enabled() { "true" } else { "false" };
     let native_platform = std::env::consts::OS;
+    let distribution = distribution::current().as_str();
     #[cfg(target_os = "windows")]
     let windows_caption_inset = windows_titlebar::caption_controls_inset_css_px();
     #[cfg(not(target_os = "windows"))]
     let windows_caption_inset = 0;
     let runtime_init_script = format!(
-    "Object.defineProperty(window,\"__ARIES_TAURI_RUNTIME__\",{{value:true,configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PLATFORM__\",{{value:\"{native_platform}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_WINDOWS_CAPTION_INSET__\",{{value:{windows_caption_inset},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_URL__\",{{value:\"{daemon_base_url}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_TOKEN__\",{{value:\"{daemon_token}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PERF__\",{{value:{native_perf},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_SPEEDLOG__\",{{value:{speedlog},configurable:false,writable:false}});"
+    "Object.defineProperty(window,\"__ARIES_TAURI_RUNTIME__\",{{value:true,configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PLATFORM__\",{{value:\"{native_platform}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DISTRIBUTION__\",{{value:\"{distribution}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_WINDOWS_CAPTION_INSET__\",{{value:{windows_caption_inset},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_URL__\",{{value:\"{daemon_base_url}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_DAEMON_TOKEN__\",{{value:\"{daemon_token}\",configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_NATIVE_PERF__\",{{value:{native_perf},configurable:false,writable:false}});Object.defineProperty(window,\"__ARIES_SPEEDLOG__\",{{value:{speedlog},configurable:false,writable:false}});"
   );
-    let init_script = format!("{runtime_init_script}{DESKTOP_WEBVIEW_GUARD_SCRIPT}");
+    let diagnostics = if bug_report::ENABLED {
+        bug_report::WEBVIEW_DIAGNOSTICS
+    } else {
+        ""
+    };
+    let init_script = format!("{runtime_init_script}{DESKTOP_WEBVIEW_GUARD_SCRIPT}{diagnostics}");
 
-    tauri::Builder::default()
+    // Packaged builds embed a pruned frontend; its large media is served from
+    // the bundle's resources under the same URLs (see frontend_media.rs).
+    let mut context = app_context();
+    let embedded_assets = context.set_assets(Box::new(frontend_media::NoAssets));
+    context.set_assets(Box::new(frontend_media::ResourceBackedAssets::new(
+        embedded_assets,
+        |app| bundled_resource_dir(app.handle()).ok(),
+    )));
+
+    let builder = tauri::Builder::default()
         .on_page_load(|_webview, _payload| {
             #[cfg(target_os = "macos")]
             if let Err(error) = _webview.with_webview(|platform| {
@@ -2556,17 +3111,37 @@ pub fn run() {
             }) {
                 log::warn!("failed to configure native tab navigation: {error}");
             }
+            #[cfg(target_os = "windows")]
+            if matches!(_payload.event(), tauri::webview::PageLoadEvent::Started) {
+                configure_webview2(_webview);
+            }
         })
         .manage(NativeMenuReadiness::default())
         .manage(ToolWindowIntents::default())
-        .append_invoke_initialization_script(init_script)
-        .menu(build_native_menu)
+        .manage(vanilla::RelaunchIntent::default())
+        .append_invoke_initialization_script(init_script);
+    // Registered before every other plugin, as the plugin requires: a second
+    // process exits here before it creates windows or spawns a daemon.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+        focus_existing_main_window(app, &argv, &cwd);
+    }));
+    #[cfg(target_os = "windows")]
+    let builder = builder.manage(licensing::StagedWindowsUpdate::default());
+    let builder = if NATIVE_MENU_BAR {
+        builder.menu(build_native_menu)
+    } else {
+        builder
+    };
+    builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             show_main_window,
+            set_main_window_theme,
+            get_windows_caption_inset,
             prewarm_chart_picker_window,
             open_chart_picker_window,
             close_chart_picker_window,
@@ -2585,6 +3160,9 @@ pub fn run() {
             confirm_quit,
             record_frontend_perf,
             read_legal_document,
+            bug_report::record_bug_report_error,
+            bug_report::send_bug_report,
+            bug_report::save_bug_report,
             native_daemon_request,
             sample_screen_color,
             licensing::license_status,
@@ -2595,6 +3173,14 @@ pub fn run() {
             licensing::license_revoke_device,
             licensing::license_check_update,
             licensing::license_install_update,
+            vanilla::vanilla_mode,
+            vanilla::restart_vanilla_mode,
+            diagnostics::collect_diagnostics,
+            diagnostics::copy_diagnostics,
+            diagnostics::save_diagnostics,
+            diagnostics::open_logs_folder,
+            diagnostics::get_daemon_startup_failure,
+            diagnostics::record_frontend_error,
         ])
         .setup(move |app| {
             let handle = app.handle();
@@ -2607,6 +3193,10 @@ pub fn run() {
                 daemon_access_allowed,
             ));
             app.manage(licensing::PendingLicenseUpdate::default());
+            // Inert unless fed (Windows): see diagnostics::watch_daemon_startup.
+            app.manage(diagnostics::DaemonStartupWatch::default());
+            #[cfg(all(feature = "update-rehearsal", target_os = "windows"))]
+            update_rehearsal::start(handle);
             app.manage(QuitConfirmed(Mutex::new(false)));
             app.manage(NativeMenuCommandIds::from_manifest(
                 &baked_native_menu_manifest(),
@@ -2617,11 +3207,54 @@ pub fn run() {
             } else {
                 log::LevelFilter::Warn
             };
-            handle.plugin(
-                tauri_plugin_log::Builder::default()
+            // The shell log's folder and file name come from
+            // diagnostics::shell_log_target, which the bug report also reads.
+            #[cfg(not(target_os = "windows"))]
+            {
+                let mut log_builder = tauri_plugin_log::Builder::default()
                     .level(native_log_level)
-                    .build(),
-            )?;
+                    .clear_targets()
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::Stdout,
+                    ));
+                if let Some(target) = diagnostics::shell_log_target(handle) {
+                    log_builder = log_builder.target(target);
+                }
+                handle.plugin(log_builder.build())?;
+            }
+            // Windows testers' logs are the only signal from that platform:
+            // Aries' own info lines (daemon starts, exits, startup failures)
+            // go to a rotated %LOCALAPPDATA%\Aries\logs\aries-shell.log.
+            #[cfg(target_os = "windows")]
+            {
+                let mut log_builder = tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Warn)
+                    .level_for("aries_lib", native_log_level.max(log::LevelFilter::Info))
+                    .max_file_size(diagnostics::SHELL_LOG_MAX_BYTES)
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(2))
+                    .clear_targets()
+                    .target(tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::Stdout,
+                    ));
+                if let Some(target) = diagnostics::shell_log_target(handle) {
+                    log_builder = log_builder.target(target);
+                }
+                handle.plugin(log_builder.build())?;
+                log::info!(
+                    "Aries {} starting ({} {})",
+                    handle.package_info().version,
+                    distribution::current().as_str(),
+                    std::env::consts::ARCH
+                );
+            }
+            // The main window is created here rather than from the config, so a
+            // vanilla launch can give it a webview store of its own.
+            if let Err(error) = vanilla::prepare(handle) {
+                log::warn!("vanilla mode unavailable: {error}");
+            }
+            if let Some(config) = app.config().app.windows.iter().find(|window| window.label == "main") {
+                vanilla::isolate(WebviewWindowBuilder::from_config(handle, config)?).build()?;
+            }
             record_native_startup_perf(
                 "native-setup-start",
                 native_started_at,
@@ -2647,6 +3280,9 @@ pub fn run() {
                     }
                     Err(error) => log::warn!("failed to acquire main Windows HWND: {error}"),
                 }
+                if let Err(error) = fit_main_window_to_work_area(&window) {
+                    log::warn!("failed to fit the main window to the visible monitors: {error}");
+                }
             }
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
@@ -2661,7 +3297,19 @@ pub fn run() {
                     native_started_at,
                     serde_json::json!({ "daemonPort": daemon_port }),
                 );
-                if let Some(daemon_pid) = start_daemon_if_permitted(app.handle(), "startup")? {
+                let started = start_daemon_if_permitted(app.handle(), "startup");
+                // Windows: an engine that Smart App Control, antivirus or a
+                // missing file stops from launching must not abort setup.
+                // start_daemon_if_permitted already logged the error, counted
+                // it for the restart backoff and reported it to the window,
+                // which shows the start-up failure dialog; the supervisor
+                // below keeps retrying in case the file is restored.
+                #[cfg(target_os = "windows")]
+                let started = started.or_else(|error| {
+                    log::error!("aries daemon did not start at startup: {error}");
+                    Ok::<_, String>(None)
+                });
+                if let Some(daemon_pid) = started? {
                     record_native_startup_perf(
                         "daemon-spawned",
                         native_started_at,
@@ -2685,12 +3333,10 @@ pub fn run() {
                     // Native menus do not forward this click as a key event.
                     // Apply Select All in the focused webview, including a
                     // same-origin map iframe when it owns keyboard focus.
-                    for label in ["main", SETTINGS_WINDOW, CHART_EDITOR_WINDOW] {
-                        if let Some(window) = app.get_webview_window(label) {
-                            if window.is_focused().unwrap_or(false) {
-                                let _ = window.eval("(document.activeElement instanceof HTMLIFrameElement ? document.activeElement.contentDocument : document)?.execCommand('selectAll')");
-                                break;
-                            }
+                    for window in app.webview_windows().values() {
+                        if window.is_focused().unwrap_or(false) {
+                            let _ = window.eval("(document.activeElement instanceof HTMLIFrameElement ? document.activeElement.contentDocument : document)?.execCommand('selectAll')");
+                            break;
                         }
                     }
                     return;
@@ -2714,6 +3360,14 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             #[cfg(target_os = "macos")]
+            if window.label() == SETTINGS_WINDOW {
+                if let (tauri::WindowEvent::Focused(focused), Some(menu)) = (event, window.app_handle().menu()) {
+                    if let Err(error) = scope_transit_search_accelerator(&menu, *focused) {
+                        log::warn!("failed to scope the Transit Search accelerator: {error}");
+                    }
+                }
+            }
+            #[cfg(target_os = "macos")]
             if window.label() == "main"
                 && matches!(
                     event,
@@ -2730,6 +3384,17 @@ pub fn run() {
                     }
                     schedule_compact_macos_traffic_lights(main_window, "after window relayout");
                 }
+            }
+            // Maximize/restore, a DPI change and a theme change move or
+            // resize the DWM caption buttons.
+            #[cfg(target_os = "windows")]
+            if matches!(
+                event,
+                tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::ScaleFactorChanged { .. }
+                    | tauri::WindowEvent::ThemeChanged(_)
+            ) {
+                publish_windows_caption_inset(window);
             }
             match event {
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
@@ -2779,28 +3444,59 @@ pub fn run() {
                 _ => return,
             }
             let app = window.app_handle();
+            // The quit is confirmed (charts saved or discarded, notes flushed):
+            // a staged Windows update installs now. On success this stops the
+            // daemon and ends the process.
+            #[cfg(target_os = "windows")]
+            licensing::install_staged_windows_update(app);
             stop_daemon(&app, "main window close");
             // Confirmed main-window close means quit the application. Retained
             // tools (including hidden prewarmed windows) must not keep the
             // event loop alive. Tauri owns teardown of every remaining window.
             app.exit(0);
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app, event| match event {
             tauri::RunEvent::ExitRequested { api, code, .. }
                 if code.is_none() && !is_quit_confirmed(app) =>
             {
+                // A plain quit request cancels an earlier, abandoned restart.
+                vanilla::clear_relaunch(app);
                 api.prevent_exit();
                 request_quit_preflight(app);
             }
             tauri::RunEvent::Exit => {
                 stop_daemon(app, "tauri run exit");
+                vanilla::relaunch(app);
             }
             _ => {}
         });
 }
 
+
+#[cfg(test)]
+mod daemon_ready_probe_tests {
+    use super::*;
+
+    #[test]
+    fn port_probe_sees_a_listener_and_its_absence() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        assert!(daemon_port_accepting(&url, DAEMON_READY_CONNECT_PROBE));
+        drop(listener);
+        let started = Instant::now();
+        assert!(!daemon_port_accepting(&url, DAEMON_READY_CONNECT_PROBE));
+        // Refused (Unix) or abandoned at the budget (Windows), never the ~2 s
+        // Windows SYN-retry refusal.
+        assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn port_probe_defers_to_the_health_get_for_unparseable_urls() {
+        assert!(daemon_port_accepting("not a url", DAEMON_READY_CONNECT_PROBE));
+    }
+}
 
 #[cfg(test)]
 mod wheel_style_menu_tests {
@@ -2812,6 +3508,7 @@ mod wheel_style_menu_tests {
         assert!(wheel_style_command_ids(&[entry("quick.options.wheel-preset:working.anglo")]).is_err());
         assert!(wheel_style_command_ids(&[entry("quick.options.wheel-preset:migrated.old.anglo")]).is_err());
         let user = "quick.options.wheel-preset:user.saved";
+        assert!(wheel_style_command_ids(&[entry("quick.options.wheel-preset:factory.traditional-morinus")]).is_ok());
         assert!(wheel_style_command_ids(&[entry(user), entry(user)]).is_err());
         let commands = NativeMenuCommandIds(Mutex::new(HashSet::from([
             "quick.options.layout:2".into(), "quick.options.anglo-dense-label-layout:routed-cusps".into(),
@@ -2822,6 +3519,88 @@ mod wheel_style_menu_tests {
         assert!(!commands.contains("quick.options.wheel-preset:user.old").unwrap());
         assert!(commands.contains("quick.options.layout:2").unwrap());
         assert!(commands.contains("quick.options.anglo-dense-label-layout:routed-cusps").unwrap());
+    }
+}
+
+#[cfg(test)]
+mod windows_shell_config_tests {
+    use super::*;
+
+    fn config(name: &str) -> serde_json::Value {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(name);
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn every_webview_shares_one_scroll_bar_style() {
+        // WebView2 refuses a second webview whose scrollbar style differs
+        // from the others in the same data directory.
+        let base = config("tauri.conf.json");
+        let windows = base["app"]["windows"].as_array().unwrap();
+        assert!(!windows.is_empty());
+        for window in windows {
+            assert_eq!(window["scrollBarStyle"], "fluentOverlay");
+        }
+        #[cfg(target_os = "windows")]
+        assert!(matches!(
+            WEBVIEW_SCROLL_BAR_STYLE,
+            tauri::webview::ScrollBarStyle::FluentOverlay
+        ));
+        #[cfg(not(target_os = "windows"))]
+        assert!(matches!(
+            WEBVIEW_SCROLL_BAR_STYLE,
+            tauri::webview::ScrollBarStyle::Default
+        ));
+        // A platform override would replace the whole window list.
+        assert!(config("tauri.windows.conf.json")["app"]["windows"].is_null());
+    }
+
+    #[test]
+    fn installer_requires_a_webview2_with_fluent_overlay_scrollbars() {
+        // fluentOverlay needs WebView2 Runtime 125.0.2535 or newer; the NSIS
+        // installer updates an older runtime before Aries first starts.
+        let windows = config("tauri.windows.conf.json");
+        let minimum = windows["bundle"]["windows"]["minimumWebview2Version"]
+            .as_str()
+            .expect("minimumWebview2Version is set");
+        let parts: Vec<u32> = minimum.split('.').map(|part| part.parse().unwrap()).collect();
+        assert_eq!(parts.len(), 4);
+        assert!(parts[..3] >= [125, 0, 2535][..], "{minimum} predates fluentOverlay");
+    }
+
+    #[test]
+    fn windows_installs_no_app_menu() {
+        // muda's macOS-style app menu on Windows binds Ctrl+H to Hide (the
+        // window vanishes) and Quit to PostQuitMessage (skips the quit
+        // preflight). Windows uses the in-page menu with File > Exit instead.
+        assert_eq!(NATIVE_MENU_BAR, !cfg!(target_os = "windows"));
+    }
+
+    #[test]
+    fn process_app_user_model_id_matches_the_installer_shortcuts() {
+        assert_eq!(
+            config("tauri.conf.json")["identifier"],
+            WINDOWS_APP_USER_MODEL_ID
+        );
+    }
+
+    #[test]
+    fn nsis_hooks_stop_the_daemon_before_files_change() {
+        let windows = config("tauri.windows.conf.json");
+        let hooks = windows["bundle"]["windows"]["nsis"]["installerHooks"]
+            .as_str()
+            .unwrap();
+        let script =
+            fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(hooks)).unwrap();
+        for hook in ["NSIS_HOOK_PREINSTALL", "NSIS_HOOK_PREUNINSTALL"] {
+            let body = script
+                .split(&format!("!macro {hook}"))
+                .nth(1)
+                .and_then(|rest| rest.split("!macroend").next())
+                .unwrap_or_else(|| panic!("{hook} is missing"));
+            assert!(body.contains("AriesStopDaemon"), "{hook} must stop the daemon");
+        }
+        assert!(script.contains("\"aries-daemon.exe\""));
     }
 }
 
@@ -2840,5 +3619,77 @@ mod tool_window_lifecycle_tests {
             intent.open = false;
             assert!(!intent.can_reveal(generation));
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod native_transport_tests {
+    use super::*;
+    use tokio::net::UnixListener;
+
+    async fn serve_one_frame(stream: &mut UnixStream, status: u16) {
+        let mut header = [0_u8; 11];
+        stream.read_exact(&mut header).await.unwrap();
+        let path_length = u16::from_be_bytes([header[5], header[6]]) as usize;
+        let body_length =
+            u32::from_be_bytes([header[7], header[8], header[9], header[10]]) as usize;
+        let mut rest = vec![0_u8; path_length + body_length];
+        stream.read_exact(&mut rest).await.unwrap();
+        let mut reply = NATIVE_RESPONSE_MAGIC.to_vec();
+        reply.extend_from_slice(&status.to_be_bytes());
+        reply.extend_from_slice(&2_u32.to_be_bytes());
+        reply.extend_from_slice(b"{}");
+        stream.write_all(&reply).await.unwrap();
+    }
+
+    #[test]
+    fn retained_stream_reconnects_after_daemon_restart() {
+        tauri::async_runtime::block_on(async {
+            // A Unix socket path must fit sun_path (104 bytes on macOS); a deep
+            // TMPDIR (a clean-clone check's private temp root) overflows it.
+            let name = format!("aries-native-test-{}.sock", std::process::id());
+            let mut socket_path = std::env::temp_dir().join(&name);
+            if socket_path.as_os_str().len() >= 100 {
+                socket_path = std::path::Path::new("/tmp").join(&name);
+            }
+            let _ = fs::remove_file(&socket_path);
+            let listener = UnixListener::bind(&socket_path).unwrap();
+            let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+            let replacement_path = socket_path.clone();
+            let server = tauri::async_runtime::spawn(async move {
+                let (mut first, _) = listener.accept().await.unwrap();
+                serve_one_frame(&mut first, 200).await;
+                // The reloaded daemon drops every retained connection.
+                drop(first);
+                drop(listener);
+                fs::remove_file(&replacement_path).unwrap();
+                closed_tx.send(()).unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let listener = UnixListener::bind(&replacement_path).unwrap();
+                let (mut second, _) = listener.accept().await.unwrap();
+                serve_one_frame(&mut second, 201).await;
+            });
+            let transport = NativeDaemonTransport {
+                socket_path: socket_path.clone(),
+                reconnect_window: Duration::from_secs(2),
+                generation: AtomicU64::new(0),
+                connection: tokio::sync::Mutex::new(NativeDaemonConnection {
+                    generation: 0,
+                    stream: None,
+                }),
+            };
+            let request = NativeDaemonRequest {
+                method: "POST".to_string(),
+                path: "/api/workspace/step".to_string(),
+                body: Some("{}".to_string()),
+            };
+            let first = transport.request(&request).await.ok().unwrap();
+            assert_eq!(first.status, 200);
+            closed_rx.await.unwrap();
+            let second = transport.request(&request).await.ok().unwrap();
+            assert_eq!(second.status, 201);
+            server.await.unwrap();
+            let _ = fs::remove_file(&socket_path);
+        });
     }
 }

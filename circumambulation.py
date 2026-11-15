@@ -12,6 +12,7 @@ import io
 import types
 from contextlib import contextmanager
 import astrology, chart, houses, mtexts
+import arabicparts
 import fixstars
 import fortune
 import planets
@@ -36,6 +37,7 @@ CIRCUMAMBULATION_PROMISSOR_CAPABILITIES = {
     "planets": "supported",
     "nodes": "supported-follow-pd",
     "chiron": "supported-follow-pd",
+    "apogee": "supported-follow-pd",
     "fortune": "supported-follow-pd",
     "customer-point": "supported-follow-pd",
     "arabic-part": "supported-follow-pd",
@@ -49,6 +51,12 @@ CIRCUMAMBULATION_PROMISSOR_CAPABILITIES = {
     "syzygy": "unsupported-no-primary-directions-promissor-selection",
     "vertex": "unsupported-no-primary-directions-promissor-selection",
 }
+
+# These ecliptic participants have no ordinary PD promissor row to reuse.
+# Keep their separate circumambulation contacts without replacing native PD rows.
+_SUPPLEMENTAL_ONLY_FAMILIES = frozenset({
+    "antiscion-angle", "contra-antiscion-angle", "house-cusp",
+})
 
 
 def normalize_promissor_profile(value):
@@ -100,8 +108,13 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
 
     Bounds remain the structural period stream. Every selected ecliptic
     promissor family is converted to a stable longitude entry before either
-    calculation method narrows it to contacts.
+    calculation method narrows it to contacts.  Angles, cusps and Lots built
+    from a cusp follow the PD system's own houses (P/R/C/T), like the PD list,
+    never the house system displayed on the wheel.
     """
+    from engine.pd_in_chart import radix_in_pd_houses
+
+    chart_obj = radix_in_pd_houses(chart_obj, options)
     profile = normalize_promissor_profile(promissor_profile)
     source = _NATAL_PARTICIPATOR_SOURCE if natal else "return"
     marker = _NATAL_PARTICIPATOR_MARKER if natal else None
@@ -109,7 +122,8 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
     entries = []
     seen = set()
 
-    def add(family, identity, label, lon, lat=0.0, planet_id=None, promissor_id=primdirs.PrimDir.NONE):
+    def add(family, identity, label, lon, lat=0.0, planet_id=None,
+            promissor_id=primdirs.PrimDir.NONE, pd_key=None, prom2=None):
         try:
             lon = util.normalize(float(lon))
             lat = float(lat or 0.0)
@@ -141,6 +155,9 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
             "source": source,
             "source_marker": marker,
             "planet_id": planet_id,
+            "promissor_id": promissor_id,
+            "pd_key": pd_key,
+            "prom2": prom2,
         })
 
     selected_bodies = list(getattr(options, "promplanets", []) or [])
@@ -160,9 +177,14 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
     if getattr(options, "pdpromchiron", False):
         try:
             body = chart_obj.chiron
-            add("body", astrology.SE_CHIRON, mtexts.txts.get("Chiron", "Chiron"), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], astrology.SE_CHIRON)
+            add("body", astrology.SE_CHIRON, mtexts.txts.get("Chiron", "Chiron"), body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], astrology.SE_CHIRON, pd_key="chiron")
         except Exception:
             pass
+
+    if getattr(options, "pdpromapogee", False):
+        body = getattr(chart_obj, "apogee", None)
+        if body is not None:
+            add("body", body.pId, mtexts.txts['Apogee'], body.data[planets.Planet.LONG], body.data[planets.Planet.LAT], body.pId, pd_key="apogee")
 
     if bool((getattr(options, "pdlof", [False]) or [False])[0]):
         try:
@@ -174,18 +196,19 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
         try:
             point = chart_obj._ensure_pd_customer_point(False)
             if point is not None:
-                add("customer", "user-promissor", mtexts.txts.get("User2", "User"), point.lon, point.lat)
+                add("customer", "user-promissor", mtexts.txts.get("User2", "User"), point.lon, point.lat, pd_key="user_prom")
         except Exception:
             pass
 
-    if getattr(options, "pdpromarabicparts", False):
-        try:
-            point = chart_obj._get_pd_arabic_part_promissor_point()
-            label = chart_obj._get_pd_active_arabic_part_name(True)
-            if point is not None and label:
-                add("arabic-part", label, label, point.lon, point.lat)
-        except Exception:
-            pass
+    for key, point in chart_obj._iter_pd_selected_points(True, options):
+        label = chart_obj.get_pd_dynamic_point_label(key, True)
+        if key.startswith('asteroid:'):
+            import asteroids
+            number = int(key.split(':', 1)[1])
+            body_id = asteroids.asteroid_body_id(number)
+            add('body', body_id, label, point.lon, point.lat, body_id, pd_key=key)
+        else:
+            add('arabic-part', label, label, point.lon, point.lat, pd_key=key)
 
     if getattr(options, "pdfixstars", False):
         selections = list(getattr(options, "pdfixstarssel", []) or [])
@@ -197,7 +220,7 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
                     continue
                 code = star[fixstars.FixStars.NOMNAME]
                 label = code or star[fixstars.FixStars.NAME]
-                add("fixed-star", ordinal, label, star[fixstars.FixStars.LON], promissor_id=primdirs.PrimDir.FIXSTAR + ordinal)
+                add("fixed-star", ordinal, label, star[fixstars.FixStars.LON], promissor_id=primdirs.PrimDir.FIXSTAR + sorted_idx)
         except Exception:
             pass
 
@@ -250,25 +273,61 @@ def _participating_longitude_entries(chart_obj, options, promissor_profile, *, n
                 if not selected_bodies[midpoint.p1] or not selected_bodies[midpoint.p2]:
                     continue
                 label = "%s / %s" % (_body_label(midpoint.p1), _body_label(midpoint.p2))
-                add("midpoint", idx, label, midpoint.m, midpoint.lat)
+                add("midpoint", idx, label, midpoint.m, midpoint.lat,
+                    promissor_id=midpoint.p1, prom2=midpoint.p2)
             except Exception:
                 continue
 
+    pd_houses = chart_obj.houses
+
     if getattr(options, "ascmchcsasproms", False):
         try:
-            add("angle", "asc", mtexts.txts.get("Asc", "Asc"), chart_obj.houses.ascmc[houses.Houses.ASC])
-            add("angle", "mc", mtexts.txts.get("MC", "MC"), chart_obj.houses.ascmc[houses.Houses.MC])
+            add("angle", "asc", mtexts.txts.get("Asc", "Asc"), pd_houses.ascmc[houses.Houses.ASC], promissor_id=primdirs.PrimDir.ASC)
+            add("angle", "mc", mtexts.txts.get("MC", "MC"), pd_houses.ascmc[houses.Houses.MC], promissor_id=primdirs.PrimDir.MC)
         except Exception:
             pass
 
     if getattr(options, "pdcusppromissors", False):
-        for cusp in (2, 3, 5, 6, 8, 9, 11, 12):
+        for offset, cusp in enumerate((2, 3, 5, 6, 8, 9, 11, 12)):
             try:
-                add("house-cusp", cusp, mtexts.txts.get("HC%d" % cusp, "HC%d" % cusp), chart_obj.houses.cusps[cusp])
+                add("house-cusp", cusp, mtexts.txts.get("HC%d" % cusp, "HC%d" % cusp), pd_houses.cusps[cusp], promissor_id=primdirs.PrimDir.HC2 + offset)
             except Exception:
                 continue
 
     return entries
+
+
+def _pd_participant_lookup(entries):
+    """Index display metadata by the identities emitted by the PD engine."""
+    by_id = {}
+    by_key = {}
+    by_midpoint = {}
+    for entry in entries:
+        if entry["family"] in _SUPPLEMENTAL_ONLY_FAMILIES:
+            by_key[entry["key"]] = entry
+        pd_key = entry.get("pd_key")
+        if pd_key:
+            by_key[pd_key] = entry
+            if str(pd_key).startswith("part:"):
+                by_key["arabic_part_prom"] = entry
+            continue
+        prom2 = entry.get("prom2")
+        if prom2 is not None:
+            by_midpoint[(entry["promissor_id"], prom2)] = entry
+            continue
+        promissor_id = entry.get("promissor_id")
+        if promissor_id != primdirs.PrimDir.NONE:
+            by_id[promissor_id] = entry
+    return by_id, by_key, by_midpoint
+
+
+def _pd_participant(pd, lookup):
+    by_id, by_key, by_midpoint = lookup
+    if pd.prom == primdirs.PrimDir.CUSTOMERPD:
+        return by_key.get(getattr(pd, "promdyn", None))
+    if pd.promasp == chart.Chart.MIDPOINT:
+        return by_midpoint.get((pd.prom, pd.prom2))
+    return by_id.get(pd.prom)
 
 
 def years_per_degree_from_options(options):
@@ -342,6 +401,83 @@ def normalize_custom_significator(spec):
     except (TypeError, ValueError):
         pass
     return out
+
+
+def _native_angle_significator(chrt, spec):
+    """Use the PD angle itself when the releaser is a chart angle."""
+    if spec is None:
+        return primdirs.PrimDir.ASC, 0
+    angle_ids = {
+        "custom:primary:angle:asc": (primdirs.PrimDir.ASC, 0, houses.Houses.ASC, 0.0),
+        "custom:primary:angle:dsc": (primdirs.PrimDir.DESC, 1, houses.Houses.ASC, 180.0),
+        "custom:primary:angle:mc": (primdirs.PrimDir.MC, 2, houses.Houses.MC, 0.0),
+        "custom:primary:angle:ic": (primdirs.PrimDir.IC, 3, houses.Houses.MC, 180.0),
+    }
+    selected = angle_ids.get(spec.get("id"))
+    if selected is None or abs(float(spec.get("latitude", 0.0))) > 1e-9:
+        return None
+    point_id, option_index, house_index, offset = selected
+    actual_lon = util.normalize(float(chrt.houses.ascmc[house_index]) + offset)
+    if abs((float(spec["longitude"]) - actual_lon + 180.0) % 360.0 - 180.0) > 1e-7:
+        return None
+    return point_id, option_index
+
+
+def _pd_releaser(chrt, spec):
+    """Resolve a chooser item to the significator identity used by Primary Directions."""
+    angle = _native_angle_significator(chrt, spec)
+    if angle is not None:
+        return "angle", angle[0], angle[1]
+    if spec is None:
+        return "angle", primdirs.PrimDir.ASC, 0
+    item_id = spec.get("id", "")
+
+    def matches(lon, lat=0.0):
+        distance = (float(spec["longitude"]) - float(lon) + 180.0) % 360.0 - 180.0
+        return abs(distance) <= 1e-7 and abs(float(spec["latitude"]) - float(lat)) <= 1e-7
+
+    if item_id.startswith("custom:primary:planet:"):
+        try:
+            body_id = int(item_id.rsplit(":", 1)[1])
+            if 0 <= body_id < len(chrt.planets.planets):
+                body = chrt.planets.planets[body_id]
+                if matches(body.data[planets.Planet.LONG], body.data[planets.Planet.LAT]):
+                    return "planet", body_id, None
+            for field, key in (("chiron", "chiron"), ("apogee", "apogee")):
+                body = getattr(chrt, field, None)
+                if body is not None and getattr(body, "pId", None) == body_id and matches(
+                    body.data[planets.Planet.LONG], body.data[planets.Planet.LAT]
+                ):
+                    return "dynamic", primdirs.PrimDir.CUSTOMERPD, key
+        except (TypeError, ValueError, IndexError, AttributeError):
+            pass
+    if item_id == "custom:primary:fortune:fortune":
+        if matches(chrt.fortune.fortune[fortune.Fortune.LON]):
+            return "fortune", primdirs.PrimDir.LOF, None
+    if item_id == "custom:primary:vertex:vertex":
+        if matches(chrt.houses.ascmc[houses.Houses.VERTEX]):
+            return "dynamic", primdirs.PrimDir.CUSTOMERPD, "vertex"
+    if item_id.startswith("custom:primary:house:"):
+        try:
+            cusp = int(item_id.rsplit(":", 1)[1])
+            if matches(chrt.houses.cusps[cusp]):
+                angles = {1: (primdirs.PrimDir.ASC, 0), 4: (primdirs.PrimDir.IC, 3),
+                          7: (primdirs.PrimDir.DESC, 1), 10: (primdirs.PrimDir.MC, 2)}
+                if cusp in angles:
+                    return "angle", *angles[cusp]
+                cusp_ids = (2, 3, 5, 6, 8, 9, 11, 12)
+                return "house", primdirs.PrimDir.HC2 + cusp_ids.index(cusp), None
+        except (ValueError, IndexError, AttributeError):
+            pass
+    if item_id.startswith("custom:primary:secondary_ring:lot:"):
+        try:
+            index = int(item_id.rsplit(":", 1)[1])
+            part = chrt.parts.parts[index]
+            if matches(part[arabicparts.ArabicParts.LONG]):
+                return "lot", primdirs.PrimDir.CUSTOMERPD, str(part[arabicparts.ArabicParts.NAME])
+        except (ValueError, IndexError, AttributeError):
+            pass
+    return "custom", primdirs.PrimDir.CUSTOMERPD, _CIRCUM_SIG_KEY
 
 
 @contextmanager
@@ -920,7 +1056,7 @@ def compute_distributions(chrt, options, start_lambda=None, key=DEFAULT_KEY_Y_PE
     """Route to the correct back-end depending on the OA method setting.
 
     use_exact_oa=True  (CIRCUM_OA_USE_PD):
-        Delegates entirely to the Morinus PD engine (PlacidianSAPD).
+        Uses the selected Primary Directions engine and timing key.
         Circumambulations use the selected significator, the bounds stream, and
         the selected Follow PD or Traditional promissor/aspect profile.
 
@@ -1063,70 +1199,102 @@ def _append_participator_pd_hits(pd_engine, target_chart, options, entries, cust
     pd_engine.pds.sort(key=lambda pd: pd.time)
 
 
+def _append_extra_pd_hits(pd_engine, chrt, options, entries, releaser, spec):
+    """Keep cross-chart and circum-only participants on the selected PD engine."""
+    if not entries:
+        return
+    kind, sig_id, detail = releaser
+    original_ids = {id(pd) for pd in pd_engine.pds}
+    if kind == "angle":
+        _append_participator_pd_hits(pd_engine, chrt, options, entries)
+    elif kind == "custom":
+        _append_participator_pd_hits(pd_engine, chrt, options, entries,
+                                    custom_significator=spec)
+    else:
+        with _temporary_custom_significator(chrt, spec):
+            _append_participator_pd_hits(pd_engine, chrt, options, entries,
+                                        custom_significator=spec)
+    if kind in {"angle", "custom"}:
+        return
+    for pd in pd_engine.pds:
+        if id(pd) in original_ids or pd.sig != primdirs.PrimDir.CUSTOMERPD:
+            continue
+        pd.sig = sig_id
+        if kind == "dynamic":
+            pd.sigdyn = detail
+        elif kind == "lot":
+            pd.sigdyn = "arabic_part_sig"
+
+
 def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
                               custom_significator=None,
                               natal_participator_chart=None,
                               promissor_profile=primdirs.PrimDirs.CIRCUM_PROMISSORS_FOLLOW_PD):
-    """Compute circumambulation table by delegating to the Morinus PD engine.
-
-    Circumambulations = PD with the selected significator, bounds, and the
-    selected promissor/aspect profile (zodiacal).
-    Arc→years conversion uses the same key (Naibod/Cardan/Ptolemy/Custom) and
-    ayanamsha already set in options, so results align exactly with the PD table.
-    """
+    """Compute circumambulation contacts with the configured PD engine and key."""
     import copy
-    import placidiansapd
+    from engine import symbolic_projection
 
+    from engine.pd_in_chart import radix_in_pd_houses
+
+    # The chooser lists cusps and Lots in the PD system's houses, so the
+    # releaser is matched, and every participant read, on that same view.
+    # A releaser saved from the displayed houses keeps its identity; the
+    # engine then directs that cusp or Lot in the PD system's houses.
+    cast_chart = chrt
+    chrt = radix_in_pd_houses(chrt, options)
     normalized_sig = normalize_custom_significator(custom_significator)
-    participant_entries = _participating_longitude_entries(
+    releaser_kind, releaser_id, releaser_detail = _pd_releaser(chrt, normalized_sig)
+    if releaser_kind == "custom" and cast_chart is not chrt:
+        saved = _pd_releaser(cast_chart, normalized_sig)
+        if saved[0] in ("house", "lot"):
+            releaser_kind, releaser_id, releaser_detail = saved
+    dynamic_sig = normalized_sig if releaser_kind == "custom" else None
+    source_entries = _participating_longitude_entries(
         chrt, options, promissor_profile, natal=False,
     )
+    natal_entries = []
     if natal_participator_chart is not None and natal_participator_chart is not chrt:
-        participant_entries.extend(_participating_longitude_entries(
+        natal_entries = _participating_longitude_entries(
             natal_participator_chart, options, promissor_profile, natal=True,
-        ))
-    participant_by_key = {entry["key"]: entry for entry in participant_entries}
+        )
+    participant_lookup = _pd_participant_lookup(source_entries)
+    natal_by_key = {entry["key"]: entry for entry in natal_entries}
 
-    # Build effective options: ASC-only by default, or one dynamic custom
-    # significator when the list was launched from a chart point.
-    # All other settings (key, ayanamsha, subzodiacal, bianchini, secmotion…)
-    # are inherited from the user's PD settings unchanged.
+    # Keep the selected engine, timing key, and coordinate options. Narrow the
+    # stream to one releaser, bounds, and circumambulation participants.
     eff = copy.copy(options)
-    eff.sigangles = [False, False, False, False] if normalized_sig is not None else [True, False, False, False]
+    eff.sigangles = [releaser_kind == "angle" and index == releaser_detail for index in range(4)]
     if hasattr(eff, 'sigplanets'):
-        try:
-            eff.sigplanets = [False] * len(eff.sigplanets)
-        except Exception:
-            pass
-    eff.sighouses = False
+        eff.sigplanets = [releaser_kind == "planet" and index == releaser_id
+                          for index in range(len(eff.sigplanets))]
+    eff.sighouses = releaser_kind == "house"
     eff.pdterms   = True
-    eff.pdlof     = [False, False]
+    eff.pdlof     = [bool((getattr(options, "pdlof", []) or [False])[0]),
+                     releaser_kind == "fortune"]
     eff.pdsyzygy  = False
-    eff.pdsigchiron = False
-    eff.pdsigvertex = False
-    eff.pdsigarabicparts = False
-    eff.pdcustomer2 = normalized_sig is not None
-    eff.subzodiacal = primdirs.PrimDirs.SZNEITHER
+    eff.pdsigchiron = releaser_kind == "dynamic" and releaser_detail == "chiron"
+    eff.pdsigapogee = releaser_kind == "dynamic" and releaser_detail == "apogee"
+    eff.pdsigvertex = releaser_kind == "dynamic" and releaser_detail == "vertex"
+    eff.pdsigarabicparts = releaser_kind == "lot"
+    if releaser_kind == "lot":
+        eff.pdsigarabicpartnames = [releaser_detail]
+    eff.pdcustomer2 = dynamic_sig is not None
     eff.subprimarydir = primdirs.PrimDirs.ZODIACAL
-    eff.zodpromsigasps = [True, False]
-    eff.bianchini = False
-    eff.morin_excentric = False
-    # Dynamic keys (True/Birthday Solar Arc) iterate ephemeris day-by-day per PD event
-    # which makes the on-render term-lord overlay block the main thread. Fall back to
-    # whichever static key (pdkeys) the user last had selected — Naibod/Cardan/Ptolemy/
-    # Customer — so the display respects their choice without running the slow path.
-    eff.pdkeydyn = False
-    eff.promplanets = [False] * len(getattr(options, "promplanets", []) or [])
-    eff.pdantiscia = False
-    eff.pdmidpoints = False
-    eff.pdfixstars = False
-    eff.pdcustomer = False
-    eff.pdpromchiron = False
-    eff.pdpromarabicparts = False
-    eff.ascmchcsasproms = False
-    eff.pdcusppromissors = False
-    eff._range_bounds_override = (0.0, float(max_age_years))
-    eff._max_age_limit_override = float(max_age_years)
+    if normalize_promissor_profile(promissor_profile) == primdirs.PrimDirs.CIRCUM_PROMISSORS_TRADITIONAL:
+        eff.promplanets = [index < 7 for index in range(len(getattr(options, "promplanets", []) or []))]
+        eff.pdlof[0] = False
+        eff.pdantiscia = False
+        eff.pdmidpoints = False
+        eff.pdfixstars = False
+        eff.pdcustomer = False
+        eff.pdpromchiron = False
+        eff.pdpromapogee = False
+        eff.pdpromarabicparts = False
+        eff.ascmchcsasproms = False
+        eff.pdcusppromissors = False
+        eff.zodpromsigasps = [True, False]
+    eff._pd_range_bounds_override = (0.0, float(max_age_years))
+    eff._pd_max_age_limit_override = float(max_age_years)
     if hasattr(eff, 'pdparallels'):
         eff.pdparallels = [False, False]
 
@@ -1143,36 +1311,44 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
 
     abort = primdirs.AbortPD()
     try:
-        with _temporary_custom_significator(chrt, normalized_sig):
-            pd_engine = placidiansapd.PlacidianSAPD(
+        with _temporary_custom_significator(chrt, dynamic_sig):
+            pd_engine, _ = symbolic_projection.build_primary_directions(
                 chrt, eff, primdirs.PrimDirs.RANGEALL, primdirs.PrimDirs.DIRECT, abort)
-            _append_participator_pd_hits(
-                pd_engine,
-                chrt,
-                options,
-                participant_entries,
-                custom_significator=normalized_sig,
+            supplemental = [entry for entry in source_entries
+                            if entry["family"] in _SUPPLEMENTAL_ONLY_FAMILIES]
+            # The engine directs its own copy of the chart (PD node and Moon
+            # parallax), so later custom significators are set on that copy.
+            _append_extra_pd_hits(
+                pd_engine, pd_engine.chart, options, supplemental,
+                (releaser_kind, releaser_id, releaser_detail), normalized_sig,
+            )
+            _append_extra_pd_hits(
+                pd_engine, pd_engine.chart, options, natal_entries,
+                (releaser_kind, releaser_id, releaser_detail), normalized_sig,
             )
     except Exception as e:
         raise ValueError("PD engine error in circumambulation: %s" % e)
 
     # Simple PD stream: one significator only.
-    if normalized_sig is None:
-        sig_pds = [
-            pd for pd in pd_engine.pds
-            if pd.sig == primdirs.PrimDir.ASC and pd.direct
-        ]
-        start_lon = chrt.houses.ascmc[houses.Houses.ASC]
-    else:
-        sig_pds = [
-            pd for pd in pd_engine.pds
-            if (
-                pd.sig == primdirs.PrimDir.CUSTOMERPD
-                and getattr(pd, "sigdyn", None) in (_CIRCUM_SIG_KEY, "user_sig")
-                and pd.direct
-            )
-        ]
-        start_lon = normalized_sig["longitude"]
+    lot_keys = {"arabic_part_sig"}
+    if releaser_kind == "lot":
+        lot_keys.update("part:%03d" % index for index, part in enumerate(
+            getattr(eff, "arabicparts", ()) or ()
+        ) if part and part[arabicparts.ArabicParts.NAME] == releaser_detail)
+    sig_pds = [pd for pd in pd_engine.pds if (
+        pd.sig == releaser_id
+        and pd.direct
+        and not pd.mundane
+        and pd.sigasp == chart.Chart.CONJUNCTIO
+        and (releaser_kind not in {"dynamic", "lot", "custom"}
+             or (releaser_kind == "lot" and getattr(pd, "sigdyn", None) in lot_keys)
+             or (releaser_kind == "dynamic" and getattr(pd, "sigdyn", None) == releaser_detail)
+             or (releaser_kind == "custom" and getattr(pd, "sigdyn", None) in {_CIRCUM_SIG_KEY, "user_sig"}))
+    )]
+    start_lon = (
+        chrt.houses.ascmc[houses.Houses.ASC]
+        if normalized_sig is None else normalized_sig["longitude"]
+    )
     sig_pds.sort(key=lambda pd: pd.arc)
 
     TERM_MIN = primdirs.PrimDir.TERM
@@ -1203,16 +1379,21 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
 
     planet_hits_raw = []
     for pd in sig_pds:
-        participant = participant_by_key.get(getattr(pd, "promdyn", None))
-        if (
-            pd.prom == primdirs.PrimDir.CUSTOMERPD
-            and participant is not None
-            and int(pd.promasp) in enabled_asps
-        ):
-            planet_hits_raw.append(pd)
+        participant = natal_by_key.get(getattr(pd, "promdyn", None))
+        if participant is None:
+            participant = _pd_participant(pd, participant_lookup)
+        if participant is None:
+            continue
+        if (pd.promasp not in participant["aspect_indices"]
+                and not (participant["family"] == "midpoint"
+                         and pd.promasp == chart.Chart.MIDPOINT
+                         and chart.Chart.CONJUNCTIO in participant["aspect_indices"])):
+            continue
+        planet_hits_raw.append((pd, participant))
     planet_hits = _unique_by(
         planet_hits_raw,
-        lambda pd: (int(pd.prom), getattr(pd, 'promdyn', None), int(pd.promasp), round(float(pd.arc), 10), round(float(pd.time), 8))
+        lambda item: (item[1]["key"], int(item[0].promasp),
+                      round(float(item[0].arc), 10), round(float(item[0].time), 8)),
     )
 
     if not term_hits:
@@ -1271,7 +1452,7 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
         seg_arc = max(th.arc - prev_arc, 0.0)
         seg_lon = (b - a) % 360.0
         while ph_ptr < len(planet_hits):
-            ph = planet_hits[ph_ptr]
+            ph, participant = planet_hits[ph_ptr]
             if ph.arc > th.arc - 1e-9:
                 break
             if ph.arc > prev_arc + 1e-9 and ph.time <= jd_limit + 1e-9:
@@ -1284,7 +1465,6 @@ def _compute_distributions_pd(chrt, options, max_rows=200, max_age_years=150,
                 else:
                     frac = 0.0
                 aspect_deg  = chart.Chart.Aspects[ph.promasp] if 0 <= ph.promasp < len(chart.Chart.Aspects) else 0.0
-                participant = participant_by_key.get(getattr(ph, "promdyn", None), {})
                 fallback_lon = (a + seg_lon * frac) % 360.0
                 lam_part = _aspect_display_longitude(
                     participant.get("lon"),

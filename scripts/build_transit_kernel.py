@@ -38,6 +38,14 @@ def native_compile_args() -> list[str]:
 	return ["-O3", "-fvisibility=hidden"]
 
 
+def native_define_macros() -> list[tuple[str, str | None]]:
+	# Same process-wide Swiss Ephemeris state as sweastrology (SWEP/src/setup.py):
+	# macOS has no TLS in sweodef.h; MSVC would otherwise make it per-thread.
+	if sys.platform == "win32":
+		return [("TLSOFF", None)]
+	return []
+
+
 setup(
 	name="aries-transit-kernel",
 	packages=[],
@@ -49,6 +57,7 @@ setup(
 				*(str(SWEP_ROOT / name) for name in SWEP_SOURCES),
 			],
 			include_dirs=[str(SWEP_ROOT)],
+			define_macros=native_define_macros(),
 			extra_compile_args=native_compile_args(),
 		)
 	],

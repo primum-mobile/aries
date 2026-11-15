@@ -8,7 +8,7 @@ import ts from "typescript";
 
 const source = await readFile(new URL("../src/lib/chart/side-by-side-refresh.ts", import.meta.url), "utf8");
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { createSplitPeerRefreshGate } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
+const { createSplitPeerRefreshGate, splitSnapshotForDocument } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
 const contextSource = await readFile(new URL("../src/lib/chart/aspect-list-context.ts", import.meta.url), "utf8");
 const contextJs = ts.transpileModule(contextSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { aspectListViewContext } = await import(`data:text/javascript;base64,${Buffer.from(contextJs).toString("base64")}`);
@@ -40,6 +40,35 @@ test("incomplete or closed split pairs restore the normal chart list context", (
   assert.equal(normal.comparisonVisible, false);
   assert.equal(normal.comparisonDocumentId, null);
   assert.equal(aspectListViewContext(single, "previous"), null);
+});
+
+test("harmonic division changes refresh a same-cursor Aspect List world", () => {
+  const snapshot = {
+    document: {
+      documentId: "harmonic", featureKind: "harmonic", viewMode: 0,
+      displayDatetime: "1990-06-15T12:30:00",
+      binding: { retained_state: { projection_mode: "harmonic", harmonic_number: 5 } },
+    },
+    comparisonChart: null,
+  };
+  const before = aspectListViewContext(snapshot, "harmonic");
+  const changedNumber = aspectListViewContext({
+    ...snapshot,
+    document: {
+      ...snapshot.document,
+      binding: { retained_state: { projection_mode: "harmonic", harmonic_number: 7 } },
+    },
+  }, "harmonic");
+  const changedMode = aspectListViewContext({
+    ...snapshot,
+    document: {
+      ...snapshot.document,
+      binding: { retained_state: { projection_mode: "varga", varga_number: 9 } },
+    },
+  }, "harmonic");
+  assert.notEqual(changedNumber.revision, before.revision);
+  assert.notEqual(changedMode.revision, before.revision);
+  assert.equal(aspectListViewContext(snapshot, "harmonic").revision, before.revision);
 });
 
 test("explicit sources keep list owner, selection and cursors stable across focus and Tab", () => {
@@ -159,6 +188,12 @@ test("paint acknowledgement waits for both pane canvases from the same frame", a
   const nextParent = { ...parent, sideBySideSnapshots: { child: nextChild } };
   acknowledgePaintedDocumentSnapshot("parent", nextParent);
   assert.equal(wasDocumentSnapshotPainted("parent", nextParent), false);
+  const sameRight = { document: { documentId: "same" }, viewSide: "right" };
+  const sameLeft = { document: { documentId: "same" }, viewSide: "left", sideBySideSnapshotsBySide: { right: sameRight } };
+  acknowledgePaintedDocumentSnapshot("same", sameLeft);
+  assert.equal(wasDocumentSnapshotPainted("same", sameLeft), false);
+  acknowledgePaintedDocumentSnapshot("same", sameRight);
+  assert.equal(wasDocumentSnapshotPainted("same", sameLeft), true);
 });
 
 test("context-menu child opens retain the visible frame until activation has its new snapshot", async () => {
@@ -249,4 +284,31 @@ test("context-menu child opens retain the visible frame until activation has its
     assert.deepEqual(frames, [visible, replacement]);
     assert.equal(errors.length, 1);
   }
+});
+
+
+test("the same document keeps separate coordinate frames and direct refreshes by pane", () => {
+  const left = { document: { documentId: "same" }, viewSide: "left", overlayRenderMode: "full" };
+  const right = { document: { documentId: "same" }, viewSide: "right", overlayRenderMode: "full" };
+  const bundle = { ...left, sideBySideSnapshotsBySide: { right } };
+  assert.equal(splitSnapshotForDocument(bundle, "same", "left"), bundle);
+  assert.equal(splitSnapshotForDocument(bundle, "same", "right"), right);
+  assert.equal(splitSnapshotForDocument(bundle, "other", "right"), null);
+  const previous = empty();
+  const next = { ...previous, commandSnapshot: { docId: "same", snapshot: bundle } };
+  const gate = createSplitPeerRefreshGate("same", () => [], "right");
+  assert.equal(gate(next, previous), false);
+});
+
+test("Option+A changes the list context so rows follow the ascensional wheel", () => {
+  const chart = { document: { documentId: "radix", viewMode: 0, chartPresentation: { coordinateMode: "zodiacal" } }, comparisonChart: null };
+  const zodiacal = aspectListViewContext(chart, "radix");
+  const ascensional = aspectListViewContext({ ...chart, document: { ...chart.document,
+    chartPresentation: { coordinateMode: "ascensional" } } }, "radix");
+  assert.notEqual(ascensional.revision, zodiacal.revision);
+  const source = { id: "left:live", side: "left", documentId: "left", ownerDocumentId: "left", label: "Radix", cursorIdentity: "0" };
+  const split = (follows) => ({ document: { documentId: "left", viewMode: 0 }, comparisonChart: null,
+    sideBySide: { enabled: true, leftDocumentId: "left", rightDocumentId: "right", activeSide: "left",
+      aspectList: { sources: [source], primarySourceId: source.id, outerSourceId: null, ascensional: follows } } });
+  assert.notEqual(aspectListViewContext(split(true), "left").revision, aspectListViewContext(split(false), "left").revision);
 });

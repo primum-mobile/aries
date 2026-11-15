@@ -17,88 +17,52 @@ import {
   LIST_PANE_CLASSES,
   LIST_ROLE_CLASSES,
 } from "@/lib/list-tokens";
+import {
+  formatShortcutKeys,
+  glyphShortcutAvailable,
+  isAppleShortcutPlatform,
+  useAppleShortcuts,
+  useShortcutModifierLabels,
+} from "@/lib/shortcut-display";
 import { useWorkspaceManifest } from "@/stores/use-workspace-manifest";
+import { useUraniaTourStore } from "@/stores/urania-tour-store";
+
+// Existing importers (Help tests, other surfaces) keep their entry point.
+export { formatShortcutKeys, isAppleShortcutPlatform };
 
 type ShortcutRow = {
   keys: string;
   action: string;
+  actionId?: string;
+  manifestGroup: string;
 };
 
-type ShortcutModifierLabels = {
-  control: string;
-  alt: string;
-  shift: string;
-};
+const ORDERED_SHORTCUT_SECTIONS = [
+  {
+    titleKey: "help.shortcuts.chartNavigation",
+    actions: [
+      "help.shortcut.toggleComparisonOrDashboard", "help.shortcut.resetInitialChart",
+      "help.shortcut.contextualStep", "help.shortcut.weekOrListStep",
+    ],
+  },
+  {
+    titleKey: "help.shortcuts.transitSteps",
+    actions: [
+      "help.shortcut.finerStep", "help.shortcut.finestStep", "help.shortcut.secondStep",
+      "help.shortcut.lunarQuarter",
+    ],
+    noteKey: "help.timeBody",
+  },
+  {
+    titleKey: "help.shortcuts.find",
+    actions: ["help.shortcut.openSpotlight", "help.shortcut.openSpotlightSeeded", "transit-search"],
+  },
+];
 
-const TIME_NAVIGATION_KEYS = [
-  "← / →",
-  "⇧ + ← / →",
-  "⌥ + ← / →",
-  "↑ / ↓",
-  "⇧ + ↑ / ↓",
-  "Space",
-] as const;
-const PRIORITY_SHORTCUT_KEYS = [
-  "⇧ ⇧",
-  "0–9",
-  ...TIME_NAVIGATION_KEYS,
-] as const;
-const PRIORITY_SHORTCUT_KEY_SET = new Set<string>(PRIORITY_SHORTCUT_KEYS);
-
-type NavigatorPlatform = Pick<Navigator, "platform" | "userAgent"> & {
-  userAgentData?: { platform?: string };
-};
-
-const subscribeToStaticPlatform = () => () => {};
-
-export function isAppleShortcutPlatform(
-  candidate?: NavigatorPlatform | null,
-): boolean {
-  const current = candidate ?? (
-    typeof navigator === "undefined" ? null : navigator as NavigatorPlatform
-  );
-  if (!current) return true;
-  const platform = current.userAgentData?.platform
-    || current.platform
-    || current.userAgent;
-  return /mac|iphone|ipad|ipod/i.test(platform);
-}
-
-export function formatShortcutKeys(
-  keys: string,
-  applePlatform: boolean,
-  labels: ShortcutModifierLabels,
-): string {
-  if (applePlatform) return keys;
-
-  const modifierNames: Record<string, string> = {
-    "⌘": labels.control,
-    "⌃": labels.control,
-    "⌥": labels.alt,
-    "⇧": labels.shift,
-  };
-  const repeatedModifier = keys.trim().match(/^([⌘⌃⌥⇧])\s+\1$/);
-  if (repeatedModifier) {
-    const label = modifierNames[repeatedModifier[1]];
-    return `${label} ${label}`;
-  }
-
-  const tokens = keys.trim().replace(/\s*\+\s*/g, " ").split(/\s+/);
-  const modifiers: string[] = [];
-  while (tokens.length > 0 && modifierNames[tokens[0]]) {
-    modifiers.push(modifierNames[tokens.shift()!]);
-  }
-  if (modifiers.length === 0) return keys;
-  return [...modifiers, tokens.join(" ")].filter(Boolean).join("+");
-}
-
-function useAppleShortcutPlatform(): boolean {
-  return React.useSyncExternalStore(
-    subscribeToStaticPlatform,
-    isAppleShortcutPlatform,
-    () => true,
-  );
-}
+const CHART_TOOL_ACTIONS = new Set([
+  "ascensional-view", "ascensional-transits", "astrocartography", "synastry",
+  "open-style-lab", "quick.options.house:next",
+]);
 
 const COMMAND_LABEL_KEYS: Record<string, string> = {
   "menu.data": "help.shortcut.editData",
@@ -113,6 +77,9 @@ function shortcutAction(
   shortcut: ShortcutEntry,
   tf: (key: string, fallback: string) => string,
 ): string {
+  if (shortcut.commandId === "ascensional-view") {
+    return tf("help.shortcut.ascensionalChart", shortcut.label);
+  }
   if (shortcut.labelKey) return tf(shortcut.labelKey, shortcut.label);
   const explicitKey = shortcut.commandId
     ? COMMAND_LABEL_KEYS[shortcut.commandId]
@@ -127,32 +94,44 @@ function shortcutAction(
 export function collectShortcutRows(
   manifest: WorkspaceManifest | null,
   tf: (key: string, fallback: string) => string,
+  applePlatform = true,
 ): ShortcutRow[] {
   if (!manifest) return [];
 
   const rows: ShortcutRow[] = [];
+  const seen = new Set<string>();
   for (const shortcut of manifest.shortcuts) {
     if (!shortcut.bound || shortcut.hidden || shortcut.keys === "?") continue;
+    if (!glyphShortcutAvailable(shortcut.keys, applePlatform)) continue;
+    const chord = shortcut.keys.replaceAll(" ", "").toLowerCase();
+    if (seen.has(chord)) continue;
+    seen.add(chord);
     rows.push({
       keys: shortcut.keys,
       action: shortcutAction(shortcut, tf),
+      actionId: shortcut.commandId ?? shortcut.labelKey,
+      manifestGroup: shortcut.group,
     });
   }
+  return rows;
+}
 
-  const seen = new Set<string>();
-  const uniqueRows = rows.filter((row) => {
-    const key = row.keys.replaceAll(" ", "").toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+export function groupShortcutRows(rows: ShortcutRow[]) {
+  const remaining = new Set(rows);
+  const sections = ORDERED_SHORTCUT_SECTIONS.map(({ titleKey, actions, noteKey }) => {
+    const matches = actions.flatMap((action) => rows.filter((row) => row.actionId === action));
+    for (const row of matches) remaining.delete(row);
+    return { titleKey, rows: matches, noteKey };
   });
-  const priorityRows = PRIORITY_SHORTCUT_KEYS.flatMap((key) =>
-    uniqueRows.filter((row) => row.keys === key),
+  const chartTools = [...remaining].filter(
+    (row) => row.manifestGroup === "CHART MODES" || CHART_TOOL_ACTIONS.has(row.actionId ?? ""),
   );
-  const remainingRows = uniqueRows.filter(
-    (row) => !PRIORITY_SHORTCUT_KEY_SET.has(row.keys),
-  );
-  return [...priorityRows, ...remainingRows];
+  for (const row of chartTools) remaining.delete(row);
+  return [
+    ...sections,
+    { titleKey: "help.shortcuts.chartTools", rows: chartTools, noteKey: undefined },
+    { titleKey: "help.shortcuts.workspace", rows: [...remaining], noteKey: undefined },
+  ].filter((section) => section.rows.length > 0);
 }
 
 function HelpSection({
@@ -181,15 +160,11 @@ export function HelpView({ onClose }: { onClose: () => void }) {
   const t = useT();
   const tf = useTFallback();
   const manifest = useWorkspaceManifest();
-  const appleShortcutPlatform = useAppleShortcutPlatform();
-  const modifierLabels = React.useMemo<ShortcutModifierLabels>(() => ({
-    control: t("help.key.control"),
-    alt: t("help.key.alt"),
-    shift: t("help.key.shift"),
-  }), [t]);
-  const shortcuts = React.useMemo(
-    () => collectShortcutRows(manifest, tf),
-    [manifest, tf],
+  const appleShortcutPlatform = useAppleShortcuts();
+  const modifierLabels = useShortcutModifierLabels();
+  const shortcutSections = React.useMemo(
+    () => groupShortcutRows(collectShortcutRows(manifest, tf, appleShortcutPlatform)),
+    [appleShortcutPlatform, manifest, tf],
   );
 
   return (
@@ -208,45 +183,57 @@ export function HelpView({ onClose }: { onClose: () => void }) {
 
       <div className={`${LIST_PANE_CLASSES.scroller} px-[var(--aries-pane-content-padding)] py-[var(--aries-panel-padding-y)]`}>
         <div className="space-y-[var(--aries-section-gap)] pb-[var(--aries-pane-content-padding)]">
-          <p className="text-[length:var(--aries-font-size-reading)] leading-relaxed text-muted-foreground">
-            {t("help.intro")}
-          </p>
-
           <HelpSection title={t("help.shortcutsTitle")}>
-            <p>{t("help.shortcutsIntro")}</p>
             <div className="overflow-hidden rounded-[var(--aries-radius-md)] border border-border">
               <table className={`${LIST_ROLE_CLASSES.standard} w-full table-auto border-collapse text-left text-[length:var(--aries-font-size-reading)]`}>
-                <thead className="bg-muted/50 text-foreground">
+                <thead className="sr-only">
                   <tr>
-                    <th className="aries-list-head whitespace-nowrap border-b border-border font-medium">
-                      {t("help.shortcutKey")}
-                    </th>
-                    <th className="aries-list-head border-b border-border font-medium">
-                      {t("help.shortcutFunction")}
-                    </th>
+                    <th scope="col">{t("help.shortcutKey")}</th>
+                    <th scope="col">{t("help.shortcutFunction")}</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {shortcuts.map((shortcut) => (
-                    <tr key={`${shortcut.keys}:${shortcut.action}`} className="aries-list-row border-b border-border/70 last:border-b-0">
-                      <td className="aries-list-cell whitespace-nowrap align-top text-foreground">
-                        <kbd className="aries-help-kbd">
-                          {formatShortcutKeys(
-                            shortcut.keys,
-                            appleShortcutPlatform,
-                            modifierLabels,
-                          )}
-                        </kbd>
-                      </td>
-                      <td className="aries-list-cell align-top">{shortcut.action}</td>
+                {shortcutSections.map(({ titleKey, rows, noteKey }) => (
+                  <tbody key={titleKey}>
+                    <tr className="border-b border-border">
+                      <th scope="rowgroup" colSpan={2} className="aries-list-head whitespace-normal font-semibold text-foreground">
+                        {t(titleKey)}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
+                    {rows.map((shortcut) => (
+                      <tr key={shortcut.keys} className="aries-list-row border-b border-border/70">
+                        <td className="aries-list-cell whitespace-nowrap align-top text-foreground">
+                          <kbd className="aries-help-kbd">
+                            {shortcut.actionId === "help.shortcut.resetInitialChart" && shortcut.keys === "Space"
+                              ? t("help.key.space")
+                              : formatShortcutKeys(shortcut.keys, appleShortcutPlatform, modifierLabels)}
+                          </kbd>
+                        </td>
+                        <td className="aries-list-cell whitespace-normal align-top text-foreground">
+                          {shortcut.action}
+                          {shortcut.actionId === "ascensional-view" && (
+                            <p className="whitespace-normal text-muted-foreground">{t("help.shortcut.ascensionalDetail")}</p>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {noteKey && (
+                      <tr className="border-b border-border">
+                        <td colSpan={2} className="aries-list-cell whitespace-normal">{t(noteKey)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                ))}
               </table>
             </div>
           </HelpSection>
 
           <HelpSection title={t("help.gettingStartedTitle")}>
+            <Button type="button" variant="outline" onClick={(event) => {
+              onClose();
+              useUraniaTourStore.getState().start(event.detail === 0);
+            }}>
+              {t("urania.replay")}
+            </Button>
             <p>{t("help.spotlightGettingStarted")}</p>
             <p>{t("help.gettingStartedBody")}</p>
             <p>{t("help.workspaceBody")}</p>
@@ -254,7 +241,6 @@ export function HelpView({ onClose }: { onClose: () => void }) {
 
           <HelpSection title={t("help.chartsTitle")}>
             <p>{t("help.chartsBody")}</p>
-            <p>{t("help.timeBody")}</p>
           </HelpSection>
 
           <HelpSection title={t("help.tablesTitle")}>

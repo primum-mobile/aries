@@ -7,7 +7,14 @@
   'use strict';
   const { createWorker, publish, report = console.warn } = options;
   let source = null, meshes = null, worker = null, generation = 0, requested = null;
+  let sourceKeys = [];
   const cache = new Map();
+  // Payloads cross the iframe boundary as new objects. Only the analytic curve
+  // defines its mesh; labels, styles and coarse daemon sampling do not.
+  function curveKey(feature) {
+    const curve = feature.properties?.curve;
+    return curve ? JSON.stringify(Object.keys(curve).sort().map(key => [key, curve[key]])) : null;
+  }
   function cancel() {
     generation++;
     if (worker) worker.terminate();
@@ -15,20 +22,26 @@
     requested = null;
   }
   function request(data, view) {
-    if (source !== data) {
-      cancel(); source = data; meshes = null; cache.clear();
-    }
-    if (!data.features?.some(feature => feature.properties?.curve)) return;
+    if (source !== data) retainUnchanged(data);
+    if (!sourceKeys.some(Boolean)) return;
     const key = JSON.stringify(view);
     if (requested === key) return;
     cancel(); requested = key;
     const revision = generation;
-    const install = (result) => {
+    const viewMeshes = cache.get(key) || new Map();
+    const install = () => {
       if (revision !== generation || source !== data) return;
-      meshes = result;
-      publish();
+      const next = sourceKeys.map(curve => viewMeshes.get(curve) || null);
+      const changed = next.some((mesh, index) => mesh !== (meshes?.[index] || null));
+      meshes = next;
+      if (changed) publish();
     };
-    if (cache.has(key)) { install(cache.get(key)); return; }
+    const missing = new Map();
+    sourceKeys.forEach((curve, index) => {
+      if (curve && !viewMeshes.has(curve)) missing.set(curve, data.features[index]);
+    });
+    if (!missing.size) { install(); return; }
+    const missingKeys = [...missing.keys()];
     try {
       worker = createWorker();
       worker.onerror = (error) => {
@@ -39,13 +52,14 @@
         if (revision !== generation) return;
         worker.terminate(); worker = null;
         if (result.error) { report('Astrocart curve refinement failed', result.error); return; }
-        cache.set(key, result.geometries);
+        result.geometries.forEach((geometry, index) => viewMeshes.set(missingKeys[index], geometry));
+        cache.set(key, viewMeshes);
         while (cache.size > 3) cache.delete(cache.keys().next().value);
-        install(result.geometries);
+        install();
       };
       // Retain source properties on the main thread. Style changes must never
       // be overwritten by an older worker result or cached viewport geometry.
-      worker.postMessage({ view, features: data.features.map(feature => ({
+      worker.postMessage({ view, features: [...missing.values()].map(feature => ({
         properties: { curve: feature.properties?.curve }, geometry: feature.geometry,
       })) });
     } catch (error) { cancel(); report('Astrocart curve refinement failed', error.message); }
@@ -56,17 +70,18 @@
       meshes[index] ? { ...feature, geometry: meshes[index] } : feature) };
   }
   function retainUnchanged(data) {
-    const priorFeatures = source && source.features || [];
-    const priorMeshes = meshes;
-    const meshByFeature = priorMeshes
-      ? new Map(priorFeatures.map((feature, index) => [feature, priorMeshes[index]]))
-      : null;
+    const meshByCurve = new Map(sourceKeys.map((curve, index) => [curve, meshes?.[index]]));
     cancel();
     source = data;
-    meshes = meshByFeature && Array.isArray(data.features)
-      ? data.features.map((feature) => meshByFeature.get(feature) || null)
-      : null;
-    cache.clear();
+    sourceKeys = (data.features || []).map(curveKey);
+    const retained = sourceKeys.map(curve => meshByCurve.get(curve) || null);
+    meshes = retained.some(Boolean) ? retained : null;
+    const retainedKeys = new Set(sourceKeys);
+    for (const viewMeshes of cache.values()) {
+      for (const curve of viewMeshes.keys()) {
+        if (!retainedKeys.has(curve)) viewMeshes.delete(curve);
+      }
+    }
   }
   return { request, cancel, getData, retainUnchanged };
 });

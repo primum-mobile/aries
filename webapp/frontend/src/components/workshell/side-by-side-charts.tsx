@@ -14,8 +14,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { executeWorkspaceContextMenuAction, type WorkspaceStatePayload } from "@/lib/daemon/client";
-import { fetchCachedDocumentSnapshot, getDocumentSnapshot } from "@/lib/chart/document-snapshot-cache";
+import { executeWorkspaceContextMenuAction, fetchDocumentSnapshot, type WorkspaceStatePayload } from "@/lib/daemon/client";
+import { getDocumentSnapshot } from "@/lib/chart/document-snapshot-cache";
 import type { ChartRenderSnapshot, SideBySideView } from "@/lib/chart/types";
 import type { WheelVerticalAlignment } from "@/lib/chart/outer-glyph-lane";
 import { perfNow, recordChartPerf } from "@/lib/chart/perf";
@@ -54,15 +54,16 @@ type Surface = ComponentType<{
   wheelVerticalAlignment?: WheelVerticalAlignment;
 }>;
 
-function isSplitSnapshot(snapshot: ChartRenderSnapshot | null | undefined, documentId: string | null): boolean {
+function isSplitSnapshot(snapshot: ChartRenderSnapshot | null | undefined, documentId: string | null, side: "left" | "right"): boolean {
   const view = snapshot?.sideBySide;
-  return Boolean(documentId && snapshot?.document?.documentId === documentId && view?.enabled &&
+  return Boolean((!snapshot?.viewSide || snapshot.viewSide === side) && documentId && snapshot?.document?.documentId === documentId && view?.enabled &&
     (view.leftDocumentId === documentId || view.rightDocumentId === documentId));
 }
 
 /** Each slot retains its last coherent paint while a different document loads. */
-const ChartSlot = memo(function ChartSlot({ documentId, active, current, revision, Surface }: {
+const ChartSlot = memo(function ChartSlot({ documentId, side, active, current, revision, Surface }: {
   documentId: string | null;
+  side: "left" | "right";
   active: boolean;
   current: ChartRenderSnapshot | null;
   revision: number;
@@ -74,7 +75,7 @@ const ChartSlot = memo(function ChartSlot({ documentId, active, current, revisio
   const [failed, setFailed] = useState(false);
 
   const cached = documentId ? getDocumentSnapshot(documentId) : undefined;
-  const candidate = current ?? (isSplitSnapshot(cached, documentId) ? cached ?? null : null);
+  const candidate = current ?? (isSplitSnapshot(cached, documentId, side) ? cached ?? null : null);
   if (candidate && candidate !== lastCandidate) {
     setLastCandidate(candidate);
     setRetained(candidate);
@@ -85,12 +86,12 @@ const ChartSlot = memo(function ChartSlot({ documentId, active, current, revisio
     let alive = true;
     let generation = 0;
     const shouldRefresh = createSplitPeerRefreshGate(documentId, () =>
-      (getDocumentSnapshot(documentId)?.ringTaxonomy ?? []).flatMap((ring) => ring.documentId ? [ring.documentId] : []),
+      (getDocumentSnapshot(documentId)?.ringTaxonomy ?? []).flatMap((ring) => ring.documentId ? [ring.documentId] : []), side,
     );
     const refresh = () => {
       const request = ++generation;
       const startedAt = perfNow();
-      void fetchCachedDocumentSnapshot(documentId).then((snapshot) => {
+      void fetchDocumentSnapshot(documentId, undefined, "full", side).then((snapshot) => {
         if (!alive || request !== generation) return;
         setRetained(snapshot);
         setFailed(false);
@@ -100,21 +101,21 @@ const ChartSlot = memo(function ChartSlot({ documentId, active, current, revisio
       });
     };
     const cached = getDocumentSnapshot(documentId);
-    if (!isSplitSnapshot(cached, documentId)) refresh();
+    if (!current && !isSplitSnapshot(cached, documentId, side)) refresh();
     // Both visible wheels consume the same navigate response. Events remain
     // a fallback for external edits/options, never a per-step second request.
     const unsubscribe = useDaemonWorkspaceStore.subscribe((state, previous) => {
       const bundle = state.steppedSnapshot !== previous.steppedSnapshot
         ? state.steppedSnapshot?.snapshot : state.commandSnapshot !== previous.commandSnapshot
           ? state.commandSnapshot?.snapshot : undefined;
-      if (bundle?.sideBySideSnapshots?.[documentId]) generation += 1;
+      if (bundle && splitSnapshotForDocument(bundle, documentId, side)) generation += 1;
       if (shouldRefresh(state, previous)) refresh();
     });
     return () => { alive = false; unsubscribe(); };
-  }, [active, documentId, revision]);
+  }, [active, documentId, revision, side, current]);
 
   const shown = candidate && candidate !== lastCandidate ? candidate : retained;
-  const ready = isSplitSnapshot(shown, documentId);
+  const ready = isSplitSnapshot(shown, documentId, side);
   if (!documentId) return <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">{t("chartview.openChart")}</div>;
   return (
     <div className="relative h-full min-h-0" aria-busy={!ready}>
@@ -146,8 +147,9 @@ export function SideBySideCharts({ chart, view, Surface }: {
       {(["left", "right"] as const).map((side) => {
         const documentId = side === "left" ? view.leftDocumentId : view.rightDocumentId;
         const active = view.activeSide === side;
-        const current = splitSnapshotForDocument(chart, documentId);
+        const current = splitSnapshotForDocument(chart, documentId, side);
         const selected = choices.find((doc) => doc.id === documentId);
+        const viewTitle = current?.document?.viewTitle;
         return <section key={side} aria-label={t(`chartview.${side}`)} className="flex min-h-0 min-w-0 flex-col"
           onPointerDown={() => { if (!active) command({ side }); }}>
           <div className="flex shrink-0 justify-center px-[var(--aries-pane-header-padding-x)] py-[var(--aries-pane-header-compact-padding-y)]"
@@ -159,8 +161,8 @@ export function SideBySideCharts({ chart, view, Surface }: {
                   active ? "bg-muted text-foreground" : "bg-transparent text-muted-foreground",
                 )} />}>
                 <span className="truncate">
-                  {selected?.name ?? t("chartview.chooseChart")}
-                  {selected?.detail ? <span className="text-muted-foreground"> · {selected.detail}</span> : null}
+                  {viewTitle ?? selected?.name ?? t("chartview.chooseChart")}
+                  {!viewTitle && selected?.detail ? <span className="text-muted-foreground"> · {selected.detail}</span> : null}
                 </span>
                 <ChevronDown aria-hidden="true" className="text-muted-foreground" />
               </DropdownMenuTrigger>
@@ -179,7 +181,7 @@ export function SideBySideCharts({ chart, view, Surface }: {
             </DropdownMenu>
           </div>
           <div className="relative min-h-0 flex-1">
-            <ChartSlot documentId={documentId} active={active} current={current} revision={view.revision} Surface={Surface} />
+            <ChartSlot side={side} documentId={documentId} active={active} current={current} revision={view.revision} Surface={Surface} />
             {active ? <div aria-hidden="true" className={styles.focusWash} /> : null}
           </div>
         </section>;

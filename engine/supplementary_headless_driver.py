@@ -196,9 +196,10 @@ class SupplementaryHeadlessDriver:
 			except Exception:
 				pass
 
-		time = chart.Time(
-			t1, t2, t3, t4, t5, t6, False, radix.time.cal,
-			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+		time = chart_factory.build_time(
+			t1, t2, t3, t4, t5, t6, astronomical=True,
+			cal=radix.time.cal, zt=chart.Time.GREENWICH,
+			plus=plus, place=place, full=False,
 			tzid=str(getattr(radix.time, 'tzid', '') or ''),
 			tzauto=bool(getattr(radix.time, 'tzauto', False)),
 		)
@@ -262,9 +263,10 @@ class SupplementaryHeadlessDriver:
 			except Exception:
 				pass
 
-		time = chart.Time(
-			y, m, d, hh, mi, ss, False, radix.time.cal,
-			chart.Time.GREENWICH, plus, 0, 0, False, place, False,
+		time = chart_factory.build_time(
+			y, m, d, hh, mi, ss, astronomical=True,
+			cal=radix.time.cal, zt=chart.Time.GREENWICH,
+			plus=plus, place=place, full=False,
 			tzid=str(tzid or ''), tzauto=bool(tzauto),
 		)
 		revolution = chart_factory.build_chart(radix.name, radix.male, time, place, chart.Chart.SOLAR, '', self.options, False)

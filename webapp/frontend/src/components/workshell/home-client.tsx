@@ -5,8 +5,12 @@
 
 "use client";
 
+import { useUraniaTourStore } from "@/stores/urania-tour-store";
+import { uraniaHoldsNavigationBar } from "@/lib/urania-tour";
+
 import { coerceDateConvention, type DateConvention } from "@/lib/date-display";
-import { activateWheelStyle, flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+import { activateWheelStyle } from "@/lib/daemon/wheel-preset-sync";
+import { applyWheelTheme } from "@/lib/daemon/wheel-theme-transition";
 
 import {
   useCallback,
@@ -37,6 +41,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Archive,
+  ArchiveRestore,
   ClipboardPaste,
   Database,
   FileJson,
@@ -51,7 +57,6 @@ import {
 } from "@/components/workshell/workspace-content";
 import { CHART_UPPER_NAVIGATION_BAR_ENABLED } from "@/components/workshell/chart-navigation-bar-flag";
 import { WorkspaceFrame } from "@/components/workshell/workspace-frame";
-import { BrowserMenuBar } from "@/components/workshell/browser-menu-bar";
 import { SettingsWindowBridge } from "@/components/workshell/settings-window-bridge";
 import { prewarmToolWindows } from "@/lib/shell/tool-window-lifecycle";
 import { openNativeSettings, hideNativeSettings } from "@/lib/shell/settings-window";
@@ -64,10 +69,15 @@ import {
   type LatestWinsWriteQueue,
 } from "@/components/workshell/inspector-panel";
 import { isSettingsTabId, type SettingsTabId } from "@/components/workshell/settings-dialog";
+import { settingsTabForCommand } from "@/lib/settings-navigation";
 import { useSurveilStore } from "@/stores/surveil-store";
 import { useHelpAboutStore } from "@/stores/help-about-store";
 import { useLicenseDialogStore } from "@/stores/license-dialog-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { retainedHouseVisibility } from "@/lib/chart/document-snapshot-cache";
+import { withHouseVisibility } from "@/lib/chart/house-visibility";
+import { toggleRetainedHouseVisibility } from "@/lib/chart/house-visibility-command";
+import { withDashboardView } from "@/lib/chart/dashboard-canvas";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import {
   AmbientSpotlight,
@@ -75,6 +85,7 @@ import {
 } from "@/components/workshell/ambient-spotlight";
 import { ThemeProvider } from "@/components/workshell/theme-provider";
 import { LicenseStartupController } from "@/components/workshell/license-startup-controller";
+import { VanillaModeController } from "@/components/workshell/vanilla-mode-controller";
 import {
   ShellMenuListener,
   syncShellMenuEnablement,
@@ -86,12 +97,13 @@ import {
   type ShellMenuEnabledState,
 } from "@/components/workshell/shell-menu-listener";
 import {
+  FORTUNE_REVERSED_BY_NIGHT,
+  FORTUNE_SAME_DAY_NIGHT,
   corpusDisciplinesCached,
   cycleSecondaryView,
   clearStartupChart,
   toggleHouses,
   toggleMinorAspects,
-  applyThemePreset,
   patchOptions,
   workspaceToggleComparison,
   workspaceSynastryComposite,
@@ -115,6 +127,7 @@ import {
   exportRenderedChartBytes,
   executeWorkspaceContextMenuAction,
   importCharts,
+  exportChartLibrary,
   listCollections,
   setCurrentAsStartupChart,
   setRestoreOpenCharts,
@@ -123,10 +136,13 @@ import {
   workspaceClosePreflight,
   workspaceMove,
   workspaceNavigateKey,
+  workspaceAstrocartLayerNow,
   workspaceOpen,
+  workspaceOpenTable,
   workspaceOpenSynastry,
   workspaceOpenSynastryPair,
   spotlightExecute,
+  waitForAstrolabeViewStateWrites,
   resolvePlace,
   fetchCorpusPacks,
   setCorpusPackActive,
@@ -142,6 +158,7 @@ import {
   type PlanetaryReturnBody,
   type RecentChartItem,
   type SpotlightActionId,
+  type SpotlightChartMatch,
   type SpotlightPreview,
   type CorpusSemanticProfilesPayload,
   type SupplementaryBindingPayload,
@@ -162,15 +179,20 @@ import {
   setChartStepBurstActive,
 } from "@/lib/chart/perf";
 import {
+  flushGraphicEphemerisCamera,
   navigateGraphicEphemeris,
   releaseGraphicEphemerisNavigation,
+  toggleGraphicEphemerisRadix,
   type GraphicEphemerisNavigationKey,
   type GraphicEphemerisStepKey,
 } from "@/lib/chart/graphic-ephemeris-navigation.mjs";
+import { navigateAstrolabe, type AstrolabeNavigationKey } from "@/lib/chart/astrolabe-navigation.mjs";
+import { dispatchAstrolabeDisplayCommand } from "@/lib/chart/astrolabe-display-commands.mjs";
 import {
   canReusePaintedDocumentCanvas,
   wasDocumentSnapshotPainted,
 } from "@/lib/chart/painted-snapshot-registry";
+import { aspectViewState } from "@/lib/chart/aspect-view-state";
 import {
   flushSidebarListPreferenceWrites,
   localizedWorkspaceDocumentTitle,
@@ -178,6 +200,8 @@ import {
   type SupplementaryKind,
   type WorkspaceDocument,
 } from "@/stores/workspace-store";
+import { minimizeTouchPane } from "@/stores/touch-pane-store";
+import { mobileLayoutMatches } from "@/hooks/use-mobile-layout";
 import {
   findDaemonRadixAncestor,
   useChartLaunchers,
@@ -214,7 +238,20 @@ import {
 } from "@/lib/chart/chart-export-registry";
 import { renderChartSurfaceExport } from "@/lib/chart/chart-export-renderer";
 import { useShortcut } from "@/shortcuts/use-shortcut";
+import { useDesignTunerShortcut } from "@/shortcuts/design-tuner-shortcut";
 import { useManifestShortcutDispatch } from "@/shortcuts/manifest-shortcuts";
+import { useInPageMenuAccelerators } from "@/shortcuts/menu-accelerators";
+import { useBrowserHistoryKeyGuard } from "@/shortcuts/browser-history-guard";
+import { APP_EXIT_COMMAND } from "./browser-menu-bar";
+import { BugReportDialog } from "./bug-report-dialog";
+import { DaemonStartupFailureDialog, SupportDiagnosticsDialog } from "./support-diagnostics-dialog";
+import {
+  SUPPORT_COMMANDS,
+  SUPPORT_DIAGNOSTICS_COMMAND,
+  SUPPORT_OPEN_LOGS_COMMAND,
+  openLogsFolder,
+} from "@/lib/shell/support-diagnostics";
+import { useSupportDiagnosticsStore } from "@/stores/support-diagnostics-store";
 import { noteSpotlightDismissed } from "@/shortcuts/spotlight-cooldown";
 import {
   enabledActionIds,
@@ -226,6 +263,7 @@ import {
   openChartPickerWindow,
   prewarmChartPickerWindowApi,
 } from "@/lib/shell/chart-picker-window";
+import { BrowserChartPicker } from "@/components/workshell/browser-chart-picker";
 import { safeShellUnlisten } from "@/lib/shell/unlisten";
 import { userWheelStyleMenuEntries, wheelStyleForCommand, wheelStyleMenuChecks } from "@/lib/chart/wheel-style-menu";
 import { confirmQuit, resolveShellHost, type ShellOpenSelection } from "@/lib/shell-host";
@@ -238,11 +276,18 @@ import {
   prewarmChartPickerRows,
 } from "@/lib/chart-picker/rows-cache";
 import { isAbortError, isTransientDaemonFetchError } from "@/lib/abort-error";
+import { liveSurfaceRequests } from "@/lib/live-surfaces";
+import { beginStepBurst, endStepBurst, noteStepBurstCursor } from "@/lib/chart/step-burst";
 import {
   closeInspectorAndNotes,
   closeWorkspaceTransientPanes,
+  toggleWorkspaceInspector,
+  toggleWorkspaceNotes,
 } from "@/components/workshell/workspace-ui-commands";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
+import { usePosterExportStore } from "@/stores/poster-export-store";
+import { PosterExportHost } from "./poster-export-host";
+import { useSidebarVisibilityStore } from "@/stores/sidebar-visibility-store";
 import { useT, useTFallback, useLocale } from "@/lib/i18n/i18n";
 
 function recoverUnknownDocumentSnapshot(error: unknown): boolean {
@@ -302,19 +347,28 @@ type RevolutionLocationRequest = Extract<
   { mode: "revolution-location" }
 >;
 
+const REPORT_BUG_COMMAND = "menu.help.report-bug";
+
 const CHART_INDEPENDENT_COMMANDS = new Set([
+  APP_EXIT_COMMAND,
+  REPORT_BUG_COMMAND,
+  ...SUPPORT_COMMANDS,
   "appearance.toggle",
   "menu.ayanamsha",
   "menu.import.charts",
+  "menu.view.edit-sidebar",
   "menu.import.hor-folder",
   "menu.import.jsonl",
   "menu.import.sfcht",
   "menu.import.aaf",
   "menu.import.aaf-paste",
   "menu.colors",
+  "menu.app.settings",
   "menu.help.about",
   "menu.help.features",
   "menu.help.help",
+  "menu.help.find-setting",
+  "menu.help.walkthrough",
   "menu.help.license",
   "menu.house-system",
   "menu.lunar-mansions",
@@ -396,6 +450,14 @@ const TABLE_ID_BY_MENU_COMMAND: Record<string, string> = {
   "menu.table.monthly-transits": "monthly_transits",
 };
 
+/** Whether a time step of `docId` carries dashboard module data: only while
+ * the active chart's dashboard view shows (by default, the daemon's state). */
+function stepDashboardVisible(chart: ChartRenderSnapshot | null, docId: string): boolean {
+  const dashboard = chart?.document?.documentId === docId ? chart.dashboard : null;
+  if (!dashboard?.eligible) return true;
+  return useFrameLayoutStore.getState().dashboardView ?? dashboard.enabled;
+}
+
 function exportBaseName(doc: WorkspaceDocument | null): string {
   const title = doc?.title.replace(/\s*\*$/, "").trim() || "aries-chart";
   const source = doc?.sourceName.trim() || "";
@@ -412,6 +474,8 @@ function runtimeActionIdForShellMenu(id: string): string {
 }
 
 const QUICK_OPTIONS_PREFIX = "quick.options.";
+// Origins this window puts on its own option writes; unique across windows.
+const NATIVE_OPTIONS_ORIGIN_PREFIX = `quick-${Math.random().toString(36).slice(2)}-`;
 const MINOR_ASPECT_INDICES = new Set([1, 2, 4, 7, 8, 9, 11]);
 const FIXED_STAR_SUBMODE_VALUES = new Set([1, 6, 7, 8]);
 
@@ -419,6 +483,7 @@ const NATIVE_QUICK_DISPLAY_TOGGLES = [
   "houses",
   "housesystem",
   "showchiron",
+  "showapogee",
   "showvertex",
   "shownodes",
   "showlof",
@@ -433,10 +498,7 @@ const NATIVE_QUICK_DISPLAY_TOGGLES = [
   "showaspectstovertex",
   "aspectstonodes",
   "showaspectstolof",
-  "showlofouterring",
-  "aspect_thickness_mode",
   "aspect_opacity_mode",
-  "aspect_flag_show_parties",
   "showfixstarsnodes",
   "showfixstarshcs",
   "showfixstarslof",
@@ -457,6 +519,9 @@ function quickCommandValue(command: string, prefix: string): string | null {
 function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsPatch | null {
   const display = opts.display as Record<string, unknown>;
   const boolDisplay = (attr: string): OptionsPatch => {
+    // Older native commands share the inner chart's canonical visibility.
+    if (attr === "showfixstarsnodes") attr = "shownodes";
+    if (attr === "showfixstarslof") attr = "showlof";
     const value = !Boolean(display[attr]);
     const patch: Record<string, unknown> = { [attr]: value };
     if (attr === "showvertex" && !value) patch.showaspectstovertex = false;
@@ -472,16 +537,31 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
     return boolDisplay("presentation_cursor");
   }
 
+  if (command === "quick.options.true-node") {
+    return { planetsPoints: { meannode: !opts.planetsPoints.meannode } };
+  }
+  if (command === "quick.options.true-apogee") {
+    return { display: { meanapogee: !opts.display.meanapogee } };
+  }
+  if (command === "quick.options.fortuna-reverse") {
+    const reversed = opts.planetsPoints.lotoffortune !== FORTUNE_SAME_DAY_NIGHT;
+    return { planetsPoints: { lotoffortune: reversed ? FORTUNE_SAME_DAY_NIGHT : FORTUNE_REVERSED_BY_NIGHT } };
+  }
+
   let value = quickCommandValue(command, "quick.options.display:");
   if (value) return boolDisplay(value);
 
   value = quickCommandValue(command, "quick.options.node:");
   if (value !== null) return { planetsPoints: { meannode: value === "1" } };
 
+  value = quickCommandValue(command, "quick.options.apogee:");
+  if (value !== null) return { display: { meanapogee: value === "1" } };
+
   value = quickCommandValue(command, "quick.options.ayanamsha:");
   if (value !== null) return { ayanamsha: { ayanamsha: Number(value) } };
 
   value = quickCommandValue(command, "quick.options.house:");
+  if (value === "next") return { houseSystem: { cycle: true } };
   if (value !== null) return { houseSystem: { hsys: value } };
 
   value = quickCommandValue(command, "quick.options.transcendental:");
@@ -524,41 +604,6 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
     return { display: patch };
   }
 
-  if (command === "quick.options.exclusive-aspects") {
-    const enabled = !Boolean(opts.display.exclusive_aspects_on_click);
-    return {
-      display: {
-        exclusive_aspects_on_click: enabled,
-        ...(!enabled
-          ? {
-              exclusive_aspects_on_click_show_minor: false,
-              exclusive_aspects_on_click_traditional: false,
-            }
-          : {}),
-      },
-    };
-  }
-
-  if (command === "quick.options.exclusive-minor") {
-    const enabled = !Boolean(opts.display.exclusive_aspects_on_click_show_minor);
-    return {
-      display: {
-        exclusive_aspects_on_click_show_minor: enabled,
-        ...(enabled ? { exclusive_aspects_on_click_traditional: false } : {}),
-      },
-    };
-  }
-
-  if (command === "quick.options.exclusive-traditional") {
-    const enabled = !Boolean(opts.display.exclusive_aspects_on_click_traditional);
-    return {
-      display: {
-        exclusive_aspects_on_click_traditional: enabled,
-        ...(enabled ? { exclusive_aspects_on_click_show_minor: false } : {}),
-      },
-    };
-  }
-
   value = quickCommandValue(command, "quick.options.fixstars:");
   if (value !== null) {
     const mode = Number(value);
@@ -576,6 +621,8 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   if (value !== null) return { display: { phasismode: Number(value) } };
   value = quickCommandValue(command, "quick.options.cazimi:");
   if (value !== null) return { display: { cazimimode: Number(value) } };
+  value = quickCommandValue(command, "quick.options.void-course:");
+  if (value !== null) return { display: { voidcoursepolicy: Number(value) } };
   value = quickCommandValue(command, "quick.options.synodic:");
   if (value !== null) return { display: { synodicmode: Number(value) } };
   value = quickCommandValue(command, "quick.options.anglo-dense-label-layout:");
@@ -587,8 +634,6 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
     return { display: { anglo_dense_label_layout: value } };
   }
 
-  value = quickCommandValue(command, "quick.options.fortuna:");
-  if (value !== null) return { planetsPoints: { lotoffortune: Number(value) } };
   value = quickCommandValue(command, "quick.options.syzygy:");
   if (value !== null) return { planetsPoints: { syzmoon: Number(value) } };
 
@@ -614,6 +659,9 @@ function nativeQuickOptionPatch(command: string, opts: OptionsPayload): OptionsP
   if (value !== null) return { quickCharts: { progression_day_type: Number(value) } };
   value = quickCommandValue(command, "quick.options.launch-mode:");
   if (value !== null) return { quickCharts: { secondary_progression_launch_mode: Number(value) } };
+
+  value = quickCommandValue(command, "quick.options.supplementary-location:");
+  if (value === "radix" || value === "default") return { quickCharts: { supplementary_location: value } };
 
   value = quickCommandValue(command, "quick.options.solar-year:");
   if (value !== null) return { revolutions: { revolutions_solaryearmode: Number(value) } };
@@ -679,7 +727,8 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
     for (const value of values) check(`${prefix}:${String(value)}`, String(value) === String(selected));
   };
 
-  radio("quick.options.node", [1, 0], opts.planetsPoints.meannode ? 1 : 0);
+  check("quick.options.true-node", !opts.planetsPoints.meannode);
+  check("quick.options.true-apogee", !opts.display.meanapogee);
   radio("quick.options.ayanamsha", opts.ayanamsha.available.map((entry) => entry.index), opts.ayanamsha.ayanamsha);
   radio("quick.options.house", opts.houseSystem.available.map((entry) => entry.code), opts.houseSystem.hsys);
 
@@ -697,9 +746,6 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   }
   check("quick.options.terms", Boolean(opts.display.showterms));
   check("quick.options.traditional-aspects", Boolean(opts.display.traditionalaspects));
-  check("quick.options.exclusive-aspects", Boolean(opts.display.exclusive_aspects_on_click));
-  check("quick.options.exclusive-minor", Boolean(opts.display.exclusive_aspects_on_click_show_minor));
-  check("quick.options.exclusive-traditional", Boolean(opts.display.exclusive_aspects_on_click_traditional));
 
   opts.display.transcendental.forEach((enabled, index) => {
     check(`quick.options.transcendental:${index}`, Boolean(enabled));
@@ -707,10 +753,14 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   opts.display.aspect.forEach((enabled, index) => {
     check(`quick.options.aspect:${index}`, Boolean(enabled));
   });
+  check("quick.options.display:showfixstarsnodes", opts.display.shownodes);
+  check("quick.options.display:showfixstarslof", opts.display.showlof);
 
   radio("quick.options.fixstars", opts.catalog.fixstarsModes.map((entry) => entry.value), opts.display.showfixstars);
   radio("quick.options.phasis", opts.catalog.phasisModes.map((entry) => entry.value), opts.display.phasismode);
   radio("quick.options.cazimi", opts.catalog.cazimiModes.map((entry) => entry.value), opts.display.cazimimode);
+  check("quick.options.display:showvoidcourse", opts.display.showvoidcourse);
+  radio("quick.options.void-course", opts.catalog.voidCoursePolicies.map((entry) => entry.value), opts.display.voidcoursepolicy);
   radio("quick.options.synodic", opts.catalog.synodicModes.map((entry) => entry.value), opts.display.synodicmode);
   states.push(...wheelStyleMenuChecks(opts));
   radio(
@@ -718,7 +768,7 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
     opts.catalog.angloDenseLabelLayouts.map((entry) => entry.value),
     opts.display.anglo_dense_label_layout,
   );
-  radio("quick.options.fortuna", opts.catalog.fortunaModes.map((entry) => entry.value), opts.planetsPoints.lotoffortune);
+  check("quick.options.fortuna-reverse", opts.planetsPoints.lotoffortune !== FORTUNE_SAME_DAY_NIGHT);
   radio("quick.options.syzygy", opts.catalog.syzygyModes.map((entry) => entry.value), opts.planetsPoints.syzmoon);
 
   check(
@@ -736,6 +786,7 @@ function nativeQuickOptionCheckedStates(opts: OptionsPayload): ShellMenuCheckedS
   radio("quick.options.progression-day", opts.catalog.progressionDayTypes.map((entry) => entry.value), opts.quickCharts.progression_day_type);
   radio("quick.options.launch-mode", opts.catalog.secondaryLaunchModes.map((entry) => entry.value), opts.quickCharts.secondary_progression_launch_mode);
 
+  radio("quick.options.supplementary-location", ["radix", "default"], opts.quickCharts.supplementary_location);
   radio("quick.options.solar-year", [0, 1], opts.revolutions.revolutions_solaryearmode);
   radio("quick.options.solar-location", [0, 1], opts.revolutions.revolutions_solarlocationmode);
   radio("quick.options.lunar-location", [0, 1], opts.revolutions.revolutions_lunarlocationmode);
@@ -841,13 +892,14 @@ function placePayloadFromCandidate(candidate: PlaceCandidate): Record<string, un
     place: candidate.name,
     deglon: candidate.lonDeg,
     minlon: candidate.lonMin,
-    seclon: 0,
+    seclon: candidate.isCoordinate ? candidate.lonSec : 0,
     east: candidate.east,
     deglat: candidate.latDeg,
     minlat: candidate.latMin,
-    seclat: 0,
+    seclat: candidate.isCoordinate ? candidate.latSec : 0,
     north: candidate.north,
     altitude: candidate.altitude,
+    ...(candidate.isCoordinate ? { lon: candidate.lon, lat: candidate.lat } : {}),
   };
 }
 
@@ -865,12 +917,8 @@ function chartSaveTarget(
   return activeRadix;
 }
 
-function chartSaveName(doc: WorkspaceDocument): string {
-  const title = doc.title.replace(/\s*\*$/, "").trim();
-  if (doc.kind === "supplementary") {
-    return title || doc.sourceName.trim();
-  }
-  return (doc.sourceName || title).trim();
+function chartSaveName(doc: WorkspaceDocument, untitled: string): string {
+  return doc.saveName?.trim() || untitled;
 }
 
 type SemanticProfileWriteQueue = LatestWinsWriteQueue<
@@ -939,6 +987,8 @@ async function selectImportSelection(
         ? tf("home.importDialogHorFolder", "Select folder containing .hor files")
         : kind === "jsonl"
           ? tf("home.importDialogJsonl", "Import JSONL Collection")
+          : kind === "library"
+            ? tf("home.importDialogLibrary", "Restore chart library backup")
           : kind === "sfcht"
             ? tf("home.importDialogSfcht", "Import Solar Fire / Astro Gold .SFcht")
             : tf("home.importDialogAaf", "Import Astrological Exchange Format"),
@@ -947,6 +997,8 @@ async function selectImportSelection(
     filters:
       kind === "jsonl"
         ? [{ name: tf("home.filterJsonlCollections", "JSONL collections"), extensions: ["jsonl"] }]
+        : kind === "library"
+          ? [{ name: tf("home.filterChartLibrary", "Aries chart library backup"), extensions: ["zip"] }]
         : kind === "sfcht"
           ? [{ name: tf("home.filterSolarFireAstroGold", "Solar Fire / Astro Gold"), extensions: ["sfcht", "SFcht"] }]
           : kind === "aaf"
@@ -1199,7 +1251,7 @@ export function HomeClient() {
         window.cancelIdleCallback(idleHandle);
       }
     };
-  }, [daemonConnection]);
+  }, [daemonConnection, t]);
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | null = null;
@@ -1395,10 +1447,14 @@ export function HomeClient() {
   const surveilStudiesDialogOpen = useSurveilStore((s) => s.studiesDialogOpen);
   const openSurveilStudiesDialog = useSurveilStore((s) => s.openStudiesDialog);
   const aboutDialogOpen = useHelpAboutStore((s) => s.aboutOpen);
+  const supportDiagnosticsOpen = useSupportDiagnosticsStore((s) => s.diagnosticsOpen);
   const openAboutDialog = useHelpAboutStore((s) => s.openAbout);
   const licenseDialogOpen = useLicenseDialogStore((s) => s.open);
   const openLicenseDialog = useLicenseDialogStore((s) => s.openDialog);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const openEclipsesPane = useWorkspaceStore((s) => s.openEclipsesPane);
+  const openPdPositionsPane = useWorkspaceStore((s) => s.openPdPositionsPane);
+  const pdPositionsOpenPendingRef = useRef(false);
   const openLunarMansionsPane = useWorkspaceStore((s) => s.openLunarMansionsPane);
   const openFeatureCatalogPane = useWorkspaceStore((s) => s.openFeatureCatalogPane);
   const openHelpPane = useWorkspaceStore((s) => s.openHelpPane);
@@ -1417,7 +1473,6 @@ export function HomeClient() {
   const setAspectListPerfectionLinkMode = useWorkspaceStore(
     (s) => s.setAspectListPerfectionLinkMode,
   );
-  const toggleInspector = useFrameLayoutStore((s) => s.toggleInspector);
   const setStyleEditorOpen = useFrameLayoutStore((s) => s.setStyleEditorOpen);
 
   useEffect(() => {
@@ -1442,6 +1497,9 @@ export function HomeClient() {
       if (window.localStorage.getItem(FIRST_STARTUP_HELP_STORAGE_KEY) === "1") return;
       window.localStorage.setItem(FIRST_STARTUP_HELP_STORAGE_KEY, "1");
       openHelpPane();
+      // Touch layouts keep the first chart in front; the guide waits on its
+      // bar ("Back to …") instead of covering the screen.
+      if (mobileLayoutMatches()) minimizeTouchPane(useWorkspaceStore.getState().featureCatalogPane);
     } catch (error) {
       console.warn("[first-startup-help]", error);
     }
@@ -1491,6 +1549,7 @@ export function HomeClient() {
   const [keyHintsAllowed, setKeyHintsAllowed] = useState(true);
   const [keyHintsAutoAllowed, setKeyHintsAutoAllowed] = useState(true);
   const [keyHintsRevealToken, setKeyHintsRevealToken] = useState(0);
+  const tourHoldsNavigationBar = useUraniaTourStore((state) => uraniaHoldsNavigationBar(state.step));
   const lastBiwheelHintKeyRef = useRef<string | null>(null);
   const [spotlight, setSpotlight] = useState({
     open: false,
@@ -1499,13 +1558,26 @@ export function HomeClient() {
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsMounted, setSettingsMounted] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>("appearance");
-  const [nativeQuickOptions, setNativeQuickOptions] = useState<OptionsPayload | null>(null);
+  const [settingsTabIntent, setSettingsTabIntent] = useState<{ tab?: SettingsTabId; focusSearch?: boolean; generation: number }>({ generation: 0 });
+  const [nativeQuickOptions, setNativeQuickOptionsState] = useState<OptionsPayload | null>(null);
+  const nativeQuickOptionsSerialRef = useRef(0);
+  // Rapid writes can answer out of order; never replace a newer daemon read.
+  const setNativeQuickOptions = useCallback((next: OptionsPayload): boolean => {
+    const serial = next.payloadSerial ?? 0;
+    if (serial > 0 && serial < nativeQuickOptionsSerialRef.current) return false;
+    nativeQuickOptionsSerialRef.current = serial;
+    setNativeQuickOptionsState(next);
+    return true;
+  }, []);
+  const ownOptionOriginsRef = useRef(new Set<string>());
+  const nativeOptionOriginSeqRef = useRef(0);
+  const handledOptionsSeqRef = useRef(0);
   const [importResult, setImportResult] = useState<{
     summary: ImportSummary | null;
     error: string | null;
+    errorTitle?: string;
   } | null>(null);
-  const [aafPasteOpen, setAafPasteOpen] = useState(false);
+  const [pasteImportKind, setPasteImportKind] = useState<PasteImportKind | null>(null);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const runImportKind = useCallback((importKind: ImportKind) => {
     void selectImportSelection(importKind, tf)
@@ -1527,11 +1599,33 @@ export function HomeClient() {
         });
       });
   }, [tf]);
-  const openSettings = useCallback((tab: SettingsTabId = "appearance") => {
-    void openNativeSettings(tab, t("settings.title")).then((native) => {
+  // Chart library backup: the browser build downloads the archive; native
+  // shells let the daemon write it to the save-dialog path.
+  const runLibraryBackup = useCallback(() => {
+    const host = resolveShellHost();
+    const task = host.capabilities.nativeFileDialogs
+      ? host.selectSavePath({
+        title: t("home.exportDialogLibrary"),
+        defaultPath: `Aries-library-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: t("home.filterChartLibrary"), extensions: ["zip"] }],
+      }).then((path) => (path ? exportChartLibrary({ path }) : null))
+      : exportChartLibrary().then((result) => {
+        if (!result.dataBase64) throw new Error("chart library archive missing");
+        return host.downloadBytes(result.filename, decodeBase64Bytes(result.dataBase64), result.mimeType);
+      });
+    void task.catch((err) => {
+      setImportResult({
+        summary: null,
+        error: err instanceof Error ? err.message : String(err),
+        errorTitle: t("home.chartLibraryBackupFailed"),
+      });
+    });
+  }, [t]);
+  const openSettings = useCallback((tab?: SettingsTabId, focusSearch = false) => {
+    void openNativeSettings(tab, t("settings.title"), focusSearch).then((native) => {
       if (native) return;
       setSettingsMounted(true);
-      setSettingsInitialTab(tab);
+      setSettingsTabIntent(current => ({ tab, focusSearch, generation: current.generation + 1 }));
       setSettingsOpen(true);
     }).catch(error => console.error("[settings-window-open]", error));
   }, [t]);
@@ -1569,12 +1663,40 @@ export function HomeClient() {
       version: current.version + 1,
     }));
   }, []);
+  const applyCursorCommandResult = useCallback((result: Awaited<ReturnType<typeof spotlightExecute>>) => {
+    applyImmediateWorkspaceCommandResult(result, result.documentId);
+    // Linked maps refresh moving geometry from the acknowledged cursor.
+    if (result.stepped && result.documentId &&
+        astrocartLayerDocumentIdsRef.current.has(result.documentId)) {
+      window.dispatchEvent(new CustomEvent("aries:chart-step-published", {
+        detail: { documentId: result.documentId, burstOpen: false },
+      }));
+      window.dispatchEvent(new CustomEvent("aries:chart-step-settle", {
+        detail: { documentId: result.documentId },
+      }));
+    }
+  }, []);
   const executeSpotlightAction = useCallback(
-    async (text: string, action: "open-chart" | SpotlightActionId): Promise<boolean> => {
+    async (text: string, action: "open-chart" | SpotlightActionId, chart?: SpotlightChartMatch, place?: SpotlightPreview["geocodedPlace"]): Promise<boolean> => {
       const finish = beginWorkspaceSnapshotCommand();
       try {
-        const result = await spotlightExecute(text, action);
-        applyImmediateWorkspaceCommandResult(result, result.documentId);
+        const activeDocument = activeDocRef.current;
+        const documentId = activeDocument?.id;
+        const command = async () => {
+          if (activeDocument?.kind === "astrolabe") {
+            await waitForAstrolabeViewStateWrites(activeDocument.id);
+          }
+          if (activeDocument?.kind === "ephemeris") {
+            // Merge the typed date into the camera on screen, not a stale write.
+            await flushGraphicEphemerisCamera(activeDocument.id);
+          }
+          return spotlightExecute(text, action, chart, place);
+        };
+        const result = action === "current" && documentId &&
+          astrocartLayerDocumentIdsRef.current.has(documentId)
+          ? (await runWorkspaceDocumentSnapshotCommand(documentId, command)).result
+          : await command();
+        applyCursorCommandResult(result);
         return true;
       } catch (err) {
         console.error("[spotlight-execute]", err);
@@ -1583,22 +1705,44 @@ export function HomeClient() {
         finish();
       }
     },
-    [],
+    [applyCursorCommandResult],
   );
   const handleSpotlightCommit = useCallback(
     async (
       action: "open-chart" | SpotlightActionId,
-      _preview: SpotlightPreview,
+      preview: SpotlightPreview,
       text: string,
     ) => {
-      if (await executeSpotlightAction(text, action)) setSpotlightOpen(false);
+      const chart = preview.kind === "chart" ? preview.chart : undefined;
+      if (await executeSpotlightAction(text, action, chart, preview.geocodedPlace)) setSpotlightOpen(false);
     },
     [executeSpotlightAction, setSpotlightOpen],
   );
+  // Spotlight "current": a typed moment for the active chart's cursor (the
+  // Astrocart layer field and pane time controls such as the Speculum).
   const setAstrocartCursorMoment = useCallback(
     (moment: string) => executeSpotlightAction(moment, "current"),
     [executeSpotlightAction],
   );
+  const setAstrocartCursorNow = useCallback(async (): Promise<boolean> => {
+    const documentId = activeDocRef.current?.id;
+    if (!documentId || !astrocartLayerDocumentIdsRef.current.has(documentId)) return false;
+    const finish = beginWorkspaceSnapshotCommand();
+    try {
+      // A field may commit on blur just before Now is clicked. Keep those
+      // mutations ordered so the older edit cannot overwrite wall-clock time.
+      const { result } = await runWorkspaceDocumentSnapshotCommand(
+        documentId, () => workspaceAstrocartLayerNow(documentId),
+      );
+      applyCursorCommandResult(result);
+      return true;
+    } catch (err) {
+      console.error("[astrocart-now]", err);
+      return false;
+    } finally {
+      finish();
+    }
+  }, [applyCursorCommandResult]);
   useAmbientSpotlightTriggers({
     open: spotlight.open,
     onOpen: openSpotlight,
@@ -1608,9 +1752,6 @@ export function HomeClient() {
     reconcileWorkspaceChrome(documents);
   }, [documents, reconcileWorkspaceChrome]);
 
-  useEffect(() => {
-    clearAspectSelection();
-  }, [activeDoc?.id, clearAspectSelection]);
   // Close-cascade discard prompt (step C): when a daemon close reports
   // promptWorthyIds, hold the pending close here until the user confirms.
   const [pendingClose, setPendingClose] = useState<{
@@ -1653,7 +1794,7 @@ export function HomeClient() {
   // settle updates state without repainting Canvas layers.
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleRequestRef = useRef<AbortController | null>(null);
-  // -- burst envelope (doc/policy-time-architecture.md T1) -------------------
+  // -- burst envelope ------------------------------------------------------
   // A held arrow is ONE transport burst with explicit edges: keydown opens,
   // keyup / blur / visibility loss closes. Burst state is never inferred from
   // elapsed time. Inferring it from a quiet window is what made stepping
@@ -1703,6 +1844,7 @@ export function HomeClient() {
     // the close: its `finally` arms the settle once, after the last commit.
     // Only when the pipeline is already idle must the close edge trigger it.
     if (steppingRef.current || pendingStepsRef.current.length > 0) return;
+    endStepBurst();
     const armSettle = armSettleRef.current;
     armSettleRef.current = null;
     armSettle?.();
@@ -1820,8 +1962,9 @@ export function HomeClient() {
     const controller = new AbortController();
     fetchOptions(controller.signal)
       .then((next) => {
-        setNativeQuickOptions(next);
+        if (!setNativeQuickOptions(next)) return;
         applyRetainedListDisplay(next.retainedListDisplay);
+        useDaemonWorkspaceStore.getState()._applySecondaryProgressionsDataKey(next.secondaryProgressionsDataKey);
         applyKeyPromptOptions(next);
         setAspectListPerfectionLinkMode(next.aspectList.perfectionLinkMode);
       })
@@ -1832,15 +1975,29 @@ export function HomeClient() {
         console.error("[key-hints-options]", err);
       });
     return () => controller.abort();
-  }, [applyKeyPromptOptions, applyRetainedListDisplay, setAspectListPerfectionLinkMode]);
+  }, [applyKeyPromptOptions, applyRetainedListDisplay, setAspectListPerfectionLinkMode, setNativeQuickOptions]);
+
+  useEffect(() => {
+    // A restarted daemon counts payload serials from zero again.
+    if (daemonConnection !== "open") nativeQuickOptionsSerialRef.current = 0;
+  }, [daemonConnection]);
 
   useEffect(() => {
     if (daemonConnection !== "open") return undefined;
+    const previousSeq = handledOptionsSeqRef.current;
+    handledOptionsSeqRef.current = nativeQuickOptionsSeq;
+    // This window's own write already returned the options it caused; reading
+    // them again rebuilt the whole Settings payload on every quick toggle.
+    const origin = useDaemonWorkspaceStore.getState().lastOptionsChange?.origin;
+    if (origin && ownOptionOriginsRef.current.delete(origin) && nativeQuickOptionsSeq === previousSeq + 1) {
+      return undefined;
+    }
     const controller = new AbortController();
     fetchOptions(controller.signal)
       .then((next) => {
-        setNativeQuickOptions(next);
+        if (!setNativeQuickOptions(next)) return;
         applyRetainedListDisplay(next.retainedListDisplay);
+        useDaemonWorkspaceStore.getState()._applySecondaryProgressionsDataKey(next.secondaryProgressionsDataKey);
         applyKeyPromptOptions(next);
         setAspectListPerfectionLinkMode(next.aspectList.perfectionLinkMode);
       })
@@ -1857,6 +2014,7 @@ export function HomeClient() {
     daemonConnection,
     nativeQuickOptionsSeq,
     setAspectListPerfectionLinkMode,
+    setNativeQuickOptions,
   ]);
 
   useEffect(() => {
@@ -1937,8 +2095,9 @@ export function HomeClient() {
   const handleOptionsPatched = useCallback((next?: OptionsPayload) => {
     supersedePendingStepSettle();
     if (next) {
-      setNativeQuickOptions(next);
+      if (!setNativeQuickOptions(next)) return;
       applyRetainedListDisplay(next.retainedListDisplay);
+      useDaemonWorkspaceStore.getState()._applySecondaryProgressionsDataKey(next.secondaryProgressionsDataKey);
       setAspectListPerfectionLinkMode(next.aspectList.perfectionLinkMode);
     }
     applyKeyPromptOptions(next);
@@ -1951,6 +2110,7 @@ export function HomeClient() {
     applyKeyPromptOptions,
     applyRetainedListDisplay,
     setAspectListPerfectionLinkMode,
+    setNativeQuickOptions,
     setTimedChartShowRadix,
     supersedePendingStepSettle,
   ]);
@@ -1983,6 +2143,7 @@ export function HomeClient() {
       // About, and the Edit/Window submenu titles). macOS localizes predefined
       // ITEMS but not these custom TITLES, so relabel them from the catalog too.
       labels.push({ id: "menu.app.about", label: tfMenu("nativeMenu.about", "About Aries") });
+      labels.push({ id: "menu.app.settings", label: tfMenu("nativeMenu.settings", "Settings…") });
       labels.push({ id: "menu.edit", label: tfMenu("nativeMenu.edit", "Edit") });
       labels.push({ id: "menu.window", label: tfMenu("nativeMenu.window", "Window") });
       await syncShellMenuLabels(labels);
@@ -2010,17 +2171,22 @@ export function HomeClient() {
     void load
       .then((opts) => {
         const presetName = quickCommandValue(command, "quick.options.theme-preset:");
-        if (presetName !== null) return flushWheelGeometry().then(() => applyThemePreset(presetName));
+        if (presetName !== null) return applyWheelTheme(presetName);
         const wheel = wheelStyleForCommand(command, opts);
         if (wheel) return activateWheelStyle(wheel.id, wheel.layout).then(() => fetchOptions());
         const patch = nativeQuickOptionPatch(command, opts);
         if (!patch) return null;
-        return patchOptions(patch);
+        const origin = `${NATIVE_OPTIONS_ORIGIN_PREFIX}${++nativeOptionOriginSeqRef.current}`;
+        ownOptionOriginsRef.current.add(origin);
+        return patchOptions(patch, undefined, origin).catch((err: unknown) => {
+          ownOptionOriginsRef.current.delete(origin);
+          throw err;
+        });
       })
       .then((next) => {
         if (!next) return;
         if (command === "toggle-presentation-cursor") {
-          setNativeQuickOptions(next);
+          if (!setNativeQuickOptions(next)) return;
           useThemeStore.getState().applyThemeState(next.themeState);
           return;
         }
@@ -2176,7 +2342,9 @@ export function HomeClient() {
   const ensureChartSurfaceForPaneLauncher = useCallback(
     (launchParent: WorkspaceDocument) => {
       const doc = activeDoc;
-      if (isViewDocument(doc) && doc?.id !== launchParent.id) {
+      // The Astrolabe hosts right panes itself; other view documents return
+      // to their radix chart first.
+      if (isViewDocument(doc) && doc?.kind !== "astrolabe" && doc?.id !== launchParent.id) {
         activateDocument(launchParent.id);
       }
     },
@@ -2206,7 +2374,12 @@ export function HomeClient() {
   const commandIsRuntimeEnabled = useCallback(
     (command: string): boolean => {
       if (command === "workspace.close-active") return activeDoc !== null;
+      if (command === "ascensional-view") return hasActiveChart;
+      // A wheel to print, or an astrolabe on screen.
+      if (command === "export-poster") return hasActiveChart || activeDoc?.kind === "astrolabe";
+      if (command === "toggle-notes") return activeDoc?.kind !== "astrocart";
       if (CHART_INDEPENDENT_COMMANDS.has(command)) return true;
+      if (settingsTabForCommand(command)) return true;
       if (command === "menu.copy-chart-png") return hasCopyableActiveChart;
       if (SAVE_CHART_COMMANDS.has(command)) return activeSaveTarget !== null;
       if (ROOT_RADIX_COMMANDS.has(command)) return activeRadix !== null;
@@ -2492,6 +2665,36 @@ export function HomeClient() {
           ensureChartSurfaceForPaneLauncher(launchParent);
           openEclipsesPane({ documentId: launchParent.id, sourceName: launchParent.sourceName });
           closeInspectorAndNotes();
+          return;
+        }
+        if (launchedTableId === "pd_positions") {
+          if (launchParent.launcherKind === "pd_in_chart") {
+            ensureChartSurfaceForPaneLauncher(launchParent);
+            openPdPositionsPane({ documentId: launchParent.id, sourceName: launchParent.sourceName });
+            closeInspectorAndNotes();
+          } else {
+            if (pdPositionsOpenPendingRef.current) return;
+            pdPositionsOpenPendingRef.current = true;
+            const finishSnapshotCommand = beginWorkspaceSnapshotCommand();
+            void workspaceOpenTable(launchParent.id, launchedTableId)
+              .then((result) => {
+                if (!result.documentId) throw new Error(t("dirview.pdsInChartNoDocument"));
+                useWorkspaceStore.getState().applyWorkspaceOpenResult(result);
+                openPdPositionsPane({ documentId: result.documentId, sourceName: launchParent.sourceName });
+                closeInspectorAndNotes();
+              })
+              .catch((error: unknown) => {
+                console.error("[pd-positions-open]", error);
+                // Keep the chart visible and expose the retained pane's
+                // localized failure state, rather than losing the click.
+                openPdPositionsPane({ documentId: launchParent.id, sourceName: launchParent.sourceName });
+                closeInspectorAndNotes();
+              })
+              .finally(() => {
+                pdPositionsOpenPendingRef.current = false;
+                finishSnapshotCommand();
+              });
+          }
           return;
         }
         if (launchedTableId === "lunar_mansions") {
@@ -2780,6 +2983,7 @@ export function HomeClient() {
       openAspectListPane,
       openCalendarPane,
       openEclipsesPane,
+      openPdPositionsPane,
       openLunarMansionsPane,
       openReturnWithSavedLocationMode,
       ensureChartSurfaceForPaneLauncher,
@@ -2887,7 +3091,11 @@ export function HomeClient() {
   //   - stored radix: otherwise load the radix record by name+fpath and save.
   // Cleared on unmount.
   useEffect(() => {
-    setEditChartRequester((radix) => {
+    setEditChartRequester((document) => {
+      const radix = document.kind === "astrolabe"
+        ? documents.find((doc) => doc.id === document.parentDocumentId)
+        : document;
+      if (!radix) return;
       const activeId = activeDoc?.id ?? null;
       const openStoredRadix = () => {
         // The radix proper is OPEN as `radix.id` → edit applies in place +
@@ -2921,12 +3129,12 @@ export function HomeClient() {
         });
     });
     return () => setEditChartRequester(null);
-  }, [setEditChartRequester, activeDoc]);
+  }, [setEditChartRequester, activeDoc, documents]);
 
   // Canonical arrow-key time stepping. The frontend forwards the raw keypress +
   // modifiers; canonical Python (ChartSession._navigate_intrinsically, or the
   // year/cycle stepper for return/progression children) decides the unit — NO
-  // unit ladder in JS. Spec: doc/migration/surfaces/arrow-stepping.md.
+  // unit ladder in JS.
   //
   // Active doc must either be a live chart-session document or a view-only
   // child that explicitly borrows selected keys from its parent chart session.
@@ -3017,6 +3225,7 @@ export function HomeClient() {
         priorPresentation?: Promise<void>,
       ) => {
         steppingRef.current = true;
+        beginStepBurst();
         const stepGeneration = ++stepGenerationRef.current;
         const mapTarget = astrocartLayerDocumentIdsRef.current.has(targetDocId);
         if (mapTarget) {
@@ -3045,16 +3254,28 @@ export function HomeClient() {
         // newer step response.
         settleRequestRef.current?.abort();
         settleRequestRef.current = null;
+        let requestStartAt: number | null = null;
         const startNavigationRequest = () => {
+          requestStartAt = perfNow();
           documentCommandGenerationAtRequest =
             workspaceDocumentSnapshotCommandGeneration(targetDocId);
-          return workspaceNavigateKey(targetDocId, k, shift, alt, repeat, !mapTarget);
+          return workspaceNavigateKey(
+            targetDocId,
+            k,
+            shift,
+            alt,
+            repeat,
+            !mapTarget,
+            mapTarget ? [] : liveSurfaceRequests(targetDocId),
+            stepDashboardVisible(activeChartRef.current, targetDocId),
+          );
         };
         const navigationRequest = hasPendingWorkspaceDocumentSnapshotCommand(targetDocId)
           ? waitForWorkspaceDocumentSnapshotCommands(targetDocId).then(startNavigationRequest)
           : startNavigationRequest();
         void navigationRequest
           .then(async (res) => {
+            const responseAt = perfNow();
             // Start transport as soon as the preceding response is published,
             // then hold only this publication until the preceding snapshot has
             // had a presentation boundary. Requests and frames overlap while
@@ -3081,6 +3302,11 @@ export function HomeClient() {
                 repeat: res.appliedSteps ?? repeat,
                 intentAt: stepIntentAt,
                 inputIds: stepInputIds,
+                requestStartAt,
+                responseAt,
+                daemonNavigateMs: res.stepTiming?.navigateMs,
+                daemonLiveSurfacesMs: res.stepTiming?.liveSurfacesMs,
+                daemonHandlerMs: res.stepTiming?.handlerMs,
                 displayDatetime:
                   res.snapshot.document?.displayDatetime ?? res.snapshot.displayDatetime,
               });
@@ -3091,6 +3317,9 @@ export function HomeClient() {
                 stepInputIds,
                 paintsSnapshot ? "missing-step-snapshot" : "no-canvas-target",
               );
+            }
+            if (res.stepped) {
+              noteStepBurstCursor(targetDocId, res.displayDatetime ?? null);
             }
             if (mapTarget && res.stepped) {
               mapStepCursor = {
@@ -3138,7 +3367,7 @@ export function HomeClient() {
               // This folds PAINTS, never transitions: each daemon route applies
               // `repeat` under its own declared fold policy (civil units are
               // fold-safe; supplementary and PD-in-Chart loop one transition at
-              // a time). See doc/temporal-capability-matrix.md.
+              // a time).
               const envelopeStillOpen =
                 pending.envelopeId !== 0 &&
                 heldStepEnvelopesRef.current.get(pending.key) === pending.envelopeId;
@@ -3168,6 +3397,9 @@ export function HomeClient() {
               return;
             }
             steppingRef.current = false;
+            // Completion edge for every non-wheel surface (T6): released and
+            // drained. A key still held keeps the burst open.
+            if (heldStepEnvelopesRef.current.size === 0) endStepBurst();
             // Preserve the just-painted step for two presentation boundaries,
             // then ask for full semantic truth. Frame-critical rows already
             // arrived in step_fast; retained term/signal slots stay visible
@@ -3225,20 +3457,31 @@ export function HomeClient() {
                     trigger: "burst-close",
                   });
                   void fetchDocumentSnapshot(targetDocId, controller.signal)
-                    .then((snapshot) => {
+                    .then((fetchedSnapshot) => {
                       if (
                         controller.signal.aborted ||
                         stepGeneration !== stepGenerationRef.current ||
                         steppingRef.current ||
                         pendingStepsRef.current.length > 0
                       ) return;
+                      const houseVisibility = retainedHouseVisibility();
+                      const snapshot = houseVisibility === null ? fetchedSnapshot
+                        : withHouseVisibility(fetchedSnapshot, houseVisibility);
+                      // H can replace a painted step with its display projection
+                      // while this completion is in flight. Reuse only the exact
+                      // current object from the same immutable semantic frame.
+                      const current = useDaemonWorkspaceStore.getState().steppedSnapshot;
+                      const visibleStep = publishedStepSnapshot && current?.docId === targetDocId
+                        && current.snapshot.primaryChart.planets === publishedStepSnapshot.primaryChart.planets
+                        && current.snapshot.primaryChart.houses === publishedStepSnapshot.primaryChart.houses
+                        ? current.snapshot : publishedStepSnapshot;
                       const paintedPublishedStep = wasDocumentSnapshotPainted(
                         targetDocId,
-                        publishedStepSnapshot,
+                        visibleStep,
                       );
                       const overlayOnly = canReusePaintedDocumentCanvas(
                         targetDocId,
-                        publishedStepSnapshot,
+                        visibleStep,
                         snapshot,
                       );
                       if (!overlayOnly) {
@@ -3324,6 +3567,18 @@ export function HomeClient() {
         }
         return;
       }
+      if (
+        activeDocument?.kind === "astrolabe" &&
+        !modifiers.ctrl &&
+        !modifiers.meta &&
+        (isStepEnvelopeKey(key) || key === "space")
+      ) {
+        navigateAstrolabe(activeDocument.id, key as AstrolabeNavigationKey, {
+          shift: modifiers.shift,
+          alt: modifiers.alt,
+        });
+        return;
+      }
       navigateKeyWithModifiers(key, {
         shift: modifiers.shift,
         alt: modifiers.alt,
@@ -3360,6 +3615,7 @@ export function HomeClient() {
   useEffect(
     () => () => {
       setChartStepBurstActive(false);
+      endStepBurst();
       if (settleTimerRef.current != null) clearTimeout(settleTimerRef.current);
       if (stepQueueFrameRef.current != null) {
         window.cancelAnimationFrame(stepQueueFrameRef.current);
@@ -3376,6 +3632,7 @@ export function HomeClient() {
   // alt+arrow is a canonical unit (minute). Modifiers are forwarded verbatim.
   // ignoreRepeat: false so hold-to-step repeats while the key is held.
   const arrowOpts = { allowAlt: true, ignoreRepeat: false } as const;
+  useDesignTunerShortcut();
   useShortcut("arrowleft", "chart", (event) => navigateKey("left", event), arrowOpts);
   useShortcut("arrowright", "chart", (event) => navigateKey("right", event), arrowOpts);
   useShortcut("arrowup", "chart", (event) => navigateKey("up", event), arrowOpts);
@@ -3391,22 +3648,84 @@ export function HomeClient() {
     if (!activeDoc) return;
     if (!isChartBearingDocumentKind(activeDoc.kind)) return;
     const docId = activeDoc.id;
-    void workspaceToggleComparison(docId)
-      .then((res) => {
-        if (res.snapshot) pushCommandSnapshot(docId, res.snapshot);
+    const snapshot = activeChartRef.current;
+    const viewSide = snapshot?.sideBySide?.enabled ? snapshot.viewSide : undefined;
+    void runWorkspaceDocumentSnapshotCommand(docId, () => workspaceToggleComparison(docId, undefined, viewSide))
+      .then(({ result, isLatest }) => {
+        if (isLatest) applyImmediateWorkspaceCommandResult(result, docId);
       })
       .catch((err) => console.error("[ws-toggle-comparison]", err));
-  }, [pushCommandSnapshot]);
+  }, []);
 
   // TAB — toggle comparison (biwheel) <-> singleton view. Wx-free twin of
   // keyboard_layers TAB -> frame.toggleComparisonView (keyboard_layers.py:123).
   // The daemon flips cs.view_mode and returns a FULL re-rendered snapshot (the
   // toggle adds/removes an entire ring); paint from the POST result. View-only
   // docs have no ChartSession, so skip them — same guard as navigateKey.
-  useShortcut("tab", "chart", toggleComparisonView);
+  // Singleton (radix-only) charts have no comparison to toggle: there Tab
+  // switches the local dashboard layout over the same daemon-owned data.
+  // The snapshot says which applies (chart_dashboard.py).
+  const dashboardPreparationRef = useRef<Promise<void> | null>(null);
+  const toggleTabView = useCallback(() => {
+    // On the Graphic Ephemeris, Tab shows or hides the radix layer.
+    const activeDoc = activeDocRef.current;
+    if (activeDoc?.kind === "ephemeris") {
+      toggleGraphicEphemerisRadix(activeDoc.id);
+      return;
+    }
+    const dashboard = activeChartRef.current?.dashboard;
+    if (!dashboard?.eligible) {
+      toggleComparisonView();
+      return;
+    }
+    useFrameLayoutStore.getState().toggleDashboardView(dashboard.enabled);
+    if (!useFrameLayoutStore.getState().dashboardView || dashboardPreparationRef.current) return;
+    // Prepare daemon-owned module data once. Subsequent view changes only redraw.
+    if (!dashboard.enabled) {
+      dashboardPreparationRef.current = patchOptions({ display: { chart_dashboard: true } })
+        .then((next) => handleOptionsPatched(next))
+        .catch((err) => console.error("[ws-toggle-dashboard]", err))
+        .finally(() => { dashboardPreparationRef.current = null; });
+      return;
+    }
+    // Steps taken while the view was hidden left the module data out (before a
+    // full snapshot replaced them): fetch the current frame's data once.
+    const docId = activeChartRef.current?.document?.documentId;
+    if (dashboard.dataOmitted && docId) {
+      dashboardPreparationRef.current = fetchDocumentSnapshot(docId)
+        .then((snapshot) => {
+          // A newer step (now with the dashboard showing) supersedes this.
+          if (steppingRef.current || !activeChartRef.current?.dashboard?.dataOmitted) return;
+          pushSteppedSnapshot(docId, snapshot);
+        })
+        .catch((err) => console.error("[ws-toggle-dashboard]", err))
+        .finally(() => { dashboardPreparationRef.current = null; });
+    }
+  }, [handleOptionsPatched, pushSteppedSnapshot, toggleComparisonView]);
+  useShortcut("tab", "chart", toggleTabView);
 
+  // File > Exit (desktop without a native menu bar) runs the same quit
+  // preflight as closing the window; the handler is declared further down.
+  const quitRequestRef = useRef<() => void>(() => {});
   const dispatchManifestCommand = useCallback(
     (command: AriesMenuCommand) => {
+      if (command === APP_EXIT_COMMAND) {
+        quitRequestRef.current();
+        return;
+      }
+      if (command === REPORT_BUG_COMMAND) {
+        setBugReportOpen(true);
+        return;
+      }
+      // Windows Help menu support tools (browser-menu-bar withDesktopSupport).
+      if (command === SUPPORT_DIAGNOSTICS_COMMAND) {
+        useSupportDiagnosticsStore.getState().setDiagnosticsOpen(true);
+        return;
+      }
+      if (command === SUPPORT_OPEN_LOGS_COMMAND) {
+        void openLogsFolder().catch((error) => console.error("[open-logs-folder]", error));
+        return;
+      }
       // Recent Charts entries are runtime-built native items, not manifest
       // rows — resolve through the daemon reopen door before the manifest
       // gate (wx onRecentChartMenu, morin.py:15740-15744).
@@ -3467,8 +3786,17 @@ export function HomeClient() {
         return;
       }
       if (!commandIsRuntimeEnabled(command)) return;
+      if (command === "toggle-notes") {
+        const documentId = activeDocRef.current?.id;
+        toggleWorkspaceNotes(documentId ? { opener: document.activeElement, documentId } : undefined);
+        return;
+      }
       if (command === "open-style-lab") {
         openStyleLab();
+        return;
+      }
+      if (command === "export-poster") {
+        usePosterExportStore.getState().request();
         return;
       }
       if (command === "toggle-inspector") {
@@ -3486,8 +3814,7 @@ export function HomeClient() {
           }
           return;
         }
-        closeAllRightPanes();
-        toggleInspector();
+        toggleWorkspaceInspector();
         return;
       }
       if (command === "menu.data") {
@@ -3496,6 +3823,11 @@ export function HomeClient() {
       }
       if (command === "menu.import.charts") {
         setImportDrawerOpen(true);
+        return;
+      }
+      if (command === "menu.view.edit-sidebar") {
+        useFrameLayoutStore.getState().setSidebarOpen(true);
+        useSidebarVisibilityStore.getState().setEditing(true);
         return;
       }
       // Charts > Elections / Horary theme picks — wx _on_election_theme /
@@ -3546,24 +3878,23 @@ export function HomeClient() {
         return;
       }
       if (command === "menu.import.aaf-paste") {
-        setAafPasteOpen(true);
+        setPasteImportKind("aaf");
         return;
       }
       if (SAVE_CHART_COMMANDS.has(command)) {
         // File > Save Horoscope / Save As (DEF-007). Save targets the active
         // chart-bearing document. Root radix docs can silently upsert into
-        // their bound collection; derived child charts always ask for a name
-        // so a finding can be saved as its own collection record.
+        // their bound collection; unbound charts ask for a name and collection.
+        // Saved children update their own record just like saved root charts.
         const target = chartSaveTarget(activeDoc, activeRadix);
         if (!target) return;
-        const forcePicker = target.id !== activeRadix?.id;
         const openPicker = () =>
           setSavePicker({
             documentId: target.id,
-            chartName: chartSaveName(target),
+            chartName: chartSaveName(target, tf("home.untitled", "Untitled")),
             currentCollectionPath: target.fpath ?? null,
           });
-        if (command === "menu.save.as" || forcePicker) {
+        if (command === "menu.save.as" || !target.fpath) {
           openPicker();
           return;
         }
@@ -3604,9 +3935,9 @@ export function HomeClient() {
           ) {
             throw new Error("visible chart renderer unavailable");
           }
-          const aspectState = useWorkspaceStore.getState();
+          const aspectState = aspectViewState(useWorkspaceStore.getState(), activeDoc?.id);
           return renderChartSurfaceExport(
-            currentActiveChart,
+            withDashboardView(currentActiveChart, useFrameLayoutStore.getState().dashboardView),
             useThemeStore.getState().theme,
             {
               width: Math.max(1, document.documentElement.clientWidth),
@@ -3618,6 +3949,8 @@ export function HomeClient() {
               hideAll: aspectState.hideAllAspects,
               minorOnly: aspectState.minorOnlyAspects,
             },
+            undefined,
+            t,
           );
         };
         const renderExport = async (
@@ -3632,6 +3965,7 @@ export function HomeClient() {
                 output,
                 colorMode: nativeQuickOptions?.export.pngChartAppearance ?? "screen",
                 rasterPreset: "clean",
+                pageFormat: nativeQuickOptions?.export.pngPageFormat ?? "A4",
                 includeOverlays: nativeQuickOptions?.export.pngIncludeOverlays ?? true,
                 dignityHighlights:
                   nativeQuickOptions?.dignities.dignitylabelcolors ?? false,
@@ -3645,15 +3979,20 @@ export function HomeClient() {
                 output,
                 colorMode: opts.export.pdfChartColorMode,
                 rasterPreset: opts.export.pdfChartRasterPreset,
+                pageFormat: opts.export.pdfPageFormat,
                 includeOverlays: opts.export.pdfIncludeOverlays,
                 dignityHighlights: opts.dignities.dignitylabelcolors,
                 individualBodyColors: opts.colors.useplanetcolors,
               }));
+          // The PDF page the pixels were painted for travels with them.
+          const pageFormat = request.kind === "pdf" && (request.pageFormat === "A4" || request.pageFormat === "A3")
+            ? request.pageFormat
+            : undefined;
           try {
-            return await renderRegisteredChartExport(documentId, request);
+            return { ...await renderRegisteredChartExport(documentId, request), pageFormat };
           } catch (err) {
             if (!String(err).includes("visible chart renderer unavailable")) throw err;
-            return renderProfileWheelFallback(request);
+            return { ...await renderProfileWheelFallback(request), pageFormat };
           }
         };
         const requireBase64 = (rendered: Awaited<ReturnType<typeof renderExport>>) => {
@@ -3664,6 +4003,7 @@ export function HomeClient() {
             pngBase64: rendered.pngBase64,
             width: rendered.width,
             height: rendered.height,
+            pageFormat: rendered.pageFormat,
           };
         };
         if (command === "menu.copy-chart-png") {
@@ -3731,7 +4071,7 @@ export function HomeClient() {
           .catch((err) => console.error("[restore-open-toggle]", err));
         return;
       }
-      const registeredTab = manifest?.settingsRegistry?.tabs.find((tab) =>
+      const registeredTab = settingsTabForCommand(command) ?? manifest?.settingsRegistry?.tabs.find((tab) =>
         tab.menuCommands.includes(command),
       )?.id;
       const settingsTab = registeredTab && isSettingsTabId(registeredTab)
@@ -3752,9 +4092,32 @@ export function HomeClient() {
         }
         return;
       }
-      if (command === "toggle-houses") {
+      if (command === "ascensional-view") {
+        // Option+A flips the active chart's Ascensional coordinate view in
+        // place — the chart context-menu checkbox, not a new sub-chart.
+        const snapshot = activeChartRef.current;
+        const documentId = snapshot?.document?.documentId;
+        if (!snapshot || !documentId) return;
+        const next =
+          snapshot.document?.chartPresentation?.coordinateMode === "ascensional"
+            ? "zodiacal"
+            : "ascensional";
         supersedePendingStepSettle();
-        void toggleHouses().catch((err) => console.error("[toggle-houses]", err));
+        void runWorkspaceDocumentSnapshotCommand(documentId, () => executeWorkspaceContextMenuAction(
+          "workspace.set_chart_presentation", {documentId, patch: {coordinateMode: next}},
+        )).then(({result, isLatest}) => {
+          if (isLatest && result.snapshot) useDaemonWorkspaceStore.getState().pushCommandSnapshot(documentId, result.snapshot as unknown as ChartRenderSnapshot);
+        }).catch((err) => console.error("[ascensional-view]", err));
+        return;
+      }
+      if (
+        activeDoc?.kind === "astrolabe" &&
+        dispatchAstrolabeDisplayCommand(activeDoc.id, command)
+      ) return;
+      if (command === "toggle-houses") {
+        const snapshot = activeChartRef.current;
+        if (snapshot) toggleRetainedHouseVisibility(snapshot);
+        else void toggleHouses().catch((err) => console.error("[toggle-houses]", err));
         return;
       }
       if (command === "toggle-aspects") {
@@ -3766,15 +4129,19 @@ export function HomeClient() {
         if (activeChartRef.current?.primaryChart.options.showAspects === false) {
           clearAspectSelection();
           supersedePendingStepSettle();
-          void patchOptions({ display: { aspects: true } })
-            .catch((err) => console.error("[toggle-aspects-restore]", err));
+          const documentId = activeChartRef.current.document?.documentId;
+          if (documentId) void runWorkspaceDocumentSnapshotCommand(documentId, () => executeWorkspaceContextMenuAction(
+            "workspace.set_chart_presentation", {documentId, patch: {displayOverrides: {drawAspects: true}}},
+          )).then(({result, isLatest}) => {
+            if (isLatest && result.snapshot) useDaemonWorkspaceStore.getState().pushCommandSnapshot(documentId, result.snapshot as unknown as ChartRenderSnapshot);
+          }).catch((err) => console.error("[toggle-aspects-restore]", err));
           return;
         }
         toggleHideAllAspects();
         return;
       }
       if (command === "toggle-minor-aspects") {
-        const aspectState = useWorkspaceStore.getState();
+        const aspectState = aspectViewState(useWorkspaceStore.getState(), activeDoc?.id);
         if (aspectState.hideAllAspects) {
           // A remains the comparison/transit master. M adds or removes only an
           // inner-wheel minor exception; ensure the daemon's minor set is
@@ -3791,23 +4158,27 @@ export function HomeClient() {
           void toggleMinorAspects()
             .then((result) => {
               const current = useWorkspaceStore.getState();
+              const view = aspectViewState(current, activeDoc?.id);
               if (
                 result.minorAspects &&
-                current.hideAllAspects &&
-                !current.minorOnlyAspects
+                view.hideAllAspects &&
+                !view.minorOnlyAspects
               ) {
-                current.toggleMinorOnlyAspects();
+                current.toggleMinorOnlyAspects(activeDoc?.id);
               }
             })
             .catch((err) => console.error("[toggle-minor-aspects]", err));
           return;
         }
-        // M changes the global aspect set. Leave any click-exclusive body view
-        // first so the newly enabled/disabled minors are immediately visible
-        // on the complete wheel instead of being masked by showsOnClick.
-        clearAspectSelection();
+        // Preserve the selected body; its minor filter is independent of the
+        // global aspect vector and is resolved by the daemon.
+        const snapshot = activeChartRef.current;
+        const exclusive = Boolean(aspectState.selectedAspectBody && (
+          snapshot?.clickAspectFlags?.exclusiveOnClick
+          ?? snapshot?.primaryChart.clickAspectFlags?.exclusiveOnClick
+        ));
         supersedePendingStepSettle();
-        void toggleMinorAspects().catch((err) => console.error("[toggle-minor-aspects]", err));
+        void toggleMinorAspects(undefined, exclusive).catch((err) => console.error("[toggle-minor-aspects]", err));
         return;
       }
       const tableId = TABLE_ID_BY_MENU_COMMAND[command];
@@ -3858,6 +4229,11 @@ export function HomeClient() {
         openSurveilStudiesDialog();
         return;
       }
+      if (command === "menu.app.settings") {
+        // Aries > Settings… (Cmd+,): reopen the retained window on its last tab.
+        openSettings();
+        return;
+      }
       if (command === "menu.help.about") {
         // wx onAbout (morin.py) — the About dialog (aboutdlg.AboutDialog).
         openAboutDialog();
@@ -3868,9 +4244,17 @@ export function HomeClient() {
         closeInspectorAndNotes();
         return;
       }
+      if (command === "menu.help.walkthrough") {
+        useUraniaTourStore.getState().start();
+        return;
+      }
       if (command === "menu.help.help") {
         openHelpPane();
         closeInspectorAndNotes();
+        return;
+      }
+      if (command === "menu.help.find-setting") {
+        openSettings(undefined, true);
         return;
       }
       if (command === "menu.help.license") {
@@ -3917,7 +4301,6 @@ export function HomeClient() {
       activeDoc,
       activeRadix,
       clearAspectSelection,
-      closeAllRightPanes,
       closeDocument,
       commandIsRuntimeEnabled,
       documents,
@@ -3941,10 +4324,10 @@ export function HomeClient() {
       requestEditChart,
       runImportKind,
       runNativeQuickOptionCommand,
+      t,
       tf,
       toggleHideAllAspects,
       toggleMinorOnlyAspects,
-      toggleInspector,
       supersedePendingStepSettle,
     ],
   );
@@ -3953,6 +4336,8 @@ export function HomeClient() {
   // overlay truth and key bindings cannot diverge. Reference-only/deferred rows
   // remain bound:false and do not register here.
   useManifestShortcutDispatch(manifest, dispatchManifestCommand, commandIsRuntimeEnabled);
+  useInPageMenuAccelerators(manifest, dispatchManifestCommand, commandIsRuntimeEnabled);
+  useBrowserHistoryKeyGuard();
 
   useShortcut("r", "any", (event) => {
     if (event.ctrlKey || event.metaKey) openHereNow();
@@ -4046,6 +4431,9 @@ export function HomeClient() {
     await flushQuitPersistence();
     await confirmQuit();
   }, [flushQuitPersistence]);
+  useEffect(() => {
+    quitRequestRef.current = () => void handleQuitRequested();
+  }, [handleQuitRequested]);
 
   // Save → write each bound+dirty radix into its bound collection (reuse the
   // shipped POST /api/io/save; in-place save never forks), flush quit
@@ -4181,15 +4569,19 @@ export function HomeClient() {
     visible:
       harmonicNavbarVisible ||
       relationshipNavbarVisible ||
+      // Like the manual "?" reveal, the walkthrough shows it even when key
+      // hints are turned off in Settings; releasing the step hides it again.
+      tourHoldsNavigationBar ||
       (keyHintsVisible &&
         (CHART_UPPER_NAVIGATION_BAR_ENABLED || keyHintsPlacement !== "top")),
+    held: tourHoldsNavigationBar,
     // Chart navigation is a single, predictable rail below the chart across
     // timed, harmonic, synastry, and composite surfaces.
     placement: "bottom",
     revealToken: keyHintsRevealToken,
     autoHideMs: harmonicNavbarVisible || relationshipNavbarVisible ? 0 : KEY_HINT_VISIBLE_MS,
     overlay: false,
-    hasChart: activeChartPresent || activeDoc?.kind === "ephemeris",
+    hasChart: activeChartPresent || activeDoc?.kind === "ephemeris" || activeDoc?.kind === "astrolabe",
     hasComparisonChart: activeChartHasComparison,
     parentDocumentId: activeDoc?.parentDocumentId,
     comparisonSourceName: activeChartComparisonName,
@@ -4211,12 +4603,16 @@ export function HomeClient() {
         activeDoc?.symbolicTime?.signifiedDatetime,
       dateConvention: nativeQuickOptions?.display.dateconvention ?? "current",
       onSetCursorMoment: setAstrocartCursorMoment,
+      onSetCursorNow: setAstrocartCursorNow,
+      onResetCursor: () => routeNavigationKey("space"),
     } : {}),
     onToggleComparison: toggleComparisonView,
     onSwitchRelationshipMode: handleRelationshipModeChange,
     onHintInteraction: renewKeyHints,
     onNavigateHint: routeNavigationKey,
     onNavigateHintEnd: releaseNavigationHint,
+    onSetChartMoment: setAstrocartCursorMoment,
+    onResetNavigation: () => routeNavigationKey("space"),
     onHarmonicNumberChange: handleHarmonicNumberChange,
   };
 
@@ -4224,13 +4620,8 @@ export function HomeClient() {
     <ThemeProvider mainWindow>
       <>
         <LicenseStartupController />
+        <VanillaModeController />
         <ShellMenuListener onCommand={dispatchManifestCommand} />
-        <BrowserMenuBar
-          manifest={manifest}
-          recentCharts={recentChartsMenuItems}
-          onCommand={dispatchManifestCommand}
-          isCommandEnabled={commandIsRuntimeEnabled}
-        />
         <WorkspaceFrame
           chart={activeChart}
           activeDocument={activeDoc}
@@ -4242,9 +4633,9 @@ export function HomeClient() {
           onSolarAverageWindowSelect={handleSolarAverageWindowSelect}
           harmonicChartMode={nativeQuickOptions?.quickCharts.harmonic_chart_mode ?? "harmonic"}
           onOpenSettings={openSettings}
-          onOpenStyleLab={openStyleLab}
           onMenuCommand={dispatchManifestCommand}
           isMenuCommandEnabled={commandIsRuntimeEnabled}
+          recentCharts={recentChartsMenuItems}
           onRevealKeyHints={
             keyHintsAllowed && keyHintsAutoAllowed ? revealKeyHintsAtEdge : undefined
           }
@@ -4272,13 +4663,16 @@ export function HomeClient() {
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={setSettingsOpen}
-            initialTab={settingsInitialTab}
+            initialTab={settingsTabIntent.tab}
+            tabRequestGeneration={settingsTabIntent.generation}
+            focusSearch={settingsTabIntent.focusSearch}
             onOptionsPatched={handleOptionsPatched}
             onSemanticProfileSelect={selectSemanticProfileFromSettings}
             onSemanticProfilesCommitted={publishSemanticProfilesFromSettings}
             getSemanticProfileRevision={semanticProfileSelectionRevision}
           />
         ) : null}
+        <BrowserChartPicker />
         <ImportResultDialog
           result={importResult}
           onClose={() => setImportResult(null)}
@@ -4287,14 +4681,20 @@ export function HomeClient() {
           open={importDrawerOpen}
           onOpenChange={setImportDrawerOpen}
           onImport={runImportKind}
-          onPasteAaf={() => {
+          onBackupLibrary={() => {
             setImportDrawerOpen(false);
-            setAafPasteOpen(true);
+            runLibraryBackup();
+          }}
+          onPasteImport={(kind) => {
+            setImportDrawerOpen(false);
+            setPasteImportKind(kind);
           }}
         />
-        <AafPasteImportDialog
-          open={aafPasteOpen}
-          onOpenChange={setAafPasteOpen}
+        <PasteImportDialog
+          kind={pasteImportKind}
+          onOpenChange={(open) => {
+            if (!open) setPasteImportKind(null);
+          }}
           onImported={(summary) => setImportResult({ summary, error: null })}
           onError={(error) => setImportResult({ summary: null, error })}
         />
@@ -4346,6 +4746,7 @@ export function HomeClient() {
             if (!open) setPicker(null);
           }}
         />
+        <PosterExportHost activeDoc={activeDoc} activeChart={activeChart} />
         {savePicker !== null ? (
           <SaveToCollectionDialog
             key={savePicker ? `save:${savePicker.documentId}:${savePicker.chartName}` : "save-closed"}
@@ -4388,6 +4789,9 @@ export function HomeClient() {
         {surveilStudiesDialogOpen ? <SurveilStudiesDialog /> : null}
         {aboutDialogOpen ? <AboutDialog /> : null}
         {licenseDialogOpen ? <LicenseDialog /> : null}
+        {bugReportOpen ? <BugReportDialog onClose={() => setBugReportOpen(false)} /> : null}
+        {supportDiagnosticsOpen ? <SupportDiagnosticsDialog /> : null}
+        <DaemonStartupFailureDialog />
       </>
     </ThemeProvider>
   );
@@ -4625,7 +5029,7 @@ function ImportResultDialog({
   result,
   onClose,
 }: {
-  result: { summary: ImportSummary | null; error: string | null } | null;
+  result: { summary: ImportSummary | null; error: string | null; errorTitle?: string } | null;
   onClose: () => void;
 }) {
   const t = useT();
@@ -4637,12 +5041,14 @@ function ImportResultDialog({
     <Dialog open={result !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent size="md">
         <DialogHeader>
-          <DialogTitle>{error ? t("home.importFailedTitle") : t("home.importCompleteTitle")}</DialogTitle>
+          <DialogTitle>{error ? (result?.errorTitle ?? t("home.importFailedTitle")) : t("home.importCompleteTitle")}</DialogTitle>
           {summary ? (
             <DialogDescription>
               {t("home.importedSummary", {
                 count: summary.importedCount,
-                destination: summary.destinationCollectionName || t("home.chartCollectionFallback"),
+                destination: summary.kind === "library"
+                  ? t("home.chartLibraryDestination")
+                  : summary.destinationCollectionName || t("home.chartCollectionFallback"),
               })}
             </DialogDescription>
           ) : error ? (
@@ -4686,14 +5092,17 @@ function ImportChartsDrawer({
   open,
   onOpenChange,
   onImport,
-  onPasteAaf,
+  onBackupLibrary,
+  onPasteImport,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (kind: ImportKind) => void;
-  onPasteAaf: () => void;
+  onBackupLibrary: () => void;
+  onPasteImport: (kind: PasteImportKind) => void;
 }) {
   const t = useT();
+  const browserLibrary = !resolveShellHost().capabilities.nativeFileDialogs;
   const importFromFile = (kind: ImportKind) => {
     onOpenChange(false);
     onImport(kind);
@@ -4732,7 +5141,36 @@ function ImportChartsDrawer({
           <ImportChartsDrawerButton
             icon={ClipboardPaste}
             label={t("home.importPasteAaf")}
-            onClick={onPasteAaf}
+            onClick={() => onPasteImport("aaf")}
+          />
+          <ImportChartsDrawerButton
+            icon={ClipboardPaste}
+            label={t("home.importPasteZet")}
+            onClick={() => onPasteImport("zet")}
+          />
+          <ImportChartsDrawerButton
+            icon={ClipboardPaste}
+            label={t("home.importPasteZeus")}
+            onClick={() => onPasteImport("zeus")}
+          />
+          <div className="my-2 border-t border-border/60" />
+          <div className="px-2.5 pb-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+            {t("home.chartLibrarySection")}
+          </div>
+          {browserLibrary ? (
+            <p className="px-2.5 pb-1 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]">
+              {t("home.chartLibraryBackupHint")}
+            </p>
+          ) : null}
+          <ImportChartsDrawerButton
+            icon={Archive}
+            label={t("home.chartLibraryBackup")}
+            onClick={onBackupLibrary}
+          />
+          <ImportChartsDrawerButton
+            icon={ArchiveRestore}
+            label={t("home.chartLibraryRestore")}
+            onClick={() => importFromFile("library")}
           />
         </div>
       </SheetContent>
@@ -4762,18 +5200,47 @@ function ImportChartsDrawerButton({
   );
 }
 
-function AafPasteImportDialog({
-  open,
+type PasteImportKind = "aaf" | "zet" | "zeus";
+
+/** Dialog copy and new-collection placeholder per pasted text format. */
+const PASTE_IMPORT_COPY: Record<
+  PasteImportKind,
+  { titleKey: string; descriptionKey: string; collectionPlaceholder: string }
+> = {
+  aaf: {
+    titleKey: "home.pasteAafTitle",
+    descriptionKey: "home.pasteAafDescription",
+    collectionPlaceholder: "Astro-Seek",
+  },
+  zet: {
+    titleKey: "home.importPasteZet",
+    descriptionKey: "home.pasteZetDescription",
+    collectionPlaceholder: "Zet",
+  },
+  zeus: {
+    titleKey: "home.importPasteZeus",
+    descriptionKey: "home.pasteZeusDescription",
+    collectionPlaceholder: "Zeus",
+  },
+};
+
+function PasteImportDialog({
+  kind,
   onOpenChange,
   onImported,
   onError,
 }: {
-  open: boolean;
+  kind: PasteImportKind | null;
   onOpenChange: (open: boolean) => void;
   onImported: (summary: ImportSummary) => void;
   onError: (error: string) => void;
 }) {
   const t = useT();
+  const open = kind !== null;
+  // Keep the last format's copy while the dialog animates closed.
+  const [shownKind, setShownKind] = useState<PasteImportKind>("aaf");
+  if (kind !== null && kind !== shownKind) setShownKind(kind);
+  const copy = PASTE_IMPORT_COPY[shownKind];
   const [text, setText] = useState("");
   const [collections, setCollections] = useState<ChartCollection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState("");
@@ -4807,7 +5274,7 @@ function AafPasteImportDialog({
     setPending(true);
     try {
       const summary = await importCharts({
-        kind: "aaf",
+        kind: shownKind,
         paths: [],
         text: rawText,
         collection: collectionValue,
@@ -4837,9 +5304,9 @@ function AafPasteImportDialog({
       <DialogContent size="reading" className="h-[min(44rem,calc(100vh-3rem))] overflow-hidden">
         <form onSubmit={submit} className="grid h-full min-h-0 grid-rows-[auto_minmax(12rem,1fr)_auto_auto_auto] gap-4">
           <DialogHeader>
-            <DialogTitle>{t("home.pasteAafTitle")}</DialogTitle>
+            <DialogTitle>{t(copy.titleKey)}</DialogTitle>
             <DialogDescription>
-              {t("home.pasteAafDescription")}
+              {t(copy.descriptionKey)}
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -4871,7 +5338,7 @@ function AafPasteImportDialog({
               <input
                 data-aries-control-appearance="local"
                 value={newCollectionName}
-                placeholder="Astro-Seek"
+                placeholder={copy.collectionPlaceholder}
                 onChange={(event) => setNewCollectionName(event.currentTarget.value)}
                 className="rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-border-subtle)] bg-transparent px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-gap)] text-[color:var(--aries-text-primary)] outline-none focus:border-[color:var(--aries-focus-ring)]"
               />
@@ -5190,6 +5657,12 @@ function useActiveDocumentChart(
       lastSessionChange.rebuiltChildIds.includes(docId))
       ? lastSessionChange.seq
       : 0;
+  // A display-only command on this document already published its own
+  // authoritative snapshot; its deferred session.changed echo needs no GET.
+  const selfCommandEchoRefresh =
+    sessionRefreshTick !== 0 &&
+    lastSessionChange?.commandEcho === true &&
+    lastSessionChange.docId === docId;
   useEffect(() => {
     if (!docId || !isChartBearingDocumentKind(docKind)) {
       return;
@@ -5301,6 +5774,8 @@ function useActiveDocumentChart(
       }
     };
     const fetchAndApply = () => {
+      if (selfCommandEchoRefresh
+        && useDaemonWorkspaceStore.getState().commandSnapshot?.docId === docId) return;
       const sourceStore = useDaemonWorkspaceStore.getState();
       const sourceStepped =
         sourceStore.steppedSnapshot?.docId === docId ? sourceStore.steppedSnapshot : null;
@@ -5416,7 +5891,7 @@ function useActiveDocumentChart(
     }
     fetchAndApply();
     return cleanup;
-  }, [docId, docKind, pushCommandSnapshot, sessionRefreshTick]);
+  }, [docId, docKind, pushCommandSnapshot, selfCommandEchoRefresh, sessionRefreshTick]);
 
   const commandSeq = commandSnapshot?.seq ?? 0;
   useEffect(() => {

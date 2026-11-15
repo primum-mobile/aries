@@ -4,9 +4,11 @@
 
 import argparse
 import datetime as dt
+from functools import lru_cache
 import json
 import logging
 import math
+from engine.dignity_display import minor_dignity_palette
 import os
 import subprocess
 import sys
@@ -28,7 +30,7 @@ import chartfile
 import dateformat
 import eclipses
 import note_storage
-from engine import chart_factory, harmonic_chart
+from engine import chart_factory, harmonic_chart, orb_policy, void_of_course
 import common
 import fixstars
 import fortune
@@ -37,6 +39,7 @@ import houses
 import hours
 import interchartaspects
 import lordofyear
+import node_mirror
 import mtexts
 import options
 import planets
@@ -66,6 +69,8 @@ PLANET_ID_MAP = {
     astrology.SE_MEAN_NODE: "nnode",
     astrology.SE_TRUE_NODE: "snode",
     astrology.SE_CHIRON: "chiron",
+    astrology.SE_MEAN_APOG: "apogee",
+    astrology.SE_OSCU_APOG: "apogee",
 }
 
 # se_id -> mtexts key for outer-ring planet-source labels. Resolved at CALL time
@@ -84,6 +89,8 @@ _PLANET_LABEL_KEYS = {
     astrology.SE_NEPTUNE: "Neptune",
     astrology.SE_PLUTO: "Pluto",
     astrology.SE_MEAN_NODE: "NorthNode",
+    astrology.SE_MEAN_APOG: "Apogee",
+    astrology.SE_OSCU_APOG: "Apogee",
 }
 _PLANET_LABEL_ENGLISH_FALLBACK = {
     astrology.SE_TRUE_NODE: "South Node",  # no mtexts key; stays English by design
@@ -438,6 +445,21 @@ def display_tuple_iso(dt_tuple):
         return None
 
 
+def sync_center_information_metadata(meta, view_label=None):
+    """Keep centre information on the same daemon display labels as normal overlays."""
+    if not isinstance(meta, dict):
+        return
+    if meta.get("kind") == "composite":
+        return
+    lines = meta.get("centerLines")
+    if not isinstance(lines, list) or len(lines) < 2:
+        return
+    lines[0] = meta.get("dateDisplay", lines[0])
+    lines[1] = meta.get("timeDisplay", lines[1])
+    if view_label and len(lines) > 5:
+        lines[5] = str(view_label)
+
+
 def apply_display_datetime_to_chart_payload(chart_payload, display_dt, bc=False, options=None):
     """Replace visible chart metadata with the session's local display time.
 
@@ -459,6 +481,7 @@ def apply_display_datetime_to_chart_payload(chart_payload, display_dt, bc=False,
     meta["timeDisplay"] = time_display
     meta["compactTimeDisplay"] = compact_time_display(time_display)
     meta["anchorDisplay"] = f"{date_display} {time_display}"
+    sync_center_information_metadata(meta)
     iso = display_tuple_iso(display_dt)
     if iso is not None:
         meta["datetime"] = iso
@@ -499,6 +522,8 @@ def format_status_datetime(chrt):
 
 
 def format_runtime_title_parts(chrt, opts):
+    if chrt.htype == chart_mod.Chart.COMPOSITE:
+        return "", "", mtexts.txts["Composite"]
     now = dt.datetime.now()
     calflag = symbolic_time._calflag_from_chart(chrt)
     runtime_dt = (now.year, now.month, now.day, now.hour, now.minute, now.second)
@@ -516,7 +541,22 @@ def format_runtime_title_parts(chrt, opts):
         view_label = mtexts.typeList[chrt.htype]
     except Exception:
         pass
+    if getattr(chrt, "_composite_variant", None) == "davison":
+        view_label = mtexts.txts["Davison"]
     return runtime_txt, f"{mtexts.txts.get('Age', 'Age')}: {age_years:.2f}y", view_label
+
+
+def chart_identity_lines(chrt):
+    """Format a complete chart identity without constructing/exporting charts."""
+    date_text, time_text = format_chart_datetime(chrt)
+    lon_text, lat_text = format_coord_pair(chrt.place)
+    return [
+        str(chrt.name or "").strip(),
+        date_text,
+        time_text,
+        str(chrt.place.place or ""),
+        f"{lon_text}, {lat_text}",
+    ]
 
 
 def relationship_corner_lines(participants):
@@ -524,26 +564,17 @@ def relationship_corner_lines(participants):
     if len(participants) != 2:
         return None
 
-    def lines(chrt):
-        date_text, time_text = format_chart_datetime(chrt)
-        lon_text, lat_text = format_coord_pair(chrt.place)
-        return [
-            str(chrt.name or "").strip(),
-            date_text,
-            time_text,
-            str(chrt.place.place or ""),
-            f"{lon_text}, {lat_text}",
-        ]
-
     return {
-        "topLeft": lines(participants[0]),
-        "bottomLeft": lines(participants[1]),
+        "topLeft": chart_identity_lines(participants[0]),
+        "bottomLeft": chart_identity_lines(participants[1]),
         "pairedParticipants": True,
     }
 
 
 def composite_corner_lines(chrt):
-    """Source identities for paired composites; retain multi-party labels."""
+    """Midpoints show source identities; Davison shows its own real chart."""
+    if getattr(chrt, "_composite_variant", None) == "davison":
+        return {"topLeft": chart_identity_lines(chrt), "bottomLeft": [], "singleChart": True}
     pair = getattr(chrt, "_composite_source_pair", None)
     if isinstance(pair, (list, tuple)) and len(pair) == 2:
         return relationship_corner_lines(pair)
@@ -584,6 +615,10 @@ def iso_datetime_with_offset(chrt):
         total_minutes = int(chrt.time.zh) * 60 + int(getattr(chrt.time, "zm", 0))
         if not chrt.time.plus:
             total_minutes *= -1
+        # zh/zm hold the standard offset; Time applies DST as one extra hour,
+        # so the civil clock's actual UTC offset includes it.
+        if getattr(chrt.time, "daylightsaving", False):
+            total_minutes += 60
         tzinfo = dt.timezone(dt.timedelta(minutes=total_minutes))
     return dt.datetime(
         int(chrt.time.origyear),
@@ -612,8 +647,9 @@ def deg_min_payload(lon):
 
 def export_planets(chrt):
     from webapp.daemon import inspector_service
+    from webapp.daemon.display_palette import minor_dignity_display_facts
 
-    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=getattr(chrt.options, "showchiron", True))
+    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
     data = []
     for pid in planet_ids:
         body = chrt.get_planet_body(pid)
@@ -655,6 +691,7 @@ def export_planets(chrt):
             "latitude": float(planet_data[1]),
             "speed": speed_lon,
             "house": house_num,
+            **minor_dignity_display_facts(chrt, pid),
             "dignity": dignity,
             "color": color,
             "glyph": glyph,
@@ -763,7 +800,7 @@ def prenatal_syzygy_label(chrt):
 
 
 def prenatal_eclipse_label(event, chrt, label=None):
-    label = label if label is not None else eclipses.eclipse_event_label(event)
+    label = label if label is not None else eclipses.prenatal_eclipse_point_label()
     try:
         year, month, day, *_ = eclipses.local_datetime_tuple(event.jdut, chrt)
     except (AttributeError, TypeError, ValueError):
@@ -841,7 +878,7 @@ def export_vertex_aspects(chrt):
         return []
 
     aspects = []
-    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=getattr(chrt.options, "showchiron", True))
+    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
     for pid in planet_ids:
         if pid in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE) and not getattr(chrt.options, "aspectstonodes", False):
             continue
@@ -850,7 +887,7 @@ def export_vertex_aspects(chrt):
             continue
         lon = float(body.data[planets.Planet.LONG])
         idx = chrt.get_planet_orb_index(pid)
-        orb_by_aspect = chrt.options.orbis[idx][:]
+        orb_by_aspect = orb_policy.contributions(chrt.options)[idx][:]
         asp = chrt._build_dynamic_aspect(
             lon,
             vlon,
@@ -859,7 +896,8 @@ def export_vertex_aspects(chrt):
             orb_by_aspect,
             node_only_conjunction=pid in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE),
         )
-        if not should_show_aspect(chrt, asp, lon, vlon):
+        asp = shown_aspect(chrt, asp, lon, vlon)
+        if asp is None:
             continue
         aspects.append(
             aspect_payload(PLANET_ID_MAP[pid], "vertex", asp)
@@ -878,12 +916,15 @@ def aspect_payload(p1, p2, asp):
     }
 
 
-def should_show_aspect(chrt, asp, lon1, lon2):
+def shown_aspect(chrt, asp, lon1, lon2):
+    """The nearest in-orb aspect the wheel draws for this pair, or None.
+
+    Selects after the enabled-type and Traditional gates, so a disabled
+    nearer aspect (e.g. a quintile) cannot hide an enabled one in orb."""
     if asp is None or asp.typ == chart_mod.Chart.NONE:
-        return False
-    if not chrt.options.aspect[asp.typ]:
-        return False
-    return chrt._passes_traditional_aspect_filter(asp.typ, lon1, lon2)
+        return None
+    return asp.nearest(lambda typ: bool(chrt.options.aspect[typ])
+                       and chrt._passes_traditional_aspect_filter(typ, lon1, lon2))
 
 
 _ANGLE_ASPECT_DISPLAY_FIELDS = {
@@ -900,12 +941,37 @@ def should_draw_angle_aspects(chrt, angle_key):
     return field is not None and bool(getattr(chrt.options, field, True))
 
 
+_NODE_ID_BY_KEY = {"nnode": astrology.SE_MEAN_NODE, "snode": astrology.SE_TRUE_NODE}
+
+
+def drop_mirrored_node_aspects(aspects, *, side_keys=("p1", "p2")):
+    """List one aspect per body for the mirrored lunar-node pair (node_mirror).
+
+    ``aspects`` are payload dicts naming their endpoints under ``side_keys``
+    (in a biwheel the node's side tells radix from outer nodes)."""
+    left_key, right_key = side_keys
+
+    def contacts():
+        for index, item in enumerate(aspects):
+            left, right = item.get(left_key), item.get(right_key)
+            if left in _NODE_ID_BY_KEY and right not in _NODE_ID_BY_KEY:
+                node, partner, node_side = left, right, left_key
+            elif right in _NODE_ID_BY_KEY and left not in _NODE_ID_BY_KEY:
+                node, partner, node_side = right, left, right_key
+            else:
+                continue
+            yield index, (partner, node_side), _NODE_ID_BY_KEY[node], item.get("type")
+
+    drop = node_mirror.redundant_keys(contacts())
+    return [item for index, item in enumerate(aspects) if index not in drop]
+
+
 def export_aspects(chrt):
     if not getattr(chrt.options, "aspects", True):
         return []
 
     aspects = []
-    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=getattr(chrt.options, "showchiron", True))
+    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
     show_lof_aspects = bool(
         getattr(chrt.options, "showlof", True)
         and getattr(chrt.options, "showaspectstolof", False)
@@ -925,8 +991,8 @@ def export_aspects(chrt):
             if body2 is None:
                 continue
             lon2 = float(body2.data[0])
-            asp = chrt.get_planetary_aspect(p1, p2)
-            if not should_show_aspect(chrt, asp, lon1, lon2):
+            asp = shown_aspect(chrt, chrt.get_planetary_aspect(p1, p2), lon1, lon2)
+            if asp is None:
                 continue
             aspects.append(
                 aspect_payload(PLANET_ID_MAP[p1], PLANET_ID_MAP[p2], asp)
@@ -942,8 +1008,8 @@ def export_aspects(chrt):
         for angle_key, angle_lon in _angle_longitudes(chrt):
             if not should_draw_angle_aspects(chrt, angle_key):
                 continue
-            asp = _angle_aspect(chrt, pid, angle_key, angle_lon)
-            if not should_show_aspect(chrt, asp, lon, angle_lon):
+            asp = shown_aspect(chrt, _angle_aspect(chrt, pid, angle_key, angle_lon), lon, angle_lon)
+            if asp is None:
                 continue
             aspects.append(
                 aspect_payload(PLANET_ID_MAP[pid], angle_key, asp)
@@ -951,13 +1017,13 @@ def export_aspects(chrt):
 
         if show_lof_aspects:
             lof_lon = float(chrt.fortune.fortune[fortune.Fortune.LON])
-            asp = chrt.get_lof_aspect(pid)
-            if should_show_aspect(chrt, asp, lon, lof_lon):
+            asp = shown_aspect(chrt, chrt.get_lof_aspect(pid), lon, lof_lon)
+            if asp is not None:
                 aspects.append(
                     aspect_payload(PLANET_ID_MAP[pid], "fortune", asp)
                 )
 
-    return aspects
+    return drop_mirrored_node_aspects(aspects)
 
 
 def export_varga_drishti(chrt, display_options=None):
@@ -1111,8 +1177,9 @@ def _opposite_angle_decl(chrt, angle_idx):
 
 def _angle_orbs(chrt, planet_id):
     idx = chrt.get_planet_orb_index(planet_id)
+    row, combine = orb_policy.contributions(chrt.options)[idx], orb_policy.combiner(chrt.options)
     return [
-        chrt.options.orbisAscMC[a] + chrt.options.orbis[idx][a]
+        combine(chrt.options.orbisAscMC[a], row[a])
         for a in range(chart_mod.Chart.ASPECT_NUM)
     ]
 
@@ -1159,7 +1226,7 @@ def _point_aspect(chrt, planet_id, point_lon):
         float(point_lon),
         float(body.data[planets.Planet.SPLON]),
         0.0,
-        chrt.options.orbis[idx][:],
+        orb_policy.contributions(chrt.options)[idx][:],
         node_only_conjunction=planet_id in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE),
     )
 
@@ -1204,7 +1271,11 @@ def export_body_aspects(chrt, click_point_items=None):
             return
         # showsOnClick is symmetric in the two endpoints (type-set membership +
         # |sign1-sign2|), so it is computed once and stamped on both directions.
-        shows = _click_filter_pass(chrt, asp.typ, lon_a, lon_b)
+        # Prefer the nearest aspect that passes; otherwise keep the pair's
+        # nearest aspect as a hidden adjacency entry.
+        passing = asp.nearest(lambda typ: _click_filter_pass(chrt, typ, lon_a, lon_b))
+        shows = passing is not None
+        asp = passing or asp
         if not getattr(chrt.options, "aspectstonodes", False) and (
             _is_node_aspect_key(key_a) or _is_node_aspect_key(key_b)
         ):
@@ -1215,7 +1286,7 @@ def export_body_aspects(chrt, click_point_items=None):
         if allow_b:
             _append(key_b, key_a, asp, shows)
 
-    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=getattr(chrt.options, "showchiron", True))
+    planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
 
     # Planet ↔ planet. Skip the mean/true-node degenerate pair exactly like the
     # engine matrix accessor (chart.py:1103) and the desktop draw loop. Endpoint
@@ -1251,7 +1322,7 @@ def export_body_aspects(chrt, click_point_items=None):
     has_lof = getattr(chrt.options, "showlof", True) and getattr(chrt, "fortune", None) is not None
     if has_lof:
         _ensure("fortune")
-    syzygy_lon = _syzygy_lon(chrt) if getattr(chrt.options, "showprenatalsyzygy", False) else None
+    syzygy_lon = _ensure_syzygy_lon(chrt) if getattr(chrt.options, "showprenatalsyzygy", False) else None
     has_syzygy = syzygy_lon is not None
     if has_syzygy:
         _ensure("syzygy")
@@ -1384,6 +1455,18 @@ def export_body_aspects(chrt, click_point_items=None):
             shows = _click_filter_pass(chrt, asp.typ, lon, point_lon)
             by_body.setdefault(point_key, []).append(_asp_entry(k, asp, shows))
 
+    # A body's mirrored aspects to both lunar nodes reveal one line (node_mirror);
+    # a selected node still lists all of its own contacts.
+    for key, entries in by_body.items():
+        if key in _NODE_ID_BY_KEY:
+            continue
+        drop = node_mirror.redundant_keys(
+            (index, None, _NODE_ID_BY_KEY[entry["other"]], entry["type"])
+            for index, entry in enumerate(entries)
+            if entry.get("other") in _NODE_ID_BY_KEY
+        )
+        if drop:
+            by_body[key] = [entry for index, entry in enumerate(entries) if index not in drop]
     return by_body
 
 
@@ -1588,6 +1671,20 @@ def export_overlay(chrt, overlay_render_mode="full", *, radix=None, display_date
             }
         )
 
+    # Like stations, the row exists only while the Moon is actually void.
+    void_course_label = (
+        void_of_course.display_text(chrt, chrt.options)
+        if overlay_render_mode == "full" and getattr(chrt.options, "showvoidcourse", False)
+        else None
+    )
+    if void_course_label:
+        rows.append({
+            "group": "signal",
+            "slot": "void-of-course",
+            "label": void_course_label,
+            "glyphs": [overlay_planet_run(chrt, astrology.SE_MOON)],
+        })
+
     return {"rows": rows, "deferredSignals": overlay_render_mode == "step_fast"}
 
 
@@ -1672,6 +1769,7 @@ def _resolve_build_stamp_label():
                 "--date=format-local:%Y-%m-%d %H:%M",
             ],
             stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         ).decode("utf-8", "replace").strip()
         if out:
             return out
@@ -1695,6 +1793,7 @@ def export_chart(
 	display_options=None,
 	comparison_whole_sign=False,
 	include_body_aspects=True,
+    include_zodiacal_contacts=True,
 ):
     def phase(name, fn):
         return _timed_export(perf, f"{perf_prefix}.{name}", fn)
@@ -1714,7 +1813,7 @@ def export_chart(
     build_stamp = BUILD_STAMP_LABEL
     house_system_lines = phase("house_system_lines", lambda: _export_house_system_lines(chrt))
     planets_payload = phase("planets", lambda: export_planets(chrt))
-    aspects_payload = phase("aspects", lambda: export_aspects(chrt) + export_vertex_aspects(chrt))
+    aspects_payload = phase("aspects", lambda: export_aspects(chrt) + export_vertex_aspects(chrt)) if include_zodiacal_contacts else []
     drishti_payload = phase(
         "drishti",
         lambda: export_varga_drishti(chrt, render_options),
@@ -1726,12 +1825,10 @@ def export_chart(
         if include_body_aspects and not is_varga
         else {}
     )
+    house_lines_available = bool(_export_house_system_code(chrt) != "N" or comparison_whole_sign)
     show_houses = bool(
         getattr(render_options, "houses", getattr(chrt.options, "houses", False))
-        and (
-            _export_house_system_code(chrt) != "N"
-            or comparison_whole_sign
-        )
+        and house_lines_available
     )
     anglo_dense_label_layout = str(
         getattr(render_options, "anglo_dense_label_layout", "routed-cusps")
@@ -1763,6 +1860,7 @@ def export_chart(
         "positions": css_rgb(chrt.options.clrpositions),
         "peregrin": css_rgb(chrt.options.clrperegrin),
         "domicil": css_rgb(chrt.options.clrdomicil),
+        "minorDignities": [css_rgb(color) for color in minor_dignity_palette(chrt.options)],
         "exil": css_rgb(chrt.options.clrexil),
         "exal": css_rgb(chrt.options.clrexal),
         "casus": css_rgb(chrt.options.clrcasus),
@@ -1778,6 +1876,11 @@ def export_chart(
         "pluto": int(getattr(chrt.options, "pluto", 0)),
         "signVariant": 1 if getattr(chrt.options, "signs", True) else 2,
         "useDignityColors": bool(getattr(chrt.options, "useplanetcolors", False)),
+        "blendMinorDignities": bool(getattr(chrt.options, "blendminordignities", False)),
+        "showDignityGlyphs": bool(getattr(chrt.options, "showdignityglyphs", False)),
+        "showTermGlyphs": bool(getattr(chrt.options, "showtermglyphs", False)),
+        "usePlanetColorsForSubdivisions": bool(getattr(chrt.options, "useplanetcolorsforsubdivisions", True)),
+        "showFaceGlyphs": bool(getattr(chrt.options, "showfaceglyphs", False)),
         "useZodiacElementColors": bool(
             getattr(chrt.options, "usezodiacelementcolors", False)
         ),
@@ -1802,6 +1905,7 @@ def export_chart(
         "showFixstarsToHcs": bool(getattr(chrt.options, "showfixstarshcs", False)),
         "showFixstarsToLoF": bool(getattr(chrt.options, "showfixstarslof", False)),
         "showHouses": show_houses,
+        "houseLinesAvailable": house_lines_available,
         "showOuterHouseLines": bool(
             getattr(render_options, "showouterhouselines", True)
         ),
@@ -1903,6 +2007,11 @@ def export_chart(
                 f"{mtexts.txts.get('Latitude', 'Latitude')}: {lat_txt}",
             ],
             "houseSystemLines": house_system_lines,
+            # Display labels only; the renderer never reconstructs chart semantics.
+            "centerLines": [date_display, time_display, chrt.place.place,
+                            f"{lon_txt}, {lat_txt}", chrt.name, view_label,
+                            (ayanamsha_label(int(chrt.options.ayanamsha)) if int(getattr(chrt.options, "ayanamsha", 0)) else mtexts.txts["WheelCenterTropical"]),
+                            hsystem_label(getattr(chrt.houses, "ui_hsys", getattr(chrt.options, "hsys", "P")))],
         },
         "angles": {
             "asc": float(chart_mod.semantic_angle_longitude(chrt, "asc")),
@@ -1931,6 +2040,11 @@ def export_chart(
         "palette": palette_payload,
         "options": options_payload,
     }
+    if chrt.htype == chart_mod.Chart.COMPOSITE:
+        meta = payload["meta"]
+        meta["titleParts"] = [chrt.name]
+        meta["statusFields"].pop(3)
+        meta["centerLines"] = meta["centerLines"][4:]
     if include_body_aspects:
         payload["bodyAspects"] = body_aspects
     corner_lines = phase("composite_corner_lines", lambda: composite_corner_lines(chrt))
@@ -2061,13 +2175,14 @@ def ensure_arabic_parts(chrt):
     return getattr(getattr(chrt, "parts", None), "parts", None) or []
 
 
-def collect_hybrid_ring_items(chrt, *, filter_hits=True):
+def collect_hybrid_ring_items(chrt, *, filter_hits=True, display_options=None):
     # Hybrid Hits combines lots, fixed stars, and the always-present asteroid
     # set. A Tauri step chart deliberately skips Chart(full=True), so populate
     # only the two optional families this selected ring actually consumes.
     ensure_arabic_parts(chrt)
     ensure_fixstars(chrt)
-    return common.collect_hybrid_ring_items(chrt, chrt.options, filter_hits=filter_hits)
+    opts = display_options if display_options is not None else chrt.options
+    return common.collect_hybrid_ring_items(chrt, opts, filter_hits=filter_hits)
 
 
 def _resolve_live_export_options(primary, explicit_options=None):
@@ -2100,6 +2215,10 @@ def export_ring_item(
         "label": label,
         "role": role,
     }
+    if family == "arabic_part":
+        short_name = lot_label_short_name(label)
+        if short_name:
+            payload["shortLabel"] = short_name
     if segments:
         payload["segments"] = segments
     if fit_policy:
@@ -2118,89 +2237,30 @@ def _semantic_identity(*parts):
     return ":".join(str(part) for part in parts)
 
 
-# Derived from graphchart.isShowAsp(CONJUNCTIO, lon1, lon2)
-# (graphchart.py:5840-5869), with one deliberate divergence: the
-# `traditionalaspects` whole-sign gate is NOT applied to fixed stars.
-#
-# A star conjunction is a bodily contact, not a sign-based aspect -- no
-# traditional source confines a star's influence to its own sign -- so the
-# desktop behaviour of dropping an in-orb but out-of-sign pairing (e.g. Mars
-# 29Leo36 / Regulus 0Vir13, 0.62 deg apart) hid real contacts. The global
-# conjunction toggle still applies.
-def _fixstar_conjunction_is_shown(chrt, lon1, lon2):
-    typ = chart_mod.Chart.CONJUNCTIO
-    if typ == chart_mod.Chart.NONE or not chrt.options.aspect[typ]:
-        return False
-    return True
+def shown_fixstar_indices(chrt, display_options=None):
+    """Select stars against live visible inner objects, using each star's orb.
 
-
-def shown_fixstar_indices(chrt):
-    """wx-free port of graphchart.mergefsaspmatrices (graphchart.py:5218-5283).
-
-    The fsaspmatrix* structures are already orb-filtered at chart-build time via
-    inorbsinister(...CONJUNCTIO) (chart.py:1808-1880), so they encode the
-    conjunctions. This reproduces the desktop's per-matrix gating and returns the
-    set of fixstar indices (into chrt.fixstars.data) that the wheel would draw.
+    The stored matrices describe construction-time contacts; display toggles
+    must work without rebuilding charts or depending on a planet contact first.
     """
-    options = chrt.options
-    showfss = set()
-
-    fsaspmatrix = getattr(chrt, "fsaspmatrix", None)
-    if not fsaspmatrix:
-        return showfss
-
-    fsdata = chrt.fixstars.data
-
-    # Conjunctions to chart planets/bodies.
-    for star_idx, body_ids in fsaspmatrix:
-        lon1 = fsdata[star_idx][fixstars.FixStars.LON]
-        for body_id in body_ids:
-            body = common.get_chart_planet(chrt, body_id)
-            if body is None:
-                continue
-            lon2 = body.data[planets.Planet.LONG]
-            if _fixstar_conjunction_is_shown(chrt, lon1, lon2):
-                showfss.add(star_idx)
-                break
-
-    # Conjunctions to Asc/Desc/MC/IC.
-    ascmc = [
-        chart_mod.semantic_angle_longitude(chrt, "asc"),
-        chart_mod.semantic_angle_longitude(chrt, "dsc"),
-        chart_mod.semantic_angle_longitude(chrt, "mc"),
-        chart_mod.semantic_angle_longitude(chrt, "ic"),
-    ]
-    for star_idx, angle_idxs in getattr(chrt, "fsaspmatrixangles", None) or ():
-        lon1 = fsdata[star_idx][fixstars.FixStars.LON]
-        for angle_idx in angle_idxs:
-            if _fixstar_conjunction_is_shown(chrt, lon1, ascmc[angle_idx]):
-                showfss.add(star_idx)
-                break
-
-    # Conjunctions to house cusps (gated by showfixstarshcs).
-    if getattr(options, "showfixstarshcs", False):
-        for star_idx, cusp_idxs in getattr(chrt, "fsaspmatrixhcs", None) or ():
-            lon1 = fsdata[star_idx][fixstars.FixStars.LON]
-            for cusp_idx in cusp_idxs:
-                if _fixstar_conjunction_is_shown(chrt, lon1, chrt.houses.cusps[cusp_idx + 1]):
-                    showfss.add(star_idx)
-                    break
-
-    # Conjunctions to Lot of Fortune (gated by showfixstarslof).
-    if getattr(options, "showfixstarslof", False):
-        lof = chrt.fortune.fortune[fortune.Fortune.LON]
-        for star_idx in getattr(chrt, "fsaspmatrixlof", None) or ():
-            lon1 = fsdata[star_idx][fixstars.FixStars.LON]
-            if _fixstar_conjunction_is_shown(chrt, lon1, lof):
-                showfss.add(star_idx)
-
-    return showfss
+    opts = display_options if display_options is not None else chrt.options
+    if not opts.aspect[chart_mod.Chart.CONJUNCTIO]:
+        return set()
+    targets = common.get_overlay_trigger_longitudes(chrt, opts)
+    return {
+        index
+        for index, star in enumerate(chrt.fixstars.data)
+        if common.chart_has_ring_direct_hit(
+            chrt, opts, star[fixstars.FixStars.LON],
+            opts.fixstars[star[fixstars.FixStars.NOMNAME]], targets=targets,
+        )
+    }
 
 
 def export_fixstar_items(chrt, display_options=None, *, filter_hits=True):
     items = []
     fsdata = ensure_fixstars(chrt)
-    shown = shown_fixstar_indices(chrt) if filter_hits else None
+    shown = shown_fixstar_indices(chrt, display_options) if filter_hits else None
     configured_codes = list(getattr(chrt.options, "fixstars", {}).keys())
     naming_options = display_options or chrt.options
     for idx, star in enumerate(fsdata):
@@ -2238,10 +2298,13 @@ def export_fixstar_items(chrt, display_options=None, *, filter_hits=True):
     return items
 
 
-def export_asteroid_items(chrt, role="primary", *, filter_hits=True):
+def export_asteroid_items(chrt, role="primary", *, filter_hits=True, display_options=None):
     items = []
-    filter_hits = filter_hits and not bool(getattr(chrt.options, "asteroid_outer_ring_all", False))
-    for item in common.collect_asteroid_ring_items(chrt, chrt.options, filter_hits=filter_hits):
+    # Coordinates belong to the chart; global ring eligibility belongs to the
+    # current display options, even when this source owns a detached copy.
+    opts = display_options if display_options is not None else chrt.options
+    filter_hits = filter_hits and not bool(getattr(opts, "asteroid_outer_ring_all", False))
+    for item in common.collect_asteroid_ring_items(chrt, opts, filter_hits=filter_hits):
         try:
             body_id = int(item["bodyId"])
             lon = float(item["lon"])
@@ -2266,9 +2329,9 @@ def export_asteroid_items(chrt, role="primary", *, filter_hits=True):
     return items
 
 
-def export_hybrid_items(chrt, role="primary", *, filter_hits=True):
+def export_hybrid_items(chrt, role="primary", *, filter_hits=True, display_options=None):
     items = []
-    for index, item in enumerate(collect_hybrid_ring_items(chrt, filter_hits=filter_hits)):
+    for index, item in enumerate(collect_hybrid_ring_items(chrt, filter_hits=filter_hits, display_options=display_options)):
         family = str(item.get("family") or "hybrid_hit")
         label = str(item.get("name") or family)
         try:
@@ -2333,10 +2396,11 @@ def export_row_ring_items(rows, family, role="primary"):
     return items
 
 
-def export_midpoint_ring_items(chrt, *, filter_hits=True):
+def export_midpoint_ring_items(chrt, *, filter_hits=True, display_options=None):
     items = []
     ensure_midpoints(chrt)
-    for idx, item in enumerate(common.collect_midpoint_ring_items(chrt, chrt.options, filter_hits=filter_hits)):
+    opts = display_options if display_options is not None else chrt.options
+    for idx, item in enumerate(common.collect_midpoint_ring_items(chrt, opts, filter_hits=filter_hits)):
         p1 = int(item["p1"])
         p2 = int(item["p2"])
         label = f"{common.common.get_planet_name(p1)}/{common.common.get_planet_name(p2)}"
@@ -2356,6 +2420,24 @@ def export_midpoint_ring_items(chrt, *, filter_hits=True):
             )
         )
     return items
+
+
+@lru_cache(maxsize=512)
+def lot_label_short_name(label):
+    """Display alias in the name's own language; custom names keep their qualifiers."""
+    for _menu, texts, _license in mtexts.langs.values():
+        for source_key, short_key in (
+            ("LotLabelMarriageName", "LotLabelMarriageShort"),
+            ("LotLabelChildrenName", "LotLabelChildrenShort"),
+            ("LotLabelJourneysName", "LotLabelJourneysShort"),
+        ):
+            source = texts.get(source_key)
+            short = texts.get(short_key)
+            if source and short and label.casefold() == source.casefold():
+                return short
+            if source and short and label.casefold().startswith(source.casefold() + " "):
+                return short + label[len(source):]
+    return None
 
 
 def export_arabic_part_items(chrt, role="primary"):
@@ -2622,6 +2704,24 @@ def _morin_planet_projection_points(chrt, antis, kind, planet):
         yield branch, float(point["lon"]), direction_name(point.get("direction", 0))
 
 
+def _overlay_planet_segment(chrt, kind, se_id, longitude):
+    segment = {
+        "text": common.common.get_planet_glyph(se_id),
+        "kind": "planet",
+        "seId": se_id,
+    }
+    if kind == "dodecatemoria":
+        from engine.dignity_display import minor_dignity_count
+
+        # The projection is already in the selected zodiac. Paint its own
+        # dignity, retaining the source body only for identity/individual colors.
+        segment["dignity"] = DIGNITY_MAP.get(
+            chart_mod.Chart.dignity(chrt, se_id, longitude), "peregrin"
+        )
+        segment["minorDignityCount"] = minor_dignity_count(chrt, se_id, longitude)
+    return segment
+
+
 def _export_varga_overlay_family_items(chrt, kind, role):
     """Export the radix-resolved projection factors retained by a Varga chart."""
     if getattr(chrt, "_varga_number", None) is None:
@@ -2689,11 +2789,7 @@ def _export_varga_overlay_family_items(chrt, kind, role):
                     projected_lon,
                     overlay_source_display_label(se_id, kind, chrt.options),
                     role=role,
-                    segments=[{
-                        "text": common.common.get_planet_glyph(se_id),
-                        "kind": "planet",
-                        "seId": se_id,
-                    }],
+                    segments=[_overlay_planet_segment(chrt, kind, se_id, projected_lon)],
                     semantic_id=semantic_id,
                     motion_ref=motion_ref,
                 )
@@ -2817,14 +2913,15 @@ def export_overlay_family_items(chrt, kind, role="primary"):
     elif not morin_planet_mode:
         for idx, planet in enumerate(exported_planets):
             se_id = int(planet["seId"])
+            projected_lon = calc_fn(float(planet["longitude"]))
             items.append(
                 export_ring_item(
                     f"{suffix}-planet-{idx}",
                     kind,
-                    calc_fn(float(planet["longitude"])),
+                    projected_lon,
                     overlay_source_display_label(se_id, kind, chrt.options),
                     role=role,
-                    segments=[{"text": common.common.get_planet_glyph(se_id), "kind": "planet", "seId": se_id}],
+                    segments=[_overlay_planet_segment(chrt, kind, se_id, projected_lon)],
                     semantic_id=_semantic_identity(kind, "planet", se_id),
                     motion_ref={
                         "kind": "projection",
@@ -2908,6 +3005,7 @@ def _interchart_point_aspect(
     best_asp = None
     best_delta = None
     best_distance = None
+    combine = orb_policy.combiner(options)
     for aspect_type in range(chart_mod.Chart.ASPECT_NUM):
         if not enabled_aspects[aspect_type]:
             continue
@@ -2922,7 +3020,7 @@ def _interchart_point_aspect(
         ):
             continue
 
-        orb = float(primary_orbs[aspect_type]) + float(comparison_orbs[aspect_type])
+        orb = combine(float(primary_orbs[aspect_type]), float(comparison_orbs[aspect_type]))
         delta, distance = interchartaspects._aspect_delta(primary_lon, comparison_lon, aspect_type)
         if delta > orb:
             continue
@@ -2952,6 +3050,8 @@ _TECHNIQUE_STANDARD_BODY_IDS = (
     astrology.SE_MEAN_NODE,
     astrology.SE_TRUE_NODE,
     astrology.SE_CHIRON,
+    astrology.SE_MEAN_APOG,
+    astrology.SE_OSCU_APOG,
 )
 
 
@@ -2974,14 +3074,14 @@ def _technique_body_orbs(chrt, options, body_id):
     try:
         orb_index = int(chrt.get_planet_orb_index(body_id))
     except Exception:
-        if body_id == astrology.SE_CHIRON:
+        if body_id in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
             orb_index = astrology.SE_PLUTO
         elif body_id == astrology.SE_TRUE_NODE:
             orb_index = astrology.SE_MEAN_NODE
         else:
             orb_index = int(body_id)
     try:
-        source = list(options.orbis[orb_index])
+        source = list(orb_policy.contributions(options)[orb_index])
     except Exception:
         return _zero_orbs()
     return [
@@ -3101,7 +3201,7 @@ def technique_aspect_endpoints(chrt, options=None):
 def _interchart_planet_endpoints(chrt, options):
     endpoints = []
     try:
-        planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=getattr(options, "showchiron", True))
+        planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
     except Exception:
         planet_ids = common.common.get_visible_chart_planet_ids(
             chrt,
@@ -3117,7 +3217,7 @@ def _interchart_planet_endpoints(chrt, options):
         if body is None:
             continue
         try:
-            orbs = options.orbis[chrt.get_planet_orb_index(planet_id)]
+            orbs = orb_policy.contributions(options)[chrt.get_planet_orb_index(planet_id)]
         except Exception:
             continue
         endpoints.append(
@@ -3410,8 +3510,15 @@ def export_interchart_aspect_data(primary, comparison):
                 "showsOnClick",
                 selection_keys=selection_keys,
             )
+    kept = drop_mirrored_node_aspects(list(rows.values()), side_keys=("outer", "inner"))
+    kept_ids = {id(row) for row in kept}
+    by_selector = {
+        key: value if _is_node_aspect_key(key.removeprefix("outer:"))
+        else [row for row in value if id(row) in kept_ids]
+        for key, value in by_selector.items()
+    }
     aspects = sorted(
-        rows.values(),
+        kept,
         key=lambda row: (str(row["inner"]), str(row["outer"]), int(row["type"])),
     )
     return {
@@ -3503,6 +3610,7 @@ def export_snapshot(
     overlay_cursor_jd=None,
     parallel_transit=None,
     rings=None,
+    include_zodiacal_contacts=True,
 ):
     # ``rings`` is the ordered multi-wheel membership, innermost first, and is
     # supplied only for three or more rings (webapp/daemon/chart_rings.py). The
@@ -3544,9 +3652,9 @@ def export_snapshot(
             outer_ring_items[mode] = _timed_export(perf, f"outer.{mode}", builder)
 
     include_outer("fixstars", lambda: export_fixstar_items(primary, export_options))
-    include_outer("asteroids", lambda: export_asteroid_items(primary))
-    include_outer("midpoints", lambda: export_midpoint_ring_items(primary))
-    include_outer("hybrid_hits", lambda: export_hybrid_items(primary))
+    include_outer("asteroids", lambda: export_asteroid_items(primary, display_options=export_options))
+    include_outer("midpoints", lambda: export_midpoint_ring_items(primary, display_options=export_options))
+    include_outer("hybrid_hits", lambda: export_hybrid_items(primary, display_options=export_options))
     include_outer("antiscia", lambda: export_overlay_family_items(
             comparison if comparison is not None else primary,
             "antiscia",
@@ -3574,7 +3682,7 @@ def export_snapshot(
         }
     active_click_points = outer_ring_items.get(active_outer_mode, ())
     overlay_radix = radix if radix is not None else primary
-    include_auxiliary_body_aspects = overlay_render_mode != "step_fast"
+    include_auxiliary_body_aspects = overlay_render_mode != "step_fast" and include_zodiacal_contacts
     comparison_whole_sign = bool(
         comparison is not None and _export_house_system_code(primary) == "N"
     )
@@ -3586,7 +3694,7 @@ def export_snapshot(
     # one selected body against one other ring costs 0.091 ms on demand.
     interchart_aspect_data = (
         {"aspects": [], "bodyAspects": {}}
-        if ring_charts
+        if ring_charts or not include_zodiacal_contacts
         else _timed_export(
             perf,
             "interchart_aspect_data",
@@ -3597,7 +3705,7 @@ def export_snapshot(
         perf,
         "multiwheel_conjunctions",
         lambda: export_multiwheel_conjunctions(ring_charts, export_options),
-    ) if ring_charts else []
+    ) if ring_charts and include_zodiacal_contacts else []
     # A multi-wheel's primary and comparison charts are also its first and last
     # rings. Export every distinct chart once, then reuse those payload objects
     # for the compatibility slots below. JSON still exposes the established
@@ -3611,6 +3719,7 @@ def export_snapshot(
                 chrt,
                 overlay_render_mode,
                 include_body_aspects=include_auxiliary_body_aspects,
+                include_zodiacal_contacts=include_zodiacal_contacts,
                 perf=perf,
                 perf_prefix="chart.ring%d" % (index + 1),
                 overlay_radix=overlay_radix,
@@ -3633,6 +3742,8 @@ def export_snapshot(
                 primary,
                 overlay_render_mode,
                 click_point_items=active_click_points,
+                include_body_aspects=include_zodiacal_contacts,
+                include_zodiacal_contacts=include_zodiacal_contacts,
                 perf=perf,
                 perf_prefix="chart.primary",
                 overlay_radix=overlay_radix,
@@ -3655,6 +3766,7 @@ def export_snapshot(
                 comparison,
                 overlay_render_mode,
                 include_body_aspects=include_auxiliary_body_aspects,
+                include_zodiacal_contacts=include_zodiacal_contacts,
                 perf=perf,
                 perf_prefix="chart.comparison",
                 overlay_radix=overlay_radix,
@@ -3685,6 +3797,7 @@ def export_snapshot(
                 radix,
                 overlay_render_mode,
                 include_body_aspects=include_auxiliary_body_aspects,
+                include_zodiacal_contacts=include_zodiacal_contacts,
                 perf=perf,
                 perf_prefix="chart.radix",
                 display_options=export_options,
@@ -3697,6 +3810,7 @@ def export_snapshot(
                 anchor,
                 overlay_render_mode,
                 include_body_aspects=include_auxiliary_body_aspects,
+                include_zodiacal_contacts=include_zodiacal_contacts,
                 perf=perf,
                 perf_prefix="chart.anchor",
                 display_options=export_options,

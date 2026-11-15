@@ -33,6 +33,10 @@ export function normalizeThemeState(value) {
     activePreset: candidate.activePreset,
     mode: candidate.mode,
     presentationCursor: candidate.presentationCursor === true,
+    inspectorTextSize: ["normal", "larger", "extra-large"].includes(candidate.inspectorTextSize)
+      ? candidate.inspectorTextSize : "normal",
+    inspectorSpeculumPrecision: ["degrees", "minutes", "seconds"].includes(candidate.inspectorSpeculumPrecision)
+      ? candidate.inspectorSpeculumPrecision : "seconds",
     schemaVersion:
       typeof candidate.schemaVersion === "number" ? candidate.schemaVersion : 1,
     version: candidate.version,

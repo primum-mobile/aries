@@ -1359,8 +1359,8 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 					self.toSyzygy(p+offs, primdirs.PrimDir.NONE, raprom, adprom, psidx)
 
 
-	def calcZodTerms(self):
-		'''Calculates zodiacal terms to Planets, LoF, Syzygy and Customer2'''
+	def calcZodTerms(self, dynamic_only=False):
+		'''Calculate zodiacal terms to configured native and dynamic significators.'''
 
 		num = len(self.options.terms[0])
 		subnum = len(self.options.terms[0][0])
@@ -1379,20 +1379,24 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 				#Planets
 				for s in range(len(self.chart.planets.planets)):
-					if self.options.sigplanets[s]:
+					if not dynamic_only and self.options.sigplanets[s]:
 						self.toPlanet(False, primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], raprom, adprom, chart.Chart.CONJUNCTIO, s, chart.Chart.CONJUNCTIO)
 
 				#LoF
-				if self.options.pdlof[1]:
+				if not dynamic_only and self.options.pdlof[1]:
 					self.toLoF(primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], raprom, adprom, chart.Chart.CONJUNCTIO)
 
 				#Syzygy
-				if self.options.pdsyzygy:
+				if not dynamic_only and self.options.pdsyzygy:
 					self.toSyzygy(primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], raprom, adprom, chart.Chart.CONJUNCTIO)
 
 				#Customer2
-				if self._get_active_dynamic_sig_point() != None:
+				if dynamic_only and self._get_active_dynamic_sig_point() != None:
 					self.toCustomer2(False, primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], raprom, adprom, chart.Chart.CONJUNCTIO)
+
+				if not dynamic_only and self.options.sighouses and not self._use_global_house_cusp_significators():
+					self.toHCs(False, primdirs.PrimDir.TERM+i, raprom,
+					             90.0+adprom, 90.0-adprom, chart.Chart.CONJUNCTIO)
 
 				summa += self.options.terms[self.options.selterm][i][j][1]
 
@@ -2900,6 +2904,43 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 		return result
 
 
+	def _traditional_converse_mundane_raw_arc(
+		self, prom, sig, promasp, sigasp, promasp_offset, sigasp_offset
+	):
+		"""Mundane traditional converse: the significator body is carried by
+		the primary motion to the promissor's proportional mundane position
+		(PMP).  A direct row places the aspect on the significator (PMP_sig +
+		offset); with the roles' geometry swapped the same configuration is
+		reached when the significator stands at PMP_prom - offset.  The arc
+		equation is toPlanet's mundane branch with the moving body exchanged."""
+		count = len(self.chart.planets.planets)
+		if not (0 <= prom < count and 0 <= sig < count):
+			raise primdirs.TraditionalConverseUnsupported('mundane-point-family')
+		if promasp != chart.Chart.CONJUNCTIO or not chart.Chart.CONJUNCTIO <= sigasp <= chart.Chart.SEPTILE:
+			raise primdirs.TraditionalConverseUnsupported('mundane-point-family')
+		if sigasp != chart.Chart.CONJUNCTIO and float(sigasp_offset) == 0.0:
+			raise primdirs.TraditionalConverseUnsupported('missing-ray-side')
+
+		plprom = self.chart.planets.planets[prom]
+		plsig = self.chart.planets.planets[sig]
+		pmp = plprom.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.PMP]
+		target = util.normalize(pmp-float(sigasp_offset))
+
+		# Same quadrant table as toPlanet's mundane aspect branch.
+		if target < 90.0:
+			mdpersa, t, v, ra = 1.0-target/90.0, 1.0, -1.0, self.raic
+		elif target < 180.0:
+			mdpersa, t, v, ra = target/90.0-1.0, -1.0, -1.0, self.raic
+		elif target < 270.0:
+			mdpersa, t, v, ra = 3.0-target/90.0, 1.0, 1.0, self.ramc
+		else:
+			mdpersa, t, v, ra = target/90.0-3.0, -1.0, 1.0, self.ramc
+
+		rasig = plsig.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.RA]
+		adsig = plsig.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
+		return self.getDiff(rasig-ra)+t*(90+v*adsig)*mdpersa
+
+
 	def getvars(self, abovehorizon, eastern):
 		t = -1.0
 		if (eastern and not abovehorizon) or (not eastern and abovehorizon):
@@ -2944,7 +2985,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 #####################################Moon's SecMotion
 	def calcArcWithSM(self, mundane, idprom, sig, sigasp, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		raprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.RA]
 		adprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
@@ -3032,7 +3073,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 
 	def calcArcWithSM2(self, idprom, psidx, sig, paspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 
@@ -3095,7 +3136,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 		PARALLEL = 0
 		CONTRAPARALLEL = 1
 
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		raprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.RA]
 		adprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
 
@@ -3134,7 +3175,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 
 	def calcArcWithSMMLoF(self, idprom, sigasp, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		raprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.RA]
 		adprom = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.ADLAT]
 
@@ -3177,7 +3218,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 
 	def calcArcWithSMLoF(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 
@@ -3221,7 +3262,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 
 	def calcArcWithSMCustomer2(self, mundane, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 
@@ -3283,7 +3324,7 @@ class PlacidianSAPD(placidiancommonpd.PlacidianCommonPD):
 
 
 	def calcArcWithSMSyzygy(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.PLACSPECULUM][planets.Planet.LAT]
 

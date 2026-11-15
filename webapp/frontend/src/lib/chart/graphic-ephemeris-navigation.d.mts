@@ -16,3 +16,25 @@ export function releaseGraphicEphemerisNavigation(
   documentId: string,
   key: GraphicEphemerisStepKey | null,
 ): boolean;
+
+export type GraphicEphemerisCamera = { startJd: number; spanDays: number };
+
+export function registerGraphicEphemerisCamera(
+  documentId: string,
+  apply: (camera: GraphicEphemerisCamera) => void,
+  flush: () => Promise<void>,
+): () => void;
+
+export function applyGraphicEphemerisCamera(
+  documentId: string,
+  camera: GraphicEphemerisCamera,
+): boolean;
+
+export function flushGraphicEphemerisCamera(documentId: string): Promise<void>;
+
+export function registerGraphicEphemerisRadixToggle(
+  documentId: string,
+  toggle: () => void,
+): () => void;
+
+export function toggleGraphicEphemerisRadix(documentId: string): boolean;

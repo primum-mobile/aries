@@ -22,6 +22,7 @@ import {
   fetchLicenseStatus,
   installLicensedUpdate,
   refreshLicense,
+  selfUpdatesEnabled,
   type LicensedUpdate,
   type LicenseStatus,
   type UpdateInstallEvent,
@@ -43,6 +44,7 @@ export function LicenseStartupController() {
   const t = useT();
   const status = useLicenseStateStore((state) => state.status);
   const setStatus = useLicenseStateStore((state) => state.setStatus);
+  const setStartupError = useLicenseStateStore((state) => state.setStartupError);
   const deferUpdate = useUpdateNotificationStore((state) => state.defer);
   const clearDeferredUpdate = useUpdateNotificationStore((state) => state.clear);
   const deferredUpdate = useUpdateNotificationStore((state) => state.deferred);
@@ -79,13 +81,20 @@ export function LicenseStartupController() {
         let resolved = next;
         if (
           next.required &&
-          (next.state === "grace" || next.state === "expired" || next.state === "invalid")
+          (next.state === "grace" ||
+            next.state === "expired" ||
+            next.state === "invalid" ||
+            // Windows: the lease file is gone (app data deleted on uninstall)
+            // but Credential Manager still holds this device's activation.
+            (next.state === "unlicensed" && next.recoverable === true))
         ) {
           try {
             resolved = await refreshLicense();
-          } catch {
+            if (active) setStartupError(null);
+          } catch (error) {
             // An authoritative server rejection clears the local lease in the
             // native layer; an offline failure deliberately leaves grace intact.
+            if (active) setStartupError(String(error));
             resolved = await fetchLicenseStatus().catch(() => next);
           }
         }
@@ -97,11 +106,12 @@ export function LicenseStartupController() {
     return () => {
       active = false;
     };
-  }, [setStatus]);
+  }, [setStartupError, setStatus]);
 
   React.useEffect(() => {
     if (
       !licenseActive ||
+      !selfUpdatesEnabled() ||
       updateCheckedFor.current === statusIdentity
     ) {
       return;

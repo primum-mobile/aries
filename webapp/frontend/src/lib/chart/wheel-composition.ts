@@ -1,7 +1,8 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import registry from './wheel-ring-archetypes.json';
-import factorySettings from './wheel-factory-v1.json';
+import historicalFactorySettings from './wheel-factory-v1.json';
+import factorySettings from './wheel-factory-v2.json';
 import type { WheelTypographyProfile } from './wheel-render-style';
 export const WHEEL_RING_ARCHETYPES = registry;
 function freezeFactory<T>(value: T): T {
@@ -13,6 +14,7 @@ function freezeFactory<T>(value: T): T {
 }
 /** Original layout definitions; options and authoring operate on working copies. */
 export const WHEEL_FACTORY_SETTINGS = freezeFactory(factorySettings);
+export const HISTORICAL_WHEEL_FACTORY_SETTINGS = freezeFactory(historicalFactorySettings);
 export type WheelRingArchetypeId = keyof typeof registry;
 export type WheelRingInstance = Readonly<{
   instanceId: string;

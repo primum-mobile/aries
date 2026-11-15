@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
-const assetVersion = '20260809-native-edit-context-menu';
+const assetVersion = '20261109-shell-escape';
 const nodeModulesMarker = '/node_modules/';
 
 function packageRootForModule(moduleId) {
@@ -124,6 +124,7 @@ export default defineConfig({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'; base-uri 'none'; form-action 'none'" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#232428" />
     <title>Aries Notes</title>
@@ -146,95 +147,6 @@ export default defineConfig({
         background: var(--notes-background);
       }
     </style>
-    <script>
-      (() => {
-        const bridge = {
-          postMessage(payload) {
-            if (window.parent && window.parent !== window) {
-              window.parent.postMessage(payload, "*");
-            }
-          },
-        };
-
-        Object.defineProperty(window, "ariesNotes", {
-          configurable: true,
-          enumerable: true,
-          get() {
-            return bridge;
-          },
-          set(target) {
-            if (target && typeof target === "object") {
-              Object.assign(bridge, target);
-            }
-            bridge.postMessage = (payload) => {
-              if (window.parent && window.parent !== window) {
-                window.parent.postMessage(payload, "*");
-              }
-            };
-          },
-        });
-
-        const parseMessage = (raw) => {
-          if (typeof raw === "string") {
-            try {
-              return JSON.parse(raw);
-            } catch {
-              return null;
-            }
-          }
-          return typeof raw === "object" && raw !== null ? raw : null;
-        };
-
-        window.addEventListener("message", (event) => {
-          const message = parseMessage(event.data);
-          if (!message || typeof message !== "object") return;
-          const type = message.type;
-          if (typeof type !== "string") return;
-          const payload = message.payload;
-
-          const editor = window.AriesNotes;
-          if (!editor) return;
-
-          if (type === "setDocument" && typeof payload === "object" && payload !== null) {
-            editor.setDocument?.(payload);
-            return;
-          }
-          if (type === "focusEditor") {
-            editor.focusEditor?.();
-            return;
-          }
-          if (type === "runCommand" && typeof payload === "object" && payload !== null) {
-            const command = payload.command;
-            if (typeof command === "string") {
-              editor.runCommand?.(command);
-            }
-            return;
-          }
-          if (type === "insertMarkdown" && typeof payload === "object" && payload !== null) {
-            const markdown = payload.markdown;
-            if (typeof markdown === "string") {
-              editor.insertMarkdown?.(markdown);
-            }
-            return;
-          }
-          if (type === "setReadOnly" && typeof payload === "object" && payload !== null) {
-            const { readonly } = payload;
-            if (typeof readonly === "boolean") {
-              editor.setReadOnly?.(readonly);
-            }
-            return;
-          }
-          if (type === "setTheme") {
-            editor.setTheme?.(payload);
-            return;
-          }
-          if (type === "setTitlebarSafeTop") {
-            editor.setTitlebarSafeTop?.(payload);
-            return;
-          }
-        });
-      })();
-    </script>
   </head>
   <body>
     <div id="notes-app">
@@ -264,7 +176,6 @@ export default defineConfig({
           <button type="button" data-command="undo" title="Undo">↶</button>
           <button type="button" data-command="redo" title="Redo">↷</button>
         </div>
-        <button type="button" class="notes-close-button" data-close-notes title="Close notes">✕</button>
       </div>
       <main id="editor"></main>
       <div id="boot-status">Loading notes editor…</div>

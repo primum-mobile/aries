@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import astrology
+import asteroids
 import common
 import fixstars
 import mtexts
@@ -41,6 +42,8 @@ _PLANET_POINT_IDS = {
     astrology.SE_MEAN_NODE: "planet:asc_node",
     astrology.SE_TRUE_NODE: "planet:desc_node",
     astrology.SE_CHIRON: "planet:chiron",
+    astrology.SE_MEAN_APOG: "planet:apogee",
+    astrology.SE_OSCU_APOG: "planet:apogee",
 }
 
 
@@ -101,8 +104,8 @@ def primdir_semantic_point(
     if point is None or point == PrimDir.NONE:
         return None
 
-    if body_context and point == astrology.SE_CHIRON:
-        return semantic_planet_point(astrology.SE_CHIRON)
+    if body_context and point in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
+        return semantic_planet_point(point)
 
     angle_index = primdir_angle_index(point)
     if angle_index is not None:
@@ -122,8 +125,16 @@ def primdir_semantic_point(
 
     if point == PrimDir.CUSTOMERPD:
         key = str(dynamic_key or "").strip()
+        if key == "apogee":
+            body = getattr(reference_chart, "apogee", None)
+            return semantic_planet_point(body.pId if body is not None else astrology.SE_MEAN_APOG)
         if key == "chiron":
             return semantic_planet_point(astrology.SE_CHIRON)
+        if key.startswith('asteroid:'):
+            number = int(key.split(':', 1)[1])
+            return {'pointId': key, 'planetId': asteroids.asteroid_body_id(number)}
+        if key.startswith('part:'):
+            return {'pointId': key, 'planetId': None}
         if key == "vertex":
             return {"pointId": "point:vertex", "planetId": None}
 

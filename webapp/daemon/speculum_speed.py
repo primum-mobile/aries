@@ -41,6 +41,8 @@ RELATIVE_SPEED_REFERENCE_DEG_PER_DAY: Final = {
     astrology.SE_PLUTO: 0.01649627308664681,
     astrology.SE_MEAN_NODE: 0.052953776357837254,
     astrology.SE_CHIRON: 0.04989634307158842,
+    astrology.SE_MEAN_APOG: 0.11140365467092203,
+    astrology.SE_OSCU_APOG: 2.1244975827725843,
 }
 
 # Existing Aries motion-quality bands (engine.morin_chart.motion_quality), now

@@ -44,6 +44,19 @@ export async function refreshWorkspaceManifest(): Promise<void> {
   }
 }
 
+/** Push a manifest the daemon just returned (or an optimistic projection of
+ * one) to every mounted hook without another fetch. */
+export function publishWorkspaceManifest(manifest: WorkspaceManifest): void {
+  workspaceManifestCache = manifest;
+  workspaceManifestCacheIsLive = true;
+  workspaceManifestSubscribers.forEach((fn) => fn(manifest));
+}
+
+/** Current manifest (live once the daemon answered, else the fallback). */
+export function currentWorkspaceManifest(): WorkspaceManifest {
+  return workspaceManifestCache;
+}
+
 function isPermanentManifestFailure(err: unknown): boolean {
   return err instanceof Error && /workspace manifest failed: (401|403)\b/.test(err.message);
 }

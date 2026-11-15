@@ -104,7 +104,9 @@ SEMANTIC_ALLOWED_VALUES = {
     "solar_condition_profile": SOLAR_CONDITION_PROFILES,
 }
 STATE_FILENAME = "corpus_semantics.json"
-DEFAULT_PROFILE_ID = "quadrant"
+# Fresh installs judge each pack by its own declared doctrine (house frame,
+# orbs, dignities); comparative lenses such as "quadrant" are an opt-in.
+DEFAULT_PROFILE_ID = "source-native"
 
 _INHERITED_VALUES = {"", "profile", "inherit"}
 _CUSTOM_PROFILE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")

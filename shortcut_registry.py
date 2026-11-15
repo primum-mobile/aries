@@ -3,22 +3,10 @@
 
 import mtexts
 
-# wx is only needed to build the live wx AcceleratorTable (build_main_accelerators).
-# Keep the import lazy so this module — the single source of truth for the
-# shortcut data — stays importable in wx-free contexts (e.g. the web daemon
-# manifest service). Desktop callers still get the real wx via _wx().
-try:  # pragma: no cover - exercised by both the desktop app and the daemon
-    import wx
-except Exception:  # wx-free context (daemon / tests without a display)
-    wx = None
-
-
-def _wx():
-    global wx
-    if wx is None:
-        import wx as _wxmod  # let the ImportError surface to wx-only callers
-        wx = _wxmod
-    return wx
+# Stable arrow IDs shared by sessions, cursor steppers and daemon commands.
+# Keep the historical integer contract so legacy keyboard events also work.
+NAVIGATION_KEYCODES = {'left': 314, 'up': 315, 'right': 316, 'down': 317}
+NAVIGATION_NUMPAD_KEYCODES = {'left': 376, 'up': 377, 'right': 378, 'down': 379}
 
 
 # Central editable registry for active workspace/menu shortcut behavior.
@@ -43,21 +31,6 @@ WORKSPACE_SHORTCUT_OVERRIDES = {
 	'synodic_cycles': 'Q',
 	'aspect_list': 'X',
 }
-
-
-MENU_LABEL_UPDATES = (
-	('ctransits', 'ID_Transits', 'Transits', 'transits'),
-	('mcharts', 'ID_Revolutions', 'Solar Revolution', 'solar_return'),
-	('mcharts', 'ID_OtherRevolutions', 'Other Revolutions...', None),
-	('mcharts', 'ID_ProfectionsChart', 'Profections Chart', 'profections_chart'),
-	('mcharts', 'ID_SecProgChart', 'Secondary Progressions Chart', 'secondary_chart'),
-	('mtable', 'ID_Profections', 'Profections', None),
-	('mtable', 'ID_PrimaryDirs', 'Primary Directions Lists', 'primary_directions'),
-	('mtable', 'ID_Eclipses', 'Eclipses', 'eclipses'),
-	('mtable', 'ID_SearchModule', 'Search...', 'search_module'),
-	('ttimelords', 'ID_ZodiacalReleasing', 'Zodiacal Releasing', 'zodiacal_releasing'),
-	('ttimelords', 'ID_Circumambulation', 'Circumambulation', 'circumambulation'),
-)
 
 
 MAIN_QUICK_SHORTCUTS = (
@@ -103,10 +76,8 @@ WEB_BOUND_QUICK_ACTIONS = frozenset({
 })
 
 
-# The shortcut help overlay's reference rows — the SAME data the wx painter draws
-# (aries/ui/shortcut_help_overlay.py imports this). Pulled here, into the wx-free
-# single source of truth, so the desktop overlay and the web shortcuts overlay
-# read one table (the painter is wx; this data is not). Each group is
+# The shortcut help overlay's reference rows, read by the web shortcuts
+# overlay. Each group is
 # {'title', 'items': [(keys, action, example|None), ...]}. The key glyphs are
 # KEYBOARD symbols (arrows/shift/option), never astrological Morinus glyphs.
 SHORTCUT_HELP_GROUPS = (
@@ -138,7 +109,7 @@ SHORTCUT_HELP_GROUPS = (
 	{
 		'title': 'VIEW',
 		'items': (
-			('Tab', 'compare', 'derived charts only'),
+			('Tab', 'compare or dashboard', 'dashboard on single charts'),
 			('Esc', 'close panel / overlay', None),
 			('⇧ ⇧', 'open spotlight', 'double-tap shift'),
 		),
@@ -146,11 +117,8 @@ SHORTCUT_HELP_GROUPS = (
 )
 
 
-# Genuine wx accelerators as PURE DATA (label + display chord), the wx-free twin
-# of _accelerator_specs() below. _accelerator_specs binds wx.ACCEL_*/wx.WXK_* ids
-# the daemon cannot import; this parallel table is the same chords described for
-# the web shortcuts overlay. Each row: (display_chord, label). Sourced 1:1 from
-# _accelerator_specs (shortcut_registry.py:75-93) and its menu labels.
+# Former desktop accelerators as display data (chord + label) for the web
+# shortcuts overlay. Each row: (display_chord, label).
 ACCELERATOR_HELP_ROWS = (
 	('⌘ W', 'Close window'),
 	('⌘ F', 'Search'),
@@ -171,6 +139,13 @@ ACCELERATOR_HELP_ROWS = (
 # Live Tauri/web shortcuts owned by the manifest dispatcher.
 TAURI_MANIFEST_SHORTCUT_ROWS = (
 	{
+		'keys': 'N',
+		'label': 'Notes',
+		'labelKey': 'notes.title',
+		'group': 'WORKSPACE',
+		'commandId': 'toggle-notes',
+	},
+	{
 		'keys': '⌘ A',
 		'label': 'Astrocartography',
 		'labelKey': 'settings.astrocartography',
@@ -184,6 +159,27 @@ TAURI_MANIFEST_SHORTCUT_ROWS = (
 		'group': 'WORKSPACE',
 		'commandId': 'open-style-lab',
 	},
+	{
+		'keys': '⌥ A',
+		'label': 'Ascensional view',
+		'labelKey': 'chartmenu.ascensional',
+		'group': 'WORKSPACE',
+		'commandId': 'ascensional-view',
+	},
+	{
+		'keys': '⌥ E',
+		'label': 'Export poster',
+		'labelKey': 'astrolabe.poster.saveTitle',
+		'group': 'WORKSPACE',
+		'commandId': 'export-poster',
+	},
+	{
+		'keys': '⌘ ⇧ H',
+		'label': 'Cycle house system',
+		'labelKey': 'nativeMenu.cycleHouseSystem',
+		'group': 'WORKSPACE',
+		'commandId': 'quick.options.house:next',
+	},
 )
 
 
@@ -193,6 +189,12 @@ TAURI_MANIFEST_SHORTCUT_ROWS = (
 # handler. ``labelKey`` is an optional frontend localization key; the daemon
 # also resolves the shared mtexts labels where one already exists.
 TAURI_LIVE_SHORTCUT_ROWS = (
+	{
+		'keys': '^',
+		'label': 'Toggle sidebar',
+		'labelKey': 'toolbar.toggleSidebar',
+		'group': 'WORKSPACE',
+	},
 	{
 		'keys': '⌘ B',
 		'label': 'Toggle sidebar',
@@ -212,8 +214,14 @@ TAURI_LIVE_SHORTCUT_ROWS = (
 		'group': 'WORKSPACE',
 	},
 	{
+		'keys': '⇧ + ⌥ + ← / →',
+		'label': 'Step by one second',
+		'labelKey': 'help.shortcut.secondStep',
+		'group': 'TIME STEP',
+	},
+	{
 		'keys': 'Space',
-		'label': 'Reset to initial chart',
+		'label': 'Reset Chart',
 		'labelKey': 'help.shortcut.resetInitialChart',
 		'group': 'TIME STEP',
 	},
@@ -249,34 +257,6 @@ TAURI_HIDDEN_SHORTCUT_ROWS = (
 		'commandId': 'toggle-presentation-cursor',
 	},
 )
-
-
-def _accelerator_specs():
-	"""wx accelerator specs, built lazily so the module imports wx-free.
-
-	The constants (wx.ACCEL_*, wx.WXK_F*) only resolve in a desktop (wx)
-	process; keeping them inside a function lets the daemon import this module's
-	pure shortcut data without dragging in wx."""
-	wx = _wx()
-	return (
-		(wx.ACCEL_CMD, ord('W'), 'ID_CloseWindowShortcut'),
-		(wx.ACCEL_CMD, ord('F'), 'ID_SearchModule'),
-		(wx.ACCEL_CTRL, wx.WXK_F11, 'ID_AngleAtBirth'),
-		(wx.ACCEL_CTRL, ord('1'), 'ID_ZodiacalReleasing'),
-		(wx.ACCEL_CTRL, ord('2'), 'ID_Phasis'),
-		(wx.ACCEL_CTRL, ord('3'), 'ID_Paranatellonta'),
-		(wx.ACCEL_CTRL, ord('5'), 'ID_FixStarAngleDirs'),
-		(wx.ACCEL_NORMAL, wx.WXK_F5, 'ID_Misc'),
-		(wx.ACCEL_CTRL, ord('6'), 'ID_Eclipses'),
-		(wx.ACCEL_CTRL, ord('8'), 'ID_FixStarsParallels'),
-		# `S` for SecProgChart is dispatched via CHAR_HOOK + handle_main_quick_shortcut.
-		# Adding it to the AcceleratorTable here would dispatch as EVT_MENU before
-		# CHAR_HOOK and bypass the text-input focus filter — letters typed in the
-		# notes pane would steal-fire the chart action. Don't put it back.
-		(wx.ACCEL_CMD, ord('Y'), 'ID_Synastry'),
-		(wx.ACCEL_CMD | wx.ACCEL_SHIFT, ord('D'), 'ID_DevPanel'),
-		(wx.ACCEL_CMD | wx.ACCEL_ALT, ord('A'), 'ID_AscensionalTransits'),
-	)
 
 
 def _shortcut_from_menu_key(menu_key, fallback=''):
@@ -369,7 +349,7 @@ def text_safe_menu_label(label):
 	wx treats text after a tab in a menu label as a native accelerator. Bare
 	letters are normal typing, so show them as inert hints instead of
 	registering them with the OS menu system. Shift-only shortcuts are retired
-	from menus; see doc/keyboard-manual.md before reassigning.
+	from menus.
 	"""
 	if not isinstance(label, str) or '\t' not in label:
 		return label
@@ -396,64 +376,3 @@ def sanitize_menu_texts(labels):
 		return
 	for key, label in list(labels.items()):
 		labels[key] = text_safe_menu_label(label)
-
-
-def apply_menu_shortcut_labels(frame):
-	for menu_name, item_id_attr, label, action_id in MENU_LABEL_UPDATES:
-		try:
-			item_id = getattr(frame, item_id_attr)
-			menu = getattr(frame, menu_name)
-		except Exception:
-			continue
-		shortcut = workspace_shortcut(action_id, fallback='') if action_id else ''
-		if not shortcut:
-			menu_label = text_safe_menu_label(label)
-		elif _has_shift_modifier(shortcut):
-			menu_label = label
-		elif _is_text_conflicting_shortcut(shortcut):
-			# Visual hint only — `(T)` is not parsed by wx as an
-			# accelerator, so no OS-level keyEquivalent is registered.
-			menu_label = '%s    (%s)' % (label, shortcut)
-		else:
-			# Real OS accelerator (Cmd+…, Ctrl+…, Fn keys) — keep `\t` form.
-			menu_label = '%s\t%s' % (label, shortcut)
-		try:
-			menu.SetLabel(item_id, menu_label)
-		except Exception:
-			pass
-
-
-def handle_main_quick_shortcut(frame, keycode):
-	for key, action_id, handler_name in MAIN_QUICK_SHORTCUTS:
-		if keycode not in (ord(key), ord(key.lower())):
-			continue
-		if getattr(frame, 'splash', True):
-			return False
-		radix_only = getattr(frame, '_handle_main_radix_quick_shortcut', None)
-		if callable(radix_only) and action_id in (
-			'transits',
-			'solar_return',
-			'lunar_return',
-			'secondary_chart',
-			'solar_arc_chart',
-			'minor_chart',
-			'profections_chart',
-		):
-			return bool(radix_only(action_id))
-		handler = getattr(frame, handler_name, None) if handler_name else None
-		if handler is None:
-			return False
-		handler(None)
-		return True
-	return False
-
-
-def build_main_accelerators(frame):
-	entries = []
-	for modifiers, keycode, item_id_attr in _accelerator_specs():
-		try:
-			item_id = getattr(frame, item_id_attr)
-		except Exception:
-			continue
-		entries.append((modifiers, keycode, item_id))
-	return entries

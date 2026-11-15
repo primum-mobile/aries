@@ -3,7 +3,7 @@
 'use client';
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {resolveShellHost} from '@/lib/shell-host';
-import {SETTINGS_WINDOW_WIDTH} from './settings-window';
+import {SETTINGS_WINDOW_HEIGHT, SETTINGS_WINDOW_WIDTH} from './settings-window';
 import {EDITOR_WINDOW_WIDTH, EDITOR_WINDOW_MAX_HEIGHT} from './chart-editor-window';
 
 export type ToolWindowIntent<T> = {generation: number; open: boolean; context: T | null};
@@ -65,7 +65,7 @@ export function prewarmToolWindows(settingsTitle: string, editorTitle: string) {
       return {width: box.width, height: box.height};
     };
     await invoke('open_settings_window', {prewarm: true, tab: 'appearance', title: settingsTitle,
-      ...measure('--aries-dialog-width-workspace', 'min(var(--aries-dialog-viewport-height),calc(var(--aries-dialog-content-height-workspace) + var(--aries-dialog-padding) + var(--aries-pane-header-padding-y) + var(--aries-font-size-large) + var(--aries-sash-rule-size)))'), width: SETTINGS_WINDOW_WIDTH});
+      ...measure('--aries-dialog-width-workspace', SETTINGS_WINDOW_HEIGHT), width: SETTINGS_WINDOW_WIDTH});
     await import('@/components/workshell/chart-editor-dialog');
     const editorSize = measure('--aries-dialog-width-lg', 'min(var(--aries-dialog-viewport-height),var(--aries-dialog-content-height-workspace))');
     await invoke('open_chart_editor_window', {prewarm: true, context: null, title: editorTitle,

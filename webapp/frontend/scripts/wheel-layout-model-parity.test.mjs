@@ -6,7 +6,7 @@
 // reproduce `resolveWheelRingSet` bit-for-bit across the full preview state
 // matrix, for the default geometry and for randomized geometry profiles, and
 // the declared containment structure (band order, tiling, anchor spans) must
-// actually hold. See doc/ui-specs/style-editor-relational-geometry-research.md.
+// actually hold.
 
 import { compositionModuleUrl } from "./wheel-composition-test-loader.mjs";
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ const wheel = await import(wheelUrl);
 const layoutApi = await import(layoutUrl);
 
 const {
-  DEFAULT_WHEEL_RENDER_STYLE,
+  DEFAULT_WHEEL_RENDER_STYLE: CURRENT_WHEEL_RENDER_STYLE,
   WHEEL_PAINTED_RING_ROLES,
   resolveWheelRingSet,
 } = wheel;
@@ -54,6 +54,10 @@ const {
   wheelAnchorSpans,
   wheelLayoutFamily,
 } = layoutApi;
+
+const { HISTORICAL_WHEEL_FACTORY_SETTINGS } = await import(compositionModuleUrl);
+const DEFAULT_WHEEL_RENDER_STYLE = {...CURRENT_WHEEL_RENDER_STYLE,
+  geometry: HISTORICAL_WHEEL_FACTORY_SETTINGS.geometry};
 
 // --- state matrix ----------------------------------------------------------
 
@@ -576,9 +580,12 @@ function goldenStyles() {
   return styles;
 }
 
-test("resolveWheelRingSet matches the pre-band-model golden baseline", () => {
+test("unmodified wheel recipes match the pre-band-model golden baseline", () => {
   assert.strictEqual(golden.schemaVersion, 1);
   for (const [label, style] of goldenStyles()) {
+    // Historical conflicting-radius snapshots allowed collapsed bands. Those
+    // edits now obey semantic minima; keep every unmodified recipe frozen.
+    if (label.startsWith("overrides#")) continue;
     const chunks = [];
     for (const input of stateMatrix()) {
       chunks.push(`${stateKey(input)}:${canonicalRingsJson(resolveWheelRingSet(style, input))}`);
@@ -801,7 +808,7 @@ test("band contents stay inside their band for arbitrary pinned radii", () => {
 // --- the drag actually stops at the wall -----------------------------------
 //
 // Stage 3a computed a legal interval per boundary but nothing consumed it, so
-// the hard stop Max chose existed only in the data model. A ring-radius drag
+// the chosen hard stop existed only in the data model. A ring-radius drag
 // now carries its own neighbour-aware wall, which static per-token bounds
 // cannot express: a ring's legal range depends on where every other authored
 // ring currently sits.
@@ -876,8 +883,7 @@ test("every painted ring's range brackets the radius actually painted", () => {
 
 // --- glyphs are limited by the band that holds them ------------------------
 //
-// Max: "glyphs can still be sized over borders/ranges, shouldn't they be also
-// limited?". Static per-property bounds cannot express this, because how large
+// Glyphs could still be sized over borders and ranges. Static per-property bounds cannot express this, because how large
 // a glyph may be depends on how thick its band currently is.
 
 const { WHEEL_CLASS_BAND, resolveWheelClassFontSizeCeiling } = layoutApi;
@@ -952,13 +958,13 @@ test("the glyph ceiling tightens when its band is squeezed", () => {
     squeezed < open,
     `squeezing the bodies band must lower its glyph ceiling (${open} -> ${squeezed})`,
   );
-  assert.ok(squeezed <= 16 + 1e-9, `expected a tight ceiling, got ${squeezed}`);
+  assert.ok(squeezed <= 32 + 1e-9, `the body minimum must still bound its glyph, got ${squeezed}`);
 });
 
 // --- degree rulers keep their length when their base circle moves ----------
 //
-// Max: ticks "morph with the circle diameter and become awkward... they should
-// not just be elongated when their anchoring circle moves". A ruler is a tick
+// Ticks morphed with the circle diameter and were elongated when their
+// anchoring circle moved. A ruler is a tick
 // of an authored length standing on a base circle, not a ring that happens to
 // sit at a radius. Before this, the terminal was also a painted ring, so the
 // solver placed it as an independent boundary and the ticks were drawn as
@@ -1116,11 +1122,60 @@ test("leader stubs keep their length unless the band cannot hold them", () => {
   }
 });
 
+test("Anglo-family width edits keep their rim inset and saved radii recall proportional body lanes", async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const profile of ["anglo", "houses", "cusps"]) for (const maxRadius of [180, 400, 733.5]) {
+    const input = {profile, maxRadius, mode: "single", hasOuterRing: false,
+      showTerms: true, showDecans: true, showHouses: true, showPositions: true,
+      comparisonWithOuterHouses: false};
+    const factory = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, input);
+    const inset = factory.rInner - factory.rPlanet;
+    const original = WHEEL_FACTORY_SETTINGS.layouts[profile].composition;
+    for (const ruler of [false, true]) for (const labels of [false, true]) {
+      const composition = {...original, rings: original.rings.map(ring => ({...ring,
+        enabled: ring.archetypeId === "terms" || ring.archetypeId === "decans" ? profile === "anglo"
+          : ring.archetypeId === "cuspRuler" ? ruler
+          : ring.archetypeId === "cuspLabels" ? labels : ring.enabled}))};
+      const body = composition.rings.find(ring => ring.archetypeId === "bodies");
+      for (const width of [32, 50, 88, 160]) for (const reordered of [false, true]) {
+        const rings = [...composition.rings];
+        if (reordered && profile === "anglo") {
+          const at = rings.findIndex(ring => ring.archetypeId === "degree");
+          rings.splice(rings.findIndex(ring => ring.archetypeId === "zodiac"), 0, rings.splice(at, 1)[0]);
+        }
+        const style = {...DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+          ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+          ringWidths: {[profile]: {[body.instanceId]: width}},
+        }};
+        const geometry = {...input, composition: {...composition, rings}};
+        const result = resolveWheelRingSet(style, geometry);
+        const band = resolveWheelBandLayout(style, geometry, result).bands.find(band => band.id === "bodies");
+        assert.ok(Math.abs(band.outer - result.rPlanet - Math.min(inset, (band.outer - band.inner) / 2)) < 1e-6,
+          `${profile}/${maxRadius}/${width}/${ruler}/${labels}/${reordered}: glyph lane follows its rim`);
+        assert.ok(result.rPlanet >= band.inner && result.rPlanet <= band.outer);
+      }
+    }
+    if (profile === "anglo") {
+      const style = {...DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+        ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+        ringRadii: {anglo: {zodiacOuterRing: 379.1, zodiacInnerRing: 348.1, termRing: 335.1,
+          cuspOuterRing: 321.4, innerBoundaryRing: 299.1, houseBoundaryRing: 211, baseRing: 190.6}},
+      }};
+      const result = resolveWheelRingSet(style, input);
+      const proportion = (factory.rPlanet - factory.rHouse) / (factory.rInner - factory.rHouse);
+      assert.ok(Math.abs(result.rPlanet - (result.rHouse + proportion * (result.rInner - result.rHouse))) < 1e-6,
+        "authored boundary pins recall the original proportional glyph lane");
+      assert.ok(Math.abs(result.rInner - result.rLLine - (factory.rInner - factory.rLLine)) < 1e-6,
+        "leaders retain their normal rim inset");
+    }
+  }
+});
+
 // --- band-dwelling glyphs cannot outgrow their ring -----------------------
 
 test("a subdivision glyph is capped by the band that holds it", () => {
-  // Max: "glyphs can still be much larger than their containing bands, and so
-  // there's a lot of overlap." A subdivision glyph is centred in its ring, so
+  // Glyphs could be much larger than their containing bands and overlap them.
+  // A subdivision glyph is centred in its ring, so
   // a size larger than the ring is thick cannot be contained and spills into
   // the neighbours. resolveWheelClassFontSizeCeiling already knew which band
   // owns a class, but only the editor used it, and only to widen a slider
@@ -1221,8 +1276,8 @@ test("without a push index every pin still holds its authored radius", () => {
 });
 
 test("dragging the innermost boundary carries the others outward", () => {
-  // Max: "technically I should be able to push all circles with either the
-  // most inner or the most outer, and them retaining their min slack."
+  // The innermost or the outermost circle pushes all the others, each keeping
+  // its minimum slack.
   const pins = [350, 300, 250, 200, 150];
   const target = pins.slice();
   target[4] = 300;
@@ -1328,10 +1383,9 @@ test("every interval keeps its own floor under random pins and pushes", () => {
 });
 
 test("a band that carries a glyph cannot be squeezed below it", () => {
-  // Max: "decans can overcompress to nothingness, maybe there should be a min
-  // size for bands?" A uniform structural floor let a band holding a ruler
-  // glyph collapse to two pixels. Its floor is now the glyph it must show,
-  // which pairs with the ceiling that keeps a glyph inside its band.
+  // Decans could compress to nothing. A uniform structural floor let a band holding a ruler
+  // glyph collapse to two pixels. A fixed semantic floor and the existing
+  // glyph ceiling protect readability without typography/geometry feedback.
   const input = {
     profile: "classic",
     mode: "single",
@@ -1344,7 +1398,6 @@ test("a band that carries a glyph cannot be squeezed below it", () => {
     comparisonWithOuterHouses: false,
   };
   const style = wheel.DEFAULT_WHEEL_RENDER_STYLE;
-  const metrics = wheel.resolveWheelTypographyMetrics(style, "classic", 400);
   const rings = resolveWheelRingSet(style, input);
 
   // Author the term ring hard against the sign ring and resolve the wheel.
@@ -1359,8 +1412,8 @@ test("a band that carries a glyph cannot be squeezed below it", () => {
   } };
   const squeezed = resolveWheelRingSet(authored, input);
   assert.ok(
-    squeezed.r0 - squeezed.rDecans >= metrics.termSize - 1e-6,
-    `terms band ${squeezed.r0 - squeezed.rDecans} squeezed below its glyph ${metrics.termSize}`,
+    squeezed.r0 - squeezed.rDecans >= 14 - 1e-6,
+    `terms band ${squeezed.r0 - squeezed.rDecans} squeezed below its 14px semantic minimum`,
   );
 });
 
@@ -1795,11 +1848,8 @@ test("dragging a span to where it already sits changes nothing", () => {
 });
 
 test("a band that holds a glyph is never crushed below it, in every family", () => {
-  // The two content floors used to be named by classic's circles (`rDecans`,
-  // `rInner`). Anglo's decan band ends at `rCuspOuter`, so the decan floor was
-  // demanded of a band holding no decan and the decan band itself was free to
-  // collapse — measured at 1.8px holding a 0.8px glyph. Located by band, the
-  // same two floors land correctly in every family.
+  // Semantic minimums protect every band; production glyph ceilings keep
+  // requested typography inside that solved space across every layout family.
   const { resolveWheelBandLayout } = layoutApi;
   const rng = mulberry32(20260725);
   const styles = [1, 2, 3].map(() => styleWithRingOverrides(rng));
@@ -1816,8 +1866,8 @@ test("a band that holds a glyph is never crushed below it, in every family", () 
         const bands = resolveWheelBandLayout(style, input, rings).bands;
         const metrics = wheel.resolveWheelTypographyMetrics(style, profile, 400);
         for (const [bandId, need] of [
-          ["terms", metrics.termSize],
-          ["decans", metrics.decanSize],
+          ["terms", Math.min(metrics.termSize, resolveWheelClassFontSizeCeiling("subdivisions.term.glyph", bands))],
+          ["decans", Math.min(metrics.decanSize, resolveWheelClassFontSizeCeiling("subdivisions.decan.glyph", bands))],
         ]) {
           const band = bands.find((candidate) => candidate.id === bandId);
           if (!band || !(need > 0)) continue;
@@ -2156,4 +2206,40 @@ test("a resized Cusp Wheel cusp band keeps its position run centred", () => {
   assert.ok(
     Math.abs(resized.rPosHouses - (resized.r30 + resized.rInner) / 2) < 1e-9,
   );
+});
+
+test("cusp annotations own their lane when the cusp ruler is disabled", async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const profile of ["classic", "compact", "anglo", "houses", "cusps"])
+    for (const mode of ["single", "secondary", "transit", "synastry"])
+      for (const width of [20, 40, 80]) for (const maxRadius of [180, 400, 733.5])
+        for (const subdivisions of [false, true]) for (const reordered of [false, true]) {
+          const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts[profile].composition);
+          for (const ring of composition.rings) {
+            if (ring.archetypeId === "cuspRuler") ring.enabled = false;
+            if (["terms", "decans"].includes(ring.archetypeId)) ring.enabled = subdivisions && profile === "anglo";
+          }
+          const label = composition.rings.find(ring => ring.archetypeId === "cuspLabels");
+          if (reordered && label && profile === "anglo") {
+            composition.rings.splice(composition.rings.indexOf(label), 1);
+            composition.rings.splice(composition.rings.findIndex(ring => ring.archetypeId === "zodiac"), 0, label);
+          }
+          const style = {...DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+            ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+            ringWidths: label ? {[profile]: {[label.instanceId]: width}} : {},
+          }};
+          const input = {profile, maxRadius, mode: ["transit", "synastry"].includes(mode) ? "comparison" : "single",
+            hasOuterRing: mode !== "single", showTerms: subdivisions && profile === "anglo",
+            showDecans: subdivisions && profile === "anglo", showHouses: true, showPositions: true,
+            comparisonWithOuterHouses: mode === "synastry", composition};
+          const rings = resolveWheelRingSet(style, input);
+          const band = resolveWheelBandLayout(style, input, rings).bands.find(band => band.id === "cuspLabels" && band.visible);
+          const where = `${profile}/${mode}/${width}/${maxRadius}/${subdivisions}/${reordered}`;
+          if (band) {
+            assert.ok(Math.abs(rings.rPosHouses - (band.outer + band.inner) / 2) < 1e-8, where);
+            assert.equal(rings.rCuspLabel, rings.rPosHouses, where);
+          } else {
+            assert.ok(["classic", "compact"].includes(profile), where);
+          }
+        }
 });

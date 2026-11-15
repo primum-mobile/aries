@@ -4,20 +4,24 @@
 "use client";
 
 import * as React from "react";
-import { ListPlus } from "lucide-react";
+import { ListPlus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Chart, ChartFortune, ChartPlanet, ChartRenderSnapshot, ChartSyzygy, ChartVertex, PlanetId } from "@/lib/chart/types";
 import type { ThemeState } from "@/lib/daemon/client";
 import {
-  daemonBaseUrl,
   fetchNotes,
   saveNotes,
 } from "@/lib/daemon/client";
 import { cn } from "@/lib/utils";
+import { resolveShellHost } from "@/lib/shell-host";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES } from "@/lib/list-tokens";
+import { chartScopeIsClear } from "@/shortcuts/manifest-shortcuts";
+import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { bindNotesEscape } from "./workspace-keyboard-focus";
 
 type Props = {
   sourceName: string;
@@ -27,9 +31,20 @@ type Props = {
   eventId?: string;
   recordId?: string;
   className?: string;
+  focusChart: () => void;
 };
 
-const NOTES_EDITOR_ASSET_VERSION = "20260809-native-edit-context-menu";
+const NOTES_EDITOR_URL = `${process.env.NEXT_PUBLIC_ARIES_BASE_PATH ?? ""}/aries-notes/index.html?v=20261109-shell-escape`;
+
+type NotesEditorBridge = {
+  requestReady: () => void;
+  setTheme: (theme: ReturnType<typeof notesEditorTheme>) => void;
+  setDocument: (payload: { markdown: string; readonly: boolean }) => void;
+  insertMarkdown: (markdown: string) => void;
+  focusEditor: () => boolean;
+  blurEditor: () => void;
+  closeNotes: () => void;
+};
 
 /**
  * Per-radix notes — file-backed via the daemon. Saved charts write the
@@ -42,7 +57,7 @@ const NOTES_EDITOR_ASSET_VERSION = "20260809-native-edit-context-menu";
  * Re-mounted per sourceName via React `key` in the parent so internal
  * fetch state starts fresh on radix switch (no stale notes flash).
  */
-export function NotesPanel({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
+export function NotesPanel({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className, focusChart }: Props) {
   return (
     <NotesPanelInner
       key={eventId ? `${recordId}:${eventId}` : `${sourceName}:${documentId ?? ""}:${scratch ? "scratch" : "saved"}`}
@@ -53,21 +68,26 @@ export function NotesPanel({ sourceName, chart = null, documentId, scratch = fal
       eventId={eventId}
       recordId={recordId}
       className={className}
+      focusChart={focusChart}
     />
   );
 }
 
-function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className }: Props) {
+function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false, eventId, recordId, className, focusChart }: Props) {
   const t = useT();
   const theme = useThemeStore((s) => s.theme);
   const setNotesPaneOpen = useFrameLayoutStore((s) => s.setNotesPaneOpen);
-  const [notesLoading, setNotesLoading] = React.useState(true);
+  const focusRequest = useFrameLayoutStore((s) => s.notesFocusRequest);
+  const [notesStatus, setNotesStatus] = React.useState<"loading" | "loaded" | "failed">("loading");
+  const notesLoading = notesStatus === "loading";
   const [editorReady, setEditorReady] = React.useState(false);
   const [savedAt, setSavedAt] = React.useState<Date | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
+  const paneRef = React.useRef<HTMLElement>(null);
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const contentRef = React.useRef("");
+  const notesLoadedRef = React.useRef(false);
   const dirtyRef = React.useRef(false);
   const focusedRef = React.useRef(false);
   const lastSyncedRef = React.useRef("");
@@ -80,19 +100,6 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   );
   const savedTargetRef = React.useRef(noteTarget);
   const revisionRef = React.useRef<string | undefined>(undefined);
-  const notesBaseUrl = React.useMemo(() => daemonBaseUrl(), []);
-  const notesEditorUrl = React.useMemo(
-    () => `${notesBaseUrl}/Res/notes/index.html?v=${NOTES_EDITOR_ASSET_VERSION}`,
-    [notesBaseUrl],
-  );
-  const notesEditorOrigin = React.useMemo(
-    () => {
-      if (typeof window === "undefined") return notesBaseUrl;
-      return new URL(notesEditorUrl, window.location.href).origin;
-    },
-    [notesBaseUrl, notesEditorUrl],
-  );
-  type RawEditorEvent = Record<string, unknown>;
   const notesTheme = React.useMemo(() => notesEditorTheme(theme), [theme]);
 
   const markClean = React.useCallback((text: string) => {
@@ -108,34 +115,25 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     };
   }, []);
 
-  const sendEditorMessage = React.useCallback(
-    (type: string, payload: RawEditorEvent | null = null) => {
-      if (!editorReadyRef.current) return;
-      const frame = iframeRef.current?.contentWindow;
-      if (!frame) return;
-      frame.postMessage(
-        payload === null ? { type } : { type, payload },
-        "*",
-      );
-    },
-    [],
-  );
+  const getEditor = React.useCallback(() => {
+    const frame = iframeRef.current;
+    if (!frame?.contentDocument) return undefined;
+    return (frame.contentWindow as (Window & { AriesNotes?: NotesEditorBridge }) | null)?.AriesNotes;
+  }, []);
 
   const syncDocumentToEditor = React.useCallback(() => {
-    if (!editorReadyRef.current) return;
-    sendEditorMessage("setDocument", {
+    if (!editorReadyRef.current || !notesLoadedRef.current) return;
+    getEditor()?.setDocument({
       markdown: contentRef.current,
       readonly: false,
-      label: sourceName,
     });
-  }, [sendEditorMessage, sourceName]);
+  }, [getEditor]);
 
   const insertChartInfo = React.useCallback(() => {
-    if (!chart || !editorReadyRef.current) return;
-    sendEditorMessage("insertMarkdown", { markdown: chartInfoMarkdown(chart, t) });
-    sendEditorMessage("focusEditor");
+    if (!chart || !editorReadyRef.current || !notesLoadedRef.current) return;
+    getEditor()?.insertMarkdown(chartInfoMarkdown(chart, t));
     setError(null);
-  }, [chart, sendEditorMessage, t]);
+  }, [chart, getEditor, t]);
 
   const loadNote = React.useCallback(
     async (signal?: AbortSignal, force = false) => {
@@ -145,11 +143,13 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       savedTargetRef.current = { ...noteTarget, recordId: payload.recordId ?? noteTarget.recordId };
       revisionRef.current = payload.revision;
       const text = payload.content ?? "";
+      const documentChanged = !notesLoadedRef.current || contentRef.current !== text;
       contentRef.current = text;
+      notesLoadedRef.current = true;
       markClean(text);
-      setNotesLoading(false);
+      setNotesStatus("loaded");
       setError(null);
-      syncDocumentToEditor();
+      if (documentChanged) syncDocumentToEditor();
     },
     [markClean, noteTarget, sourceName, syncDocumentToEditor],
   );
@@ -198,8 +198,41 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
   const handleIframeLoad = React.useCallback(() => {
     editorReadyRef.current = false;
     setEditorReady(false);
-    setError(null);
-  }, []);
+    getEditor()?.requestReady();
+  }, [getEditor]);
+
+  const returnFocusToChart = React.useCallback(() => {
+    const pane = paneRef.current;
+    const active = document.activeElement;
+    if (!pane || (!pane.contains(active) && active !== document.body)) return;
+    focusChart();
+  }, [focusChart]);
+
+  React.useLayoutEffect(() => {
+    const editorWindow = iframeRef.current?.contentWindow;
+    if (!editorReady || !editorWindow) return;
+    return bindNotesEscape(editorWindow, () => {
+      getEditor()?.blurEditor();
+      focusChart();
+    });
+  }, [editorReady, focusChart, getEditor]);
+
+  React.useEffect(() => {
+    if (!focusRequest || !editorReady || notesStatus === "loading") return;
+    const frameState = useFrameLayoutStore.getState();
+    if (!frameState.notesPaneOpen || frameState.notesFocusRequest !== focusRequest) return;
+    useFrameLayoutStore.setState({ notesFocusRequest: null });
+
+    const frame = iframeRef.current;
+    const active = document.activeElement;
+    const openerRemoved = !focusRequest.opener?.isConnected && active === document.body;
+    if (!frame || frame.closest("[inert]") || notesStatus !== "loaded") return;
+    if (!document.hasFocus() || (active !== focusRequest.opener && !openerRemoved) || !chartScopeIsClear()) return;
+    if (useDaemonWorkspaceStore.getState().activeDocumentId !== focusRequest.documentId) return;
+    // Focusing the iframe itself can capture keyboard input without a caret.
+    // Enter the editable element directly and recover chart focus on failure.
+    if (!getEditor()?.focusEditor() && document.activeElement === frame) returnFocusToChart();
+  }, [editorReady, focusRequest, getEditor, notesStatus, returnFocusToChart]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -209,7 +242,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       .catch((err) => {
         if ((err as { name?: string }).name === "AbortError") return;
         setError(String(err));
-        setNotesLoading(false);
+        setNotesStatus("failed");
       });
     return () => controller.abort();
   }, [loadNote]);
@@ -276,34 +309,47 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
     void saveCurrent().catch((err) => setError(String(err)));
   }, [saveCurrent]);
 
+  const closeNotesPane = React.useCallback(() => {
+    returnFocusToChart();
+    setNotesPaneOpen(false);
+  }, [returnFocusToChart, setNotesPaneOpen]);
+
+  const requestCloseNotes = React.useCallback(() => {
+    const editor = getEditor();
+    if (editorReadyRef.current && editor) {
+      editor.closeNotes();
+      return;
+    }
+    closeNotesPane();
+  }, [closeNotesPane, getEditor]);
+
   const handleEditorMessage = React.useCallback(
     (event: MessageEvent<unknown>) => {
       const frameWindow = iframeRef.current?.contentWindow;
-      const fromEditorFrame =
-        event.source === frameWindow ||
-        (event.origin === notesEditorOrigin && event.source !== window);
-      if (!fromEditorFrame) return;
+      if (!frameWindow || event.source !== frameWindow) return;
 
-      const payload =
-        typeof event.data === "string"
-          ? (() => {
-              try {
-                return JSON.parse(event.data) as RawEditorEvent;
-              } catch {
-                return null;
-              }
-            })()
-          : (event.data as RawEditorEvent);
+      const payload = event.data as Record<string, unknown> | null;
       if (!payload || typeof payload !== "object") return;
       const type = String(payload.type ?? "");
 
+      if (type === "open-external") {
+        if (typeof payload.url !== "string") return;
+        let url: URL;
+        try {
+          url = new URL(payload.url);
+        } catch {
+          return;
+        }
+        if (url.protocol !== "http:" && url.protocol !== "https:") return;
+        void resolveShellHost().openExternal(url.href).catch((err) => setError(String(err)));
+        return;
+      }
+
       if (type === "ready") {
+        if (editorReadyRef.current) return;
         editorReadyRef.current = true;
-        setEditorReady(true);
-        setError(null);
-        sendEditorMessage("setTheme", notesTheme);
         syncDocumentToEditor();
-        window.setTimeout(syncDocumentToEditor, 50);
+        setEditorReady(true);
         return;
       }
 
@@ -329,7 +375,7 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       }
 
       if (type === "close") {
-        setNotesPaneOpen(false);
+        closeNotesPane();
         return;
       }
 
@@ -355,10 +401,10 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
         return;
       }
     },
-    [handleBlur, notesEditorOrigin, notesTheme, saveCurrent, setEditorText, setNotesPaneOpen, sendEditorMessage, syncDocumentToEditor, t],
+    [closeNotesPane, handleBlur, saveCurrent, setEditorText, syncDocumentToEditor, t],
   );
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     window.addEventListener("message", handleEditorMessage);
     return () => {
       window.removeEventListener("message", handleEditorMessage);
@@ -367,11 +413,12 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
 
   React.useEffect(() => {
     if (!editorReady) return;
-    sendEditorMessage("setTheme", notesTheme);
-  }, [editorReady, notesTheme, sendEditorMessage]);
+    getEditor()?.setTheme(notesTheme);
+  }, [editorReady, getEditor, notesTheme]);
 
   return (
     <aside
+      ref={paneRef}
       data-aries-surface="panel"
       className={cn(
         "flex h-full w-full min-w-0 flex-col gap-[var(--aries-notes-gap)] bg-background/95 p-[var(--aries-notes-padding)] text-[length:var(--aries-font-size-base)]",
@@ -379,14 +426,19 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       )}
     >
       <div className="flex min-w-0 items-center justify-between gap-[var(--aries-notes-header-gap)] px-[var(--aries-notes-gap)]">
-        <span className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-foreground/70">
-          {t("notes.title")} <span className="text-foreground/35">/</span> {sourceName}
-        </span>
+        <div className={LIST_PANE_CLASSES.titleLeading}>
+          <Button type="button" {...LIST_BUTTON_PROPS.icon} onClick={requestCloseNotes} aria-label={t("notes.close")}>
+            <X className="size-[var(--aries-control-icon-size)]" />
+          </Button>
+          <span className="min-w-0 truncate text-[length:var(--aries-font-size-small)] font-medium text-foreground/70">
+            {t("notes.title")} <span className="text-foreground/35">/</span> {sourceName}
+          </span>
+        </div>
         <Button
           type="button"
           variant="ghost"
           size="xs"
-          disabled={!chart || !editorReady}
+          disabled={!chart || !editorReady || notesStatus !== "loaded"}
           onClick={insertChartInfo}
           title={chart ? t("notes.appendChartInfo") : t("notes.noChartLoaded")}
           className="h-5 shrink-0 rounded-[var(--aries-radius-control-compact)] px-1.5 text-[length:var(--aries-font-size-section)] text-foreground/55 hover:text-foreground"
@@ -406,8 +458,10 @@ function NotesPanelInner({ sourceName, chart = null, documentId, scratch = false
       <div className="relative -mx-1 min-h-0 flex-1 overflow-hidden border-y border-border/40 bg-background/80">
         <iframe
           ref={iframeRef}
+          data-notes-editor=""
           title={t("notes.editorTitle")}
-          src={notesEditorUrl}
+          src={NOTES_EDITOR_URL}
+          inert={!editorReady || notesStatus !== "loaded"}
           onLoad={handleIframeLoad}
           className={cn(
             "h-full w-full min-w-0 border-0 bg-background/80 transition-opacity",
@@ -473,6 +527,7 @@ const PLANET_ORDER: PlanetId[] = [
   "nnode",
   "snode",
   "chiron",
+  "apogee",
 ];
 
 const PLANET_LABEL_KEYS: Record<PlanetId, string> = {
@@ -489,6 +544,7 @@ const PLANET_LABEL_KEYS: Record<PlanetId, string> = {
   nnode: "notes.planetNnode",
   snode: "notes.planetSnode",
   chiron: "notes.planetChiron",
+  apogee: "astrocart.point.apogee",
 };
 
 function chartInfoMarkdown(snapshot: ChartRenderSnapshot, t: TFunc): string {

@@ -72,7 +72,7 @@ test("retained map geometry terminates at interactive precision", () => {
 test("a held child step advances moving map lines before the final settle", () => {
   assert.match(
     homeSource,
-    /workspaceNavigateKey\(targetDocId, k, shift, alt, repeat, !mapTarget\)/,
+    /workspaceNavigateKey\(\s*targetDocId,\s*k,\s*shift,\s*alt,\s*repeat,\s*!mapTarget\s*[,)]/,
   );
   assert.match(homeSource, /if \(mapTarget && res\.stepped\) \{[\s\S]*?aries:chart-step-published/);
   assert.match(homeSource, /if \(mapTarget\) \{[\s\S]*?aries:chart-step-settle/);
@@ -114,6 +114,19 @@ test("focused map forwards linked-chart arrow press and release without stealing
   assert.deepEqual(messages.map((message) => [message.eventType, message.key]), [
     ["keydown", "right"], ["keyup", "right"],
   ]);
+  event.key = " ";
+  runInNewContext("routeChartNavigationKey(event, 'keydown'); routeChartNavigationKey(event, 'keyup');", context);
+  assert.deepEqual(messages.slice(2).map((message) => [message.eventType, message.key]), [
+    ["keydown", "space"], ["keyup", "space"],
+  ]);
+  event.repeat = true;
+  runInNewContext("routeChartNavigationKey(event, 'keydown');", context);
+  assert.equal(messages.length, 4);
+  event.repeat = false;
+  event.target.tagName = "INPUT";
+  runInNewContext("routeChartNavigationKey(event, 'keydown');", context);
+  assert.equal(messages.length, 4);
+  assert.match(source, /payload\.key === "space"[\s\S]*?navigation\.onResetCursor\?\.\(\)/);
   assert.match(source, /payload\.type === "navigation-key"[\s\S]*?navigation\.onNavigateHint\?\.\(payload\.key/);
   assert.match(source, /payload\.type === "navigation-key"[\s\S]*?navigation\.onNavigateHintEnd\?\.\(payload\.key\)/);
 });

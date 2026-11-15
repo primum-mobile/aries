@@ -11,6 +11,9 @@ import {
   releaseGraphicEphemerisNavigation,
 } from "../src/lib/chart/graphic-ephemeris-navigation.mjs";
 
+const readView = () =>
+  readFile(new URL("../src/components/workshell/graph-ephemeris-view.tsx", import.meta.url), "utf8");
+
 test("routes active-document navigation and explicit release without plot focus", () => {
   const received = [];
   const released = [];
@@ -81,47 +84,37 @@ test("global arrows and burst completion stay wired to the mounted ephemeris", a
     ephemerisSource,
     /React\.useLayoutEffect\(\(\) => \{\s*return registerGraphicEphemerisNavigator\([\s\S]*navigationPressRef\.current\(key\)[\s\S]*navigationReleaseRef\.current\(key\)/,
   );
-  assert.match(
-    ephemerisSource,
-    /heldNavigationKeysRef\.current\.size > 0[\s\S]*deferredNavigationTailRef\.current = runPostPaintTail/,
-  );
-  assert.match(
-    ephemerisSource,
-    /pendingAnchorPersistenceRef\.current = next/,
-  );
+  // Each arrow step is a short clockwork tick; a held arrow chains from the tick target.
+  // With the reading line the centre steps by calendar months under the fixed
+  // line; without it both edges do.
+  assert.match(ephemerisSource, /const base = targetCamera\(\);[\s\S]*const next = clampCamera\(togglesRef\.current\.showNowLine \? stepCameraCenter\(base, key\) : stepCamera\(base, key\)\);/);
+  // A step lands only on resident months: it waits for them (repeats meanwhile
+  // are dropped), so a held burst runs at the speed data arrives, never blank.
+  assert.match(ephemerisSource, /if \(pendingStepRef\.current\) return;/);
+  // A step lands once its curves are resident; overlays never hold it back.
+  assert.match(ephemerisSource, /\(camera: EphemerisCamera\) => ephemerisStore\.isResident\(camera\.startJd, cameraEndJd\(camera\), false\),/);
+  assert.match(ephemerisSource, /if \(stepResident\(next\)\) \{\s*moveCamera\(next, true, EPHEMERIS_TICK_MS\);/);
+  assert.match(ephemerisSource, /if \(pending && stepResidentRef\.current\(pending\)\) stepLandedRef\.current\(\);/);
+  assert.match(ephemerisSource, /if \(heldNavigationKeysRef\.current\.size > 0\) \{\s*arm\(\);/);
 });
 
-test("Space restores the opening anchor and cannot reset the hidden parent chart", async () => {
+test("Space restores the opening moment at the standard zoom and cannot reset the hidden parent chart", async () => {
   const [homeSource, ephemerisSource] = await Promise.all([
-    readFile(
-      new URL("../src/components/workshell/home-client.tsx", import.meta.url),
-      "utf8",
-    ),
-    readFile(
-      new URL(
-        "../src/components/workshell/graph-ephemeris-view.tsx",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
+    readFile(new URL("../src/components/workshell/home-client.tsx", import.meta.url), "utf8"),
+    readView(),
   ]);
-
   const targetResolver = homeSource.slice(
     homeSource.indexOf("function navigateTargetForDocument"),
     homeSource.indexOf("function useActiveDocumentChart"),
   );
   assert.doesNotMatch(targetResolver, /doc\.kind === "ephemeris"|key === "space"/);
-  assert.match(ephemerisSource, /const initialAnchorRef = React\.useRef<EphemerisAnchor \| null>\(null\);/);
-  assert.match(ephemerisSource, /initialAnchorRef\.current = \{ \.\.\.seededAnchor \};/);
-  assert.match(ephemerisSource, /initialAnchorRef\.current = \{ \.\.\.fallbackAnchor \};/);
+  assert.match(ephemerisSource, /const initialCameraRef = React\.useRef<EphemerisCamera \| null>\(openingCamera\);/);
+  assert.match(ephemerisSource, /initialCameraRef\.current = camera;/);
   assert.match(
     ephemerisSource,
-    /const resetToInitialAnchor = React\.useCallback\([\s\S]*heldNavigationKeysRef\.current\.clear\(\);[\s\S]*pendingAnchorPersistenceRef\.current = null;[\s\S]*deferredNavigationTailRef\.current = null;[\s\S]*commitAnchor\(\{ \.\.\.initial \}\);/,
+    /const resetToInitialCamera = React\.useCallback\([\s\S]*const initial = defaultCameraAround\(cameraCenterJd\(opening\)\);[\s\S]*heldNavigationKeysRef\.current\.clear\(\);[\s\S]*moveCamera\(initial, true, EPHEMERIS_TICK_MS\);/,
   );
-  assert.match(
-    ephemerisSource,
-    /if \(key === "space"\) \{\s*resetToInitialAnchor\(\);\s*return;/,
-  );
+  assert.match(ephemerisSource, /if \(key === "space"\) \{\s*resetToInitialCamera\(\);\s*return;/);
 });
 
 test("Graphic Ephemeris reuses the chart rail with month and year directions", async () => {
@@ -167,7 +160,7 @@ test("Graphic Ephemeris reuses the chart rail with month and year directions", a
   );
   assert.match(
     ephemerisSource,
-    /registerDisplayModeToggle\(\(\) => \{[\s\S]*modeRef\.current === "longitude" \? "declination" : "longitude";[\s\S]*selectMode\(next\);/,
+    /registerDisplayModeToggle\(\(\) => \{[\s\S]*togglesRef\.current\.mode === "longitude" \? "declination" : "longitude";[\s\S]*selectMode\(next\);/,
   );
   assert.match(ephemerisSource, /setMode\(next\);\s*onDisplayModeChange\?\.\(next\);/);
   assert.match(
@@ -225,61 +218,21 @@ test("chart rail pointer and keyboard activation both close their navigation bur
   );
 });
 
-test("cached navigation publishes once and cancelled paint releases the rAF slot", async () => {
-  const ephemerisSource = await readFile(
-    new URL(
-      "../src/components/workshell/graph-ephemeris-view.tsx",
-      import.meta.url,
-    ),
-    "utf8",
+test("camera frames repaint from the block store without React state or fetches", async () => {
+  const ephemerisSource = await readView();
+  const frame = ephemerisSource.slice(
+    ephemerisSource.indexOf("frameRef.current = () => {"),
+    ephemerisSource.indexOf("}, [requestFrame, viewId]);"),
   );
-
-  const commitAnchorSource = ephemerisSource.match(
-    /const commitAnchor = React\.useCallback\([\s\S]*?\n  \);/,
-  )?.[0];
-  assert.ok(commitAnchorSource);
-  assert.doesNotMatch(commitAnchorSource, /applyPayload\(/);
-  assert.match(
-    ephemerisSource,
-    /const pendingPaint = paintRef\.current;[\s\S]*cancelAnimationFrame\(pendingPaint\);[\s\S]*paintRef\.current === pendingPaint[\s\S]*paintRef\.current = null;/,
-  );
-});
-
-test("held navigation publishes a coherent event-glyph frame", async () => {
-  const ephemerisSource = await readFile(
-    new URL(
-      "../src/components/workshell/graph-ephemeris-view.tsx",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const fetchBlock = ephemerisSource.slice(
-    ephemerisSource.indexOf("// --- Series fetch."),
-    ephemerisSource.indexOf("// --- Paint"),
-  );
-
-  assert.match(
-    ephemerisSource,
-    /const requiresEventMarkers = showEventGlyphs && mode === "longitude";/,
-  );
-  assert.match(
-    fetchBlock,
-    /if \(cached && \(!requiresEventMarkers \|\| cachedMarkers\)\)[\s\S]*frameWithMarkers\(cached, cachedMarkers\)/,
-  );
-  assert.match(
-    fetchBlock,
-    /if \(cached\) \{[\s\S]*fetchGraphicEphemerisStations\([\s\S]*applyPayload\(frameWithMarkers\(cached, markerPayload\)\)/,
-  );
-  assert.match(fetchBlock, /includeStations: requiresEventMarkers/);
-  assert.match(
-    fetchBlock,
-    /rememberStations\(warmKey, markerPayloadFromFrame\(warmPayload\)\)/,
-  );
-  assert.match(
-    fetchBlock,
-    /if \(!ephemerisStationCache\.has\(cacheKey\)\) fetchStations\(\);/,
-  );
-  assert.doesNotMatch(fetchBlock, /applyPayload\(cached\);/);
+  assert.match(frame, /ephemerisStore\.setInterest\(viewId,/);
+  assert.match(frame, /ephemerisStore\.frameData\(camera\.startJd, endJd\)/);
+  assert.match(frame, /paintEphemerisPlate\(/);
+  assert.doesNotMatch(frame, /fetch[A-Z]|setCamera|setMenu|setHover/);
+  // The window machinery is gone: one path through the month-block store.
+  assert.doesNotMatch(ephemerisSource, /fetchGraphicEphemeris|frameWithKnownMarkers|GRAPHIC_EPHEMERIS_SPANS|steppedGraphicEphemerisAnchor/);
+  // Curves alone gate the camera; the marks follow without the series.
+  assert.match(ephemerisSource, /fetchSeries: \(year, month, count, signal\) => fetchEphemerisSeries\(year, month, count, signal\)/);
+  assert.match(ephemerisSource, /fetchBlocks: \(year, month, count, signal\) => fetchEphemerisMarks\(year, month, count, signal\)/);
 });
 
 test("ephemeris cache identity is independent from retained-list invalidation", async () => {
@@ -303,6 +256,7 @@ test("ephemeris cache identity is independent from retained-list invalidation", 
   assert.ok(dataKeyHook);
   assert.match(dataKeyHook, /lastOptionsChange\?\.ephemerisDataKey/);
   assert.doesNotMatch(dataKeyHook, /listDataChanged/);
-  assert.match(ephemerisSource, /ephemerisCacheKey\(ephemerisDataKey,/);
+  assert.match(ephemerisSource, /cached\.revision === ephemerisDataKey/);
+  assert.match(ephemerisSource, /ephemerisStore\.setDataKey\(next\.dataKey\)/);
   assert.match(storeSource, /ephemerisDataKey: event\.ephemerisDataKey/);
 });

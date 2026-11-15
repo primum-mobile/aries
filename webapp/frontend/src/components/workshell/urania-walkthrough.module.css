@@ -1,0 +1,275 @@
+/* One portal under <body> holds both tour layers in paint order. The wrapper
+   forms no stacking context; each layer is its own fixed root-level layer. */
+.tour { display: contents; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  pointer-events: none;
+}
+
+/* Above every wash and the chart navigation bar (.aries-mode-hint, z 70),
+   below context menus (z 100). Modal dialogs pause and hide the tour. */
+.cardLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+/* A light signal tint with a crisp edge and a soft inner glow: the area reads
+   as lit while the chart under it stays legible for trying each gesture. The
+   edge leans a little toward the text colour, so a pale or deep signal keeps
+   its contrast on light and dark themes alike. Each step's washes arrive with
+   one short pulse; the resting style is the final frame. */
+.wash {
+  --urania-wash-edge: color-mix(in srgb, var(--aries-signal) 82%, var(--aries-text-primary));
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--aries-radius-md);
+  background: color-mix(in srgb, var(--aries-signal) 7%, transparent);
+  box-shadow:
+    inset 0 0 0 2px var(--urania-wash-edge),
+    inset 0 0 28px color-mix(in srgb, var(--aries-signal) 18%, transparent);
+  animation: wash-arrive 520ms ease-out both;
+}
+@keyframes wash-arrive {
+  from { opacity: 0; }
+  35% { opacity: 1; background-color: color-mix(in srgb, var(--aries-signal) 20%, transparent); }
+}
+
+.guide {
+  position: absolute;
+  left: 16px;
+  bottom: calc(var(--morinus-status-height) + 16px);
+  display: flex;
+  align-items: flex-end;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* Desktop: the card starts at the lower right of the main area, over the
+   lower Inspector, so the chart and its bottom navigation bar stay visible.
+   It takes no layout space and can be dragged anywhere inside the main area;
+   double-click returns it to the start. */
+.dock { container-type: inline-size; }
+
+.guide.guideDocked {
+  left: auto;
+  right: 16px;
+  bottom: 16px;
+  width: 460px;
+  max-width: calc(100% - 32px);
+}
+
+.guideDocked .bubble { cursor: grab; user-select: none; }
+.guideDocked:active .bubble { cursor: grabbing; }
+.guideDocked .bubble button { cursor: default; }
+
+.guideWithCharacter.guideDocked {
+  --urania-character-height: 168px;
+  width: 612px;
+}
+
+.guideWithCharacter {
+  --urania-character-height: 210px;
+  width: 612px;
+}
+
+.character {
+  position: relative;
+  flex: 0 0 148px;
+  height: var(--urania-character-height);
+  animation: arrive 300ms steps(3, end) both;
+}
+
+.pose {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--urania-character-height);
+  height: var(--urania-character-height);
+  background-image: url("/urania/urania-standing.png");
+  background-size: 300% 100%;
+  background-position: left center;
+  background-repeat: no-repeat;
+}
+
+.pose[data-pose="point"] { background-position: center; }
+.pose[data-pose="smile"] { background-position: right center; }
+.pose[data-pose="float"] {
+  background-image: url("/urania/urania-hovering-v3-smile.png");
+  background-size: contain;
+  background-position: center;
+}
+
+.bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--aries-border-subtle);
+  border-radius: var(--aries-radius-dialog);
+  background: var(--aries-overlay-background);
+  color: var(--aries-overlay-text);
+  box-shadow: var(--aries-material-window-shadow);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-font-size-reading);
+  line-height: 1.45;
+  pointer-events: auto;
+}
+
+.guideWithCharacter .bubble::before {
+  content: "";
+  position: absolute;
+  top: max(18px, calc(100% - var(--urania-character-height) + 30px));
+  left: -11px;
+  width: 12px;
+  height: 18px;
+  background: var(--aries-overlay-background);
+  clip-path: polygon(100% 0, 100% 100%, 0 75%);
+}
+
+/* Sized by its content: never a max-height or scroll on desktop. The worst
+   case (time step, longest locale, five shortcut rows) is about 470px, well
+   inside the 1024 x 720 main area (694px less the 34px title bar). */
+.speech {
+  padding: calc(var(--aries-panel-padding-y) + 4px) calc(var(--aries-pane-content-padding) + 4px) 0;
+}
+
+/* The sketch sits beside the copy and is shorter than it, so it adds no height. */
+.copyRow { display: flex; align-items: center; gap: 16px; }
+.copyRow .copy { flex: 1; min-width: 0; }
+
+/* Step sketches: inline SVG, theme tokens only, no text. */
+.sketch { flex: none; width: 96px; height: 64px; }
+.sketchLine { fill: none; stroke: var(--aries-text-muted); stroke-width: 1.5; }
+.sketchMenu { fill: var(--aries-popover-background); stroke: var(--aries-border-subtle); stroke-width: 1; }
+.sketchBar { fill: var(--aries-text-muted); opacity: 0.5; }
+.sketchHighlight { fill: color-mix(in srgb, var(--aries-signal) 18%, transparent); }
+.sketchSignal { fill: var(--aries-signal); }
+.sketchRing { fill: none; stroke: var(--aries-signal); stroke-width: 1.5; }
+.sketchIcon { color: var(--aries-text-muted); }
+/* One short pass on entry; the resting style is the final frame. */
+.sketchFlash { animation: sketch-flash 700ms ease-out both; }
+.sketchSlide { animation: sketch-slide 500ms ease-out both; }
+.sketchDrop { animation: sketch-drop 400ms 200ms ease-out both; }
+.sketchOrbit { transform-box: view-box; transform-origin: 48px 26px; animation: sketch-orbit 900ms ease-in-out both; }
+@keyframes sketch-flash { from { opacity: 0; } 45% { opacity: 1; fill: var(--aries-signal); } }
+@keyframes sketch-slide { from { opacity: 0; transform: translateX(12px); } }
+@keyframes sketch-drop { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes sketch-orbit { from { transform: rotate(-40deg); } }
+
+.heading { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.heading h2 { font-size: inherit; font-weight: 600; margin: 0; }
+/* Chapter dots: visited ones keep a signal tint, the current one is long.
+   Each 6 px dot sits in a larger hit area; the row is no taller than the title. */
+.progress { display: flex; flex: none; align-items: center; margin-right: -4px; }
+.dot {
+  display: grid;
+  place-items: center;
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: inherit;
+}
+.dot::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--aries-text-muted) 40%, transparent);
+  transition: width 200ms ease-out, background-color 200ms ease-out;
+}
+.dot:hover::before { background: var(--aries-text-muted); }
+.dot[data-visited]::before { background: color-mix(in srgb, var(--aries-signal) 50%, transparent); }
+.dot[aria-current="step"]::before { width: 18px; background: var(--aries-signal); }
+.dot:focus-visible { outline: 2px solid var(--aries-focus-ring); outline-offset: -1px; }
+.copy { margin: 10px 0; }
+/* One row per shortcut: keycaps, then the label on the same line. The label
+   wraps at spaces inside its own cell, never under the keys. */
+.shortcuts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 0 12px;
+}
+.shortcuts > div { display: contents; }
+.shortcuts dt { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.shortcuts dd { margin: 0; }
+.shortcuts kbd {
+  min-width: var(--aries-control-height-small);
+  min-height: var(--aries-control-height-small);
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--aries-border-strong) 45%, var(--input));
+  border-bottom-width: 3px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.shortcuts kbd {
+  transition: translate 160ms ease-out, border-bottom-width 160ms ease-out,
+    background-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+.shortcuts kbd[data-pressed] {
+  translate: 0 2px;
+  border-bottom-width: 1px;
+  background: color-mix(in srgb, var(--aries-signal) 22%, transparent);
+  box-shadow: 0 0 0 1px var(--aries-signal);
+  transition-duration: 40ms;
+}
+.controls, .controls > div { display: flex; align-items: center; gap: 4px; }
+.controls {
+  justify-content: space-between;
+  padding: 8px calc(var(--aries-pane-content-padding) + 4px) calc(var(--aries-panel-padding-y) + 4px);
+}
+
+@keyframes arrive {
+  from { transform: translateY(6px) rotate(-2deg); }
+  to { transform: translateY(0) rotate(0); }
+}
+
+@media (max-width: 560px) {
+  .guideWithCharacter { --urania-character-height: 124px; }
+  .character { flex-basis: 72px; }
+  .guide { left: 12px; max-width: calc(100vw - 24px); gap: 2px; }
+  .controls, .controls > div { flex-wrap: wrap; }
+}
+
+:global(html[data-aries-mobile]) .guide {
+  align-items: flex-start;
+  top: calc(var(--titlebar-h) + env(safe-area-inset-top) + 8px);
+  bottom: auto;
+}
+
+:global(html[data-aries-mobile]) .guideWithCharacter .bubble::before {
+  top: 30px;
+}
+
+/* Phones: the card fills at most the space below the title bar. Only when a
+   landscape phone cannot hold it does the step body scroll; the buttons stay. */
+:global(html[data-aries-mobile]) .bubble {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--titlebar-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px);
+}
+:global(html[data-aries-mobile]) .speech { min-height: 0; overflow-y: auto; }
+
+@container (max-width: 520px) {
+  .guideWithCharacter.guideDocked { --urania-character-height: 124px; }
+  .guideDocked .character { flex-basis: 72px; }
+  .guideDocked { gap: 2px; }
+  .guideDocked .controls, .guideDocked .controls > div { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character, .sketch *, .wash { animation: none; }
+  .dot::before { transition: none; }
+  .shortcuts kbd, .shortcuts kbd[data-pressed] { transition: none; translate: none; }
+}

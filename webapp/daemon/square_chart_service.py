@@ -46,6 +46,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import astrology
+import chart_bodies
 import chart as chart_mod
 import common
 import dateformat
@@ -55,7 +56,7 @@ import planets
 import util
 import mtexts
 from webapp.daemon.chart_service import chart_snapshot_service
-from webapp.daemon.display_palette import chart_body_color_role, effective_display_options
+from webapp.daemon.display_palette import chart_body_color_role, effective_display_options, minor_dignity_display_facts
 from webapp.frontend.scripts import export_chart_json
 
 # House-system label table — verbatim from SquareChart.__init__
@@ -66,11 +67,6 @@ _HSYSTEM = {
     'H': 'Horizontal', 'T': 'Polich-Page', 'B': 'Alcabitus',
     'O': 'Porphyrius', 'N': 'Angles only',
 }
-
-# Dignity-index → colour key order, verbatim from SquareChart.__init__
-# (squarechart.py:62): domicil, exal, peregrin, casus, exil.
-_DIGNITY_KEYS = ("clrdomicil", "clrexal", "clrperegrin", "clrcasus", "clrexil")
-
 
 def _rgb_to_hex(rgb) -> str:
     try:
@@ -105,24 +101,17 @@ def _planet_color_hex(chrt, opts, idxpl, bw: bool = False) -> str:
     SE_MEAN_NODE remap), else dignity palette; Vertex/LoF → clrperegrin."""
     if bw:
         return _rgb_to_hex((0, 0, 0))
+    if idxpl == common.CHART_OBJECT_VERTEX:
+        return _rgb_to_hex(opts.clrperegrin)
+    if idxpl == common.CHART_OBJECT_FORTUNE:
+        index = astrology.SE_MEAN_NODE + 1
+    else:
+        index = common.common.get_planet_color_index(idxpl)
     if getattr(opts, "useplanetcolors", False):
-        objidx = idxpl
-        if objidx == common.CHART_OBJECT_VERTEX:
-            return _rgb_to_hex(opts.clrperegrin)
-        if objidx == planets.Planets.PLANETS_NUM - 1:
-            objidx = astrology.SE_MEAN_NODE
-        elif objidx > planets.Planets.PLANETS_NUM - 1:
-            objidx = astrology.SE_MEAN_NODE + 1
-        try:
-            return _rgb_to_hex(opts.clrindividual[objidx])
-        except Exception:
-            return _rgb_to_hex(opts.clrperegrin)
-    if idxpl < planets.Planets.PLANETS_NUM:
-        pal = tuple(getattr(opts, k) for k in _DIGNITY_KEYS)
-        try:
-            return _rgb_to_hex(pal[chrt.dignity(idxpl)])
-        except Exception:
-            return _rgb_to_hex(opts.clrperegrin)
+        return _rgb_to_hex(opts.clrindividual[index])
+    if idxpl != common.CHART_OBJECT_FORTUNE:
+        from .display_palette import chart_dignity_color
+        return _rgb_to_hex(chart_dignity_color(chrt, opts, idxpl))
     return _rgb_to_hex(opts.clrperegrin)
 
 
@@ -133,13 +122,17 @@ def _get_planets_in_house(chrt, opts, hnum):
     the square), exactly as the wx brain orders them."""
     inhouse = []
     mixed = []
-    for i in range(planets.Planets.PLANETS_NUM + 1):
+    body_ids = list(range(planets.Planets.PLANETS_NUM))
+    body_ids.extend(pid for pid, _body in chart_bodies.iter_dynamic_bodies(chrt)
+                    if common.is_planet_visible(opts, pid))
+    body_ids.append(common.CHART_OBJECT_FORTUNE)
+    for i in body_ids:
         if i in (astrology.SE_URANUS, astrology.SE_NEPTUNE, astrology.SE_PLUTO):
             continue
-        if i < planets.Planets.PLANETS_NUM:
-            lon = chrt.planets.planets[i].data[planets.Planet.LONG]
-        else:
+        if i == common.CHART_OBJECT_FORTUNE:
             lon = chrt.fortune.fortune[fortune.Fortune.LON]
+        else:
+            lon = common.get_chart_planet(chrt, i).data[planets.Planet.LONG]
 
         num = chrt.houses.getHousePos(lon, opts)
         if num == hnum:
@@ -246,25 +239,22 @@ class SquareChartService:
                 lon = order[j]
                 sign, pos, m = _sign_split(lon)
 
-                if idxpl < planets.Planets.PLANETS_NUM:
-                    glyph = common.common.Planets[idxpl]
-                elif idxpl == common.CHART_OBJECT_VERTEX:
-                    glyph = common.common.get_planet_glyph(common.CHART_OBJECT_VERTEX)
-                else:
-                    glyph = common.common.fortune
+                glyph = common.common.fortune if idxpl == common.CHART_OBJECT_FORTUNE else common.common.get_planet_glyph(idxpl)
 
                 motion = ""
-                if idxpl < planets.Planets.PLANETS_NUM:
-                    speed = chrt.planets.planets[idxpl].data[planets.Planet.SPLON]
+                body = common.get_chart_planet(chrt, idxpl) if idxpl not in (common.CHART_OBJECT_FORTUNE, common.CHART_OBJECT_VERTEX) else None
+                if body is not None:
+                    speed = body.data[planets.Planet.SPLON]
                     if speed <= 0.0:
                         motion = "S" if speed == 0.0 else "R"
 
                 color = _planet_color_hex(chrt, opts, idxpl, bw)
-                is_lof = idxpl == planets.Planets.PLANETS_NUM
+                is_lof = idxpl == common.CHART_OBJECT_FORTUNE
                 is_vertex = idxpl == common.CHART_OBJECT_VERTEX
 
                 plist.append({
                     "id": int(idxpl),
+                    **minor_dignity_display_facts(chrt, idxpl),
                     "glyph": glyph,
                     "color": color,
                     "colorRole": chart_body_color_role(

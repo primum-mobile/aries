@@ -49,6 +49,23 @@ STORE_SCHEMA_VERSION = 3
 _PRE_WHEEL_GEOMETRY_STORE_SCHEMA_VERSION = 2
 STYLE_PROFILE_FILENAME = "style-profiles.json"
 
+# Retired semantic ids are dropped without quarantining an otherwise valid
+# saved or imported theme. Quick options now fits its rows and the native
+# viewport; Astrolabe chart information and PD rows are DOM corner overlays.
+_RETIRED_STYLE_TOKEN_IDS = frozenset({
+    "app.menu.quickOptionsMaxHeight",
+    "app.menu.quickOptionsViewportMaxHeight",
+    "renderer.astrolabe.color.infoAtmospheric",
+    "renderer.astrolabe.color.infoSchematic",
+    "renderer.astrolabe.metric.infoFontDivisor",
+    "renderer.astrolabe.metric.infoFontScale",
+    "renderer.astrolabe.metric.infoInsetDivisor",
+    "renderer.astrolabe.metric.infoLineHeightScale",
+    "renderer.astrolabe.metric.pdRowFontDivisor",
+    "renderer.astrolabe.metric.pdRowHeightScale",
+    "renderer.astrolabe.metric.pdTokenGapScale",
+})
+
 _PRE_SPLIT_FILL_STORE_SCHEMA_VERSION = 1
 _HOUSE_FIELD_KEY_SEGMENT = ".fills.houseField."
 _GLYPH_FIELD_KEY_SEGMENT = ".fills.glyphField."
@@ -150,6 +167,11 @@ def _validate_font_family(value: Any, semantic_id: str) -> str:
     if not value or len(value) > 160 or not _FONT_RE.fullmatch(value):
         raise StyleProfileError(f"{semantic_id} contains an invalid font-family value")
     return value
+
+
+def validate_style_token_value(semantic_id: str, value: Any) -> Any:
+    """Validate one flat public token value, as a profile would."""
+    return _validate_token_value(semantic_id, value)
 
 
 def _validate_token_value(semantic_id: str, value: Any) -> Any:
@@ -339,6 +361,11 @@ def validate_style_profile(payload: Any) -> dict:
     raw_overrides = payload.get("overrides")
     if not isinstance(raw_overrides, Mapping):
         raise StyleProfileError("profile overrides must be an object")
+    raw_overrides = {
+        semantic_id: value
+        for semantic_id, value in raw_overrides.items()
+        if semantic_id not in _RETIRED_STYLE_TOKEN_IDS
+    }
     if len(raw_overrides) > len(STYLE_PROFILE_TOKENS):
         raise StyleProfileError("profile has too many overrides")
     overrides = {
@@ -525,7 +552,11 @@ def style_profile_css_overrides(profile: Optional[Mapping[str, Any]]) -> dict[st
     for semantic_id, value in profile.get("overrides", {}).items():
         token = STYLE_PROFILE_TOKENS[semantic_id]
         if token["type"] == "color":
-            rendered = _color_to_css(value)
+            alias = color_alias_target(value)
+            rendered = (
+                f"var({STYLE_PROFILE_TOKENS[alias]['cssVar']})"
+                if alias is not None else _color_to_css(value)
+            )
         elif token["type"] == "number":
             rendered = f"{value:g}{token.get('unit') or ''}" if isinstance(value, float) else f"{value}{token.get('unit') or ''}"
         else:
@@ -603,13 +634,22 @@ class StyleProfileStore:
         self._load_error: Optional[str] = None
         self._loaded_store_schema_version = STORE_SCHEMA_VERSION
         try:
-            self._state = self._load()
+            with exclusive_file_transaction(self.path):
+                self._state = self._load()
+                self._file_revision = self._disk_revision()
         except StyleProfileError as exc:
             # A damaged optional style file must never prevent the daemon or a
             # user's charts from opening. Preserve it untouched and refuse
             # mutations until the caller explicitly deals with the error.
             self._state = _empty_store()
             self._load_error = str(exc)
+
+    def _disk_revision(self) -> Optional[tuple[int, int, int, int, int]]:
+        try:
+            stat = self.path.stat()
+        except FileNotFoundError:
+            return None
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
     def _load(self) -> dict:
         if not self.path.is_file():
@@ -702,6 +742,7 @@ class StyleProfileStore:
             raise StyleProfileError(self._load_error)
         self._write(state)
         self._state = state
+        self._file_revision = self._disk_revision()
         self._loaded_store_schema_version = STORE_SCHEMA_VERSION
 
     def upgrade_store_format(self) -> None:
@@ -716,7 +757,13 @@ class StyleProfileStore:
         with self._lock:
             with exclusive_file_transaction(self.path):
                 if not self._load_error:
-                    self._state = self._load()
+                    revision = self._disk_revision()
+                    # Options responses and chart paints repeatedly read this
+                    # catalog. Validate once per disk revision, while keeping
+                    # other daemon writers visible under the same file lock.
+                    if revision != self._file_revision:
+                        self._state = self._load()
+                        self._file_revision = revision
                 yield
 
     def payload(self) -> dict:
@@ -729,6 +776,25 @@ class StyleProfileStore:
                 "loadError": self._load_error,
                 "profileErrors": self._state["profileErrors"],
             })
+
+    def profile_summaries(self) -> list[dict]:
+        """Identity, base and token overrides of each stored profile.
+
+        Theme lists only label and classify profiles; copying every profile's
+        wheel geometry and authoring state made each options read pay for it.
+        The override map is a shallow copy: callers read it, never mutate it.
+        """
+        with self._transaction():
+            return [
+                {
+                    "id": profile.get("id"),
+                    "name": profile.get("name"),
+                    "scope": profile.get("scope"),
+                    "basePresetId": profile.get("basePresetId"),
+                    "overrides": dict(profile.get("overrides") or {}),
+                }
+                for profile in self._state["profiles"].values()
+            ]
 
     @staticmethod
     def _remove_quarantine_for_profile(state: dict, profile_id: str) -> None:
@@ -801,6 +867,54 @@ class StyleProfileStore:
             if state["activeProfileId"] == profile_id:
                 state["activeProfileId"] = None
             self._commit(state)
+
+    def apply_override_migration(
+        self, migration_id: str, prefix: str, overrides_by_id: Mapping[str, Mapping[str, Any]],
+    ) -> list[str]:
+        """Once per store, replace every ``prefix`` override of the listed
+        profiles with the given values; other overrides are kept. Returns the
+        ids that changed. Recorded in legacyMigrations so it never reruns."""
+        with self._transaction():
+            if migration_id in self._state["legacyMigrations"]:
+                return []
+            state = deepcopy(self._state)
+            changed = []
+            for profile_id, values in overrides_by_id.items():
+                profile = state["profiles"].get(profile_id)
+                if profile is None:
+                    continue
+                kept = {k: v for k, v in (profile.get("overrides") or {}).items() if not k.startswith(prefix)}
+                merged = validate_style_profile({**profile, "overrides": dict(sorted({**kept, **values}.items()))})
+                if merged != profile:
+                    state["profiles"][profile_id] = merged
+                    changed.append(profile_id)
+            state["legacyMigrations"][migration_id] = {"kind": "override-migration", "changedProfileIds": changed}
+            self._commit(state)
+            return changed
+
+    def fill_missing_overrides(self, migration_id: str, fills: Mapping[str, Mapping[str, Any]]) -> bool:
+        """Once per store, add each listed override a profile lacks; existing
+        overrides always win (exact semantic id, never a prefix). Recorded in
+        legacyMigrations so it never reruns. Returns whether the store was written."""
+        with self._transaction():
+            if migration_id in self._state["legacyMigrations"]:
+                return False
+            state = deepcopy(self._state)
+            changed = []
+            for profile_id, values in fills.items():
+                profile = state["profiles"].get(profile_id)
+                if profile is None:
+                    continue
+                current = profile.get("overrides") or {}
+                missing = {k: v for k, v in values.items() if k not in current}
+                if not missing:
+                    continue
+                state["profiles"][profile_id] = validate_style_profile(
+                    {**profile, "overrides": dict(sorted({**current, **missing}.items()))})
+                changed.append(profile_id)
+            state["legacyMigrations"][migration_id] = {"kind": "override-fill", "changedProfileIds": changed}
+            self._commit(state)
+            return True
 
     def discard_profiles(self, profile_ids: Iterable[str]) -> dict:
         """Remove retired profile identities without failing on absent entries."""

@@ -24,18 +24,38 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		primdirs.PrimDirs.__init__(self, chrt, options, pdrange, direction, abort)
 
 
-	def _zodiacal_aspect_position(self, planet_idx, lon_base, lat_base, aspect_idx, aspect):
-		lon = util.normalize(lon_base+aspect)
-		lat = lat_base
-		if self.options.morin_excentric and 0 <= planet_idx <= astrology.SE_PLUTO:
-			lon, lat = self.getMorinExcentric(planet_idx, lon_base, lat_base, aspect)
-		elif self.options.bianchini:
-			val = self.getBianchini(lat_base, chart.Chart.Aspects[aspect_idx])
+	def _traditional_converse_mundane_raw_arc(
+		self, prom, sig, promasp, sigasp, promasp_offset, sigasp_offset
+	):
+		"""Mundane traditional converse: the significator body is carried by
+		the primary motion to the promissor's mundane place.  The direct row
+		puts the aspect on the significator (W_sig + offset, or CMP for
+		Campanus); with the roles' geometry swapped the same configuration is
+		reached at the promissor's place - offset, under that place's pole."""
+		count = len(self.chart.planets.planets)
+		if not (0 <= prom < count and 0 <= sig < count):
+			raise primdirs.TraditionalConverseUnsupported('mundane-point-family')
+		if promasp != chart.Chart.CONJUNCTIO or not chart.Chart.CONJUNCTIO <= sigasp <= chart.Chart.SEPTILE:
+			raise primdirs.TraditionalConverseUnsupported('mundane-point-family')
+		plprom = self.chart.planets.planets[prom]
+		plsig = self.chart.planets.planets[sig]
+		rasig = plsig.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
+		declsig = plsig.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
+		if sigasp == chart.Chart.CONJUNCTIO:
+			# toPlanet's conjunction branch with the moving body exchanged.
+			wprom = plprom.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.W]
+			val = math.tan(math.radians(declsig))*math.tan(math.radians(plprom.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.POLE]))
 			if math.fabs(val) > 1.0:
-				return False, lon, lat
-			lat = math.degrees(math.asin(val))
+				raise primdirs.TraditionalConverseUnsupported('geometry-undefined')
+			q = math.degrees(math.asin(val))
+			wsig = rasig-q if plprom.eastern else rasig+q
+			return util.normalize(wsig)-wprom
+		if float(sigasp_offset) == 0.0:
+			raise primdirs.TraditionalConverseUnsupported('missing-ray-side')
+		return self._traditional_converse_mundane_aspect_arc(plprom, rasig, declsig, float(sigasp_offset))
 
-		return True, lon, lat
+	def _traditional_converse_mundane_aspect_arc(self, plprom, rasig, declsig, aspect):
+		raise primdirs.TraditionalConverseUnsupported('mundane-system')
 
 
 	def _antiscia_point_sets(self):
@@ -1013,8 +1033,8 @@ class RegioCampBasePD(primdirs.PrimDirs):
 					)
 
 
-	def calcZodTerms(self):
-		'''Calculates zodiacal terms to Planets, LoF'''
+	def calcZodTerms(self, dynamic_only=False):
+		'''Calculate zodiacal terms to configured native and dynamic significators.'''
 
 		num = len(self.options.terms[0])
 		subnum = len(self.options.terms[0][0])
@@ -1030,7 +1050,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 				#Planets
 				for s in range(len(self.chart.planets.planets)):
-					if self.options.sigplanets[s]:
+					if not dynamic_only and self.options.sigplanets[s]:
 						plsig = self.chart.planets.planets[s]
 
 						wprom, wsig = 0.0, 0.0
@@ -1052,16 +1072,19 @@ class RegioCampBasePD(primdirs.PrimDirs):
 						self.create(False, primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], s, chart.Chart.CONJUNCTIO, chart.Chart.CONJUNCTIO, arc)
 
 				#LoF
-				if self.options.pdlof[1]:
+				if not dynamic_only and self.options.pdlof[1]:
 					self.toLoF(primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], lonprom, 0.0, chart.Chart.CONJUNCTIO)
 
 				#Syzygy
-				if self.options.pdsyzygy:
+				if not dynamic_only and self.options.pdsyzygy:
 					self.toSyzygy(primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], lonprom, 0.0, chart.Chart.CONJUNCTIO)
 
 				#Customer2
-				if self._get_active_dynamic_sig_point() != None:
+				if dynamic_only and self._get_active_dynamic_sig_point() != None:
 					self.toCustomer2(False, primdirs.PrimDir.TERM+i, self.options.terms[self.options.selterm][i][j][0], lonprom, 0.0, raprom, declprom, chart.Chart.CONJUNCTIO)
+
+				if not dynamic_only and self.options.sighouses and not self._use_global_house_cusp_significators():
+					self.toHCs(False, primdirs.PrimDir.TERM+i, raprom, declprom, chart.Chart.CONJUNCTIO)
 
 				summa += self.options.terms[self.options.selterm][i][j][1]
 
@@ -2341,7 +2364,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 		PARALLEL = 0
 		CONTRAPARALLEL = 1
 
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		raprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.RA]
 		declprom = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.DECL]
 
@@ -2412,7 +2435,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMLoF(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 
@@ -2440,7 +2463,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMSyzygy(self, idprom, psidx, aspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		pllon = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 
@@ -2468,7 +2491,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSM2(self, idprom, psidx, sig, paspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom_base = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 		lonprom = util.normalize(lonprom_base+paspect)
@@ -2515,7 +2538,7 @@ class RegioCampBasePD(primdirs.PrimDirs):
 
 
 	def calcArcWithSMCustomer2(self, mundane, idprom, psidx, paspect, arc):
-		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, self.options.topocentric, getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
+		sm = secmotion.SecMotion(self.chart.time, self.chart.place, idprom, arc, self.chart.place.lat, self.chart.houses.ascmc2, primdirs.PrimDirs.pd_topocentric(self.options), getattr(self.options, 'ayanamsha', 0), getattr(self.chart, 'ayanamsha_offset', 0.0))
 		lonprom_base = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LONG]
 		pllat = sm.planet.speculums[primdirs.PrimDirs.REGIOSPECULUM][planets.Planet.LAT]
 		lonprom = util.normalize(lonprom_base+paspect)

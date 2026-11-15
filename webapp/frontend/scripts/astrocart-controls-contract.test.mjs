@@ -762,15 +762,20 @@ test("configuration refreshes geometry and labels independently while preserving
 });
 
 test("iframe shortcut intents use the canonical manifest dispatcher and I is surface-aware", async () => {
-  const [home, workspace, shortcuts, map] = await Promise.all([
+  const [home, workspace, shortcuts, map, commands] = await Promise.all([
     source("src/components/workshell/home-client.tsx"),
     source("src/components/workshell/workspace-content.tsx"),
     source("src/shortcuts/manifest-shortcuts.ts"),
     source("../../Res/astrocart/map.html"),
+    source("src/components/workshell/workspace-ui-commands.ts"),
   ]);
   assert.match(
     map,
     /sendToHost\(\{ type: 'shortcut', key: key \}\)/,
+  );
+  assert.match(
+    map,
+    /if \(isCaret && window\.parent !== window\)[\s\S]*?postToParent\(\{ type: 'shortcut', key, code: event\.code, shiftKey: event\.shiftKey \}\)/,
   );
   assert.match(
     workspace,
@@ -802,9 +807,10 @@ test("iframe shortcut intents use the canonical manifest dispatcher and I is sur
   assert.match(inspectorDispatch, /closeInspectorAndNotes\(\)/);
   assert.match(inspectorDispatch, /workspace\.closeAllRightPanes\(\)/);
   assert.match(inspectorDispatch, /workspace\.openAstrocartControlsPane\(/);
+  assert.match(inspectorDispatch, /toggleWorkspaceInspector\(\);/);
   assert.match(
-    inspectorDispatch,
-    /closeAllRightPanes\(\);[\s\S]*toggleInspector\(\);/,
+    commands,
+    /function toggleWorkspaceInspector\(\)[\s\S]*?closeAllRightPanes\(\);[\s\S]*?inspectorOpen: frame\.styleEditorOpen \|\| !frame\.inspectorOpen/,
   );
 });
 

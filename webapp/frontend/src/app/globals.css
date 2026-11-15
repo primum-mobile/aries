@@ -116,7 +116,7 @@
   --aries-astrocart-map-dashed-opacity: 0.95;
   --aries-astrocart-map-dashed-width: 1.6px;
   --aries-astrocart-map-dom-label-opacity-scale: 0.9;
-  --aries-astrocart-map-eclipse-center-color: #d9b760;
+  --aries-astrocart-map-eclipse-center-color: var(--aries-signal);
   --aries-astrocart-map-eclipse-center-opacity: 0.96;
   --aries-astrocart-map-eclipse-center-width: 2px;
   --aries-astrocart-map-eclipse-fill-opacity: 0.9;
@@ -268,10 +268,14 @@
   --aries-astrocart-map-zenith-radius-width-scale: 2;
   --aries-astrocart-map-zenith-stroke-width-min: 1px;
   --aries-astrolabe-almucantar: var(--morinus-houses);
+  --aries-astrolabe-angle-label-scale: 0.7;
+  --aries-astrolabe-angle-tick-scale: 0.6;
   --aries-astrolabe-atmospheric-fill-opacity: 0.32;
   --aries-astrolabe-azimuth: var(--morinus-houses);
   --aries-astrolabe-background: var(--morinus-background);
   --aries-astrolabe-band-width-scale: 0.12;
+  --aries-astrolabe-bare-ecliptic-tick-scale: 0.5;
+  --aries-astrolabe-bare-sign-glyph-scale: 0.5;
   --aries-astrolabe-body-cull-scale: 1.1;
   --aries-astrolabe-body-label-pad-scale: 0.018;
   --aries-astrolabe-capricorn: var(--morinus-frame);
@@ -293,7 +297,27 @@
   --aries-astrolabe-connector-dash-off: 3px;
   --aries-astrolabe-connector-dash-on: 1px;
   --aries-astrolabe-connector-opacity: 0.42;
+  --aries-astrolabe-contact: var(--morinus-aspect-conjunction);
+  --aries-astrolabe-contact-glow: 6px;
+  --aries-astrolabe-contact-half-length: 40px;
+  --aries-astrolabe-decan-band-scale: 0.026;
+  --aries-astrolabe-decan-boundary: var(--morinus-frame);
+  --aries-astrolabe-declination: var(--morinus-houses);
+  --aries-astrolabe-disk-fill-opacity: 0.14;
+  --aries-astrolabe-disk-outline-opacity: 0.55;
+  --aries-astrolabe-disk-threshold: 1.2;
+  --aries-astrolabe-division-glyph-min: 5px;
+  --aries-astrolabe-division-glyph-scale: 0.72;
+  --aries-astrolabe-division-sign-share: 0.6;
+  --aries-astrolabe-earth: var(--morinus-positions);
   --aries-astrolabe-ecliptic: var(--morinus-frame);
+  --aries-astrolabe-ecliptic-band-box-degrees: 5;
+  --aries-astrolabe-ecliptic-band-tick-share: 1;
+  --aries-astrolabe-ecliptic-band-width-steps: 1;
+  --aries-astrolabe-ecliptic-scale-tick-1: 1;
+  --aries-astrolabe-ecliptic-scale-tick-10: 2.5;
+  --aries-astrolabe-ecliptic-scale-tick-5: 1.8;
+  --aries-astrolabe-ecliptic-scale-weight: 0.8;
   --aries-astrolabe-equator: var(--morinus-houses);
   --aries-astrolabe-equator-dash-off: 3px;
   --aries-astrolabe-equator-dash-on: 1px;
@@ -302,12 +326,6 @@
   --aries-astrolabe-fine-stroke-min: 0.75px;
   --aries-astrolabe-horizon: var(--morinus-angles);
   --aries-astrolabe-hour: var(--morinus-angles);
-  --aries-astrolabe-info-atmospheric: var(--morinus-text-bright);
-  --aries-astrolabe-info-font-divisor: 16;
-  --aries-astrolabe-info-font-scale: 0.75;
-  --aries-astrolabe-info-inset-divisor: 25;
-  --aries-astrolabe-info-line-height-scale: 1.2;
-  --aries-astrolabe-info-schematic: var(--morinus-text-bright);
   --aries-astrolabe-inner-radius-min: 1px;
   --aries-astrolabe-main-stroke-divisor: 720;
   --aries-astrolabe-main-stroke-min: 1.5px;
@@ -316,27 +334,64 @@
   --aries-astrolabe-meridian: var(--morinus-angles);
   --aries-astrolabe-meridian-dash-off: 4px;
   --aries-astrolabe-meridian-dash-on: 2px;
-  --aries-astrolabe-pd-row-font-divisor: 30;
-  --aries-astrolabe-pd-row-height-scale: 1.3;
-  --aries-astrolabe-pd-token-gap-scale: 0.35;
-  --aries-astrolabe-planet-font-divisor: 18;
+  --aries-astrolabe-notch-contact-width-scale: 2.4;
+  --aries-astrolabe-notch-half-length: 5px;
+  --aries-astrolabe-notch-ramp-end: 3px;
+  --aries-astrolabe-notch-ramp-start: 2px;
+  --aries-astrolabe-notch-width-scale: 1.6;
+  --aries-astrolabe-notch-zoom-cap: 1.8px;
+  --aries-astrolabe-notch-zoom-exponent: 0.3px;
+  --aries-astrolabe-planet-font-divisor: 22.22;
+  --aries-astrolabe-polar-angle-font-scale: 0.62;
+  --aries-astrolabe-polar-division-band-scale: 0.018;
+  --aries-astrolabe-polar-division-opacity: 0.4;
+  --aries-astrolabe-polar-lane-gap-scale: 0.012;
+  --aries-astrolabe-polar-leader-opacity: 0.72;
+  --aries-astrolabe-polar-rim-fill: 0.78;
+  --aries-astrolabe-polar-ring-font-scale: 0.5;
+  --aries-astrolabe-polar-star-label-scale: 0.62;
+  --aries-astrolabe-prime-vertical: var(--morinus-houses);
   --aries-astrolabe-regio: var(--morinus-houses);
   --aries-astrolabe-regio-dash-off: 4px;
   --aries-astrolabe-regio-dash-on: 1px;
+  --aries-astrolabe-regio-zoomed: var(--morinus-houses);
   --aries-astrolabe-sign-cull-scale: 0.03;
   --aries-astrolabe-sign-font-divisor: 24;
   --aries-astrolabe-sphere-outline-width: 0.75px;
   --aries-astrolabe-sphere-radius-divisor: 190;
   --aries-astrolabe-sphere-radius-min: 1.5px;
   --aries-astrolabe-star: var(--morinus-positions);
-  --aries-astrolabe-star-radius-divisor: 360;
+  --aries-astrolabe-star-bright-limit: 2.5px;
+  --aries-astrolabe-star-faint: var(--morinus-houses);
+  --aries-astrolabe-star-faint-opacity: 0.35;
+  --aries-astrolabe-star-magnitude-exponent: 0.3px;
+  --aries-astrolabe-star-radius-divisor: 590;
   --aries-astrolabe-star-radius-min: 1px;
+  --aries-astrolabe-star-scale-max: 1.6;
+  --aries-astrolabe-star-scale-min: 0.3;
+  --aries-astrolabe-subdivision-glyph: var(--morinus-signs);
   --aries-astrolabe-sun-fill: var(--morinus-body-sun);
   --aries-astrolabe-sun-sphere-scale: 1.5;
+  --aries-astrolabe-term-band-scale: 0.034;
+  --aries-astrolabe-term-boundary: var(--morinus-frame);
+  --aries-astrolabe-term-ring: var(--morinus-frame);
   --aries-astrolabe-tick-step-scale: 0.008;
   --aries-astrolabe-tropic: var(--morinus-houses);
   --aries-astrolabe-tropic-dash-off: 3px;
   --aries-astrolabe-tropic-dash-on: 1px;
+  --aries-astrolabe-zoom-glyph-cap: 2.5px;
+  --aries-astrolabe-zoom-glyph-exponent: 0.4px;
+  --aries-astrolabe-zoom-house-number-cap: 2.6px;
+  --aries-astrolabe-zoom-house-number-exponent: 0.5px;
+  --aries-astrolabe-zoom-lattice-fade: 0.55px;
+  --aries-astrolabe-zoom-ramp-end: 4px;
+  --aries-astrolabe-zoom-ramp-start: 2px;
+  --aries-astrolabe-zoom-sphere-cap: 4px;
+  --aries-astrolabe-zoom-sphere-exponent: 0.5px;
+  --aries-astrolabe-zoom-star-cap: 1.6px;
+  --aries-astrolabe-zoom-star-exponent: 0.2px;
+  --aries-astrolabe-zoom-star-label-cap: 1.3px;
+  --aries-astrolabe-zoom-star-label-exponent: 0.12px;
   --aries-mundane-arrow-scale: 0.04;
   --aries-mundane-ascmc-configured-default: 5px;
   --aries-mundane-ascmc-configured-max: 5px;
@@ -696,7 +751,7 @@
   --aries-wheel-decan-boundary-opacity: 1;
   --aries-wheel-decan-boundary-pattern: 0;
   --aries-wheel-decan-boundary-width-scale: 1;
-  --aries-wheel-decan-glyph-color: var(--morinus-signs);
+  --aries-wheel-decan-glyph-color: currentColor;
   --aries-wheel-decan-glyph-scale: 1;
   --aries-wheel-degree-tick-dash-off: 4px;
   --aries-wheel-degree-tick-dash-on: 6px;
@@ -889,7 +944,7 @@
   --aries-wheel-term-boundary-opacity: 1;
   --aries-wheel-term-boundary-pattern: 0;
   --aries-wheel-term-boundary-width-scale: 1;
-  --aries-wheel-term-glyph-color: var(--morinus-signs);
+  --aries-wheel-term-glyph-color: currentColor;
   --aries-wheel-term-glyph-scale: 1;
   --aries-wheel-term-ring-color: var(--morinus-frame);
   --aries-wheel-term-ring-dash-off: 4px;
@@ -1056,6 +1111,21 @@
   font-style: normal;
   font-display: block;
 }
+@font-face {
+  font-family: 'AriesDignityFace';
+  src: url('/fonts/AriesDignityFace.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+1D46D;
+}
+@font-face {
+  font-family: 'M PLUS 1 Code';
+  src: url('/fonts/MPLUS1Code.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;
+}
 
 html {
   background: #232428;
@@ -1211,6 +1281,7 @@ html {
   --aries-inspector-close-reserve: calc(var(--aries-inspector-close-inset) + var(--aries-inspector-close-icon-size) + var(--aries-inspector-close-inset) + 2px);
   --aries-inspector-summary-close-reserve: calc(var(--aries-inspector-close-reserve) + var(--aries-inspector-heading-gap));
   --aries-inspector-status-dot-size: 8px;
+  --aries-inspector-own-glyph-opacity: 0.7;
   --aries-inspector-hover-flag-viewport-margin: 8px;
   --aries-inspector-hover-flag-anchor-gap-x: 12px;
   --aries-inspector-hover-flag-anchor-gap-y: 10px;
@@ -1252,7 +1323,6 @@ html {
   --aries-statusbar-height: 26px;
   --aries-statusbar-line-box: 13px;
   --aries-statusbar-gap: 4px;
-  --aries-statusbar-action-size: 22px;
   --aries-statusbar-field-padding-x: 6px;
   --aries-statusbar-name-width: 160px;
   --aries-statusbar-kind-width: 80px;
@@ -1281,8 +1351,10 @@ html {
   --aries-list-cell-y-symbolic: 8px;
   --aries-list-rule-color: var(--aries-border-subtle);
   --aries-list-stripe-bg: var(--aries-surface-subtle);
-  --aries-list-hover-bg: color-mix(in srgb, var(--aries-text-primary) 10%, transparent);
-  --aries-list-selected-bg: color-mix(in srgb, var(--aries-text-primary) 14%, transparent);
+  /* Transparent first: the build's no-color-mix fallback takes the first colour,
+   * so older WebKit gets no tint instead of a solid text-colour row. */
+  --aries-list-hover-bg: color-mix(in srgb, transparent 90%, var(--aries-text-primary));
+  --aries-list-selected-bg: color-mix(in srgb, transparent 86%, var(--aries-text-primary));
   --aries-list-current-bg: var(--aries-accent);
   --aries-table-font-size-standard: var(--aries-font-size-base);
   --aries-table-row-height-standard: 31px;
@@ -1303,65 +1375,137 @@ html {
   --aries-search-sign-glyph-size: 14px;
   --aries-search-ingress-arrow-size: 13px;
   --aries-search-marker-size: 9px;
+  /* Chart modules (aspect matrix, dashboard grid, declination scale, Moon
+     list): one line colour, hairline rules and a heavier frame/axis. */
+  --aries-chart-module-rule-width: 1px;
+  --aries-chart-module-frame-width: 2px;
+  --aries-chart-module-rule-color: color-mix(in srgb, var(--aries-text-dim) 75%, var(--aries-background));
   --aries-aspect-matrix-cell-size: 46px;
   --aries-aspect-matrix-fixed-star-rail-width: 132px;
   --aries-aspect-matrix-outer-padding: 16px;
-  --aries-aspect-matrix-axis-glyph-size: 19px;
-  --aries-aspect-matrix-rule-width: 1px;
+  --aries-aspect-matrix-section-gap: 8px;
+  --aries-aspect-matrix-axis-glyph-size: 21px;
+  --aries-aspect-matrix-axis-label-size: var(--aries-font-size-small);
+  --aries-aspect-matrix-rule-width: var(--aries-chart-module-rule-width);
+  --aries-aspect-matrix-frame-width: var(--aries-chart-module-frame-width);
+  --aries-aspect-matrix-exact-width: 1px;
   --aries-aspect-matrix-exact-inset: 3px;
-  --aries-aspect-matrix-applying-marker-size: 5px;
+  --aries-aspect-matrix-applying-marker-size: 6px;
+  --aries-aspect-matrix-glyph-size: var(--aries-font-size-large);
   --aries-aspect-matrix-glyph-inset-x: 7px;
   --aries-aspect-matrix-glyph-inset-y: 5px;
+  --aries-aspect-matrix-parallel-size: var(--aries-font-size-base);
   --aries-aspect-matrix-parallel-inset-x: 4px;
   --aries-aspect-matrix-parallel-inset-y: 5px;
+  --aries-aspect-matrix-parallel-strength: 75%;
+  --aries-aspect-matrix-orb-size: var(--aries-font-size-small);
+  --aries-aspect-matrix-empty-orb-size: var(--aries-font-size-section);
+  --aries-aspect-matrix-orb-line-height: 1.5;
   --aries-aspect-matrix-orb-inset-bottom: 4px;
-  --aries-aspect-matrix-rule-color: color-mix(in srgb, var(--aries-border-subtle) 40%, transparent);
-  --aries-aspect-matrix-exact-color: color-mix(in srgb, var(--aries-text-primary) 45%, transparent);
-  --aries-aspect-matrix-applying-color: color-mix(in srgb, var(--aries-text-primary) 55%, transparent);
-  --aries-aspect-matrix-empty-color: color-mix(in srgb, var(--aries-text-primary) 35%, transparent);
+  --aries-aspect-matrix-rule-color: var(--aries-chart-module-rule-color);
+  --aries-aspect-matrix-axis-label-color: var(--aries-text-muted);
+  --aries-aspect-matrix-exact-color: var(--aries-text-muted);
+  --aries-aspect-matrix-applying-color: var(--aries-text-dim);
+  --aries-aspect-matrix-empty-color: var(--aries-text-dim);
   --aries-ephem-state-font-size: 12px;
   --aries-ephem-min-canvas-width: 40px;
   --aries-ephem-min-canvas-height: 40px;
-  --aries-ephem-planet-font-divisor: 40;
-  --aries-ephem-border-planet-scale: 1;
+  --aries-ephem-planet-font-divisor: 48;
+  --aries-ephem-planet-font-min: 10px;
+  --aries-ephem-planet-font-max: 16px;
   --aries-ephem-space-divisor: 3;
-  --aries-ephem-plot-left-border-scale: 2;
-  --aries-ephem-plot-right-border-scale: 2;
-  --aries-ephem-axis-x-border-scale: 2;
-  --aries-ephem-axis-sign-x-border-scale: 2;
-  --aries-ephem-outer-border-scale: 1;
-  --aries-ephem-bottom-axis-border-scale: 4;
-  --aries-ephem-sign-outer-margin-rows: 2;
-  --aries-ephem-axis-reserve-sign-scale: 0.5;
-  --aries-ephem-sign-font-scale: 1;
-  --aries-ephem-month-columns: 13;
-  --aries-ephem-text-font-divisor: 3;
+  --aries-ephem-plate-inset-scale: 1.25;
+  --aries-ephem-header-band-scale: 2.3;
+  --aries-ephem-wrap-band-scale: 2.75;
+  --aries-ephem-time-band-scale: 3.2;
+  --aries-ephem-sign-table-scale: 2.3;
+  --aries-ephem-modality-cell-pad-spaces: 2;
+  --aries-ephem-start-gutter-pad-spaces: 1;
+  --aries-ephem-degree-ruler-scale: 2.3;
+  --aries-ephem-limb-width-spaces: 2;
+  --aries-ephem-limb-bar-share: 0.45;
+  --aries-ephem-radix-column-scale: 3.6;
+  --aries-ephem-radix-line-width: 1.25px;
+  --aries-ephem-radix-midpoint-line-width: 1px;
+  --aries-ephem-radix-midpoint-dash-on: 6px;
+  --aries-ephem-radix-midpoint-dash-off: 6px;
+  --aries-ephem-radix-line-opacity: 0.85;
+  --aries-ephem-radix-ring-scale: 0.2;
+  --aries-ephem-radix-ring-width: 1.25px;
+  --aries-ephem-radix-label-scale: 0.9;
+  --aries-ephem-radix-pair-label-scale: 0.78;
+  --aries-ephem-radix-angle-line-scale: 1.6;
+  --aries-ephem-radix-outer-width-scale: 0.75;
+  --aries-ephem-radix-band-opacity: 0.1;
+  --aries-ephem-radix-focus-band-scale: 1.4;
+  --aries-ephem-radix-recede-opacity: 0.4;
+  --aries-ephem-radix-recede-fade-ms: 160ms;
+  --aries-ephem-radix-recede-delay-ms: 80ms;
+  --aries-ephem-radix-focus-width-scale: 1.6;
+  --aries-ephem-radix-focus-ring-scale: 1.35;
+  --aries-ephem-radix-reading-glyph-scale: 0.7;
+  --aries-ephem-radix-contour-glyph-scale: 0.75;
+  --aries-ephem-radix-contour-count: 2;
+  --aries-ephem-planet-contact-glyph-scale: 0.85;
+  --aries-ephem-planet-contact-knockout-scale: 0.55;
+  --aries-ephem-now-line-width: 1px;
+  --aries-ephem-now-line-opacity: 0.55;
+  --aries-ephem-now-tag-pad-scale: 0.5;
+  --aries-ephem-header-font-scale: 0.95;
+  --aries-ephem-text-font-scale: 0.88;
+  --aries-ephem-table-font-scale: 0.73;
+  --aries-ephem-sign-font-scale: 1.15;
+  --aries-ephem-modality-glyph-scale: 0.77;
+  --aries-ephem-edge-sign-font-scale: 0.8;
+  --aries-ephem-start-sign-font-scale: 0.77;
+  --aries-ephem-station-font-scale: 0.65;
   --aries-ephem-frame-small-max: 400px;
   --aries-ephem-frame-medium-max: 600px;
-  --aries-ephem-frame-width-small: 2px;
-  --aries-ephem-frame-width-medium: 3px;
-  --aries-ephem-frame-width-large: 4px;
-  --aries-ephem-curve-small-max: 500px;
-  --aries-ephem-curve-width-small: 1px;
-  --aries-ephem-curve-width-large: 2px;
+  --aries-ephem-frame-width-small: 1px;
+  --aries-ephem-frame-width-medium: 1px;
+  --aries-ephem-frame-width-large: 1px;
+  --aries-ephem-plate-frame-width: 1px;
+  --aries-ephem-hairline-width: 0.75px;
+  --aries-ephem-curve-width-sun: 1.6px;
+  --aries-ephem-curve-width-inner: 1.15px;
+  --aries-ephem-curve-width-outer: 1px;
+  --aries-ephem-curve-width-moon: 0.8px;
+  --aries-ephem-curve-width-highlight: 2px;
+  --aries-ephem-tier-outer-width-scale: 0.9;
   --aries-ephem-grid-line-width: 1px;
-  --aries-ephem-grid-dash-on: 6px;
+  --aries-ephem-grid-dash-on: 1px;
   --aries-ephem-grid-dash-off: 3px;
-  --aries-ephem-station-tick-scale: 0.22;
-  --aries-ephem-station-tick-min: 4px;
-  --aries-ephem-station-tick-max: 9px;
-  --aries-ephem-station-tick-line-width: 1px;
+  --aries-ephem-guide-opacity: 0.65;
+  --aries-ephem-oob-tint-opacity: 0.14;
+  --aries-ephem-ink-contrast-ratio-min: 2.2;
   --aries-ephem-event-glyph-scale: 0.9;
   --aries-ephem-event-glyph-min: 6px;
   --aries-ephem-event-glyph-max: 10px;
-  --aries-ephem-event-code-offset-x-min: 2px;
   --aries-ephem-event-code-offset-y-min: 1px;
-  --aries-ephem-left-planet-label-gap-spaces: 3;
-  --aries-ephem-edge-wrap-label-gap-spaces: 2;
+  --aries-ephem-station-letter-offset-scale: 0.65;
+  --aries-ephem-turn-dot-scale: 0.22;
+  --aries-ephem-start-sign-offset-scale: 1.15;
+  --aries-ephem-start-label-gap-scale: 1;
+  --aries-ephem-edge-label-gap-scale: 1;
+  --aries-ephem-edge-label-max-shift-scale: 1.5;
   --aries-ephem-label-y-gap-spaces: 1;
-  --aries-ephem-relax-iterations: 30;
   --aries-ephem-station-snap-x: 10px;
   --aries-ephem-station-snap-y: 16px;
+  --aries-ephem-tick-width: 0.75px;
+  --aries-ephem-minor-tick-width: 0.75px;
+  --aries-ephem-ruler-major-tick-scale: 0.7;
+  --aries-ephem-ruler-medium-tick-scale: 0.38;
+  --aries-ephem-ruler-minor-tick-scale: 0.3;
+  --aries-ephem-ruler-fine-tick-scale: 0.2;
+  --aries-ephem-ruler-tick-min: 2px;
+  --aries-ephem-ruler-tick-min-spacing: 3.5px;
+  --aries-ephem-ruler-label-scale: 0.8;
+  --aries-ephem-ruler-label-gap-spaces: 0.5;
+  --aries-ephem-lunation-disc-scale: 0.5;
+  --aries-ephem-lunation-disc-min: 5px;
+  --aries-ephem-lunation-disc-max: 9px;
+  --aries-ephem-lunation-disc-outline-width: 1px;
+  --aries-ephem-eclipse-letter-scale: 0.72;
   --aries-ephem-hover-offset-x: 12px;
   --aries-ephem-hover-offset-y: 48px;
   --aries-ephem-hover-edge-inset: 4px;
@@ -1491,6 +1635,9 @@ html {
   --aries-dialog-viewport-inset: 32px;
   --aries-dialog-viewport-height: 88vh;
   --aries-dialog-content-height-workspace: 70vh;
+  /* Floating panels stand in for native tool windows in the browser, so they
+   * carry the soft macOS window shadow the OS draws around Tauri windows. */
+  --aries-material-window-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.25), 0 18px 48px rgb(0 0 0 / 0.45);
   --aries-dialog-list-max-height: 224px;
   --aries-form-section-gap: var(--aries-section-gap);
   --aries-form-group-gap: 10px;
@@ -1513,8 +1660,6 @@ html {
   --aries-menu-context-submenu-min-width: 192px;
   --aries-menu-context-popup-min-width: 144px;
   --aries-menu-quick-width: 288px;
-  --aries-menu-quick-max-height: 620px;
-  --aries-menu-quick-viewport-max-height: 100vh;
   --aries-menu-command-max-height: 288px;
   --aries-menu-dropdown-min-width: 128px;
   --aries-menu-dropdown-submenu-min-width: 96px;
@@ -1592,6 +1737,7 @@ html {
     var(--aries-surface)
   );
   --aries-status-good: rgb(74 160 92);
+  --aries-signal: rgb(0 191 255);
   --aries-status-caution: rgb(196 152 56);
   --aries-status-avoid: rgb(192 80 72);
   --aries-status-neutral: rgb(127 127 127);
@@ -1641,6 +1787,9 @@ html {
   --morinus-houses: rgb(138 139 141);
   --morinus-housenums: rgb(59 59 60);
   --morinus-peregrin: rgb(205 205 209);
+  --morinus-minor-dignity-1: var(--morinus-peregrin);
+  --morinus-minor-dignity-2: var(--morinus-peregrin);
+  --morinus-minor-dignity-3: var(--morinus-peregrin);
   --morinus-positions: rgb(255 255 255);
   --morinus-table: rgb(0 0 0);
   --morinus-dignity-domicil: rgb(2 191 2);
@@ -1652,11 +1801,11 @@ html {
   --morinus-body-mercury: rgb(138 43 226);
   --morinus-body-venus: rgb(0 128 0);
   --morinus-body-mars: rgb(178 34 34);
-  --morinus-body-jupiter: rgb(0 0 255);
-  --morinus-body-saturn: rgb(0 0 0);
-  --morinus-body-uranus: rgb(0 0 128);
-  --morinus-body-neptune: rgb(0 0 128);
-  --morinus-body-pluto: rgb(0 0 128);
+  --morinus-body-jupiter: rgb(110 168 255);
+  --morinus-body-saturn: rgb(180 190 195);
+  --morinus-body-uranus: rgb(130 145 205);
+  --morinus-body-neptune: rgb(130 145 205);
+  --morinus-body-pluto: rgb(130 145 205);
   --morinus-body-nodes: rgb(139 54 38);
   --morinus-body-fortune: rgb(205 96 144);
   --morinus-body-chiron: rgb(128 0 128);
@@ -1695,6 +1844,7 @@ html[data-theme-ready="pending"] body {
 
 /* Day preset — dropped in for future toggle (colorsdlg.py:67–96) */
 .day {
+  --aries-material-window-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.08), 0 18px 48px rgb(0 0 0 / 0.2);
   --aries-text-primary: rgb(38 38 38);
   --aries-text-muted: rgb(99 99 99);
   --aries-text-dim: rgb(129 129 129);
@@ -1783,6 +1933,118 @@ html[data-theme-ready="pending"] body {
   color: var(--aries-inspector-text);
 }
 
+/* Larger reading sizes give interpretation selectors a full line each. */
+[data-inspector-text-size="larger"] .aries-inspector-interpretation-controls,
+[data-inspector-text-size="extra-large"] .aries-inspector-interpretation-controls {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+[data-synodic-event-label="short"],
+[data-compact-events] [data-synodic-event-label="full"] {
+  display: none;
+}
+
+[data-compact-events] [data-synodic-event-label="short"] {
+  display: inline;
+}
+
+.aries-inspector-speculum {
+  contain: inline-size;
+  padding-inline: var(--aries-list-cell-x-symbolic);
+  /* Native column flow needs whole words, regardless of surrounding prose. */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum-degree-angle,
+.aries-inspector-speculum-compact-speed,
+.aries-inspector-speculum-wrapped-speed {
+  display: none;
+}
+
+[data-speculum-dynamic] [data-speculum-variant]:not([hidden]) {
+  display: inline;
+}
+
+/* keep-all: CJK names ("天王星") are words too, not a break between every
+ * character, so they reach the fit steps instead of absorbing the squeeze. */
+.aries-inspector-speculum-body-label {
+  white-space: normal;
+  word-break: keep-all;
+}
+
+/* First fit step: headings never reserve column width. A heading wider than
+ * its values ellipsizes inside the width the values set; its title keeps the
+ * full name. Data is shortened only after this. */
+.aries-inspector-speculum[data-fit-headings="true"] .aries-inspector-speculum-heading {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Names wrap at spaces freely; long words hyphenate only after every column
+ * has dropped its seconds, and before any minutes go. */
+/* Only names with a long word (8+ letters, or 6+ CJK characters, which are
+ * about twice as wide) may break; "Mercury" and "天王星" never do.
+ * (`hyphenate-limit-chars` would say this, but the CSS pipeline drops it.) */
+.aries-inspector-speculum[data-hyphenate-names="true"] .aries-inspector-speculum-body-label[data-long-word] {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  word-break: normal;
+}
+
+/* Each coordinate column drops precision on its own (latitude, declination,
+ * then longitude), so one step frees only the width the pane needs. Seconds
+ * go before any minutes; the cell title keeps the full value. */
+.aries-inspector-speculum[data-lon-precision="minutes"] [data-speculum-angle="lon"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-lat-precision="minutes"] [data-speculum-angle="lat"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-ra-precision="minutes"] [data-speculum-angle="ra"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-decl-precision="minutes"] [data-speculum-angle="decl"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-lon-precision="degrees"] [data-speculum-angle="lon"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-lat-precision="degrees"] [data-speculum-angle="lat"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-ra-precision="degrees"] [data-speculum-angle="ra"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-decl-precision="degrees"] [data-speculum-angle="decl"] .aries-inspector-speculum-full-angle,
+.aries-inspector-speculum[data-lon-precision="degrees"] [data-speculum-angle="lon"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-lat-precision="degrees"] [data-speculum-angle="lat"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-ra-precision="degrees"] [data-speculum-angle="ra"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-decl-precision="degrees"] [data-speculum-angle="decl"] .aries-inspector-speculum-compact-angle {
+  display: none;
+}
+
+.aries-inspector-speculum[data-lon-precision="minutes"] [data-speculum-angle="lon"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-lat-precision="minutes"] [data-speculum-angle="lat"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-ra-precision="minutes"] [data-speculum-angle="ra"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-decl-precision="minutes"] [data-speculum-angle="decl"] .aries-inspector-speculum-compact-angle,
+.aries-inspector-speculum[data-lon-precision="degrees"] [data-speculum-angle="lon"] .aries-inspector-speculum-degree-angle,
+.aries-inspector-speculum[data-lat-precision="degrees"] [data-speculum-angle="lat"] .aries-inspector-speculum-degree-angle,
+.aries-inspector-speculum[data-ra-precision="degrees"] [data-speculum-angle="ra"] .aries-inspector-speculum-degree-angle,
+.aries-inspector-speculum[data-decl-precision="degrees"] [data-speculum-angle="decl"] .aries-inspector-speculum-degree-angle {
+  display: inline;
+}
+
+/* Daily speed drops its seconds like a coordinate column, before it may wrap. */
+.aries-inspector-speculum[data-speed-precision="minutes"] .aries-inspector-speculum-full-speed {
+  display: none;
+}
+
+.aries-inspector-speculum[data-speed-precision="minutes"] .aries-inspector-speculum-compact-speed {
+  display: inline;
+}
+
+.aries-inspector-speculum[data-wrap-speed="true"] .aries-inspector-speculum-full-speed,
+.aries-inspector-speculum[data-wrap-speed="true"] .aries-inspector-speculum-compact-speed {
+  display: none;
+}
+
+.aries-inspector-speculum[data-wrap-speed="true"] .aries-inspector-speculum-wrapped-speed {
+  display: inline;
+  white-space: normal;
+}
+
 [data-aries-surface="overlay"] {
   background-color: var(--aries-overlay-background);
   color: var(--aries-overlay-text);
@@ -1815,6 +2077,36 @@ html[data-theme-ready="pending"] body {
     color: CanvasText;
     filter: none !important;
     backdrop-filter: none !important;
+  }
+
+  /* Windows High Contrast. Charts, maps, plots and colour swatches show data
+   * colours, not chrome: like images they keep their authored colours (the
+   * chart palette carries its own contrast). Everything else stays on the
+   * system palette. */
+  canvas,
+  [data-aries-true-color] {
+    forced-color-adjust: none;
+  }
+
+  /* State that only a background tint carried would vanish with the palette
+   * swap: selected rows, pressed toggles, the active sidebar row and tab. */
+  [aria-selected="true"],
+  [aria-pressed="true"],
+  [aria-current]:not([aria-current="false"]),
+  [data-active="true"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  [role^="menuitem"][data-highlighted],
+  [role="option"][data-highlighted] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  [aria-disabled="true"],
+  [data-disabled] {
+    color: GrayText;
   }
 }
 
@@ -1905,6 +2197,10 @@ html[data-theme-ready="pending"] body {
     --aries-list-rule: var(--aries-list-rule-color);
     color: var(--aries-text-primary);
     font-size: var(--aries-list-font-size);
+    /* The app's inherited 1.5 leading expands glyph cells beyond the fixed
+     * row-height token used by virtualization. Keep normal font metrics here;
+     * row height and cell padding own the list's vertical rhythm. */
+    line-height: normal;
     /* Aries table contract: native auto table layout, existing column order, pane-width boundary. */
     table-layout: auto;
     min-width: 100%;
@@ -2006,11 +2302,21 @@ html[data-theme-ready="pending"] body {
     font-size: var(--aries-search-marker-size);
   }
 
-  .aries-search-results-scroller::-webkit-scrollbar {
+  /* Hide horizontal chrome without clipping exceptional list content.
+   * Not in the Windows desktop app (WebView2, `data-aries-os` set by the
+   * platform boot script in layout.tsx): styling any ::-webkit-scrollbar part
+   * switches Chromium to
+   * custom scrollbars, which drop the Fluent overlay scrollbar, paint no
+   * thumb for unstyled parts and reserve a classic-width vertical gutter.
+   * There a horizontal bar appears only on real overflow, which the table
+   * fit policy rules out, and the Fluent overlay bar takes no width. */
+  :root:not([data-aries-os="windows"]) .aries-list-scroller::-webkit-scrollbar,
+  :root:not([data-aries-os="windows"]) .aries-search-results-scroller::-webkit-scrollbar {
     height: 0;
   }
 
-  .aries-search-results-scroller::-webkit-scrollbar:horizontal {
+  :root:not([data-aries-os="windows"]) .aries-list-scroller::-webkit-scrollbar:horizontal,
+  :root:not([data-aries-os="windows"]) .aries-search-results-scroller::-webkit-scrollbar:horizontal {
     display: none;
   }
 
@@ -2663,6 +2969,13 @@ html[data-theme-ready="pending"] body {
   max-height: none;
 }
 
+[data-settings-search-highlight] {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+  border-radius: var(--aries-radius-menu-item);
+  background-color: var(--accent);
+}
+
 .aries-ambient-spotlight {
   --aries-ambient-spotlight-bg: var(--aries-background);
   --aries-ambient-spotlight-stroke: color-mix(
@@ -2756,6 +3069,10 @@ html[data-theme-ready="pending"] body {
   border-radius: var(--aries-radius-control);
   background: transparent;
   min-height: var(--aries-spotlight-preview-min-height);
+}
+
+.aries-ambient-spotlight-preview[data-selected="true"] {
+  background: var(--aries-ambient-spotlight-hover);
 }
 
 .aries-ambient-spotlight-primary {
@@ -2901,7 +3218,7 @@ html[data-theme-ready="pending"] body {
 
 /* Native unified overlay title bar.
  *
- * Contract: doc/ui-specs/webapp-shell-frame.md. AppKit owns the macOS traffic
+ * AppKit owns the macOS traffic
  * lights and DWM owns the Windows caption controls; React owns the floating
  * document title/actions, direct drag-region hit targets, and shell metrics.
  */
@@ -2916,10 +3233,16 @@ html[data-theme-ready="pending"] body {
   --titlebar-side-min-w: 132px;
   --aries-titlebar-seam-rule: color-mix(in srgb, var(--aries-border-subtle) 36%, transparent);
   --aries-sidebar-sash-rule: color-mix(in srgb, var(--aries-border-subtle) 62%, transparent);
+  /* Quiet control line: outlines the Primary Directions settings selects. */
+  --aries-control-outline: color-mix(in srgb, var(--aries-border-subtle) 60%, transparent);
   --aries-sidebar-section-rule: color-mix(in srgb, var(--aries-border-subtle) 42%, transparent);
   --aries-sidebar-row-soft: color-mix(in srgb, var(--aries-surface) 95%, var(--aries-sidebar-text));
   --aries-sidebar-row-hover: color-mix(in srgb, var(--aries-surface) 90%, var(--aries-sidebar-text));
   --aries-sidebar-row-active: color-mix(in srgb, var(--aries-surface) 88%, var(--aries-sidebar-text));
+  /* Selected chart in the sidebar: the active row with a slight slate-blue
+   * tint (soft-glow-gpt selection fill). Active row first, so a build without
+   * color-mix falls back to the neutral active row. */
+  --aries-sidebar-row-selected-chart: color-mix(in srgb, var(--aries-sidebar-row-active) 76%, rgb(74 112 178));
   --aries-sidebar-row-strong: color-mix(in srgb, var(--aries-surface) 86%, var(--aries-sidebar-text));
   --aries-sidebar-drop-indicator: color-mix(in srgb, var(--aries-sidebar-text) 78%, var(--aries-surface));
 }
@@ -2934,6 +3257,20 @@ html[data-theme-ready="pending"] body {
 .aries-sidebar-navrow--shortcut:is(:hover, :has([data-slot="sidebar-menu-button"]:focus-visible))
   .aries-sidebar-navrow-label {
   opacity: 0;
+}
+/* Windows desktop app: Segoe UI (the "system" UI face, e.g. Midnight) hangs
+ * its descenders below the 16px row line box, so the truncating label (and
+ * its text box, which the menu button also truncates) cut g/p/y at 150 %
+ * on Windows. Let both clip boxes reach below the line
+ * box; the line box, text position and row layout are unchanged. */
+:root[data-aries-os="windows"] .aries-sidebar-navrow-text {
+  height: calc(var(--aries-sidebar-row-line-box) + 0.25em);
+  margin-bottom: -0.25em;
+}
+:root[data-aries-os="windows"] .aries-sidebar-navrow-label,
+:root[data-aries-os="windows"] .aries-sidebar-navrow-label-faded {
+  height: calc(100% + 0.25em);
+  margin-bottom: -0.25em;
 }
 .aries-sidebar-navrow--shortcut:is(:hover, :has([data-slot="sidebar-menu-button"]:focus-visible))
   .aries-sidebar-navrow-label-faded,
@@ -2964,15 +3301,565 @@ html[data-theme-ready="pending"] body {
   background: transparent;
 }
 
-/* The asteroid's secondary command shares the radio row without occupying
+/* Secondary commands share their menu row without occupying
  * its visible idle state or moving the normal selected-mode checkmark. */
-[data-asteroid-menu-row] [data-asteroid-menu-all] {
+[data-context-menu-toggle-row] [data-context-menu-inline-toggle] {
   opacity: 0;
   pointer-events: none;
 }
-[data-asteroid-menu-row]:is(:hover, :focus-within) [data-asteroid-menu-all] {
+[data-context-menu-toggle-row]:is(:hover, :focus-within) [data-context-menu-inline-toggle],
+[data-context-menu-toggle-row] [data-context-menu-inline-toggle][aria-pressed="true"] {
   opacity: 1;
   pointer-events: auto;
 }
 /* Tauri only: the native traffic lights overlay the bar's left edge. Keep
  * --titlebar-traffic-x/y aligned with src-tauri/tauri.conf.json. */
+
+/* Touch layout (browser build only; html[data-aries-mobile] is set by
+ * WorkspaceFrame below 768 px and on touch tablets up to 1400 px, never in
+ * Tauri). The shell keeps its retained surfaces: the launcher is the sidebar's
+ * mobile sheet, the Inspector becomes a bottom sheet, other right panes open
+ * full screen, the stepping rail docks under the wheel, and a bottom
+ * navigation bar replaces the status row. Tap targets are at least 44 px. */
+.app-shell-mobile {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-left: env(safe-area-inset-left);
+}
+.app-shell-mobile > header {
+  top: env(safe-area-inset-top);
+}
+.aries-mobile-titlebar {
+  --morinus-header-btn-h: 44px;
+  --morinus-header-btn-w: 44px;
+  column-gap: var(--aries-titlebar-cluster-gap);
+}
+/* The phone title bar holds 44 px targets and a two-line title. */
+html[data-aries-mobile] {
+  --titlebar-h: 48px;
+}
+
+/* One bottom bar: Charts, the chart's stepping controls (portalled into the
+ * slot by ModeHintRail), Inspector and Menu. The slot takes its content's
+ * width; the three tabs share the rest. */
+.aries-mobile-nav {
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(44px, 1fr) auto minmax(44px, 1fr) minmax(44px, 1fr);
+  border-top: 1px solid var(--aries-titlebar-seam-rule);
+  background: var(--aries-titlebar-background);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.aries-mobile-nav-slot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.aries-mobile-nav-button {
+  display: flex;
+  min-height: 50px;
+  container-type: inline-size;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--aries-titlebar-icon);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-font-size-small);
+  line-height: 1.1;
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-mobile-nav-button svg {
+  width: 22px;
+  height: 22px;
+}
+.aries-mobile-nav-button[aria-pressed="true"] {
+  color: var(--aries-titlebar-icon-active);
+}
+/* A tab left narrower than its label by the stepping controls shows its icon
+ * alone; the button's aria-label keeps its name. */
+@container (max-width: 63px) {
+  .aries-mobile-nav-button > span {
+    display: none;
+  }
+}
+/* Tablets: the bar's items sit together in the middle. */
+@media (min-width: 600px) {
+  .aries-mobile-nav {
+    grid-template-columns: 128px auto 128px 128px;
+    justify-content: center;
+  }
+}
+html[data-aries-mobile] {
+  touch-action: manipulation;
+}
+
+/* Full-screen right-pane views (everything but the Inspector) cover the whole
+ * workspace, below popovers, menus and dialogs. Back minimizes the view: it
+ * keeps this box but is hidden and inert, so its list stays mounted with its
+ * viewport and scroll position, and a bar above the navigation restores it. */
+.aries-touch-pane-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  border-left-width: 0;
+  background: var(--aries-panel-background);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  overscroll-behavior: contain;
+}
+.aries-touch-pane-fullscreen * {
+  overscroll-behavior: contain;
+}
+.aries-touch-pane-minimized {
+  visibility: hidden;
+  pointer-events: none;
+}
+.aries-touch-pane-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+.aries-touch-pane-backrow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px solid var(--aries-titlebar-seam-rule);
+  background: var(--aries-titlebar-background);
+  padding: 0 4px;
+}
+.aries-touch-pane-back {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 12px 0 4px;
+  color: var(--aries-titlebar-icon-active);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-font-size-control);
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-touch-pane-back svg {
+  width: 22px;
+  height: 22px;
+}
+.aries-touch-pane-bar {
+  display: flex;
+  grid-row: 2;
+  grid-column: 1;
+  align-items: center;
+  min-height: 44px;
+  border-top: 1px solid var(--aries-titlebar-seam-rule);
+  background: var(--aries-titlebar-background);
+}
+.aries-touch-pane-bar-restore {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+  color: var(--aries-titlebar-icon-active);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-font-size-control);
+  text-align: start;
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-touch-pane-bar-close {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--aries-titlebar-icon);
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-touch-pane-bar svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* The open right pane is the second row of the right-pane split (see
+ * workspace-content.tsx), so the wheel and the docked stepping rail shrink
+ * above it and nothing is covered or offset by hard-coded nav heights. */
+html[data-aries-mobile] {
+  overscroll-behavior: none;
+}
+html[data-aries-mobile] body {
+  overscroll-behavior: none;
+}
+.aries-mobile-pane-sheet {
+  grid-row: 2;
+  grid-column: 1;
+  height: min(45dvh, 440px);
+  min-height: 0;
+  border-top: 1px solid var(--aries-titlebar-seam-rule);
+  border-left-width: 0;
+  border-radius: var(--aries-radius-lg) var(--aries-radius-lg) 0 0;
+  background: var(--aries-panel-background);
+  padding-top: 0;
+  overscroll-behavior: contain;
+}
+.aries-mobile-pane-sheet * {
+  overscroll-behavior: contain;
+}
+
+/* Launcher sheet: clear the status bar, 44 px rows, and no scroll chaining. */
+.aries-mobile-launcher-sheet {
+  --aries-sidebar-row-height: 44px;
+  --morinus-row-min-height: 44px;
+  --aries-sidebar-close-action-size: 44px;
+  --aries-sidebar-close-inset: 0px;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.aries-mobile-launcher-sheet [data-sidebar="content"] {
+  overscroll-behavior: contain;
+}
+/* Touch has no hover: show the close action, and drop the unsaved dot it
+ * would cover (the row label already ends in "*" when unsaved). */
+.aries-mobile-launcher-sheet .aries-sidebar-close-action {
+  opacity: 1;
+}
+.aries-mobile-launcher-sheet .aries-sidebar-unsaved-dot {
+  display: none;
+}
+
+/* Floating tool dialogs (New chart, Settings) become full-screen sheets
+ * within the safe area. Their single grid track may not grow past the screen,
+ * so wide rows wrap or scroll inside the dialog body. */
+.aries-mobile-dialog-backdrop {
+  background: var(--aries-overlay-scrim);
+}
+html[data-aries-mobile] [data-aries-mobile-dialog] {
+  top: env(safe-area-inset-top);
+  right: env(safe-area-inset-right);
+  bottom: env(safe-area-inset-bottom);
+  left: env(safe-area-inset-left);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  translate: none;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  border-radius: 0;
+}
+html[data-aries-mobile] [data-aries-mobile-dialog] > form {
+  min-width: 0;
+  max-height: none;
+  height: 100%;
+}
+html[data-aries-mobile] [data-aries-mobile-dialog] [data-slot="dialog-close"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* Settings: the tab rail becomes a horizontally scrolling row above
+ * full-width content. */
+html[data-aries-mobile] .aries-settings-tabs {
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: auto;
+  max-height: none;
+}
+html[data-aries-mobile] .aries-settings-tab-list {
+  width: 100%;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  border-right-width: 0;
+  border-bottom: 1px solid var(--aries-titlebar-seam-rule);
+}
+html[data-aries-mobile] .aries-settings-tab-list > * {
+  width: auto;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+/* The chart pane holds only the chart surface; its stepping controls live in
+ * the bottom navigation bar. */
+html[data-aries-mobile] [data-workspace-focus-anchor] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  padding-top: var(--titlebar-h);
+}
+/* Phone chart surface: the wheel is the largest square the pane allows (its
+ * full width in portrait) and never shrinks for the chart facts. The facts
+ * wrap after it in flow: below it in portrait, beside it when the pane is
+ * wide, and the pane scrolls when they do not fit. */
+.aries-mobile-chart {
+  container-type: size;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.aries-mobile-chart-wheel {
+  display: flex;
+  flex: none;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+}
+.aries-mobile-chart-facts {
+  display: flex;
+  flex: 1 1 160px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 8px 20px;
+  padding: 4px 12px 12px;
+}
+.aries-mobile-chart-facts:empty {
+  display: none;
+}
+/* The stepping controls as the centre of the bottom navigation bar. */
+.aries-mode-hint--mobile {
+  --aries-mode-hint-control-height: 44px;
+  --aries-mode-hint-arrow-width: 44px;
+  --aries-mode-hint-icon-size: 22px;
+  --aries-mode-hint-font-size: var(--aries-font-size-control);
+  position: static;
+  width: auto;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  transform: none;
+  z-index: auto;
+  cursor: default;
+}
+.aries-mode-hint--mobile.aries-mode-hint--hidden {
+  display: none;
+}
+.aries-mobile-step-unit {
+  min-width: 56px;
+}
+/* Reset to chart time: a small glyph in the chart pane's top-right corner,
+ * outside the round wheel, with a full 44 px touch target. */
+.aries-mobile-chart-reset {
+  position: absolute;
+  top: var(--titlebar-h);
+  right: env(safe-area-inset-right);
+  z-index: 20;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--aries-titlebar-icon);
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-mobile-chart-reset svg {
+  width: 18px;
+  height: 18px;
+}
+/* Every bar control is a full 44 px touch target. A held arrow repeats steps
+ * and a held unit resets to the chart time: no callout, text selection or pan
+ * may cancel the press (the bar itself never scrolls vertically). */
+.aries-mode-hint--mobile :is(.aries-step-arrow-button, .aries-mobile-step-unit) {
+  height: var(--aries-mode-hint-control-height);
+  min-height: 44px;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Inspector sheet: its selects and close button are touch targets too. */
+html[data-aries-mobile] [data-aries-surface="inspector"] :is(select, [role="combobox"]) {
+  min-height: 44px;
+}
+html[data-aries-mobile] [data-aries-surface="inspector"] > button:first-child {
+  min-width: 44px;
+  min-height: 44px;
+}
+.aries-mode-hint--mobile .aries-step-arrow-button svg {
+  width: var(--aries-mode-hint-icon-size);
+  height: var(--aries-mode-hint-icon-size);
+}
+
+.aries-mobile-menu-sheet {
+  max-height: 80dvh;
+  overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Top padding clears the sheet's close button. */
+.aries-mobile-menu {
+  padding: 40px 0 8px;
+}
+.aries-mobile-menu-row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  color: var(--aries-overlay-text);
+  font-family: var(--aries-font-ui);
+  font-size: var(--aries-font-size-control);
+  list-style: none;
+  text-align: start;
+  -webkit-tap-highlight-color: transparent;
+}
+.aries-mobile-menu-row::-webkit-details-marker {
+  display: none;
+}
+.aries-mobile-menu-row:active:not(:disabled) {
+  background: var(--aries-list-hover-bg);
+}
+.aries-mobile-menu-children {
+  padding-inline-start: 12px;
+}
+.aries-mobile-menu-chevron,
+.aries-mobile-menu-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.aries-mobile-menu-group[open] > summary .aries-mobile-menu-chevron {
+  transform: rotate(90deg);
+}
+.aries-mobile-menu-separator {
+  margin: 4px 16px;
+  border: 0;
+  border-top: 1px solid var(--aries-titlebar-seam-rule);
+}
+
+/* Browser build: splash shown while the in-browser engine loads
+ * (components/web-engine-splash.tsx). The Thema Mundi woodcut breathes slowly. */
+.aries-web-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 16px;
+  background: var(--background, #232428);
+  color: var(--aries-text-primary);
+  font-family: var(--aries-font-ui, system-ui, sans-serif);
+  opacity: 1;
+  transition: opacity 450ms ease;
+}
+
+.aries-web-splash[data-state="leaving"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.aries-web-splash__mark {
+  width: min(40vh, 300px, 70vw);
+  aspect-ratio: 362 / 356;
+  background-color: var(--aries-text-primary);
+  -webkit-mask: url("/aries-splash-chart-only.svg") center / contain no-repeat;
+  mask: url("/aries-splash-chart-only.svg") center / contain no-repeat;
+  animation: aries-web-splash-breathe 2.8s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* The last painted chart (lib/chart/last-chart-preview.ts), shown while the engine starts. */
+.aries-web-splash__preview {
+  display: block;
+  max-width: min(92vw, 900px);
+  max-height: 68vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  animation: aries-web-splash-preview-in 200ms ease-out;
+}
+
+@keyframes aries-web-splash-preview-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.aries-web-splash[data-state="error"] .aries-web-splash__mark {
+  animation: none;
+  opacity: 0.45;
+}
+
+.aries-web-splash__label {
+  font-size: var(--aries-font-size-reading, 14px);
+  color: var(--aries-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.aries-web-splash__track {
+  width: min(160px, 50vw);
+  height: 2px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--aries-text-muted) 22%, transparent);
+}
+
+.aries-web-splash__bar {
+  height: 100%;
+  background: var(--aries-text-muted);
+  transform-origin: left center;
+  transition: transform 500ms ease;
+}
+
+.aries-web-splash__retry {
+  font: inherit;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--aries-text-muted);
+  background: transparent;
+  color: var(--aries-text-primary);
+  cursor: pointer;
+}
+
+@keyframes aries-web-splash-breathe {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aries-web-splash__mark {
+    animation-name: aries-web-splash-fade;
+  }
+}
+
+@keyframes aries-web-splash-fade {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}

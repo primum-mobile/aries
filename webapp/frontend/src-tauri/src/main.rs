@@ -9,5 +9,12 @@ fn main() {
         }
         return;
     }
+    if std::env::args().any(|argument| argument == "--assert-store-distribution") {
+        if let Err(error) = aries_lib::verify_store_distribution_contract() {
+            eprintln!("store distribution verification failed: {error}");
+            std::process::exit(3);
+        }
+        return;
+    }
     aries_lib::run();
 }

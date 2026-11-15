@@ -1,6 +1,11 @@
 export function isAspectListSecondaryRingFilterId(filterId: string): boolean;
 export function isAspectListInclusionFilterId(filterId: string): boolean;
 export function defaultAspectListSecondaryRingIncluded(mode: string): boolean;
+export function isAspectListAspectClassIncluded(
+  aspectClass: "major" | "minor" | "declination" | null | undefined,
+  includeMinorAspects?: boolean,
+  includeDeclination?: boolean,
+): boolean;
 export function isAspectListPhaseIncluded(
   phase: "applying" | "separating" | "exact" | "none",
   phaseFilter?: "applying" | "separating" | "both",

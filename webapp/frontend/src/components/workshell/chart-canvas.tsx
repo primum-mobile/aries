@@ -5,6 +5,9 @@
 
 "use client";
 
+import { pointAngle } from "@/lib/chart/chart-coordinates";
+import { aspectViewState } from "@/lib/chart/aspect-view-state";
+
 import {
   useCallback,
   useEffect,
@@ -21,19 +24,15 @@ import { MultiwheelChartCanvas } from "@/components/workshell/multiwheel-chart-c
 import { CanvasDraw } from "@/lib/chart/canvas-draw";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
 import {
+  resolveWheelOverlayMetrics,
   resolveWheelScale,
   wheelFillUsesSolarDirection,
-  type WheelGeometryInput,
-  type WheelRenderStyle,
   wheelTypographyProfileForTheme,
 } from "@/lib/chart/wheel-render-style";
-import { assembleWheelGeometryPreview, resolveWheelGeometryPresetStyle, resolveWheelPresetAuthoringOverrides } from "@/lib/chart/wheel-geometry-preset";
+import { assembleWheelGeometryPreview, resolveWheelGeometryPresetStyle, resolveWheelPresetAuthoringOverrides, resolveWheelPresetSnapshot } from "@/lib/chart/wheel-geometry-preset";
 import { isWheelGeometryKey } from "@/lib/chart/wheel-geometry-ownership";
 import {
-  WHEEL_AUTHORING_OVERRIDE_PREFIX,
   variantAuthoredOverrideIds,
-  wheelAuthoringOverrideId,
-  wheelRingRoleForClass,
 } from "@/lib/style-lab/wheel-authoring-adapter";
 import {
   awaitFonts,
@@ -46,8 +45,18 @@ import {
   type ChartHitRegion,
   type OuterLabelCollisionBounds,
 } from "@/lib/chart/draw-chart";
-import { resolveChartPaintTarget, type WheelVerticalAlignment } from "@/lib/chart/outer-glyph-lane";
-import { fetchDocumentSnapshot, patchOptions } from "@/lib/daemon/client";
+import { resolveChartPaintTarget, type WheelRimLimit, type WheelVerticalAlignment } from "@/lib/chart/outer-glyph-lane";
+import { WheelFrameTuner } from "@/components/workshell/wheel-frame-tuner";
+import { DESIGN_TUNERS_ENABLED, useDesignTunerStore } from "@/stores/design-tuner-store";
+import { useWheelFrameTuneStore } from "@/stores/wheel-frame-tune-store";
+import { fitModulesToCornerText, type DashboardCorners, type DashboardLayout } from "@/lib/chart/dashboard-layout";
+import { cornerOuterLabelBounds, cssColorResolver, cssPixels, dashboardObstaclesKey, dashboardOuterLabelBounds, dashboardShown, dashboardTextObstacles, dashboardWheelTarget, measureCornerBoxes, solveDashboardSurface } from "@/lib/chart/dashboard-canvas";
+import { measureScaleMetrics, paintDashboard, type DashObstacles } from "@/lib/chart/dashboard-paint";
+import { dashboardContainsPoint, dashboardHitRegions } from "@/lib/chart/dashboard-hover";
+import { useT } from "@/lib/i18n/i18n";
+import { onCopyEditorRepaint } from "@/lib/i18n/copy-editor/copy-store";
+import { executeWorkspaceContextMenuAction } from "@/lib/daemon/client";
+import { runWorkspaceDocumentSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import type { ThemeState } from "@/lib/daemon/client";
 import {
   applyProfileColorsToSnapshot,
@@ -64,7 +73,10 @@ import {
   speedlogEnabled,
 } from "@/lib/chart/perf";
 import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
+import { overlayPerfState, semanticFrameSignature } from "@/lib/chart/overlay-perf-state";
+import { notifyChartPainted } from "@/lib/chart/last-chart-preview";
 import { useStyleRevision } from "@/hooks/use-style-revision";
+import { mobileLayoutMatches, useMobileLayout } from "@/hooks/use-mobile-layout";
 import { STYLE_FONT_ASSETS_READY_EVENT } from "@/lib/style-lab/fonts";
 import {
   WHEEL_STYLE_SCENE_ELEMENT_IDS,
@@ -87,8 +99,13 @@ import {
 } from "@/lib/style-lab/wheel-class-tree";
 import { WHEEL_SEMANTIC_CLASS_IDS } from "@/lib/style-lab/semantic-class-manifest";
 import { cn } from "@/lib/utils";
-import type { Chart, ChartRenderSnapshot } from "@/lib/chart/types";
-import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
+import type { ChartRenderSnapshot } from "@/lib/chart/types";
+import {
+  applyOverrideEdit,
+  useChartStyleEditorStore,
+  type ChartStyleCssOverrides,
+  type ChartStyleSemanticOverrides,
+} from "@/stores/chart-style-editor-store";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useThemeStore } from "@/stores/theme-store";
@@ -153,6 +170,31 @@ type RetainedPaintTransform = {
   y: number;
 };
 
+// What a handle drag paints before it is written: the editor maps the edit
+// would produce, under a revision no stored edit can ever have.
+type StyleDragPreview = Readonly<{
+  revision: number;
+  semanticOverrides: ChartStyleSemanticOverrides;
+  resolvedOverrides: ChartStyleSemanticOverrides;
+  cssOverrides: ChartStyleCssOverrides;
+  geometryOverrides: ChartStyleSemanticOverrides;
+}>;
+
+type DraggedHandleView = Readonly<{
+  id: string;
+  radius: number;
+  position: StyleScenePoint;
+}>;
+
+let styleDragPreviewSerial = 0;
+
+function styleDragPreviewRevision(storeRevision: number): number {
+  // Strictly between this stored revision and the next, and never repeated,
+  // so render caches keyed by revision cannot confuse a frame with an edit.
+  styleDragPreviewSerial += 1;
+  return storeRevision + 1 - 1 / (styleDragPreviewSerial + 1);
+}
+
 type ChartTargetRect = {
   x: number;
   y: number;
@@ -166,6 +208,30 @@ type RenderedCanvasState = {
 };
 
 type MidbandHitRegion = Extract<ChartHitRegion, { kind: "midband_empty" }>;
+
+// A fingertip covers far more than a mouse hotspot. Touch taps that land on a
+// broad region (sign/term/decan band or the empty midband) look a short
+// distance around the contact point for a specific target first.
+const TOUCH_HIT_SLOP_CSS_PX = 16;
+const BROAD_HIT_KINDS = new Set<ChartHitRegion["kind"]>(["sign", "term", "decan", "midband_empty"]);
+
+function findTouchHitRegion(
+  regions: ChartHitRegion[],
+  x: number,
+  y: number,
+  slop: number,
+): ChartHitRegion | null {
+  const direct = findHitRegion(regions, x, y);
+  if (direct && !BROAD_HIT_KINDS.has(direct.kind)) return direct;
+  for (const radius of [slop / 2, slop]) {
+    for (let step = 0; step < 8; step += 1) {
+      const angle = (step * Math.PI) / 4;
+      const hit = findHitRegion(regions, x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+      if (hit && !BROAD_HIT_KINDS.has(hit.kind)) return hit;
+    }
+  }
+  return direct;
+}
 
 const DEFERRED_OUTER_LABEL_DELAY_MS = 1;
 const TITLEBAR_OUTER_LABEL_CLEARANCE_PX = 6;
@@ -327,6 +393,8 @@ function chartTargetRect(
   topBoundary = 0,
   avoidTitlebar = false,
   verticalAlignment: WheelVerticalAlignment = "center",
+  targetScale = 1,
+  rimLimit?: WheelRimLimit,
 ): ChartTargetRect {
   const target = resolveChartPaintTarget(
     width,
@@ -335,6 +403,8 @@ function chartTargetRect(
     topBoundary,
     avoidTitlebar,
     verticalAlignment,
+    targetScale,
+    rimLimit,
   );
   return {
     x: (width - target.side) / 2,
@@ -343,9 +413,13 @@ function chartTargetRect(
   };
 }
 
+// Phone: the chart pane starts below the title bar and scrolls the wheel
+// under it, so the title never constrains the wheel (a scrolled wheel must
+// keep its size and labels when it repaints).
 function chartTitlebarCollisionBounds(
   hostRect: DOMRect,
 ): OuterLabelCollisionBounds | null {
+  if (mobileLayoutMatches()) return null;
   const titlebar = document.querySelector<HTMLElement>(
     "[data-aries-titlebar-title]",
   );
@@ -372,6 +446,7 @@ function chartTitlebarCollisionBounds(
 }
 
 function chartTitlebarTopBoundary(hostRect: DOMRect): number {
+  if (mobileLayoutMatches()) return 0;
   const title = document.querySelector<HTMLElement>(
     "[data-aries-titlebar-title]",
   );
@@ -413,11 +488,13 @@ function sameFlagAnchor(a: FlagAnchor | null, b: FlagAnchor | null): boolean {
 
 function dirtyStateFromSnapshot(chart: ChartRenderSnapshot): DirtyState {
   const plan = chart.renderInvalidation;
+  const traditional = chart.primaryChart.options.theme === 1
+    && chart.primaryChart.options.wheelGeometryPresets?.compact?.overrides["wheel.presentation"] === "traditional-morinus";
   if (plan) {
     return {
       fill: chart.overlayRenderMode === "step_fast",
       geometry: Boolean(plan.geometry),
-      dynamic: Boolean(plan.dynamic),
+      dynamic: Boolean(plan.dynamic) || traditional,
       outerLabel: Boolean(plan.outerLabel),
     };
   }
@@ -458,52 +535,6 @@ function bodyLayoutSignature(regions: readonly ChartHitRegion[]): string {
     .join("|");
 }
 
-function semanticChartFrameSignature(chart: Chart | null | undefined): string {
-  if (!chart) return "none";
-  const degrees = (value: number) => Number(value).toFixed(8);
-  return [
-    chart.meta.datetime,
-    `asc:${degrees(chart.angles.asc)}`,
-    `mc:${degrees(chart.angles.mc)}`,
-    ...chart.planets.map((planet) => `${planet.id}:${degrees(planet.longitude)}`),
-  ].join("|");
-}
-
-function semanticFrameSignature(snapshot: ChartRenderSnapshot): string {
-  return [
-    snapshot.displayDatetime,
-    `primary:${semanticChartFrameSignature(snapshot.primaryChart)}`,
-    `comparison:${semanticChartFrameSignature(snapshot.comparisonChart)}`,
-  ].join("||");
-}
-
-function overlayPerfState(snapshot: ChartRenderSnapshot) {
-  const displayChart =
-    snapshot.document?.compoundKind === "synastry" && snapshot.comparisonChart
-      ? snapshot.primaryChart
-      : snapshot.comparisonChart ?? snapshot.primaryChart;
-  const rows = displayChart.overlay?.rows ?? [];
-  const groupCounts = { dayhour: 0, header: 0, signal: 0 };
-  const signatures = rows.map((row) => {
-    const group = row.group ?? "row";
-    if (group === "dayhour" || group === "header" || group === "signal") {
-      groupCounts[group] += 1;
-    }
-    const glyphs = row.glyphs
-      .map((glyph) => `${glyph.kind ?? ""}:${glyph.seId ?? ""}:${glyph.char}`)
-      .join("|");
-    return {
-      group,
-      slot: row.slot ?? null,
-      signature: `${row.slot ?? row.label}:${glyphs}:${row.trailing ?? ""}`,
-    };
-  });
-  return {
-    deferredSignals: displayChart.overlay?.deferredSignals === true,
-    groupCounts,
-    rows: signatures,
-  };
-}
 
 function shouldDeferOuterLabel(chart: ChartRenderSnapshot) {
   return Boolean(
@@ -512,6 +543,18 @@ function shouldDeferOuterLabel(chart: ChartRenderSnapshot) {
 }
 
 function hitToHover(hit: ChartHitRegion): HoverRegion | null {
+  const region = hitToHoverObject(hit);
+  return region ? {...region, viewDocumentId: hit.viewDocumentId,
+    coordinateMode: hit.coordinateMode, coordinateRevision: hit.coordinateRevision} : null;
+}
+
+function hitToHoverObject(hit: ChartHitRegion): HoverRegion | null {
+  if (hit.kind === "decan") {
+    return { kind: "decan", signIndex: hit.signIndex, decanIndex: hit.decanIndex, rulerSeId: hit.rulerSeId, longitude: hit.longitude };
+  }
+  if (hit.kind === "term") {
+    return { kind: "term", signIndex: hit.signIndex, rulerSeId: hit.rulerSeId, longitude: hit.longitude };
+  }
   if (hit.kind === "planet") {
     return {
       kind: "planet",
@@ -584,29 +627,18 @@ function hitToHover(hit: ChartHitRegion): HoverRegion | null {
       p2: hit.p2,
       aspectType: hit.aspectType,
       scope: hit.scope,
+      method: hit.method,
+      contactId: hit.contactId,
     };
+  }
+  if (hit.kind === "declination") {
+    return { kind: "declination", seId: hit.seId, ...(hit.partner != null ? { partner: hit.partner } : {}) };
   }
   if (hit.kind === "drishti") {
     return {
       kind: "drishti",
       relationId: hit.relationId,
       method: hit.method,
-    };
-  }
-  if (hit.kind === "pd_event") {
-    return {
-      kind: "pd_event",
-      eventId: hit.eventId,
-      eventKind: hit.eventKind,
-      component: hit.component,
-      partyRole: hit.partyRole,
-      sourceRole: hit.sourceRole,
-      track: hit.track,
-      motion: hit.motion,
-      exactNow: hit.exactNow,
-      longitude: hit.longitude,
-      nativeCoordinate: hit.nativeCoordinate,
-      directionState: hit.directionState,
     };
   }
   if (hit.kind === "sign") {
@@ -620,7 +652,7 @@ function hitToHover(hit: ChartHitRegion): HoverRegion | null {
 
 function clickPointKey(hit: Extract<ChartHitRegion, { kind: "secondary_ring" }>): string {
   const role = hit.chartRole ?? "primary";
-  return `point:${role}:${hit.family}:${hit.itemId}:${hit.longitude.toFixed(6)}`;
+  return hit.aspectKey ?? `point:${role}:${hit.family}:${hit.itemId}:${hit.longitude.toFixed(6)}`;
 }
 
 function clickAspectBodyKey(hit: ChartHitRegion): string | null {
@@ -668,40 +700,15 @@ function findMidbandClickHit(
 }
 
 /**
- * Which reading each class belongs to. Fixed by the manifest, so it is derived
- * once rather than per render or per click.
- */
-/**
  * Who owns a gesture opened by dragging a handle on the wheel.
  *
  * Distinct from the inspector's owner so a drag started while a numeric field
  * still has focus opens — or is refused — on its own terms, instead of silently
  * joining that field's transaction and committing it on release.
  */
-/**
- * Split an authoring override id back into the scope and class it addresses.
- * Only radius ids matter here; anything else falls through untouched.
- *
- * Module scope: it depends on nothing in the component, and as a component-local
- * `const` it sat in the temporal dead zone for anything above its own line.
- */
-function parseRingRadiusSemanticId(semanticId: string) {
-  if (!semanticId.startsWith(WHEEL_AUTHORING_OVERRIDE_PREFIX)) return null;
-  if (!semanticId.endsWith(".radius")) return null;
-  const body = semanticId.slice(
-    WHEEL_AUTHORING_OVERRIDE_PREFIX.length,
-    semanticId.length - ".radius".length,
-  );
-  const cut = body.indexOf(".");
-  if (cut <= 0) return null;
-  return {
-    scope: body.slice(0, cut) as Parameters<typeof wheelAuthoringOverrideId>[0],
-    classId: body.slice(cut + 1),
-  };
-}
-
 const CANVAS_GESTURE_OWNER = "canvas" as const;
 
+/** Class reading membership is fixed by the manifest. */
 const WHEEL_CLASS_FAMILY_BY_MEMBER = wheelClassFamilyByMember(
   buildWheelClassTree(WHEEL_SEMANTIC_CLASS_IDS),
 );
@@ -751,6 +758,20 @@ function WheelChartCanvas({
   const geometryRef = useRef<HTMLCanvasElement>(null);
   const dynamicRef = useRef<HTMLCanvasElement>(null);
   const outerLabelRef = useRef<HTMLCanvasElement>(null);
+  const dashboardRef = useRef<HTMLCanvasElement>(null);
+  const paintedDashboardRef = useRef<readonly unknown[] | null>(null);
+  // Resolved module colours and rule widths for one theme scope. Stepping
+  // repaints the modules with new data but the same theme, so it reuses them.
+  const dashboardThemeScopeRef = useRef<{
+    key: readonly unknown[];
+    colors: Map<string, string>;
+    widths: { rule: number; frame: number };
+  } | null>(null);
+  const dashboardLayoutRef = useRef<DashboardLayout | null>(null);
+  const t = useT();
+  // The wheel's largest size in its pane (WheelRimLimit); the design tuner moves it live.
+  const frameTune = useWheelFrameTuneStore((state) => state.tune);
+  const designTunerOpen = useDesignTunerStore((state) => state.open);
   const rafRef = useRef<number | null>(null);
   const deferTimerRef = useRef<number | null>(null);
   const resizeSettleTimerRef = useRef<number | null>(null);
@@ -765,13 +786,29 @@ function WheelChartCanvas({
   const paintedAspectInteractionKeyRef = useRef<string | null>(null);
   const paintedStyleTargetModeRef = useRef<boolean | null>(null);
   const hitRegionsRef = useRef<ChartHitRegion[]>([]);
+  const wheelRegionsRef = useRef<ChartHitRegion[]>([]);
+  /** The plain wheel's painted corner text, measured on full paints (outer-label obstacles). */
+  const plainCornersRef = useRef<DashboardCorners | null>(null);
   const styleSceneRef = useRef<WheelStyleScene | null>(null);
   const styleHandleDragRef = useRef<{
     handle: StyleSceneHandle;
     start: StyleScenePoint;
   } | null>(null);
+  // A chart-scale drag is previewed by scaling the painted layers on the GPU.
+  // The value is written once on release, so the drag repaints nothing and
+  // wakes no editor state; the release paints the wheel once at its new size.
+  const chartScalePreviewRef = useRef<{
+    patch: StyleSceneTokenPatch;
+    transform: RetainedPaintTransform;
+  } | null>(null);
+  const styleOverlayRef = useRef<SVGSVGElement>(null);
+  // Every other handle drag paints from a local preview of its edit and is
+  // written once on release: no store write, editor re-render, theme publish
+  // or hit-scene rebuild per move.
+  const styleHandlePatchRef = useRef<StyleSceneTokenPatch | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointerTypeRef = useRef<string>("mouse");
   // The hovered symbol + its canvas-local pixel centre, driving the on-chart
   // hover-flag overlay (chartinspector.build_flag_payload). The hit region's
   // (x, y) IS the region centre — the anchor wx computes in
@@ -779,14 +816,65 @@ function WheelChartCanvas({
   const [flagAnchor, setFlagAnchor] = useState<FlagAnchor | null>(null);
   const [fontAssetRevision, setFontAssetRevision] = useState(0);
   const [styleScene, setStyleScene] = useState<WheelStyleScene | null>(null);
+  // A released chart-scale preview keeps its overlay transform until the
+  // release paint publishes handles at the new size.
+  useEffect(() => {
+    if (!chartScalePreviewRef.current && styleOverlayRef.current) {
+      styleOverlayRef.current.style.transform = "";
+    }
+  }, [styleScene]);
+
+  const setPaintedLayerTransform = useCallback((transform: RetainedPaintTransform) => {
+    const css = transform.scale === 1 && transform.x === 0 && transform.y === 0
+      ? ""
+      : `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+    for (const canvas of [fillRef.current, geometryRef.current, dynamicRef.current, outerLabelRef.current]) {
+      if (!canvas) continue;
+      canvas.style.transformOrigin = "0 0";
+      canvas.style.transform = css;
+    }
+  }, []);
+
+  const previewChartScale = useCallback((patch: StyleSceneTokenPatch, handle: StyleSceneHandle) => {
+    const startValue = handle.binding?.value ?? 0;
+    if (!(startValue > 0) || handle.kind !== "radial") return;
+    const ratio = patch.value / startValue;
+    const [cx, cy] = handle.center;
+    // Scale about the wheel centre, on top of any retained resize mapping.
+    const base = retainedPaintTransformRef.current ?? { x: 0, y: 0, scale: 1 };
+    const transform = {
+      scale: base.scale * ratio,
+      x: base.x + base.scale * cx * (1 - ratio),
+      y: base.y + base.scale * cy * (1 - ratio),
+    };
+    chartScalePreviewRef.current = { patch, transform };
+    setPaintedLayerTransform(transform);
+    const overlay = styleOverlayRef.current;
+    if (overlay) {
+      overlay.style.transformOrigin = "0 0";
+      overlay.style.transform = `translate(${cx * (1 - ratio)}px, ${cy * (1 - ratio)}px) scale(${ratio})`;
+    }
+  }, [setPaintedLayerTransform]);
+
+  const clearChartScalePreview = useCallback(() => {
+    chartScalePreviewRef.current = null;
+    setPaintedLayerTransform(retainedPaintTransformRef.current ?? { x: 0, y: 0, scale: 1 });
+    if (styleOverlayRef.current) styleOverlayRef.current.style.transform = "";
+  }, [setPaintedLayerTransform]);
+
   const flagAnchorRef = useRef<FlagAnchor | null>(null);
   const flagAnchorTokenRef = useRef(0);
   const setHoveredRegion = useWorkspaceStore((s) => s.setHoveredRegion);
   const setInspectorActiveRegion = useWorkspaceStore((s) => s.setInspectorActiveRegion);
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
-  const selectedAspectBody = useWorkspaceStore((s) => s.selectedAspectBody);
-  const hideAllAspects = useWorkspaceStore((s) => s.hideAllAspects);
-  const minorOnlyAspects = useWorkspaceStore((s) => s.minorOnlyAspects);
+  // Phone: the Inspector is a sheet the user opens after tapping, so a tap
+  // pins its target even while the sheet is closed. Desktop pins only into an
+  // open Inspector.
+  const mobileLayout = useMobileLayout();
+  const pinOnClick = inspectorOpen || mobileLayout;
+  const selectedAspectBody = useWorkspaceStore((s) => aspectViewState(s, chart.document?.documentId).selectedAspectBody);
+  const hideAllAspects = useWorkspaceStore((s) => aspectViewState(s, chart.document?.documentId).hideAllAspects);
+  const minorOnlyAspects = useWorkspaceStore((s) => aspectViewState(s, chart.document?.documentId).minorOnlyAspects);
   const toggleSelectedAspectBody = useWorkspaceStore((s) => s.toggleSelectedAspectBody);
   const toggleHideAllAspects = useWorkspaceStore((s) => s.toggleHideAllAspects);
   const clearAspectSelection = useWorkspaceStore((s) => s.clearAspectSelection);
@@ -807,43 +895,41 @@ function WheelChartCanvas({
   const styleWorkingPreviewActive = useChartStyleEditorStore(
     (s) => s.liveAppThemePreview,
   );
-  const styleEditorRevision = useChartStyleEditorStore((s) => s.revision);
-  const styleCssOverrides = useChartStyleEditorStore((s) => s.cssOverrides);
+  const [styleDragPreview, setStyleDragPreview] = useState<StyleDragPreview | null>(null);
+  const [draggedHandleView, setDraggedHandleView] = useState<DraggedHandleView | null>(null);
+  const storeStyleEditorRevision = useChartStyleEditorStore((s) => s.revision);
+  const storeStyleCssOverrides = useChartStyleEditorStore((s) => s.cssOverrides);
+  const styleEditorRevision = styleDragPreview?.revision ?? storeStyleEditorRevision;
+  const styleCssOverrides = styleDragPreview?.cssOverrides ?? storeStyleCssOverrides;
   const styleLabBaseTheme = useChartStyleEditorStore((s) => s.styleLabBaseTheme);
   // The resolved map, not the authored one: a class that follows a palette
   // role must reach the wheel as the colour it resolves to, never as the
   // reference itself.
-  const styleSemanticOverrides = useChartStyleEditorStore((s) => s.resolvedOverrides);
+  const storeStyleSemanticOverrides = useChartStyleEditorStore((s) => s.resolvedOverrides);
+  const storeAuthoredOverrides = useChartStyleEditorStore(s => s.semanticOverrides);
+  const authoredOverrides = styleDragPreview?.semanticOverrides ?? storeAuthoredOverrides;
+  const styleSemanticOverrides = styleDragPreview?.resolvedOverrides ?? storeStyleSemanticOverrides;
   const geometryProfile = useChartStyleEditorStore((s) => s.geometryProfile);
-  const geometryOverrides = useChartStyleEditorStore((s) => s.geometryOverrides);
+  const storeGeometryOverrides = useChartStyleEditorStore((s) => s.geometryOverrides);
+  const geometryOverrides = styleDragPreview?.geometryOverrides ?? storeGeometryOverrides;
   const syncedGeometryOverrides = useChartStyleEditorStore((s) => s.syncedGeometryOverrides);
-  const geometryBaseRevision = useChartStyleEditorStore((s) => s.wheelPresetState?.revision ?? -1);
+  const wheelGeometryReceipts = useChartStyleEditorStore((s) => s.wheelGeometryReceipts);
+  const wheelAppearanceBaseline = useChartStyleEditorStore(s => s.wheelAppearanceBaseline);
+  const styleTokenMetadata = useChartStyleEditorStore(s => s.tokenMetadata);
+  const pendingWheelCompositions = useChartStyleEditorStore((s) => s.pendingWheelCompositions);
+  const wheelContextSource = useChartStyleEditorStore((s) => s.wheelPresetState?.context?.sourceThemeName);
+  const wheelContextRevision = useChartStyleEditorStore((s) => s.wheelPresetState?.revision ?? -1);
   const styleAuthoringEditScope = useChartStyleEditorStore((s) => s.authoringEditScope);
   const selectedStyleElement = useChartStyleEditorStore((s) => s.selectedElement);
-  // Non-null only while a value is actively being changed. Max: "for color
-  // changes the pink must disappear" — during the moment of judgement the
+  // Non-null only while a value is actively being changed. For colour
+  // changes the selection highlight disappears: during the moment of judgement the
   // chrome must not sit on the thing being judged.
   const styleGestureActive = useChartStyleEditorStore((s) => s.gestureStart != null);
-  // The geometry and style the current scene was built from, so a live ring
-  // drag resolves its push against exactly what is on screen.
-  const styleGeometryRef = useRef<{
-    input: WheelGeometryInput;
-    style: WheelRenderStyle;
-  } | null>(null);
-
   const hoveredStyleElement = useChartStyleEditorStore((s) => s.hoveredElement);
   const setHoveredStyleElement = useChartStyleEditorStore((s) => s.setHoveredElement);
   const selectStyleElement = useChartStyleEditorStore((s) => s.selectElement);
   const selectStyleFamily = useChartStyleEditorStore((s) => s.selectFamily);
   const clearStyleSelection = useChartStyleEditorStore((s) => s.clearSelection);
-  // Which boundary is under active edit, drag or keyboard. Only while a gesture
-  // is open: a stored profile has no active boundary, and merely *selecting* a
-  // ring must not change how the wheel resolves.
-  const styleActivePropertyId = useChartStyleEditorStore((s) => s.activePropertyId);
-  // State, not the drag ref: it must be readable during render, and setting it
-  // at pointer-down means the push is in force from the first pixel rather than
-  // arriving a frame late.
-  const [activeDragSemanticId, setActiveDragSemanticId] = useState<string | null>(null);
   const beginStyleGesture = useChartStyleEditorStore((s) => s.beginGesture);
   const setStyleOverride = useChartStyleEditorStore((s) => s.setOverride);
   const endStyleGesture = useChartStyleEditorStore((s) => s.endGesture);
@@ -960,15 +1046,19 @@ function WheelChartCanvas({
     [inheritAppTheme, settledTheme, settingsColorPreview],
   );
 
+  // Each time step publishes a new chart object with the same daemon palette.
+  // Key on the palette's content: a new palette object here re-resolves the
+  // render style and misses every style-keyed paint cache on every step.
+  const chartPaletteKey = JSON.stringify(chart.primaryChart.palette ?? null);
   const palette = useMemo(
     () => ({
       ...(inheritAppTheme ? readPaletteFromTheme(effectiveTheme) : neutralChartPalette()),
-      ...(chart.primaryChart.palette ?? {}),
+      ...(JSON.parse(chartPaletteKey) ?? {}),
       ...readPaletteProfileOverrides(effectiveTheme),
     }),
-    [chart, effectiveTheme, inheritAppTheme],
+    [chartPaletteKey, effectiveTheme, inheritAppTheme],
   );
-  const renderSnapshot = useMemo(
+  const appearanceSnapshot = useMemo(
     () => withZodiacFieldOpacityPreview(
       applyProfileColorsToSnapshot(chart, effectiveTheme),
       inheritAppTheme ? zodiacFieldOpacityPreview : null,
@@ -1016,30 +1106,49 @@ function WheelChartCanvas({
     "--aries-wheel-font-aspect-symbols",
     chartSymbolFont,
   );
+  // Stepped snapshots carry an equal but new presets object; key on content
+  // so the render style survives time steps (see chartPaletteKey).
+  const wheelGeometryPresetsKey = JSON.stringify(chart.primaryChart.options.wheelGeometryPresets ?? null);
   const wheelPresetInput = useMemo(
     () => ({
       profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
-      presets: chart.primaryChart.options.wheelGeometryPresets,
+      presets: JSON.parse(wheelGeometryPresetsKey) ?? undefined,
+      readAppearanceValue: (cssVar: string) => (styleWorkingPreviewActive ? styleCssOverrides[cssVar] : undefined)
+        ?? effectiveTheme?.chartPalette?.[cssVar] ?? effectiveTheme?.appTokens?.[cssVar],
       appearanceOverrides: {
         ...(effectiveTheme?.profileOverrides?.wheelAuthoring ?? {}),
         ...(styleWorkingPreviewActive ? styleSemanticOverrides : {}),
       },
       preview: assembleWheelGeometryPreview({
+        semanticOverrides: authoredOverrides,
+        resolvedOverrides: styleSemanticOverrides, tokenMetadata: styleTokenMetadata, wheelAppearanceBaseline,
+        liveAppThemePreview: styleWorkingPreviewActive,
         geometryProfile, geometryOverrides, syncedGeometryOverrides,
-        wheelPresetState: {revision: geometryBaseRevision}, revision: styleEditorRevision,
+        wheelPresetState: {revision: wheelContextRevision, context: wheelContextSource ? {sourceThemeName: wheelContextSource} : undefined},
+        wheelGeometryReceipts, pendingWheelCompositions,
+        revision: styleEditorRevision,
         gestureStart: styleGestureActive ? true : null,
       }),
     }),
     [
       chart.primaryChart.options.theme,
-      chart.primaryChart.options.wheelGeometryPresets,
+      wheelGeometryPresetsKey,
       effectiveTheme?.profileOverrides?.wheelAuthoring,
+      effectiveTheme?.chartPalette,
+      effectiveTheme?.appTokens,
+      styleCssOverrides,
       styleWorkingPreviewActive,
       styleSemanticOverrides,
+      authoredOverrides,
+      styleTokenMetadata,
+      wheelAppearanceBaseline,
       geometryProfile,
       geometryOverrides,
       syncedGeometryOverrides,
-      geometryBaseRevision,
+      wheelGeometryReceipts,
+      pendingWheelCompositions,
+      wheelContextSource,
+      wheelContextRevision,
       styleGestureActive,
       styleEditorRevision,
     ],
@@ -1047,6 +1156,10 @@ function WheelChartCanvas({
   const effectiveWheelAuthoringOverrides = useMemo(
     () => resolveWheelPresetAuthoringOverrides(wheelPresetInput),
     [wheelPresetInput],
+  );
+  const renderSnapshot = useMemo(
+    () => resolveWheelPresetSnapshot(appearanceSnapshot, wheelPresetInput),
+    [appearanceSnapshot, wheelPresetInput],
   );
 
   useEffect(() => {
@@ -1062,7 +1175,10 @@ function WheelChartCanvas({
       const state = useChartStyleEditorStore.getState();
       if (state.gestureStart) {
         styleHandleDragRef.current = null;
-        setActiveDragSemanticId(null);
+        styleHandlePatchRef.current = null;
+        setStyleDragPreview(null);
+        setDraggedHandleView(null);
+        clearChartScalePreview();
         cancelStyleGesture(CANVAS_GESTURE_OWNER);
         event.preventDefault();
         return;
@@ -1091,16 +1207,7 @@ function WheelChartCanvas({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [cancelStyleGesture, styleEditorActive]);
-
-  const activePushRole = useMemo(() => {
-    if (!styleGestureActive) return undefined;
-    const semanticId = activeDragSemanticId ?? styleActivePropertyId;
-    if (!semanticId) return undefined;
-    const parsed = parseRingRadiusSemanticId(semanticId);
-    if (!parsed) return undefined;
-    return wheelRingRoleForClass(parsed.classId) ?? undefined;
-  }, [activeDragSemanticId, styleGestureActive, styleActivePropertyId]);
+  }, [cancelStyleGesture, clearChartScalePreview, styleEditorActive]);
 
   const renderStyle = useMemo(
     () =>
@@ -1149,9 +1256,11 @@ function WheelChartCanvas({
     if (chart.primaryChart.options.showAspects !== false) return;
     const docId = chart.document?.documentId;
     if (!docId) return;
-    void patchOptions({ display: { aspects: true } })
-      .then(() => fetchDocumentSnapshot(docId))
-      .then((snapshot) => pushCommandSnapshot(docId, snapshot))
+    void runWorkspaceDocumentSnapshotCommand(docId, () => executeWorkspaceContextMenuAction(
+      "workspace.set_chart_presentation", {documentId: docId, patch: {displayOverrides: {drawAspects: true}}},
+    )).then(({result, isLatest}) => {
+      if (isLatest && result.snapshot) pushCommandSnapshot(docId, result.snapshot as unknown as ChartRenderSnapshot);
+    })
       .catch((err) => console.error(`[${reason}-show-aspects]`, err));
   }, [appControlsEnabled, chart.document?.documentId, chart.primaryChart.options.showAspects, pushCommandSnapshot]);
 
@@ -1174,7 +1283,12 @@ function WheelChartCanvas({
     return [(x - transform.x) / transform.scale, (y - transform.y) / transform.scale];
   }, []);
 
-  const updateHoverFromClientPoint = useCallback((clientX: number, clientY: number) => {
+  const touchHitSlop = useCallback((): number => {
+    const transform = retainedPaintTransformRef.current;
+    return TOUCH_HIT_SLOP_CSS_PX / (transform?.scale || 1);
+  }, []);
+
+  const updateHoverFromClientPoint = useCallback((clientX: number, clientY: number, touch = false) => {
     const wrap = wrapRef.current;
     if (!wrap) return;
     const rect = wrap.getBoundingClientRect();
@@ -1190,7 +1304,9 @@ function WheelChartCanvas({
       return;
     }
     const [x, y] = mapPointerToRenderedPoint(clientX - rect.left, clientY - rect.top);
-    const hit = findHitRegion(hitRegionsRef.current, x, y);
+    const hit = touch
+      ? findTouchHitRegion(hitRegionsRef.current, x, y, touchHitSlop())
+      : findHitRegion(hitRegionsRef.current, x, y);
     // midband_empty is a click target only — no hover/flag representation
     // (hitToHover falls through it). Treat it as no-hover for the flag.
     const flaggable = hit && hit.kind !== "midband_empty" ? hit : null;
@@ -1214,7 +1330,7 @@ function WheelChartCanvas({
     } else {
       setTrackedFlagAnchor(null);
     }
-  }, [mapPointerToRenderedPoint, mapRenderedPointToViewport, setHoveredRegion, setTrackedFlagAnchor]);
+  }, [mapPointerToRenderedPoint, mapRenderedPointToViewport, setHoveredRegion, setTrackedFlagAnchor, touchHitSlop]);
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
@@ -1222,7 +1338,8 @@ function WheelChartCanvas({
     const geometryCanvas = geometryRef.current;
     const dynamicCanvas = dynamicRef.current;
     const outerLabelCanvas = outerLabelRef.current;
-    if (!wrap || !fillCanvas || !geometryCanvas || !dynamicCanvas || !outerLabelCanvas) {
+    const dashboardCanvas = dashboardRef.current;
+    if (!wrap || !fillCanvas || !geometryCanvas || !dynamicCanvas || !outerLabelCanvas || !dashboardCanvas) {
       return;
     }
 
@@ -1230,6 +1347,7 @@ function WheelChartCanvas({
     if (renderedDocumentRef.current !== layoutDocumentId) {
       renderedSizeRef.current = null;
       hitRegionsRef.current = [];
+      wheelRegionsRef.current = [];
       paintedFillSignatureRef.current = null;
       paintedSolarFillSignatureRef.current = null;
       paintedRenderStyleRevisionRef.current = null;
@@ -1237,10 +1355,14 @@ function WheelChartCanvas({
     }
 
     let cancelled = false;
+    // When the pending rAF paint was first requested; splits React work from
+    // the wait for the next frame in the step trace.
+    let paintScheduledAt: number | null = null;
     const fillDraw = new CanvasDraw(fillCanvas);
     const geometryDraw = new CanvasDraw(geometryCanvas);
     const dynamicDraw = new CanvasDraw(dynamicCanvas);
     const outerLabelDraw = new CanvasDraw(outerLabelCanvas);
+    const dashboardDraw = new CanvasDraw(dashboardCanvas);
     fillDraw.setDefaultFont(chartTextFont);
     geometryDraw.setDefaultFont(chartTextFont);
     dynamicDraw.setDefaultFont(chartTextFont);
@@ -1322,6 +1444,7 @@ function WheelChartCanvas({
       renderStyle.palette.frame,
       fillProfile,
       JSON.stringify(primary.options.wheelComposition ?? null),
+      JSON.stringify(primary.coordinateFrame ?? null),
       Boolean(renderSnapshot.comparisonChart),
       Boolean(primary.options.showTerms),
       Boolean(primary.options.showDecans),
@@ -1336,14 +1459,111 @@ function WheelChartCanvas({
     // the material canvas, and the matching settled frame can then retain it.
     const solarFillSignature =
       wheelFillUsesSolarDirection(renderStyle, fillProfile)
-        ? String(primary.planets.find((planet) => planet.id === "sun")?.longitude ?? "")
+        ? String(pointAngle(primary.planets.find((planet) => planet.id === "sun")))
         : null;
+
+    // Chart dashboard: modules are placed first and the wheel takes the
+    // solver's circle instead of the centred square (lib/chart/dashboard-layout.ts).
+    const dashboard = renderSnapshot.dashboard;
+    type ResolvedTarget = {
+      target: ChartTargetRect;
+      dashboardLayout: DashboardLayout | null;
+      corners?: DashboardCorners;
+      inset?: number;
+    };
+    const resolveTarget = (rect: DOMRect): ResolvedTarget => {
+      const centred = chartTargetRect(
+        rect.width,
+        rect.height,
+        outerPaintEnvelope.paintRadiusScale,
+        chartTitlebarTopBoundary(rect),
+        outerPaintEnvelope.avoidTitlebar,
+        wheelVerticalAlignment,
+        outerPaintEnvelope.targetScale,
+        // Phones keep the largest square the pane allows.
+        mobileLayoutMatches()
+          ? undefined
+          : { rimRadiusScale: outerPaintEnvelope.rimRadiusScale, height: frameTune.height, width: frameTune.width },
+      );
+      if (!dashboardShown(dashboard) || mobileLayoutMatches()) {
+        return { target: centred, dashboardLayout: null };
+      }
+      const titlebar = chartTitlebarCollisionBounds(rect);
+      const inset = resolveWheelOverlayMetrics(renderStyle.overlays, { width: rect.width, height: rect.height }).edgeInset;
+      // Wheel-first: the solver sees reserved corner areas from stable inputs,
+      // never the measured corner text (which only clips and yields).
+      const dashboardLayout = solveDashboardSurface(dashboard, rect, renderStyle.overlays, titlebar ? [titlebar] : []);
+      const target = dashboardWheelTarget(dashboardLayout, outerPaintEnvelope);
+      // One measurement pass: the painted corner text, for the Moon text's
+      // obstacles and for the modules to yield to. Never fed back into the
+      // wheel; corner text simply draws over the chart where it reaches it.
+      const corners = measureCornerBoxes(wrap, rect);
+      return { target: target ?? centred, dashboardLayout: fitModulesToCornerText(dashboardLayout, corners), corners, inset };
+    };
+
+    const paintDashboardLayer = (rect: DOMRect, dashboardLayout: DashboardLayout | null, obstacles?: DashObstacles) => {
+      dashboardLayoutRef.current = dashboardLayout;
+      // Without a dashboard the layer stays hidden and untouched: plain wheels
+      // pay no paint or compositing for it on any step frame.
+      if (!dashboardLayout || !dashboard) {
+        if (paintedDashboardRef.current) {
+          paintedDashboardRef.current = null;
+          dashboardCanvas.style.display = "";
+        }
+        return;
+      }
+      // Module paint follows the daemon payload, the layout, the theme and the
+      // language; anything else leaves the retained layer as it is. Obstacles
+      // are rebuilt every render, so they compare by value.
+      const inputs = [
+        dashboard, dashboardLayout, dashboardObstaclesKey(obstacles), renderStyle, effectiveTheme, t,
+        chartTextFont, chartSymbolFont, chartBodySymbolFont, chartAspectSymbolFont,
+      ] as const;
+      const painted = paintedDashboardRef.current;
+      if (painted && inputs.every((value, index) => painted[index] === value)) return;
+      paintedDashboardRef.current = inputs;
+      dashboardCanvas.style.display = "block";
+      dashboardDraw.resize(rect.width, rect.height);
+      dashboardDraw.ctx.clearRect(0, 0, rect.width, rect.height);
+      const scopeKey = [renderStyle, effectiveTheme] as const;
+      let scope = dashboardThemeScopeRef.current;
+      if (!scope || scope.key.some((value, index) => value !== scopeKey[index])) {
+        scope = {
+          key: scopeKey,
+          colors: new Map(),
+          widths: {
+            rule: cssPixels(wrap, "--aries-chart-module-rule-width", 1),
+            frame: cssPixels(wrap, "--aries-chart-module-frame-width", 2),
+          },
+        };
+        dashboardThemeScopeRef.current = scope;
+      }
+      const resolver = cssColorResolver(wrap, scope.colors);
+      try {
+        paintDashboard(
+          {
+            ctx: dashboardDraw.ctx,
+            dashboard,
+            color: resolver.color,
+            fonts: { ui: chartTextFont, symbols: chartSymbolFont, body: chartBodySymbolFont, aspect: chartAspectSymbolFont },
+            t,
+            obstacles,
+          },
+          dashboardLayout,
+          scope.widths,
+        );
+      } finally {
+        resolver.dispose();
+      }
+    };
 
     const render = (dirty: DirtyState): boolean => {
       if (cancelled) {
         return false;
       }
       const paintStartedAt = perfNow();
+      const scheduledAt = paintScheduledAt ?? paintStartedAt;
+      paintScheduledAt = null;
       const perfEnabled = chartPerfEnabled();
       const rect = wrap.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
@@ -1377,23 +1597,13 @@ function WheelChartCanvas({
       }
       const previous = renderedSizeRef.current;
       const titlebarBounds = chartTitlebarCollisionBounds(rect);
-      const titlebarTopBoundary = chartTitlebarTopBoundary(rect);
-      const outerLabelCollisionBounds: OuterLabelCollisionBounds[] = titlebarBounds
-        ? [titlebarBounds]
-        : [];
-      const target = chartTargetRect(
-        rect.width,
-        rect.height,
-        outerPaintEnvelope.paintRadiusScale,
-        titlebarTopBoundary,
-        outerPaintEnvelope.avoidTitlebar,
-        wheelVerticalAlignment,
-      );
+      const { target, dashboardLayout, corners: dashboardCorners, inset: dashboardInset } = resolveTarget(rect);
       // A layout-only move must repaint every retained layer together, even
       // when the daemon snapshot only invalidates overlay facts.
       const effectiveDirty: DirtyState =
         !previous || !sameHostSize(previous, rect.width, rect.height)
           || previous.target.side !== target.side || previous.target.y !== target.y
+          || previous.target.x !== target.x
           ? { fill: true, geometry: true, dynamic: true, outerLabel: true }
           : {
               ...dirty,
@@ -1405,8 +1615,22 @@ function WheelChartCanvas({
                   && paintedSolarFillSignatureRef.current !== solarFillSignature
                 ),
             };
+      // Corner text and the surface edges (plus, with the dashboard, its
+      // modules and corner reservations) abbreviate outer word labels that
+      // would cross them. The plain wheel measures its corner text only when
+      // the outer-label layer repaints (deferred after stepping), so step
+      // frames never read layout; the moving layer reuses the last boxes.
+      if (!dashboardLayout && (effectiveDirty.outerLabel || !plainCornersRef.current)) {
+        plainCornersRef.current = measureCornerBoxes(wrap, rect);
+      }
+      const outerLabelCollisionBounds: OuterLabelCollisionBounds[] = [
+        ...(titlebarBounds ? [titlebarBounds] : []),
+        ...(dashboardLayout
+          ? dashboardOuterLabelBounds(dashboardLayout, rect, renderStyle.overlays, dashboardCorners)
+          : cornerOuterLabelBounds(plainCornersRef.current, rect)),
+      ];
       const wheelCenter: readonly [number, number] = [
-        rect.width / 2,
+        target.x + target.side / 2,
         target.y + target.side / 2,
       ];
       renderedSizeRef.current = { width: rect.width, height: rect.height, target };
@@ -1483,13 +1707,17 @@ function WheelChartCanvas({
         outerLabelMs = perfNow() - layerStartedAt;
       }
       const hitStartedAt = perfNow();
-      const refreshHitRegions =
+      // Hit regions and the editable scene are for pointing, not for seeing:
+      // a handle drag rebuilds them once, on the paint after release.
+      const handleDragActive = styleHandleDragRef.current != null;
+      const refreshHitRegions = !handleDragActive && (
         effectiveDirty.geometry
         || effectiveDirty.dynamic
         || effectiveDirty.outerLabel
-        || paintedStyleTargetModeRef.current !== styleEditorActive;
+        || paintedStyleTargetModeRef.current !== styleEditorActive
+      );
       if (refreshHitRegions) {
-        hitRegionsRef.current = computeHitRegions(renderSnapshot, {
+        const wheelRegions = computeHitRegions(renderSnapshot, {
           width: rect.width,
           height: rect.height,
           chartSize: target.side,
@@ -1497,6 +1725,7 @@ function WheelChartCanvas({
           renderStyle,
           textsize: (text, textOpts) => outerLabelDraw.textsize(text, textOpts),
           textbounds: (text, textOpts) => outerLabelDraw.textbounds(text, textOpts),
+          textcontour: (text, textOpts) => outerLabelDraw.textcontour(text, textOpts),
           clickAspectState: {
             selectedBody: selectedAspectBody,
             hideAll: hideAllAspects,
@@ -1505,6 +1734,18 @@ function WheelChartCanvas({
           includeStyleTargets: styleEditorActive,
           outerLabelCollisionBounds,
         });
+        wheelRegionsRef.current = wheelRegions;
+        // Dashboard modules duplicate the wheel's hover zones on their own
+        // painted geometry (same region kinds, same hover flag).
+        hitRegionsRef.current = dashboardLayout && dashboard
+          ? [...wheelRegions, ...dashboardHitRegions(
+            dashboardLayout,
+            dashboard,
+            wheelRegions,
+            new Map(renderSnapshot.primaryChart.planets.map((planet) => [planet.seId, planet.id])),
+            measureScaleMetrics(dashboardDraw.ctx, { fonts: { ui: chartTextFont, symbols: chartSymbolFont, body: chartBodySymbolFont, aspect: chartAspectSymbolFont }, t, dashboard }, dashboardLayout.glyph),
+          )]
+          : wheelRegions;
         paintedAspectInteractionKeyRef.current = aspectInteractionPaintKey;
         paintedStyleTargetModeRef.current = styleEditorActive;
         if (styleEditorActive) {
@@ -1515,15 +1756,7 @@ function WheelChartCanvas({
                 renderSnapshot,
                 target.side / 2 * resolveWheelScale(renderStyle, profile),
               ),
-              // The boundary being edited, so the solver moves its neighbours
-              // aside for it and reports its wall as the room the whole stack
-              // has. Both surfaces feed the same field, so typing a radius and
-              // dragging one behave identically.
-              ...(activePushRole ? { pushBoundaryRole: activePushRole } : {}),
           } as const;
-          // Kept so a live ring drag can resolve the push against the same
-          // geometry the scene was built from.
-          styleGeometryRef.current = { input: styleGeometryInput, style: renderStyle };
           const nextStyleScene = buildWheelStyleScene({
             style: renderStyle,
             authoringScope: styleAuthoringEditScope === "base" ? "base" : profile,
@@ -1560,10 +1793,20 @@ function WheelChartCanvas({
         const trackedKey = hoverRegionKey(trackedFlag?.region ?? null);
         let flagReanchored = false;
         if (trackedFlag && trackedKey) {
-          const refreshedHit = hitRegionsRef.current.find((candidate) => {
-            if (candidate.styleOnly || candidate.kind === "midband_empty") return false;
-            return hoverRegionKey(hitToHover(candidate)) === trackedKey;
-          });
+          // A body or aspect can have a zone on the wheel and on a dashboard
+          // module: keep the flag on the zone nearest its current anchor.
+          let refreshedHit: ChartHitRegion | null = null;
+          let nearest = Infinity;
+          for (const candidate of hitRegionsRef.current) {
+            if (candidate.styleOnly || candidate.kind === "midband_empty") continue;
+            if (hoverRegionKey(hitToHover(candidate)) !== trackedKey) continue;
+            const [vx, vy] = mapRenderedPointToViewport(rect, candidate.x, candidate.y);
+            const distance = Math.hypot(vx - trackedFlag.x, vy - trackedFlag.y);
+            if (distance < nearest) {
+              nearest = distance;
+              refreshedHit = candidate;
+            }
+          }
           if (refreshedHit) {
             const refreshedRegion = hitToHover(refreshedHit);
             if (refreshedRegion) {
@@ -1601,10 +1844,23 @@ function WheelChartCanvas({
           updateHoverFromClientPoint(lastPointer.x, lastPointer.y);
         }
       }
+      // Modules paint after the wheel's hit regions exist: the Moon text runs
+      // past its box only up to the nearest painted object.
+      paintDashboardLayer(
+        rect,
+        dashboardLayout,
+        dashboardLayout && dashboardCorners
+          ? dashboardTextObstacles(wheelRegionsRef.current, dashboardLayout, dashboardCorners, {
+            width: rect.width,
+            inset: dashboardInset ?? 0,
+          })
+          : undefined,
+      );
       const hitMs = perfNow() - hitStartedAt;
       const totalMs = perfNow() - paintStartedAt;
       if (refreshHitRegions) {
         acknowledgePaintedDocumentSnapshot(chart.document?.documentId, chart);
+        notifyChartPainted();
       }
       recordChartPerf("chart-canvas-paint", {
         docId: chart.document?.documentId ?? null,
@@ -1616,6 +1872,7 @@ function WheelChartCanvas({
         width: Math.round(rect.width),
         height: Math.round(rect.height),
         chartSize: Math.round(target.side),
+        dashboard: Boolean(dashboardLayout),
         geometryMs,
         fillMs,
         dynamicMs,
@@ -1623,6 +1880,7 @@ function WheelChartCanvas({
         outerLabelMs,
         hitMs,
         totalMs,
+        scheduledAt,
         hitRegions: hitRegionsRef.current.length,
         bodyLayoutSignature: perfEnabled
           ? bodyLayoutSignature(hitRegionsRef.current)
@@ -1645,6 +1903,7 @@ function WheelChartCanvas({
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
       }
+      paintScheduledAt ??= perfNow();
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
         const painted = render(dirty);
@@ -1658,6 +1917,10 @@ function WheelChartCanvas({
     const dirty = previewChanged && paintedChartRef.current === chart
       ? { fill: false, geometry: false, dynamic: false, outerLabel: false }
       : dirtyStateFromSnapshot(chart);
+    // A local view change moves the wheel even when a settled snapshot's plan is empty.
+    if (paintedChartRef.current?.dashboard?.enabled !== chart.dashboard?.enabled) {
+      Object.assign(dirty, { fill: true, geometry: true, dynamic: true, outerLabel: true });
+    }
     // The snapshot plan covers daemon-owned chart-frame changes only. Style
     // Lab edits are synchronous local paint inputs and may affect any retained
     // layer (including glyph metrics and the editable hit scene), so a new
@@ -1760,16 +2023,12 @@ function WheelChartCanvas({
       if (!rendered || sameHostSize(rendered, rect.width, rect.height)) {
         return;
       }
-      scaleRetainedCanvases(
-        chartTargetRect(
-          rect.width,
-          rect.height,
-          outerPaintEnvelope.paintRadiusScale,
-          chartTitlebarTopBoundary(rect),
-          outerPaintEnvelope.avoidTitlebar,
-          wheelVerticalAlignment,
-        ),
-      );
+      const resized = resolveTarget(rect);
+      scaleRetainedCanvases(resized.target);
+      // Modules keep their own size; they repaint at once for the new surface
+      // (Moon text inside its box until the settled paint knows the wheel).
+      applyCanvasPaintRect(dashboardCanvas, rect.width, rect.height);
+      paintDashboardLayer(rect, resized.dashboardLayout);
       if (resizeSettleTimerRef.current != null) {
         window.clearTimeout(resizeSettleTimerRef.current);
       }
@@ -1778,10 +2037,15 @@ function WheelChartCanvas({
       }, 90);
     });
     ro.observe(wrap);
+    // Dev copy editor: repaint every layer so painted labels become selectable.
+    const stopCopyEditorRepaint = onCopyEditorRepaint(() =>
+      schedule({ fill: true, geometry: true, dynamic: true, outerLabel: true }),
+    );
 
     return () => {
       cancelled = true;
       ro.disconnect();
+      stopCopyEditorRepaint();
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
       }
@@ -1792,7 +2056,7 @@ function WheelChartCanvas({
         window.clearTimeout(resizeSettleTimerRef.current);
       }
     };
-  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, wheelVerticalAlignment, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, activePushRole, settingsColorPreview, effectiveTheme, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint]);
+  }, [chart, renderSnapshot, chartTextFont, chartSymbolFont, chartBodySymbolFont, chartSignSymbolFont, chartTermSymbolFont, chartDecanSymbolFont, chartAspectSymbolFont, renderStyle, wheelVerticalAlignment, frameTune, selectedAspectBody, hideAllAspects, minorOnlyAspects, aspectInteractionPaintKey, styleEditorActive, styleAuthoringEditScope, effectiveWheelAuthoringOverrides, styleWorkingPreviewActive, settingsColorPreview, effectiveTheme, setHoveredRegion, setTrackedFlagAnchor, mapRenderedPointToViewport, updateHoverFromClientPoint, t]);
 
   const stylePointFromClient = useCallback((clientX: number, clientY: number): StyleScenePoint | null => {
     const wrap = wrapRef.current;
@@ -1824,6 +2088,11 @@ function WheelChartCanvas({
    * authoring a ring — scaling the wheel must leave every band as authored.
    */
   const applyStyleHandlePatch = (patch: StyleSceneTokenPatch) => {
+    const startValue = styleHandleDragRef.current?.handle.binding?.value;
+    if (startValue != null && Math.abs(patch.value - startValue) < 1e-9) {
+      useChartStyleEditorStore.getState().restoreGestureProperty(patch.semanticId, CANVAS_GESTURE_OWNER);
+      return;
+    }
     // Written exactly as the gesture resolved it.
     //
     // There used to be a second clamp here, against a range solved separately
@@ -1832,10 +2101,52 @@ function WheelChartCanvas({
     // existence was the evidence that the first wall was not trusted. The wall
     // now travels on the handle, resolved from the same solve that placed it,
     // so re-clamping here could only disagree with it.
-    setStyleOverride(patch.semanticId, patch.value);
+    setStyleOverride(patch.semanticId, patch.value, patch.radiusTarget);
+  };
+
+  const previewStyleHandlePatch = (
+    patch: StyleSceneTokenPatch,
+    handle: StyleSceneHandle,
+    point: StyleScenePoint,
+  ) => {
+    styleHandlePatchRef.current = patch;
+    if (handle.kind === "radial") {
+      // The scene is not rebuilt mid-drag, so the dragged handle follows the
+      // pointer along its own axis.
+      const [cx, cy] = handle.center;
+      const radius = Math.hypot(point[0] - cx, point[1] - cy);
+      const reach = Math.hypot(handle.position[0] - cx, handle.position[1] - cy);
+      const ratio = reach > 1e-6 ? radius / reach : 1;
+      setDraggedHandleView({
+        id: handle.id,
+        radius,
+        position: [cx + (handle.position[0] - cx) * ratio, cy + (handle.position[1] - cy) * ratio],
+      });
+    } else {
+      setDraggedHandleView({ id: handle.id, radius: 0, position: point });
+    }
+    const state = useChartStyleEditorStore.getState();
+    const startValue = handle.binding?.value;
+    const next = startValue != null && Math.abs(patch.value - startValue) < 1e-9
+      ? state
+      : applyOverrideEdit(state, patch.semanticId, patch.value, patch.radiusTarget);
+    if (next === state) {
+      setStyleDragPreview(null);
+      return;
+    }
+    setStyleDragPreview({
+      revision: styleDragPreviewRevision(state.revision),
+      semanticOverrides: next.semanticOverrides ?? state.semanticOverrides,
+      resolvedOverrides: next.resolvedOverrides ?? state.resolvedOverrides,
+      cssOverrides: next.cssOverrides ?? state.cssOverrides,
+      geometryOverrides: next.geometryOverrides ?? state.geometryOverrides,
+    });
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    // A finger has no hover: a tap resolves its own flag (handleClick), so a
+    // touch drag across the wheel does no per-move hit testing or re-render.
+    if (event.pointerType === "touch" && !styleEditorActive) return;
     lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
     if (styleEditorActive) {
       const point = stylePointFromClient(event.clientX, event.clientY);
@@ -1846,7 +2157,11 @@ function WheelChartCanvas({
           { start: drag.start, current: point },
           (semanticId) => useChartStyleEditorStore.getState().tokenBounds[semanticId],
         );
-        if (patch) applyStyleHandlePatch(patch);
+        if (patch && drag.handle.elementId === WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale) {
+          previewChartScale(patch, drag.handle);
+        } else if (patch) {
+          previewStyleHandlePatch(patch, drag.handle, point);
+        }
         return;
       }
       const hit = point && styleSceneRef.current
@@ -1864,7 +2179,27 @@ function WheelChartCanvas({
     updateHoverFromClientPoint(event.clientX, event.clientY);
   };
 
-  const handlePointerLeave = () => {
+  // A tapped flag stays up until the next tap (touch has no pointer-leave
+  // hover end); a touch anywhere outside the wheel, such as the phone
+  // navigation or a sheet, dismisses it.
+  useEffect(() => {
+    const dismissTouchFlag = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") return;
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      hoveredKeyRef.current = null;
+      setTrackedFlagAnchor(null);
+    };
+    document.addEventListener("pointerdown", dismissTouchFlag, true);
+    return () => document.removeEventListener("pointerdown", dismissTouchFlag, true);
+  }, [setTrackedFlagAnchor]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    lastPointerTypeRef.current = event.pointerType;
+  };
+
+  const handlePointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    // A finger "leaves" on every lift; keep the tapped flag until the next tap.
+    if (event.pointerType === "touch") return;
     lastPointerClientRef.current = null;
     hoveredKeyRef.current = null;
     setHoveredRegion(null);
@@ -1930,7 +2265,17 @@ function WheelChartCanvas({
       else selectStyleElement(sceneHit.element);
       return;
     }
-    const resolvedHit = findHitRegion(hitRegionsRef.current, x, y);
+    // Touch has no hover: a tap shows the same flag a mouse hover would. It
+    // runs after this click's own handling (an aspect-target click clears the
+    // flag, which a mouse restores on its next move but a finger cannot).
+    const touch = lastPointerTypeRef.current === "touch";
+    if (touch) {
+      const { clientX, clientY } = event;
+      window.requestAnimationFrame(() => updateHoverFromClientPoint(clientX, clientY, true));
+    }
+    const resolvedHit = touch
+      ? findTouchHitRegion(hitRegionsRef.current, x, y, touchHitSlop())
+      : findHitRegion(hitRegionsRef.current, x, y);
     const midbandHit = exclusiveOnClick ? findMidbandClickHit(hitRegionsRef.current, x, y) : null;
     const hit = midbandHit && (!resolvedHit || resolvedHit.kind === "sign") ? midbandHit : resolvedHit;
 
@@ -1942,13 +2287,13 @@ function WheelChartCanvas({
       if (hit.kind === "midband_empty") {
         if (globalAspectsHidden) {
           clearFloatingFlagAfterAspectClick();
-          clearAspectSelection();
+          clearAspectSelection(chart.document?.documentId);
           ensureGlobalAspectsVisible("midband-click");
           return;
         }
         // Empty inner band → hide ALL aspects (toggle). hide_all branch.
         clearFloatingFlagAfterAspectClick();
-        toggleHideAllAspects();
+        toggleHideAllAspects(chart.document?.documentId);
         return;
       }
       // A target whose aspects we can force-show: planet, angle, Fortune, Vertex,
@@ -1957,23 +2302,27 @@ function WheelChartCanvas({
       const bodyKey = clickAspectBodyKey(hit);
       if (bodyKey) {
         clearFloatingFlagAfterAspectClick();
-        toggleSelectedAspectBody(bodyKey);
+        toggleSelectedAspectBody(bodyKey, chart.document?.documentId);
         ensureGlobalAspectsVisible("aspect-target-click");
-        if (inspectorOpen) {
+        if (pinOnClick) {
           const region = hitToHover(hit);
           if (region) setInspectorActiveRegion(region);
         }
         return;
       }
       clearFloatingFlagAfterAspectClick();
-      clearAspectSelection();
+      clearAspectSelection(chart.document?.documentId);
     }
 
     if (hit && hit.kind !== "midband_empty") {
-      if (inspectorOpen) {
-        setInspectorActiveRegion(hitToHover(hit));
+      if (pinOnClick) {
+        // A dashboard declination zone pins its body, as the wheel glyph does.
+        const pinned = hit.kind === "declination"
+          ? wheelRegionsRef.current.find((region) => region.kind === "planet" && region.seId === hit.seId && region.chartRole !== "outer")
+          : hit;
+        setInspectorActiveRegion(pinned ? hitToHover(pinned) : null);
       }
-    } else if (inspectorOpen) {
+    } else if (pinOnClick) {
       // Click in empty area clears the pin.
       setInspectorActiveRegion(null);
     }
@@ -1998,7 +2347,6 @@ function WheelChartCanvas({
     // gesture-start value, and the drag resolves that value plus the total
     // pointer delta, so it is already a function of the start and the pointer.
     styleHandleDragRef.current = { handle, start: point };
-    setActiveDragSemanticId(handle.binding?.semanticId ?? null);
     const element = styleSceneRef.current?.elements.find((candidate) => candidate.id === handle.elementId);
     if (element) selectStyleElement(element);
     // A field may still hold an open transaction from its focus. Close it on
@@ -2012,8 +2360,28 @@ function WheelChartCanvas({
 
   const endStyleHandleDrag = () => {
     if (!styleHandleDragRef.current) return;
+    const scalePreview = chartScalePreviewRef.current;
+    if (scalePreview) {
+      const startValue = styleHandleDragRef.current.handle.binding?.value;
+      if (startValue != null && Math.abs(scalePreview.patch.value - startValue) >= 1e-9) {
+        // Until the release paint lands, the layers on screen are the old
+        // paint shown through the preview transform. Record that, so the
+        // paint resets every layer and pointer mapping stays honest.
+        retainedPaintTransformRef.current = scalePreview.transform;
+        chartScalePreviewRef.current = null;
+        applyStyleHandlePatch(scalePreview.patch);
+      } else {
+        clearChartScalePreview();
+      }
+    }
+    const handlePatch = styleHandlePatchRef.current;
+    styleHandlePatchRef.current = null;
+    // One store write; React batches it with clearing the preview, so the next
+    // paint reads the stored edit directly.
+    if (handlePatch) applyStyleHandlePatch(handlePatch);
+    setStyleDragPreview(null);
+    setDraggedHandleView(null);
     styleHandleDragRef.current = null;
-    setActiveDragSemanticId(null);
     endStyleGesture(CANVAS_GESTURE_OWNER);
   };
 
@@ -2034,15 +2402,20 @@ function WheelChartCanvas({
   const chartScaleHandle = chartScaleHandleCandidate?.kind === "radial"
     ? chartScaleHandleCandidate
     : null;
+  const withDragView = <T extends StyleSceneHandle>(handle: T): T => (
+    draggedHandleView?.id === handle.id
+      ? { ...handle, radius: draggedHandleView.radius, position: draggedHandleView.position }
+      : handle
+  );
   const visibleStyleHandles = (currentSelectedStyleElement?.handles ?? []).filter(
     (handle) => handle.elementId !== WHEEL_STYLE_SCENE_ELEMENT_IDS.chartScale,
-  );
+  ).map(withDragView);
   // Always on offer: resizing the whole ring is a tool, not a property of
   // whichever line happens to be selected.
   const bandSpanHandles = (currentStyleScene?.handles ?? []).flatMap((handle) =>
     handle.elementId.startsWith(`${WHEEL_STYLE_SCENE_ELEMENT_IDS.bandSpan}.`)
     && handle.kind === "radial"
-      ? [handle]
+      ? [withDragView(handle)]
       : [],
   );
 
@@ -2060,6 +2433,8 @@ function WheelChartCanvas({
   const canvas = (
     <div
         ref={wrapRef}
+        data-aries-chart-document={chart.document?.documentId}
+        data-aries-true-color=""
         className={cn(
           className ?? "relative flex h-full w-full flex-1 items-center justify-center",
           (paintEffectsActive ?? (hasProfilePaintEffects || hasDraftPaintEffects)) &&
@@ -2068,6 +2443,7 @@ function WheelChartCanvas({
           "select-none",
         )}
         style={styleEditorCanvasStyle}
+        onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
         onPointerUp={endStyleHandleDrag}
@@ -2079,12 +2455,18 @@ function WheelChartCanvas({
         <canvas ref={geometryRef} className="absolute inset-0 block" />
         <canvas ref={dynamicRef} className="absolute inset-0 block" />
         <canvas
+          ref={dashboardRef}
+          data-aries-chart-layer="dashboard"
+          className="pointer-events-none absolute inset-0 hidden"
+        />
+        <canvas
           ref={outerLabelRef}
           data-aries-chart-layer="outer-label"
           className="pointer-events-none absolute inset-0 z-[41] block"
         />
         {styleEditorActive && currentStyleScene ? (
           <svg
+            ref={styleOverlayRef}
             className="pointer-events-none absolute inset-0 size-full overflow-visible"
             aria-hidden="true"
           >
@@ -2183,12 +2565,22 @@ function WheelChartCanvas({
             point). Portaled to document.body so pane overflow cannot clip it;
             renders daemon JSON verbatim. */}
         {styleEditorActive ? null : <ChartHoverFlag anchor={flagAnchor} chart={chart} />}
+        {DESIGN_TUNERS_ENABLED && designTunerOpen && appControlsEnabled ? <WheelFrameTuner /> : null}
         {/* Corner labels (date/time, place/coords, house-system, overlay)
             are rendered by `workspace-content.tsx` as siblings to ChartCanvas —
             see CornerLines + OverlayCorner. Already chart-size-aware. */}
     </div>
   );
   return appControlsEnabled ? (
-    <ChartContextMenu chart={chart}>{canvas}</ChartContextMenu>
+    <ChartContextMenu chart={chart} dashboardAtPoint={(clientX, clientY) => {
+      const rect = wrapRef.current?.getBoundingClientRect();
+      return Boolean(rect && dashboardContainsPoint(dashboardLayoutRef.current, clientX - rect.left, clientY - rect.top));
+    }} regionAtPoint={(clientX, clientY) => {
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return null;
+      const [x, y] = mapPointerToRenderedPoint(clientX - rect.left, clientY - rect.top);
+      const hit = findHitRegion(hitRegionsRef.current, x, y);
+      return hit ? hitToHover(hit) : null;
+    }}>{canvas}</ChartContextMenu>
   ) : canvas;
 }

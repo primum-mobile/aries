@@ -15,6 +15,16 @@ from typing import Any
 import astrology
 import chart
 import common
+from engine.dignity_display import (
+    DIGNITY_COLOR_ROLES as _DIGNITY_COLOR_ROLE_BY_CODE,
+    MINOR_DIGNITY_BLEND_WEIGHTS,
+    chart_dignity_color,
+    dignity_color,
+    dignity_color_role,
+    minor_dignity_facts,
+    minor_dignity_color,
+    minor_dignity_count,
+)
 
 
 _BODY_COLOR_ROLE_BY_PLANET = {
@@ -31,6 +41,8 @@ _BODY_COLOR_ROLE_BY_PLANET = {
     astrology.SE_MEAN_NODE: ("--morinus-body-nodes", 10),
     astrology.SE_TRUE_NODE: ("--morinus-body-nodes", 10),
     astrology.SE_CHIRON: ("--morinus-body-chiron", 12),
+    astrology.SE_MEAN_APOG: ("--morinus-body-moon", 1),
+    astrology.SE_OSCU_APOG: ("--morinus-body-moon", 1),
 }
 _ASPECT_COLOR_ROLE_BY_INDEX = {
     chart.Chart.CONJUNCTIO: "--morinus-aspect-conjunction",
@@ -47,13 +59,6 @@ _ASPECT_COLOR_ROLE_BY_INDEX = {
     chart.Chart.SEPTILE: "--morinus-aspect-septile",
     chart.Chart.PARALLEL: "--morinus-aspect-parallel",
     chart.Chart.CONTRAPARALLEL: "--morinus-aspect-contraparallel",
-}
-_DIGNITY_COLOR_ROLE_BY_CODE = {
-    chart.Chart.DOMICIL: ("--morinus-dignity-domicil", "clrdomicil"),
-    chart.Chart.EXAL: ("--morinus-dignity-exal", "clrexal"),
-    chart.Chart.PEREGRIN: ("--morinus-peregrin", "clrperegrin"),
-    chart.Chart.CASUS: ("--morinus-dignity-casus", "clrcasus"),
-    chart.Chart.EXIL: ("--morinus-dignity-exil", "clrexil"),
 }
 _ELEMENT_COLOR_ROLE_BY_KEY = {
     "fire": ("--morinus-element-fire", "clrsignelementfire"),
@@ -74,6 +79,19 @@ def effective_display_options(source_options=None):
     return options_service.get_effective_style_chart_options(source_options)
 
 
+def minor_dignity_display_facts(chrt, body_id):
+    """Reusable display metadata for chart projections with retained geometry."""
+    facts = minor_dignity_facts(chrt, body_id)
+    count = facts["minorDignityCount"]
+    dignity = None
+    if count:
+        dignity = {chart.Chart.DOMICIL: 'domicil', chart.Chart.EXAL: 'exal',
+                   chart.Chart.CASUS: 'casus', chart.Chart.EXIL: 'exil',
+                   chart.Chart.PEREGRIN: 'peregrin'}.get(chrt.dignity(body_id))
+    return {**facts, 'dignity': dignity}
+
+
+
 def object_glyph_color(
     display_options,
     obj,
@@ -81,6 +99,7 @@ def object_glyph_color(
     *,
     fallback: Any = None,
     source_options=None,
+    minor_count: int = 0,
 ):
     """Resolve a search/list object's semantic color from an effective palette.
 
@@ -92,7 +111,7 @@ def object_glyph_color(
     # Without a profile-layered palette, the serialized metadata is the
     # established presentation authority. Preserve it byte-for-byte instead of
     # silently reinterpreting dignity/individual-colour settings.
-    if source_options is not None and display_options is source_options:
+    if source_options is not None and display_options is source_options and not minor_count:
         return fallback
     if display_options is None or obj is None:
         return fallback
@@ -108,6 +127,8 @@ def object_glyph_color(
     if getattr(display_options, "useplanetcolors", False):
         if object_id == "point:lof":
             color_index = astrology.SE_MEAN_NODE + 1
+        elif planet_index in (astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
+            color_index = astrology.SE_MOON
         elif planet_index == astrology.SE_CHIRON:
             color_index = astrology.SE_PLUTO + 3
         elif planet_index == astrology.SE_TRUE_NODE:
@@ -126,18 +147,11 @@ def object_glyph_color(
         except Exception:
             return getattr(display_options, "clrperegrin", fallback)
 
-    if object_id == "point:lof" or planet_index == astrology.SE_CHIRON:
+    if object_id == "point:lof" or planet_index in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
         return getattr(display_options, "clrperegrin", fallback)
-    palette = (
-        getattr(display_options, "clrdomicil", fallback),
-        getattr(display_options, "clrexal", fallback),
-        getattr(display_options, "clrperegrin", fallback),
-        getattr(display_options, "clrcasus", fallback),
-        getattr(display_options, "clrexil", fallback),
-    )
     try:
-        return palette[int(dignity_code)]
-    except Exception:
+        return dignity_color(display_options, dignity_code, minor_count)
+    except (AttributeError, TypeError, ValueError):
         return getattr(display_options, "clrperegrin", fallback)
 
 
@@ -147,6 +161,7 @@ def object_glyph_color_role(
     dignity_code: Any,
     *,
     resolved_color: Any = None,
+    minor_count: int = 0,
 ) -> str | None:
     """Return the stable CSS role for a serialized object color.
 
@@ -180,7 +195,7 @@ def object_glyph_color_role(
         except Exception:
             pass
 
-    if object_id == "point:lof" or planet_index == astrology.SE_CHIRON:
+    if object_id == "point:lof" or planet_index in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
         candidates.append(("--morinus-peregrin", getattr(display_options, "clrperegrin", None)))
     elif planet_index is None:
         candidates.append(("--morinus-text-bright", getattr(display_options, "clrtexts", None)))
@@ -193,7 +208,11 @@ def object_glyph_color_role(
             dignity,
             _DIGNITY_COLOR_ROLE_BY_CODE[chart.Chart.PEREGRIN],
         )
-        candidates.append((role, getattr(display_options, attr, None)))
+        if dignity == chart.Chart.PEREGRIN and minor_count:
+            role = dignity_color_role(dignity, minor_count)
+            candidates.append((role, dignity_color(display_options, dignity, minor_count)))
+        else:
+            candidates.append((role, getattr(display_options, attr, None)))
         if dignity != chart.Chart.PEREGRIN:
             candidates.append(("--morinus-peregrin", getattr(display_options, "clrperegrin", None)))
 
@@ -233,6 +252,14 @@ def chart_body_color_role(
             dignity = int(chrt.dignity(planet_index))
         except Exception:
             dignity = chart.Chart.PEREGRIN
+
+    if (dignity == chart.Chart.PEREGRIN and not is_fortune and not is_vertex
+            and not getattr(display_options, 'useplanetcolors', False)):
+        count = minor_dignity_count(chrt, planet_index)
+        if count:
+            return _matching_role([
+                (f'--morinus-minor-dignity-{count}', minor_dignity_color(display_options, count)),
+            ], resolved_color)
 
     return object_glyph_color_role(
         display_options,

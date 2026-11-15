@@ -663,7 +663,7 @@ export const ASTROCART_RENDER_PALETTE_SPECS = freezeProfileSpecs({
   mapFallbackUnknownColor: ["--aries-astrocart-map-fallback-unknown-color", "#888888"],
   mapEclipseShadowColor: ["--aries-astrocart-map-eclipse-shadow-color", "rgba(5,6,7,0.34)"],
   mapEclipseOutlineColor: ["--aries-astrocart-map-eclipse-outline-color", "#c8c2b5"],
-  mapEclipseCenterColor: ["--aries-astrocart-map-eclipse-center-color", "#d9b760"],
+  mapEclipseCenterColor: ["--aries-astrocart-map-eclipse-center-color", "var(--aries-signal)"],
   mapEclipseHaloColor: ["--aries-astrocart-map-eclipse-halo-color", "rgba(8,11,15,0.92)"],
   mapAsterismHighlightColor: ["--aries-astrocart-map-asterism-highlight-color", "#c9a7ff"],
   mapAsterismShadowColor: ["--aries-astrocart-map-asterism-shadow-color", "#4f8cff"],

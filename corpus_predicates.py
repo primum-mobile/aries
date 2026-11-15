@@ -19,7 +19,7 @@ import math
 
 import astrology
 import corpus_semantics
-from engine import solar_proximity
+from engine import orb_policy, solar_proximity
 import houses as houses_module
 import planets
 
@@ -465,15 +465,9 @@ def _house_of_frame(chrt, lon, house_frame='profile'):
         return _active_house_of(chrt, lon)
     return None
 
-_LILLY_ORB_DIAMETERS = {
-    astrology.SE_SATURN: 9.0,
-    astrology.SE_JUPITER: 9.0,
-    astrology.SE_MARS: 7.0,
-    astrology.SE_SUN: 15.0,
-    astrology.SE_VENUS: 7.0,
-    astrology.SE_MERCURY: 7.0,
-    astrology.SE_MOON: 12.0,
-}
+# Lilly's orbs (first column, CA I p.107) live in engine.orb_policy, shared
+# with the chart's Lilly policy and the VOC engine so all judge one allowance.
+_LILLY_ORB_DIAMETERS = orb_policy.LILLY_ORBS
 
 
 def _chart_body_orb(chrt, a_id, b_id, angle):
@@ -489,8 +483,8 @@ def _chart_body_orb(chrt, a_id, b_id, angle):
     except Exception:
         b_idx = b_id
     try:
-        return (float(chrt.options.orbis[a_idx][idx]) +
-                float(chrt.options.orbis[b_idx][idx]))
+        orbis = orb_policy.contributions(chrt.options)
+        return orb_policy.combiner(chrt.options)(float(orbis[a_idx][idx]), float(orbis[b_idx][idx]))
     except Exception:
         return None
 
@@ -693,7 +687,7 @@ def _chart_point_orb(chrt, pid, angle, endpoint_kind='axis'):
         body_idx = pid
     kind = str(endpoint_kind or 'axis').lower().replace('-', '_')
     try:
-        body_orb = float(chrt.options.orbis[body_idx][idx])
+        body_orb = float(orb_policy.contributions(chrt.options)[body_idx][idx])
         if kind in ('axis', 'angle', 'asc_mc'):
             endpoint_orb = float(chrt.options.orbisAscMC[idx])
         elif kind in ('house_cusp', 'cusp'):
@@ -702,7 +696,7 @@ def _chart_point_orb(chrt, pid, angle, endpoint_kind='axis'):
             endpoint_orb = 0.0
         else:
             return None
-        return endpoint_orb + body_orb
+        return orb_policy.combiner(chrt.options)(endpoint_orb, body_orb)
     except Exception:
         return None
 
@@ -762,6 +756,9 @@ def _orb_limit(chrt, pid, angle, orb, point_orb_policy,
             chrt, pid, angle, endpoint_kind=endpoint_kind,
         ), label
     if policy in ('lilly', 'lilly_moiety', 'source_moiety'):
+        # Lilly gives no orb for angles, cusps or other points.  Allowing the
+        # body's own moiety (the point contributing none) is an Aries
+        # convention, not a cited source rule.
         diameter = _LILLY_ORB_DIAMETERS.get(pid)
         return (
             (diameter / 2.0) if diameter is not None else None,
@@ -4722,7 +4719,9 @@ def _lilly_consideration_voc_event(chrt, context=None, **_):
     the blanket "all matters go hardly" wording.  Neither qualification is a
     second vote, so this event owns the fact and both grades together.
     """
-    if not moon_void_of_course(chrt):
+    if not moon_void_of_course(
+            chrt, policy='lilly_moieties',
+            policy_context_key='lilly_void_course_policy', context=context):
         return None
     moon = _planet(chrt, astrology.SE_MOON)
     moon_lon = _lon(moon) if moon is not None else None
@@ -10468,13 +10467,22 @@ def _moon_future_perfections(chrt):
     return matches
 
 
-def moon_void_of_course(chrt, **_):
+def moon_void_of_course(chrt, policy=None, policy_context_key=None,
+                        context=None, **_):
     """Lilly VOC: no future Ptolemaic contact with a classical planet.
 
     The source-defined target universe is the other six visible planets;
     angles, lots, nodes, stars, and dynamic bodies are explicitly outside this
     particular planetary-application technique rather than silently omitted.
+    Without an explicit policy this is the before-sign-exit test; the Lilly
+    pack passes its selectable ``lilly_void_course_policy`` instead.
     """
+    if policy is not None or policy_context_key is not None:
+        event = _hephaistion_void_course_event(
+            chrt, policy=policy or 'lilly_before_sign_exit',
+            policy_context_key=policy_context_key, context=context,
+        )
+        return bool(event and event['void'])
     event = _next_perfected_aspect_event(
         chrt, astrology.SE_MOON,
         tuple(pid for pid in _PLANET_IDS.values()
@@ -10489,8 +10497,61 @@ def moon_void_of_course(chrt, **_):
 _HEPHAISTION_VOID_POLICIES = frozenset({
     'hellenistic_30_degree',
     'lilly_before_sign_exit',
+    'lilly_moieties',
+    'modern_sign_exit',
+    'app_setting',
     'source_phrase_only',
 })
+# Settings' void-of-course policies (engine/void_of_course.py order), as
+# selected by a pack's "app_setting" doctrine option.
+_APP_VOID_POLICIES = ('hellenistic_30_degree', 'lilly_moieties', 'modern_sign_exit')
+
+
+def _moon_void_by_moieties(chrt):
+    """Ward's reading of Lilly: no applying classical contact within moieties.
+
+    The test is instantaneous, so the chart's own longitudes and speeds are
+    the shared engine's inputs for full and partial charts alike.
+    """
+    from engine import void_of_course
+    moon = _planet(chrt, astrology.SE_MOON)
+    moon_state = (_lon(moon), _speed(moon)) if moon is not None else (None, None)
+    if None in moon_state:
+        return None
+    applying = False
+    for pid in sorted(_CLASSICAL_PLANET_PIDS - {astrology.SE_MOON}):
+        body = _planet(chrt, pid)
+        state = (_lon(body), _speed(body)) if body is not None else (None, None)
+        if None in state:
+            return None
+        applying = applying or void_of_course.applying_within_moieties(
+            moon_state, state, pid,
+        )
+    return {
+        'status': 'applies' if applying else 'boundary', 'void': not applying,
+        'days': None, 'method': 'current_moieties', 'course_arc': None,
+        'geometry': 'lilly_moieties',
+    }
+
+
+def _moon_void_modern(chrt):
+    """Settings' modern policy (outer planets included) on the chart's own sky."""
+    from engine import void_of_course
+    if not _is_full_motion_chart(chrt):
+        return None
+    try:
+        sky = void_of_course.chart_sky(chrt, void_of_course.MODERN_PLANETS)
+        if sky is None:
+            return None
+        state = void_of_course.calculate(sky[0], void_of_course.MODERN, sky[1])
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+        return None
+    return {
+        'status': 'boundary' if state.is_void else 'perfects',
+        'void': bool(state.is_void),
+        'days': state.horizon_jd - sky[0], 'method': 'ephemeris_exact',
+        'course_arc': None, 'geometry': 'modern_sign_exit',
+    }
 
 
 def _moon_forward_course_boundary_event(chrt, course_arc=30.0):
@@ -10614,6 +10675,27 @@ def _hephaistion_void_course_event(
         return None
     if selected == 'source_phrase_only':
         return None
+    if selected == 'app_setting':
+        from engine import void_of_course
+        inherited = _APP_VOID_POLICIES[void_of_course.normalize_policy(
+            getattr(getattr(chrt, 'options', None), 'voidcoursepolicy', None),
+        )]
+        event = _hephaistion_void_course_event(chrt, policy=inherited)
+        if event is None:
+            return None
+        return {
+            **event, 'policy_source': source,
+            'policy_context_key': context_key, 'inherited_from': 'app_setting',
+        }
+    if selected in ('lilly_moieties', 'modern_sign_exit'):
+        event = (_moon_void_by_moieties(chrt) if selected == 'lilly_moieties'
+                 else _moon_void_modern(chrt))
+        if event is None:
+            return None
+        return {
+            **event, 'policy': selected, 'policy_source': source,
+            'policy_context_key': context_key,
+        }
     if selected == 'lilly_before_sign_exit':
         moon = _planet(chrt, astrology.SE_MOON)
         longitude = _lon(moon) if moon is not None else None
@@ -30906,9 +30988,16 @@ def _fallback_predicate_match(predicate, args, chrt, context=None):
                 f"[method:{event.get('method', 'unknown')}]",
                 '[boundary:moon-next-30deg]',
             )
-        else:
+        elif event['policy'] == 'lilly_moieties':
             pieces = (
-                f"no exact classical Ptolemaic contact before sign exit in "
+                "no applying classical Ptolemaic contact within moieties",
+                f"[method:{event.get('method', 'unknown')}]",
+            )
+        else:
+            contact = ('classical Ptolemaic' if event['policy'] == 'lilly_before_sign_exit'
+                       else 'Ptolemaic planetary')
+            pieces = (
+                f"no exact {contact} contact before sign exit in "
                 f"{float(event['days']):.3f}d",
                 f"[method:{event.get('method', 'unknown')}]",
                 '[boundary:actor-sign]',
@@ -30916,6 +31005,7 @@ def _fallback_predicate_match(predicate, args, chrt, context=None):
         return _append_match_evidence(
             result, *pieces,
             f"[void-policy:{event['policy'].replace('_', '-')}]",
+            '[policy-source:app-setting]' if event.get('inherited_from') else None,
             (
                 f"[policy-context:{event['policy_context_key']}]"
                 if event['policy_source'] == 'context' else None
@@ -38420,6 +38510,14 @@ def _resolve_predicate_match_scoped(predicate, args, chrt, context=None):
                 'subjects': [state],
                 'geometry': 'horizon_event',
             }
+    elif predicate == 'moon_void_of_course' and (
+            'policy' in args or 'policy_context_key' in args):
+        return _fallback_predicate_match(
+            'hephaistion_moon_void_of_course',
+            {key: args[key] for key in ('policy', 'policy_context_key')
+             if key in args},
+            chrt, context=context,
+        )
     elif predicate == 'moon_void_of_course':
         event = _next_perfected_aspect_event(
             chrt, astrology.SE_MOON,

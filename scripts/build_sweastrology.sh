@@ -10,7 +10,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 arch="${1:-${ARCHFLAGS:-x86_64}}"
 deployment_target="${MACOSX_DEPLOYMENT_TARGET:-10.13}"
-python_bin="${PYTHON_BIN:-python3}"
+# Needs setuptools: default to the project venv, not the system python3.
+python_bin="${PYTHON_BIN:-webapp/.venv/bin/python}"
 
 case "${python_bin}" in
     /*)

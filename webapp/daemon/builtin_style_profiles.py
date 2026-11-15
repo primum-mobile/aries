@@ -18,6 +18,33 @@ from webapp.daemon.style_profile_service import (
 
 
 NASA_ATLAS_PRESET_NAME = "NASA Atlas"
+# Attention marks have their own role, independent of neutral chart geometry.
+# Values are copied from each theme's established body, element or aspect palette.
+THEME_SIGNAL_COLORS = {
+    "Midnight": (0, 191, 255),
+    "Daylight": (17, 43, 205),
+    "NASA Atlas": (221, 8, 6),
+    "Astro Zone": (17, 43, 205),
+    "Neo Tokyo": (221, 8, 6),
+    "Starved Rock": (68, 164, 172),
+    "Taurus": (185, 230, 180),
+    "Nocturne": (67, 220, 150),
+    "Sirius": (0, 199, 252),
+    "Classic Morinus": (0, 0, 255),
+}
+# Pane surface authored per palette preset. These established palettes keep
+# their sidebars and panels on the window background; their clrsidebar value
+# belongs to controls and small regions. A theme carries this as an ordinary
+# app.color.surface value (shipped profiles store it in the JSON, factory
+# profiles take it from here), so a copy, import or rename keeps it. The
+# no-active-profile path reads this table directly for a matching palette.
+THEME_SURFACE_COLORS = {
+    "Midnight": (35, 36, 40),
+    "Daylight": (255, 255, 255),
+    "Diurnal": (255, 255, 255),
+    "Taurus": (36, 36, 40),
+    "Nocturne": (21, 24, 27),
+}
 NASA_ATLAS_PROFILE_ID = "nasa-atlas"
 SUSAN_MILLER_PRESET_NAME = "Susan Miller"
 SUSAN_MILLER_PROFILE_ID = "susan-miller"
@@ -82,7 +109,6 @@ def _color_overrides() -> dict:
         "renderer.astrocart.color.chromeText",
         "renderer.astrocart.color.mapCountryLabelColor",
         "renderer.astrocart.color.mapLabelColor",
-        "renderer.astrolabe.color.infoAtmospheric",
         "renderer.sphere.color.wire",
         "renderer.strip.color.textPrimary",
         "renderer.wheel.color.angloBaseRing",
@@ -171,7 +197,6 @@ def _color_overrides() -> dict:
         "app.statusbar.textColor",
         "renderer.astrocart.color.chromeDim",
         "renderer.astrocart.color.mapCityLabelColor",
-        "renderer.astrolabe.color.infoSchematic",
         "renderer.strip.color.axis",
         "renderer.strip.color.textMuted",
     )
@@ -200,6 +225,7 @@ def _color_overrides() -> dict:
     assign(
         [221, 8, 6],
         "app.color.destructive",
+        "app.color.signal",
         "app.status.avoid",
         "app.status.validationError",
         "chart.color.angles",
@@ -209,7 +235,6 @@ def _color_overrides() -> dict:
         "chart.color.body.sun",
         "chart.color.dignity.exile",
         "chart.color.element.fire",
-        "renderer.astrocart.color.mapEclipseCenterColor",
         "renderer.astrolabe.color.ecliptic",
         "renderer.astrolabe.color.sunFill",
         "renderer.wheel.color.angleLabel",
@@ -499,6 +524,12 @@ BUILTIN_STYLE_PROFILE_IDS = frozenset(
 )
 
 
+def builtin_style_profile_id(name: str) -> str | None:
+    """Read immutable catalog identity without copying the full wheel style."""
+    profile = _BUILTIN_STYLE_PROFILES.get(name)
+    return str(profile["id"]) if profile is not None else None
+
+
 def builtin_style_profile(name: str) -> dict | None:
     profile = _BUILTIN_STYLE_PROFILES.get(name)
     return deepcopy(profile) if profile is not None else None
@@ -555,3 +586,25 @@ def susan_miller_upgrade_for(profile: object) -> dict | None:
     if profile.get("contentHash") not in _SUSAN_MILLER_REPLACEABLE_CONTENT_HASHES:
         return None
     return susan_miller_profile()
+
+
+# One-time release migration (2026-10, astrolabe instrument colours). Saved
+# copies of shipped themes shadow the shipped file, so they never received the
+# new astrolabe colours. Users cannot edit astrolabe settings, so replacing only
+# renderer.astrolabe.* in those copies loses no user work. Not a general rule
+# for shipped-theme updates.
+ASTROLABE_COLOURS_MIGRATION_ID = "shipped-astrolabe-colours-2026-10"
+ASTROLABE_OVERRIDE_PREFIX = "renderer.astrolabe."
+
+
+def shipped_astrolabe_overrides() -> dict:
+    """Shipped renderer.astrolabe.* overrides per shipped theme id."""
+    shipped = json.loads(Path(__file__).with_name("shipping-style-profiles.json").read_text(encoding="utf-8"))
+    return {
+        str(profile["id"]): {
+            key: deepcopy(value)
+            for key, value in (profile.get("overrides") or {}).items()
+            if key.startswith(ASTROLABE_OVERRIDE_PREFIX)
+        }
+        for profile in shipped.values()
+    }

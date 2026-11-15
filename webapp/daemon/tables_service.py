@@ -12,6 +12,7 @@ astrology.
 """
 from __future__ import annotations
 
+import copy
 import datetime
 import math
 import re
@@ -20,7 +21,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import astrology
+import asteroids
+import chart_bodies
 import chart
+import chart_bodies
 import common
 import customerpd
 import dateformat
@@ -33,6 +37,7 @@ import houses
 import manazil
 import mtexts
 import munprofections
+import node_mirror
 import planets
 import profections
 import profectionsmonthly
@@ -45,10 +50,13 @@ import util
 import vimshottari
 import zodiacalreleasing
 from angleatbirth import compute_contacts
-from engine import chart_factory
+from engine import chart_factory, orb_policy
+from engine import calendar_policy
 from engine import paranatellonta
 from engine import planetary_state
+from engine import void_of_course
 from webapp.daemon.chart_service import chart_snapshot_service
+from engine.dignity_display import chart_dignity_color
 from webapp.daemon.display_palette import (
     aspect_color_role,
     chart_body_color_role,
@@ -67,9 +75,9 @@ from webapp.daemon.speculum_speed import (
     relative_speed_percent,
 )
 from webapp.daemon.speculum_schema import (
+    PLACIDIAN as SPECULUM_PLACIDIAN,
     REGIOMONTAN as SPECULUM_REGIOMONTAN,
     columns_for_index,
-    family_for_house_system,
     index_for_house_system,
 )
 from webapp.daemon.table_catalog import TABLE_CATALOG
@@ -247,15 +255,8 @@ def _planet_color(planet_id: int, chrt, options) -> str | None:
             return _rgb_hex(palette[color_idx])
         except Exception:
             return None
-    dignity_palette = (
-        getattr(options, "clrdomicil", None),
-        getattr(options, "clrexal", None),
-        getattr(options, "clrperegrin", None),
-        getattr(options, "clrcasus", None),
-        getattr(options, "clrexil", None),
-    )
     try:
-        return _rgb_hex(dignity_palette[chrt.dignity(int(planet_id))])
+        return _rgb_hex(chart_dignity_color(chrt, options, int(planet_id)))
     except Exception:
         return _rgb_hex(getattr(options, "clrperegrin", None))
 
@@ -293,12 +294,6 @@ def _planet_run(planet_id: int, chrt, options) -> dict[str, Any]:
     color = _planet_color(planet_id, chrt, options)
     _set_semantic_color(run, color, _planet_color_role(planet_id, chrt, options, color))
     return run
-
-
-def _angle_glyph(angle_key: str) -> str:
-    common_instance = getattr(common, "common", None)
-    glyphs = getattr(common_instance, "Angles", common.CHART_ANGLE_GLYPHS)
-    return str(glyphs.get(str(angle_key).lower(), ""))
 
 
 def _empty(message: str | None = None) -> list[Row]:
@@ -422,7 +417,7 @@ def _glyph_export_text(value: Any) -> str:
     if not glyph:
         return ""
     candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
-    candidate_ids.extend((astrology.SE_CHIRON, common.CHART_OBJECT_VERTEX))
+    candidate_ids.extend((astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS, common.CHART_OBJECT_VERTEX))
     for planet_id in candidate_ids:
         if glyph == _planet_glyph(planet_id):
             return _planet_export_name(planet_id)
@@ -451,7 +446,7 @@ def _glyph_export_symbol_text(value: Any) -> str:
     if not glyph:
         return ""
     candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
-    candidate_ids.append(astrology.SE_CHIRON)
+    candidate_ids.extend((astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS))
     for planet_id in candidate_ids:
         if glyph == _planet_glyph(planet_id):
             return common.planet_text_export_mark(planet_id)
@@ -547,25 +542,26 @@ def _ensure_plain_text_export_contract(columns: list[dict], rows: list[Row]) -> 
                 continue
 
 
-def _body_ids(chrt, options, *, aspects: bool = False) -> list[int]:
+def _body_ids(chrt, options, *, aspects: bool = False, canonical: bool = False) -> list[int]:
+    """Table body rows. ``canonical`` is every enabled body, never narrowed by
+    the chart's display visibility (the "in tables" option)."""
     try:
         if aspects:
             return list(chrt.get_visible_aspect_planet_ids(include_chiron=True))
     except Exception:
         pass
-    if getattr(options, "intables", False):
+    if not canonical and getattr(options, "intables", False):
         try:
             return list(common.common.get_visible_chart_planet_ids(
                 chrt, options, include_descnode=False, include_chiron=True))
         except Exception:
             pass
     ids = list(range(astrology.SE_SUN, astrology.SE_MEAN_NODE + 1))
-    if getattr(chrt, "chiron", None) is not None:
-        ids.append(astrology.SE_CHIRON)
+    ids.extend(pid for pid, _body in chart_bodies.iter_dynamic_bodies(chrt))
     return ids
 
 
-def _dms(value: float, *, signed: bool = False, sec: bool = False) -> str:
+def _dms(value: float, *, signed: bool = False, sec: bool = True) -> str:
     try:
         val = float(value)
     except Exception:
@@ -652,7 +648,7 @@ def _position_speed_cell(body_id: int, value: float, options, chrt=None) -> Cell
     return _longitude_speed_cell(speed)
 
 
-def _ra(value: float, options, *, seconds: bool = False) -> str:
+def _ra(value: float, options, *, seconds: bool = True) -> str:
     try:
         val = float(value)
     except Exception:
@@ -663,13 +659,20 @@ def _ra(value: float, options, *, seconds: bool = False) -> str:
     return _dms(val, signed=False, sec=seconds)
 
 
+def _ra_cell(value: float, options, **kwargs) -> Cell:
+    cell = _text(_ra(value, options), **kwargs)
+    if getattr(options, "intime", False):
+        cell["angleTime"] = True
+    return cell
+
+
 def _new_chart(*args: Any, **kwargs: Any) -> Any:
     # Profections table rows mirror the wx source builder. Construction goes
     # through the ChartFactory choke point (policy-chart-lifecycle Invariant 1).
     return chart_factory.build_chart(*args, **kwargs)
 
 
-def _lon_cell(value: float, chrt, options, *, seconds: bool = False) -> Cell:
+def _lon_cell(value: float, chrt, options, *, seconds: bool = True) -> Cell:
     try:
         lon = util.normalize(float(value))
         if seconds:
@@ -689,20 +692,26 @@ def _lon_cell(value: float, chrt, options, *, seconds: bool = False) -> Cell:
         return _text("-")
 
 
-def _profection_lon_cell(value: float | None, reference_chart, options) -> Cell:
+def _profection_lon_cell(value: float | None, reference_chart, options, sign_runs: dict[int, dict[str, Any]] | None = None) -> Cell:
     if value is None:
         return _text("-")
     try:
         lon = util.normalize(float(value))
-        d, m, _s = util.decToDeg(lon)
+        d, m, seconds = _rounded_sexagesimal_parts(lon, cycle=360)
         sign_idx = int(d / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
-        signs = _signs(options)
-        sign = signs[sign_idx] if 0 <= sign_idx < len(signs) else ""
+        if sign_runs is not None and sign_idx in sign_runs:
+            sign_run = dict(sign_runs[sign_idx])
+        else:
+            signs = _signs(options)
+            sign = signs[sign_idx] if 0 <= sign_idx < len(signs) else ""
+            sign_run = _sign_run(options, sign_idx, sign)
+            if sign_runs is not None:
+                sign_runs[sign_idx] = dict(sign_run)
         return {
             "runs": [
-                {"text": "%s°%02d' " % (str(pos).rjust(2), m), "glyph": False},
-                _sign_run(options, sign_idx, sign),
+                {"text": "%s°%02d'%02d\" " % (str(pos).rjust(2), m, seconds), "glyph": False},
+                sign_run,
             ],
             "sortValue": lon,
         }
@@ -888,8 +897,9 @@ def _eclipse_birth_date_values(chrt) -> tuple[int, int, int]:
     if t is None:
         now = datetime.datetime.now()
         return (int(now.year), int(now.month), int(now.day))
+    year = int(getattr(t, "origyear", getattr(t, "year", 0)))
     return (
-        int(getattr(t, "origyear", getattr(t, "year", 0))),
+        1 - year if bool(getattr(t, "bc", False)) else year,
         int(getattr(t, "origmonth", getattr(t, "month", 1))),
         int(getattr(t, "origday", getattr(t, "day", 1))),
     )
@@ -898,6 +908,9 @@ def _eclipse_birth_date_values(chrt) -> tuple[int, int, int]:
 def _eclipse_chart_anchor_date_values(chrt, chart_anchor_datetime: Any = None) -> tuple[int, int, int]:
     if isinstance(chart_anchor_datetime, (datetime.datetime, datetime.date)):
         return _eclipse_date_values_from_datetime(chrt, chart_anchor_datetime)[:3]
+    values = _eclipse_date_tuple(chart_anchor_datetime)
+    if values is not None:
+        return values
     return _eclipse_birth_date_values(chrt)
 
 
@@ -968,9 +981,44 @@ def _eclipse_chunk_keys(from_values: tuple[int, int, int], to_values: tuple[int,
 
 
 def _eclipse_jd_bounds(chrt, from_values: tuple[int, int, int], to_values: tuple[int, int, int]) -> tuple[float, float]:
-    jd_from = eclipses.local_day_bounds_to_jd(chrt, *from_values)[0]
-    jd_to = eclipses.local_day_bounds_to_jd(chrt, *to_values)[1]
+    jd_from = _eclipse_display_day_bounds(chrt, from_values)[0]
+    jd_to = _eclipse_display_day_bounds(chrt, to_values)[1]
     return float(jd_from), float(jd_to)
+
+
+def _eclipse_display_calendar(values) -> int:
+    return (
+        chart.Time.JULIAN
+        if calendar_policy.calendar_for_date(*values[:3]) == calendar_policy.CALENDAR_JULIAN
+        else chart.Time.GREGORIAN
+    )
+
+
+def _eclipse_display_day_bounds(chrt, values):
+    # Range/focus digits belong to the list's calendar, independently of the
+    # natal record. Keep the source chart and its calculation calendar intact.
+    calendar = _eclipse_display_calendar(values)
+    if calendar != chrt.time.cal:
+        chrt = copy.copy(chrt)
+        chrt.time = copy.copy(chrt.time)
+        chrt.time.cal = calendar
+    return eclipses.local_day_bounds_to_jd(chrt, *values[:3])
+
+
+def _eclipse_date_label(values, calendar, options):
+    label = dateformat.date_text(*values[:3], options)
+    return "%s (%s)" % (label, _txt("JulianAbbrev", "Jul")) if calendar == chart.Time.JULIAN else label
+
+
+def _eclipse_anchor_display_date(chrt, values):
+    source_flag = astrology.SE_JUL_CAL if chrt.time.cal == chart.Time.JULIAN else astrology.SE_GREG_CAL
+    local_jd = astrology.swe_julday(*values[:3], 12.0, source_flag)
+    target_flag = (
+        astrology.SE_JUL_CAL
+        if calendar_policy.calendar_for_jd(local_jd) == calendar_policy.CALENDAR_JULIAN
+        else astrology.SE_GREG_CAL
+    )
+    return tuple(int(value) for value in astrology.swe_revjul(local_jd, target_flag)[:3])
 
 
 def _eclipse_events_for_range(chrt, from_values: tuple[int, int, int], to_values: tuple[int, int, int]) -> list:
@@ -1071,6 +1119,8 @@ def _eclipse_datetime_payload(event, chrt, mode: str) -> tuple[str | None, str |
     except Exception:
         values = eclipses.local_datetime_tuple(event_jd, chrt)
         time_context = None
+    if isinstance(time_context, dict):
+        time_context = {**time_context, "calendar": int(chrt.time.cal), "eventJdUt": float(event_jd)}
     try:
         y, m, d, h, mi, s = [int(v) for v in tuple(values)[:6]]
         dt_iso = "%04d-%02d-%02dT%02d:%02d:%02d" % (y, m, d, h, mi, s)
@@ -1081,17 +1131,30 @@ def _eclipse_datetime_payload(event, chrt, mode: str) -> tuple[str | None, str |
     return dt_iso, date_iso, time_context if isinstance(time_context, dict) else None, float(event_jd)
 
 
-def _eclipse_longitude_cell(event, options) -> Cell:
+def _eclipse_longitude(event, options, mode: str, moment_jd: float) -> float:
+    """Catalog Moon longitude: selected moment and chart zodiac, geocentric."""
+    longitude = (
+        float(event.elon)
+        if mode == eclipses.ECLIPSE_CHART_MOMENT_MAXIMUM
+        else float(eclipses.eclipse_zodiac_longitude(event))
+    )
+    ayanamsha = int(getattr(options, "ayanamsha", 0) or 0)
+    if ayanamsha:
+        longitude -= astrology.effective_ayanamsha_ut(moment_jd, ayanamsha)
+    return util.normalize(longitude)
+
+
+def _eclipse_longitude_cell(longitude: float, options) -> Cell:
     try:
-        lon = float(getattr(event, "elon", 0.0)) % 360.0
-        d, m, _s = util.decToDeg(lon)
-        sign_idx = int(lon / chart.Chart.SIGN_DEG)
+        lon = float(longitude) % 360.0
+        d, m, seconds = _rounded_sexagesimal_parts(lon, cycle=360)
+        sign_idx = int(d / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
         signs = _signs(options)
         sign = signs[sign_idx] if 0 <= sign_idx < len(signs) else ""
         return {
             "runs": [
-                {"text": "%s°%02d' " % (str(pos).rjust(2), m), "glyph": False},
+                {"text": "%s°%02d'%02d\" " % (str(pos).rjust(2), m, seconds), "glyph": False},
                 _sign_run(options, sign_idx, sign),
             ],
             "align": "right",
@@ -1106,8 +1169,10 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
     source = "eclipsesframe.py; eclipseswnd.py; eclipses.py"
     from_values, to_values, focus_values = _eclipse_range_from_binding(chrt, binding, current_datetime)
     current_values = _eclipse_date_values_from_datetime(chrt, None)[:3]
-    birth_values = _eclipse_chart_anchor_date_values(chrt, chart_anchor_datetime)
-    focus_jd = eclipses.local_day_bounds_to_jd(chrt, focus_values[0], focus_values[1], focus_values[2])[0]
+    birth_values = _eclipse_anchor_display_date(
+        chrt, _eclipse_chart_anchor_date_values(chrt, chart_anchor_datetime),
+    )
+    focus_jd = _eclipse_display_day_bounds(chrt, focus_values)[0]
     mode = str(
         getattr(
             options,
@@ -1146,6 +1211,18 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         focus_jd = saros_event_jd
     else:
         events = _eclipse_events_for_range(chrt, from_values, to_values)
+    saros_span_years = None
+    saros_age_years = None
+    if series_mode and events:
+        first_jd = float(events[0].jdut)
+        saros_span_years = (float(events[-1].jdut) - first_jd) / 365.2425
+        now = datetime.datetime.now(datetime.timezone.utc)
+        now_jd = astrology.swe_julday(
+            now.year, now.month, now.day,
+            now.hour + now.minute / 60.0 + now.second / 3600.0,
+            astrology.SE_GREG_CAL,
+        )
+        saros_age_years = max(0.0, (now_jd - first_jd) / 365.2425)
     display_clock = table_event_clock(options)
     columns = [
         _column("date", _txt("Date", "Date"), align="center"),
@@ -1172,7 +1249,10 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         session_label = _txt("SolarEclipse", "Solar Eclipse") if is_solar else _txt("LunarEclipse", "Lunar Eclipse")
         type_label = _eclipse_type_label(event)
         dt_iso, date_iso, time_context, chart_moment_jd = _eclipse_datetime_payload(event, chrt, mode)
-        event_display = display_clock.display(eclipses._utc_tuple_from_jdut(chart_moment_jd))
+        longitude = _eclipse_longitude(event, options, mode, chart_moment_jd)
+        event_display = display_clock.display(
+            eclipses._utc_tuple_from_jdut(chart_moment_jd), calendar="mixed_1582",
+        )
         display_offsets.append(event_display.utc_offset_minutes)
         display_date_iso = "%04d-%02d-%02d" % event_display.values[:3]
         has_path = is_solar and bool(int(getattr(event, "retflag", 0)) & int(getattr(eclipses, "SOLAR_BOLD_FLAGS", 0)))
@@ -1190,9 +1270,12 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         if saros_series is not None:
             saros_first_jd = _cached_eclipse_saros_first_jd(event)
         if saros_first_jd is not None:
-            first_values = display_clock.display(eclipses._utc_tuple_from_jdut(saros_first_jd)).values
+            first_display = display_clock.display(
+                eclipses._utc_tuple_from_jdut(saros_first_jd), calendar="mixed_1582",
+            )
+            first_values = first_display.values
             saros_first_date = "%04d-%02d-%02d" % (first_values[0], first_values[1], first_values[2])
-            saros_first_label = dateformat.date_text(first_values[0], first_values[1], first_values[2], options)
+            saros_first_label = _eclipse_date_label(first_values, first_display.calendar, options)
         row_actions = [
             "open_containing_solar_revolution",
             "open_transit_for_date",
@@ -1211,6 +1294,11 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             "eventDate": date_iso,
             "displayDatetime": event_display.iso,
             "displayDate": display_date_iso,
+            "displayDateLabel": _eclipse_date_label(event_display.values, event_display.calendar, options),
+            "displayCalendar": "julian" if event_display.calendar == chart.Time.JULIAN else "gregorian",
+            "eventDateLabel": _eclipse_date_label(
+                tuple(int(value) for value in date_iso.rsplit('-', 2)), chrt.time.cal, options,
+            ) if date_iso else None,
             "displayTime": event_display.time_text,
             "displayUtcOffsetMinutes": event_display.utc_offset_minutes,
             "timeContext": time_context,
@@ -1220,7 +1308,9 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             "type": type_label,
             "retflag": int(getattr(event, "retflag", 0)),
             "isSolar": is_solar,
-            "longitude": float(getattr(event, "elon", 0.0)),
+            "longitude": longitude,
+            "longitudeFrame": "geocentric",
+            "longitudeJd": chart_moment_jd,
             "saros": saros_meta,
             "sarosSeries": saros_series,
             "sarosMember": saros_member,
@@ -1237,15 +1327,13 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             row_id,
             [
                 _text(
-                    dateformat.date_text(
-                        event_display.values[0], event_display.values[1], event_display.values[2], options,
-                    ),
+                    _eclipse_date_label(event_display.values, event_display.calendar, options),
                     align="center",
                 ),
                 _text("%02d:%02d" % event_display.values[3:5], align="center"),
                 _text(kind_label, align="center"),
                 _text(type_label, align="center"),
-                _eclipse_longitude_cell(event, options),
+                _eclipse_longitude_cell(longitude, options),
                 _text(saros_raw if saros_raw not in (None, "") else "-", align="right"),
             ],
             meta=meta,
@@ -1271,9 +1359,11 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
         title=_txt("Eclipses", "Eclipses"),
         source=source,
         notes=[
+            _txt("EclipseCalendarDisplayNote", "Gregorian dates from 15 October 1582; earlier dates are marked as Julian."),
+            _txt("EclipseLongitudeNote", "Geocentric Moon longitude at the selected moment, using the chart's zodiac."),
             _txt("EclipseRangeNote", "Range: %s - %s.") % (
-                dateformat.date_text(from_values[0], from_values[1], from_values[2], options),
-                dateformat.date_text(to_values[0], to_values[1], to_values[2], options),
+                _eclipse_date_label(from_values, _eclipse_display_calendar(from_values), options),
+                _eclipse_date_label(to_values, _eclipse_display_calendar(to_values), options),
             ),
             "%s: %s." % (
                 _txt("ChartMoment", "Chart moment"),
@@ -1308,12 +1398,22 @@ def _eclipses(chrt, options, *, binding: dict[str, Any] | None = None,
             },
         ],
         "eclipses": {
+            "calendar": "mixed_1582",
+            "calendarNote": _txt("EclipseCalendarDisplayNote", "Gregorian dates from 15 October 1582; earlier dates are marked as Julian."),
+            "longitudeNote": _txt("EclipseLongitudeNote", "Geocentric Moon longitude at the selected moment, using the chart's zodiac."),
+            "fromLabel": _eclipse_date_label(from_values, _eclipse_display_calendar(from_values), options),
+            "toLabel": _eclipse_date_label(to_values, _eclipse_display_calendar(to_values), options),
             "seriesMode": series_mode,
             "sarosKind": saros_kind if series_mode else None,
             "sarosKindLabel": (
                 _txt("Solar2", "Solar") if saros_kind == "solar" else _txt("Lunar2", "Lunar")
             ) if series_mode else None,
             "sarosSeries": selected_saros_series if series_mode else None,
+            # Elapsed series lifetime in mean Gregorian years, independent of
+            # the visible date range, display clock, and chart-moment setting.
+            "sarosSpanYears": saros_span_years,
+            # Age is elapsed time to today, not to the chart or selected row.
+            "sarosAgeYears": saros_age_years,
             "rangeYears": _ECLIPSE_RANGE_YEARS,
             "chunkYears": _ECLIPSE_CACHE_CHUNK_YEARS,
             "edgeTriggerRows": _ECLIPSE_EDGE_TRIGGER_ROWS,
@@ -1583,16 +1683,30 @@ def _dec_planet_color(chrt, options, planet_id: int) -> str:
     try:
         if getattr(options, "useplanetcolors", False):
             return _zr_hex(options.clrindividual[int(planet_id)])
-        pal = (
-            getattr(options, "clrdomicil", (0, 0, 0)),
-            getattr(options, "clrexal", (0, 0, 0)),
-            getattr(options, "clrperegrin", (0, 0, 0)),
-            getattr(options, "clrcasus", (0, 0, 0)),
-            getattr(options, "clrexil", (0, 0, 0)),
-        )
-        return _zr_hex(pal[int(chrt.dignity(int(planet_id)))])
+        return _zr_hex(chart_dignity_color(chrt, options, int(planet_id)))
     except Exception:
         return "#888888"
+
+
+_DECENNIAL_PARENT_ROW_ID = re.compile(r"l1:\d+(?::l2:\d+(?::l3:\d+)?)?")
+_DECENNIAL_MAX_EXPANDED_ROWS = 256
+# Internal binding flag for whole-universe consumers (the temporal map): the
+# Decennials and Profections tables otherwise ship only the current branch and
+# the rows the viewer opened. The workspace binding normalizer never persists it.
+MATERIALIZE_ALL_LEVELS = "materialize_all_levels"
+
+
+def _decennial_expanded_row_ids(binding: dict[str, Any]) -> list[str]:
+    raw_expanded = binding.get("expanded_row_ids")
+    if isinstance(raw_expanded, str):
+        raw_expanded = [raw_expanded]
+    if not isinstance(raw_expanded, (list, tuple)):
+        return []
+    return list(dict.fromkeys(
+        item
+        for item in raw_expanded
+        if isinstance(item, str) and _DECENNIAL_PARENT_ROW_ID.fullmatch(item)
+    ))[:_DECENNIAL_MAX_EXPANDED_ROWS]
 
 
 def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current_datetime: Any = None) -> dict[str, Any]:
@@ -1624,6 +1738,9 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         if lower_level_method == "repeating_cycles"
         else decennials.build_children_valens
     )
+    materialize_all = bool(binding.get(MATERIALIZE_ALL_LEVELS))
+    requested_expanded = set(_decennial_expanded_row_ids(binding))
+    explicit_expanded: set[str] = set()
     now = _parse_datetime(current_datetime)
     start_info = decennials.resolve_start_info(
         chrt,
@@ -1651,38 +1768,20 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
     rows: list[Row] = []
     current_ids: list[str] = []
     expanded_ids: set[str] = set()
-    current_l1_id: str | None = None
-    current_l2_id: str | None = None
+    planet_styles: dict[int, tuple[str, str | None]] = {}
 
-    l1_index = -1
-    l2_index = -1
-    active_l1_id: str | None = None
-    for source_row in main_rows:
-        level = int(source_row.get("level", 0))
-        if level == 1:
-            l1_index += 1
-            l2_index = -1
-            row_id = f"l1:{l1_index}"
-            active_l1_id = row_id
-            parent_id = None
-            has_children = True
-            if _row_contains(source_row, now):
-                current_l1_id = row_id
-        else:
-            l2_index += 1
-            row_id = f"l1:{l1_index}:l2:{l2_index}"
-            parent_id = active_l1_id
-            has_children = True
-            if _row_contains(source_row, now):
-                current_l2_id = row_id
-        is_current = row_id in (current_l1_id, current_l2_id)
-        if is_current:
-            current_ids.append(row_id)
-            if parent_id:
-                expanded_ids.add(parent_id)
+    def is_open(row_id: str, is_current: bool) -> bool:
+        if row_id in requested_expanded:
+            explicit_expanded.add(row_id)
+            return True
+        return materialize_all or is_current
+
+    def emit(row_id: str, source_row: dict[str, Any], parent_id: str | None, is_current: bool, has_children: bool) -> None:
         planet_id = int(source_row.get("planet", astrology.SE_SUN))
-        planet_color = _dec_planet_color(chrt, options, planet_id)
-        planet_role = _planet_color_role(planet_id, chrt, options, planet_color)
+        if planet_id not in planet_styles:
+            color = _dec_planet_color(chrt, options, planet_id)
+            planet_styles[planet_id] = (color, _planet_color_role(planet_id, chrt, options, color))
+        planet_color, planet_role = planet_styles[planet_id]
         planet_cell = _glyph(
             _planet_glyph(planet_id),
             export_text=_planet_export_name(planet_id),
@@ -1714,87 +1813,49 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
         ))
         if is_current:
             rows[-1]["current"] = True
-        if level == 2:
-            l3_rows = lower_level_builder(chrt, options, source_row, level=3)
-            for l3_index, l3 in enumerate(l3_rows):
-                l3_id = f"{row_id}:l3:{l3_index}"
-                is_l3_current = _row_contains(l3, now)
-                if is_l3_current:
-                    current_ids.append(l3_id)
-                    expanded_ids.add(row_id)
-                    expanded_ids.add(l3_id)
-                l3_planet = int(l3.get("planet", astrology.SE_SUN))
-                l3_color = _dec_planet_color(chrt, options, l3_planet)
-                l3_role = _planet_color_role(l3_planet, chrt, options, l3_color)
-                l3_cell = _glyph(
-                    _planet_glyph(l3_planet),
-                    export_text=_planet_export_name(l3_planet),
-                )
-                l3_cell["planet"] = l3_planet
-                _set_semantic_color(l3_cell, l3_color, l3_role)
-                rows.append(_period_row(
-                    l3_id,
-                    [
-                        _text(_period_age_text(chrt, l3.get("start")), align="right"),
-                        l3_cell,
-                        _text(_dec_strip_year_zeros(decennials.fmt_date(l3.get("start"))), align="center"),
-                        _text(decennials.fmt_length(l3), align="right"),
-                    ],
-                    chrt=chrt,
-                    options=options,
-                    source_id="decennials",
-                    source_row=l3,
-                    parent_id=row_id,
-                    current=is_l3_current,
-                    has_children=True,
-                    temporal_activations=[(l3_planet, "period-ruler")],
-                    extra={
-                        "planet": l3_planet,
-                        "colorHex": l3_color,
-                        "colorRole": l3_role,
-                    },
-                ))
-                if is_l3_current:
-                    rows[-1]["current"] = True
-                l4_rows = lower_level_builder(chrt, options, l3, level=4)
-                for l4_index, l4 in enumerate(l4_rows):
-                    l4_id = f"{l3_id}:l4:{l4_index}"
-                    is_l4_current = _row_contains(l4, now)
-                    if is_l4_current:
-                        current_ids.append(l4_id)
-                    l4_planet = int(l4.get("planet", astrology.SE_SUN))
-                    l4_color = _dec_planet_color(chrt, options, l4_planet)
-                    l4_role = _planet_color_role(l4_planet, chrt, options, l4_color)
-                    l4_cell = _glyph(
-                        _planet_glyph(l4_planet),
-                        export_text=_planet_export_name(l4_planet),
-                    )
-                    l4_cell["planet"] = l4_planet
-                    _set_semantic_color(l4_cell, l4_color, l4_role)
-                    rows.append(_period_row(
-                        l4_id,
-                        [
-                            _text(_period_age_text(chrt, l4.get("start")), align="right"),
-                            l4_cell,
-                            _text(_dec_strip_year_zeros(decennials.fmt_date(l4.get("start"))), align="center"),
-                            _text(decennials.fmt_length(l4), align="right"),
-                        ],
-                        chrt=chrt,
-                        options=options,
-                        source_id="decennials",
-                        source_row=l4,
-                        parent_id=l3_id,
-                        current=is_l4_current,
-                        has_children=False,
-                        temporal_activations=[(l4_planet, "period-ruler")],
-                        extra={
-                            "planet": l4_planet,
-                            "colorHex": l4_color,
-                            "colorRole": l4_role,
-                        },
-                    ))
-                    if is_l4_current:
-                        rows[-1]["current"] = True
+            current_ids.append(row_id)
+
+    # Every level is lazy (frontend immediacy rule: never ship the whole
+    # period universe). All L1 rows ship; a row's children ship only when it
+    # is on the current path or the viewer opened it (binding
+    # expanded_row_ids). Closed rows keep hasChildren and unfold by refetch.
+    l1_index = -1
+    l2_index = -1
+    l1_open = False
+    for source_row in main_rows:
+        if int(source_row.get("level", 0)) == 1:
+            l1_index += 1
+            l2_index = -1
+            l1_id = f"l1:{l1_index}"
+            l1_current = _row_contains(source_row, now)
+            emit(l1_id, source_row, None, l1_current, True)
+            l1_open = is_open(l1_id, l1_current)
+            continue
+        l2_index += 1
+        if not l1_open:
+            continue
+        l2_id = f"{l1_id}:l2:{l2_index}"
+        l2_current = _row_contains(source_row, now)
+        if l2_current:
+            expanded_ids.add(l1_id)
+        emit(l2_id, source_row, l1_id, l2_current, True)
+        if not is_open(l2_id, l2_current):
+            continue
+        for l3_index, l3 in enumerate(lower_level_builder(chrt, options, source_row, level=3)):
+            l3_id = f"{l2_id}:l3:{l3_index}"
+            l3_current = _row_contains(l3, now)
+            if l3_current:
+                expanded_ids.add(l2_id)
+                expanded_ids.add(l3_id)
+            emit(l3_id, l3, l2_id, l3_current, True)
+            if not is_open(l3_id, l3_current):
+                continue
+            for l4_index, l4 in enumerate(lower_level_builder(chrt, options, l3, level=4)):
+                emit(f"{l3_id}:l4:{l4_index}", l4, l3_id, _row_contains(l4, now), False)
+    for row_id in explicit_expanded:
+        # An opened row and all its ancestors start unfolded.
+        parts = row_id.split(":")
+        expanded_ids.update(":".join(parts[:end]) for end in range(2, len(parts) + 1, 2))
 
     payload = _base_payload(
         "decennials",
@@ -1861,6 +1922,7 @@ def _decennials(chrt, options, binding: dict[str, Any] | None = None, *, current
             "apheta_house_system": apheta_house_system,
             "overlap_resolution": overlap_resolution,
             "lower_level_method": lower_level_method,
+            "expanded_row_ids": sorted(explicit_expanded),
         },
         "bindingOptions": {
             "startToken": [{"value": token, "label": label} for token, label in _DECENNIAL_START_OPTIONS],
@@ -2125,12 +2187,7 @@ def _zr_degree_text(chrt, releaser: str, resolved_sign: int) -> str:
     if lon is None:
         return ""
     deg_in_sign = float(lon) - (int(resolved_sign) % 12) * 30.0
-    d = int(deg_in_sign)
-    m = int(round((deg_in_sign - d) * 60.0))
-    if m == 60:
-        d += 1
-        m = 0
-    return "%d°%02d'" % (d, m)
+    return _dms(deg_in_sign, signed=True).strip()
 
 
 def _zr_is_eros_releaser(releaser: str) -> bool:
@@ -2395,7 +2452,8 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
             "sign": sign_options,
         },
         # Releaser header model — the in-frame ZRWnd header line
-        # "Releaser: <label> | in: <glyph> <sign name> <deg>" plus the
+        # "Releaser: <label> | in: <glyph> <sign name> <deg>" (the frontend
+        # renders it from one localized template, zrview.releaserLine) plus the
         # element/planet colours the wx rows use
         # (zodiacalreleasingwnd.py:39-52,409-431,518-566).
         "zr": {
@@ -2403,7 +2461,6 @@ def _zodiacal_releasing(chrt, options, binding: dict[str, Any] | None = None, *,
             "labelToken": label_token,
             "releaserHeading": _txt("ZRReleaser", "Releaser"),
             "releaserLabel": _zr_releaser_label(label_token, releaser),
-            "inLabel": _txt("ZRInSign", "in"),
             "signIndex": int(resolved_sign) % 12,
             "signGlyph": signs[int(resolved_sign) % 12] if int(resolved_sign) % 12 < len(signs) else "",
             "signName": zr_sign_names[int(resolved_sign) % 12],
@@ -2473,6 +2530,35 @@ def _profection_wallclock_age_offset(radix, now: datetime.datetime | None) -> in
     return age - (age % 12)
 
 
+def _profected_body_copy(body):
+    clone = copy.copy(body)
+    if isinstance(getattr(body, "speculums", None), list):
+        clone.speculums = list(body.speculums)
+    return clone
+
+
+def _profection_chart_copy(base):
+    """One row's zodiacal PROFECTION chart, cloned from the unprofected base.
+
+    Every row chart is built from the radix time and place, so all twelve are
+    identical until ``calcProfPos`` shifts them. That shift rebinds the
+    data/cusp/angle/Fortune tuples and replaces speculum entries in their
+    lists, so fresh containers over shared immutable values give each row an
+    independent chart without re-running the ephemeris twelve times.
+    """
+    clone = copy.copy(base)
+    clone.planets = copy.copy(base.planets)
+    clone.planets.planets = [_profected_body_copy(body) for body in base.planets.planets]
+    for attr in chart_bodies.DYNAMIC_BODY_ATTRS:
+        body = getattr(base, attr, None)
+        if body is not None:
+            setattr(clone, attr, _profected_body_copy(body))
+    clone.houses = copy.copy(base.houses)
+    clone.fortune = copy.copy(base.fortune)
+    clone.syzygy = None
+    return clone
+
+
 def _build_profection_charts(radix, options, *, age_offset: int = 0, proftype: int = chart.Chart.YEAR) -> list[tuple[Any, int, int, int, float]]:
     source = "morin.py:17012-17033; profectiontablestepperdlg.py:80-125"
     base_year = int(getattr(radix.time, "year", getattr(radix.time, "origyear", 0)))
@@ -2482,23 +2568,31 @@ def _build_profection_charts(radix, options, *, age_offset: int = 0, proftype: i
     if base_month == 2 and base_day == 29:
         base_day -= 1
     pcharts = []
+    base_chart = None
+    mundane_source_chart = None
     for cyc in range(12):
         row_age = int(age_offset) + cyc
         row_year = base_year + row_age
         if getattr(options, "zodprof", True):
             prof = profections.Profections(radix, base_year, base_month, base_day, base_time, row_age)
-            pchart = _new_chart(
-                radix.name,
-                radix.male,
-                radix.time,
-                radix.place,
-                chart.Chart.PROFECTION,
-                "",
-                options,
-                False,
-                proftype,
-            )
-            pchart.calcProfPos(prof)
+            if base_chart is None:
+                # Aspect tables stay lazy: the table never reads them.
+                with chart.defer_aspect_matrices():
+                    base_chart = _new_chart(
+                        radix.name,
+                        radix.male,
+                        radix.time,
+                        radix.place,
+                        chart.Chart.PROFECTION,
+                        "",
+                        options,
+                        False,
+                        proftype,
+                    )
+            pchart = _profection_chart_copy(base_chart)
+            # The table reads only angles, bodies and Fortune; the prenatal
+            # lunation search (~60 ms per row) is never shown here.
+            pchart.calcProfPos(prof, with_syzygy=False)
         else:
             if (
                 not getattr(options, "usezodprojsprof", False)
@@ -2539,19 +2633,22 @@ def _build_profection_charts(radix, options, *, age_offset: int = 0, proftype: i
                     proftype,
                     getattr(options, "usezodprojsprof", False),
                 )
-                pchartpls = _new_chart(
-                    radix.name,
-                    radix.male,
-                    radix.time,
-                    radix.place,
-                    chart.Chart.PROFECTION,
-                    "",
-                    options,
-                    False,
-                    proftype,
-                    getattr(options, "usezodprojsprof", False),
-                )
-                pchart.apply_mundane_profection(pchartpls, radix.place.lat, radix.obl[0])
+                # The radix-place source chart is the same for every row and
+                # apply_mundane_profection only reads it: build it once.
+                if mundane_source_chart is None:
+                    mundane_source_chart = _new_chart(
+                        radix.name,
+                        radix.male,
+                        radix.time,
+                        radix.place,
+                        chart.Chart.PROFECTION,
+                        "",
+                        options,
+                        False,
+                        proftype,
+                        getattr(options, "usezodprojsprof", False),
+                    )
+                pchart.apply_mundane_profection(mundane_source_chart, radix.place.lat, radix.obl[0])
         pcharts.append((pchart, row_year, base_month, base_day, base_time))
     if not pcharts:
         raise ValueError(f"no profection charts built from {source}")
@@ -2575,15 +2672,8 @@ def _profection_hour_lord_cell(reference_chart, options, row_age: int) -> Cell:
             if pid < len(palette):
                 color = _rgb_hex(palette[pid])
         else:
-            dignity_palette = (
-                getattr(options, "clrdomicil", None),
-                getattr(options, "clrexal", None),
-                getattr(options, "clrperegrin", None),
-                getattr(options, "clrcasus", None),
-                getattr(options, "clrexil", None),
-            )
             try:
-                color = _rgb_hex(dignity_palette[reference_chart.dignity(pid)])
+                color = _rgb_hex(chart_dignity_color(reference_chart, options, pid))
             except Exception:
                 color = _rgb_hex(getattr(options, "clrperegrin", None))
         cell["planet"] = pid
@@ -2644,6 +2734,7 @@ def _profection_row_cells(
     row_age: int,
     date_override: tuple[int, int, int] | None = None,
     monthly_index: int | None = None,
+    sign_runs: dict[int, dict[str, Any]] | None = None,
 ) -> list[Cell]:
     pchart, year, month, day, _time = pchart_tuple
     cells: list[Cell] = []
@@ -2670,7 +2761,7 @@ def _profection_row_cells(
             hour_lord_age = row_age + int(monthly_index or 0)
             cells.append(_profection_hour_lord_cell(reference_chart, options, hour_lord_age))
         else:
-            cells.append(_profection_lon_cell(profectiontable.get_column_lon(pchart, column), reference_chart, options))
+            cells.append(_profection_lon_cell(profectiontable.get_column_lon(pchart, column), reference_chart, options, sign_runs))
     return cells
 
 
@@ -2711,6 +2802,22 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
     rows: list[Row] = []
     current_ids: list[str] = []
     expanded_ids: set[str] = set()
+    sign_runs: dict[int, dict[str, Any]] = {}
+    # Monthly rows are lazy per annual row (frontend immediacy rule): they
+    # ship for the current year and the years the viewer opened (binding
+    # expanded_row_ids); other annual rows keep hasChildren and unfold by
+    # refetch. Month dates and currentness are still computed for every year
+    # so the current path is exactly what the eager table reported.
+    materialize_all = bool(binding.get(MATERIALIZE_ALL_LEVELS))
+    raw_expanded = binding.get("expanded_row_ids")
+    if isinstance(raw_expanded, str):
+        raw_expanded = [raw_expanded]
+    requested_expanded = {
+        item
+        for item in (raw_expanded if isinstance(raw_expanded, (list, tuple)) else ())
+        if isinstance(item, str) and re.fullmatch(r"annual:\d+", item)
+    }
+    explicit_expanded: set[str] = set()
 
     def append_row(row: Row, *, current: bool) -> None:
         rows.append(row)
@@ -2738,6 +2845,7 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
                     reference_chart=pcharts[0][0],
                     options=options,
                     row_age=row_age,
+                    sign_runs=sign_runs,
                 ),
                 meta={
                     "level": 1,
@@ -2760,18 +2868,26 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
         )
         monthly = profectionsmonthly.ProfectionsMonthly(pcharts, monthly_steps12, annual_index)
         monthly_dates = [tuple(int(v) for v in date_tuple[:3]) for date_tuple in monthly.dates]
+        month_bounds = []
+        for month_index, date_tuple in enumerate(monthly_dates):
+            month_start = _date_tuple_to_datetime(date_tuple, time_value)
+            if month_index + 1 < len(monthly_dates):
+                month_end = _date_tuple_to_datetime(monthly_dates[month_index + 1], time_value)
+            else:
+                month_end = period_end
+            month_bounds.append((month_start, month_end, bool(now and month_start <= now < month_end)))
+        if row_id in requested_expanded:
+            explicit_expanded.add(row_id)
+            expanded_ids.add(row_id)
+        elif not (materialize_all or annual_current or any(bound[2] for bound in month_bounds)):
+            continue
         agestart = agecont = row_age % 12
         for month_index, date_tuple in enumerate(monthly_dates):
             if month_index < len(pcharts):
                 monthly_pchart = pcharts[int(agecont)]
             else:
                 monthly_pchart = pcharts[int(agestart)]
-            month_start = _date_tuple_to_datetime(date_tuple, time_value)
-            if month_index + 1 < len(monthly_dates):
-                month_end = _date_tuple_to_datetime(monthly_dates[month_index + 1], time_value)
-            else:
-                month_end = period_end
-            month_current = bool(now and month_start <= now < month_end)
+            month_start, month_end, month_current = month_bounds[month_index]
             if month_current:
                 expanded_ids.add(row_id)
             month_id = f"{row_id}:month:{month_index}"
@@ -2786,6 +2902,7 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
                         row_age=row_age,
                         date_override=date_tuple,
                         monthly_index=month_index,
+                        sign_runs=sign_runs,
                     ),
                     meta={
                         "level": 2,
@@ -2842,6 +2959,7 @@ def _profections_table(chrt, options, binding: dict[str, Any] | None = None, *, 
             "mainsigs": mainsigs,
             "monthly_steps12": monthly_steps12,
             "age_offset": age_offset,
+            "expanded_row_ids": sorted(explicit_expanded),
         },
         "bindingOptions": {
             "mainsigs": [
@@ -2904,7 +3022,7 @@ def _dodecatemorion_lon_cell(
     chrt,
     options,
     *,
-    seconds: bool = False,
+    seconds: bool = True,
 ) -> Cell:
     # Dodecatemorion longitude (positionswnd.py:147-151 _dodecatemoria_lon):
     # base = sign-floor(lon); pos_in_sign*12 mapped back. Rendered like any
@@ -2924,18 +3042,55 @@ def _dodecatemorion_lon_cell(
         return _text("-")
 
 
-def _positions(chrt, options) -> dict[str, Any]:
+def _speculum_moon_void(chrt, options) -> bool:
+    """The chart Moon's void of course state under the selected policy."""
+    try:
+        return bool(void_of_course.for_chart(chrt, options).is_void)
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+        # Unavailable ephemerides never certify a void Moon.
+        return False
+
+
+def _prenatal_point_rows(chrt, options) -> list[tuple[str, str, float]]:
+    """Prenatal Syzygy and eclipse as (key, label, longitude), from the
+    canonical chart-point registry, whatever their chart layers show."""
+    from webapp.frontend.scripts import export_chart_json
+
+    try:
+        endpoints = export_chart_json.technique_aspect_endpoints(chrt, options)
+    except Exception:
+        return []
+    labels = {
+        "syzygy": lambda: str(mtexts.txts.get("Syzygy", "Syzygy")),
+        "eclipse": eclipses.prenatal_eclipse_point_label,
+    }
+    return [
+        (endpoint["key"], labels[endpoint["key"]](), float(endpoint["lon"]))
+        for endpoint in endpoints if endpoint.get("key") in labels
+    ]
+
+
+def _positions(chrt, options, *, directed: Callable[[tuple[Any, ...]], tuple[Any, ...]] | None = None,
+               speculum_index: int | None = None,
+               extra_points: list[tuple[str, Cell, Any]] | None = None) -> dict[str, Any]:
     # The ordinary Speculum is a chart surface. Its coordinate family follows
     # the chart's current house system and is deliberately independent from the
     # Primary Directions method. Regiomontanus/Campanus use the Regio/Camp
     # tuple; the other house systems use the general Placidian tuple while the
-    # House column follows the active cusps.
+    # House column follows the active cusps. ``directed`` rewrites each natal
+    # value tuple into its directed-significator form (see _pd_positions).
+    # Directed rows are the canonical significator universe: every enabled
+    # body, Vertex and Fortune. The chart's visible layers are a display lens
+    # the client applies, so a layer toggle never recalculates this table.
+    # ``extra_points`` are (row id, identity, CustomerPD) significators beyond
+    # the chart's own points; they form their own section.
+    canonical = directed is not None
     house_system = str(
         getattr(getattr(chrt, "houses", None), "ui_hsys", None)
         or getattr(getattr(chrt, "houses", None), "hsys", None)
         or getattr(options, "hsys", "P")
     ).upper()
-    speculum = index_for_house_system(house_system)
+    speculum = index_for_house_system(house_system) if speculum_index is None else int(speculum_index)
     regio = speculum == SPECULUM_REGIOMONTAN
     field_defs = list(columns_for_index(speculum))
     specs = list(getattr(options, "speculums", None) or [])
@@ -2948,7 +3103,9 @@ def _positions(chrt, options) -> dict[str, Any]:
     show_dodec = bool(dodecat[speculum]) if speculum < len(dodecat) else False
     has_longitude = any(field["id"] == "lon" for field in visible_fields)
 
-    cols = [_column("body", _txt("Bodies", "Body"), align="center", kind="glyph")]
+    body_label = _txt("DirectedSpeculumSignificator", "Significator") if canonical else _txt("Bodies", "Body")
+    body_column = _column("body", body_label, align="center", kind="glyph")
+    cols = [body_column]
     if show_dodec and not has_longitude:
         cols.append(_column("dodec", _txt("Dodecatemorion", "Dodecatemorion"), align="center", kind="glyph"))
     for field in visible_fields:
@@ -2967,13 +3124,23 @@ def _positions(chrt, options) -> dict[str, Any]:
         _column("house", _txt("House", "House"), align="right"),
     ])
     inspector_cols = [
-        _column("body", _txt("Bodies", "Body"), align="center", kind="glyph"),
+        body_column,
         _column("lon", _txt("Longitude", "Longitude"), align="center", kind="glyph"),
         _column("lat", _txt("Latitude", "Latitude"), align="center"),
         _column("decl", _txt("Declination", "Declination"), align="center"),
         _column("speed", _txt("Speed", "Speed"), align="right"),
         _column("house", _txt("House", "House"), align="right"),
     ]
+    # Compact field indices: lon/lat/decl, or lon/RA/decl for directed rows,
+    # whose latitude, speed and house are natal by construction.
+    inspector_fields = (0, 1, 3)
+    if directed is not None:
+        inspector_fields = (0, 2, 3)
+        inspector_cols = [
+            inspector_cols[0], inspector_cols[1],
+            _column("ra", _txt("Rectascension", "Rectascension"), align="center"),
+            inspector_cols[3],
+        ]
 
     def _fallback_values(lon: float, lat: float, ra: float, decl: float) -> tuple[Any, ...]:
         values: list[Any] = [None] * len(field_defs)
@@ -3005,7 +3172,7 @@ def _positions(chrt, options) -> dict[str, Any]:
     def _field_cells(values: tuple[Any, ...], lon: float) -> list[Cell]:
         cells: list[Cell] = []
         if show_dodec and not has_longitude:
-            cells.append(_dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
+            cells.append(_text("") if values[0] is None else _dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
         for field in visible_fields:
             idx = int(field["idx"])
             value = values[idx] if idx < len(values) else None
@@ -3015,7 +3182,7 @@ def _positions(chrt, options) -> dict[str, Any]:
                 else _user_speculum_value_cell(idx, float(value), chrt, options, regio=regio)
             )
             if show_dodec and field["id"] == "lon":
-                cells.append(_dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
+                cells.append(_text("") if values[0] is None else _dodecatemorion_lon_cell(lon, chrt, options, seconds=True))
         return cells
 
     def _point_row(
@@ -3029,6 +3196,10 @@ def _positions(chrt, options) -> dict[str, Any]:
         meta: dict[str, Any] | None = None,
         inspector_target: list[Row] | None = None,
     ) -> Row:
+        if directed is not None:
+            values = directed(values)
+            lon = values[0] if values[0] is not None else lon
+            speed = None
         speed_cell = speed or _text("", align="right")
         row = _row(
             row_id,
@@ -3037,16 +3208,17 @@ def _positions(chrt, options) -> dict[str, Any]:
         )
         if inspector_target is not None:
             common_cells = []
-            for idx in (0, 1, 3):
+            for idx in inspector_fields:
                 value = values[idx] if idx < len(values) else None
                 common_cells.append(
                     _text("")
                     if value is None
                     else _user_speculum_value_cell(idx, float(value), chrt, options, regio=regio)
                 )
+            trailing = [] if directed is not None else [speed_cell, _text(house, align="right")]
             inspector_target.append(_row(
                 row_id,
-                [identity, *common_cells, speed_cell, _text(house, align="right")],
+                [identity, *common_cells, *trailing],
                 meta=meta,
             ))
         return row
@@ -3072,8 +3244,9 @@ def _positions(chrt, options) -> dict[str, Any]:
 
     # Section 2: enabled chart bodies, Vertex and Lot of Fortune.
     planet_rows: list[Row] = []
+    moon_void = directed is None and _speculum_moon_void(chrt, options)
     inspector_planet_rows: list[Row] = []
-    for pid in _body_ids(chrt, options):
+    for pid in _body_ids(chrt, options, canonical=canonical):
         body = chrt.get_planet_body(pid) if hasattr(chrt, "get_planet_body") else None
         if body is None:
             continue
@@ -3092,9 +3265,13 @@ def _positions(chrt, options) -> dict[str, Any]:
                 body.dataEqu[planets.Planet.DECLEQU],
             )
         out_of_bounds = planetary_state.classify_chart_body(chrt, pid).active
+        identity = _planet_cell(pid, chrt, options)
+        if pid == astrology.SE_MOON and moon_void:
+            # Name suffix in the Speculum, present only while the Moon is void.
+            identity["voidOfCourse"] = True
         planet_rows.append(_point_row(
             f"planet:{pid}",
-            _planet_cell(pid, chrt, options),
+            identity,
             values,
             float(body.data[planets.Planet.LONG]),
             speed=_position_speed_cell(pid, body.data[planets.Planet.SPLON], options, chrt),
@@ -3103,23 +3280,26 @@ def _positions(chrt, options) -> dict[str, Any]:
             inspector_target=inspector_planet_rows,
         ))
 
-    if getattr(options, "showvertex", False):
-        try:
-            vertex_lon = float(chrt.houses.ascmc[houses.Houses.VERTEX])
-            vertex_values = _calculated_point_values(vertex_lon, 0.0, 0.0, 0.0)
-            vertex_house = str(chrt.houses.getHousePos(vertex_lon, 0.0) + 1)
-            planet_rows.append(_point_row(
-                "vertex",
-                _planet_cell(common.CHART_OBJECT_VERTEX, chrt, options),
-                vertex_values,
-                vertex_lon,
-                house=vertex_house,
-                inspector_target=inspector_planet_rows,
-            ))
-        except Exception:
-            pass
+    # Vertex, prenatal Syzygy and the prenatal eclipse are always sent; their
+    # chart layers hide them client-side (``meta.layerId``), so a layer
+    # toggle never needs this table again.
+    try:
+        vertex_lon = float(chrt.houses.ascmc[houses.Houses.VERTEX])
+        vertex_values = _calculated_point_values(vertex_lon, 0.0, 0.0, 0.0)
+        vertex_house = str(chrt.houses.getHousePos(vertex_lon, 0.0) + 1)
+        planet_rows.append(_point_row(
+            "vertex",
+            _planet_cell(common.CHART_OBJECT_VERTEX, chrt, options),
+            vertex_values,
+            vertex_lon,
+            house=vertex_house,
+            meta={"layerId": "point:vertex"},
+            inspector_target=inspector_planet_rows,
+        ))
+    except Exception:
+        pass
 
-    if not getattr(options, "intables", False) or getattr(options, "showlof", True):
+    if canonical or not getattr(options, "intables", False) or getattr(options, "showlof", True):
         try:
             fortune_obj = chrt.fortune
             fort = fortune_obj.fortune
@@ -3135,6 +3315,17 @@ def _positions(chrt, options) -> dict[str, Any]:
             _set_semantic_color(fortune_cell, fortune_color, _fortune_color_role(chrt, options, fortune_color))
             planet_rows.append(_point_row(
                 "fortune", fortune_cell, fort_values, float(fort[0]), house=fort_house,
+                inspector_target=inspector_planet_rows,
+            ))
+        except Exception:
+            pass
+
+    for key, label, lon in _prenatal_point_rows(chrt, options):
+        try:
+            planet_rows.append(_point_row(
+                key, _text(label), _calculated_point_values(lon, 0.0, 0.0, 0.0), lon,
+                house=str(chrt.houses.getHousePos(lon, 0.0) + 1),
+                meta={"layerId": f"point:{key}"},
                 inspector_target=inspector_planet_rows,
             ))
         except Exception:
@@ -3157,11 +3348,27 @@ def _positions(chrt, options) -> dict[str, Any]:
                 f"house:{h}", _text(label), values, float(lon), house=str(h),
             ))
 
+    # Section 4: extra significators (selected Lots, asteroids, the user point).
+    extra_rows: list[Row] = []
+    inspector_extra_rows: list[Row] = []
+    for row_id, identity, point in extra_points or ():
+        try:
+            values = tuple(point.speculums[speculum])
+            lon = float(values[0])
+            house = str(chrt.houses.getHousePos(lon, 0.0) + 1)
+        except Exception:
+            continue
+        extra_rows.append(_point_row(
+            row_id, identity, values, lon, house=house, inspector_target=inspector_extra_rows,
+        ))
+
     sections = [{"id": "ascmc", "columns": cols, "rows": ascmc_rows},
                 {"id": "planets", "columns": cols, "rows": planet_rows}]
     if house_rows:
         sections.append({"id": "houses", "columns": cols, "rows": house_rows})
-    flat_rows = ascmc_rows + planet_rows + house_rows
+    if extra_rows:
+        sections.append({"id": "extra", "columns": cols, "rows": extra_rows})
+    flat_rows = ascmc_rows + planet_rows + house_rows + extra_rows
     title = _txt("Positions", "Speculum").split("\t", 1)[0].replace("&", "")
     payload = _base_payload(
         "positions", chrt, options, cols, flat_rows or _empty(),
@@ -3174,11 +3381,13 @@ def _positions(chrt, options) -> dict[str, Any]:
         "sections": [
             {"id": "ascmc", "columns": inspector_cols, "rows": inspector_ascmc_rows},
             {"id": "planets", "columns": inspector_cols, "rows": inspector_planet_rows},
+            *([{"id": "extra", "columns": inspector_cols, "rows": inspector_extra_rows}]
+              if inspector_extra_rows else []),
         ],
     }
     payload["speculum"] = {
         "houseSystem": house_system,
-        "family": family_for_house_system(house_system),
+        "family": "regiomontan" if regio else "placidian",
     }
     payload["capabilities"] = {
         **payload.get("capabilities", {}),
@@ -3192,7 +3401,88 @@ def _positions(chrt, options) -> dict[str, Any]:
     return payload
 
 
-def _aspects(chrt, options) -> dict[str, Any]:
+def _pd_extra_significators(chrt, options) -> list[tuple[str, Cell, Any]]:
+    """Significators the Primary Directions settings add beyond the chart's
+    own points: the selected Lots and asteroids and the user significator,
+    from the PD engine's own significator iterator. Chiron, Apogee and Vertex
+    already have Speculum rows."""
+    try:
+        points = list(chrt.iter_pd_significator_points())
+    except Exception:
+        return []
+    main_bodies = set(_body_ids(chrt, options, canonical=True))
+    extra: list[tuple[str, Cell, Any]] = []
+    for key, point in points:
+        key = str(key)
+        if key.startswith("asteroid:"):
+            try:
+                if asteroids.asteroid_body_id(int(key.split(":", 1)[1])) in main_bodies:
+                    continue
+            except ValueError:
+                continue
+        elif not (key.startswith("part:") or key in ("arabic_part_sig", "user_sig")):
+            continue
+        try:
+            label = str(chrt.get_pd_dynamic_point_label(key, False) or "")
+        except Exception:
+            label = ""
+        if label:
+            extra.append((f"extra:{key}", _text(label), point))
+    return extra
+
+
+def _pd_positions(chrt, options, *, binding: dict[str, Any] | None = None,
+                  table_id: str = "pd_positions") -> dict[str, Any]:
+    """Morinus' PDs-in-Chart Positions: the radix Speculum, significators directed.
+
+    ``chrt`` is the radix and ``binding["signedArc"]`` the PD chart's current
+    arc (Direct positive). Each significator keeps its natal mundane place, so
+    every mundane column, latitude, declination and house stay natal. Primary
+    motion changes two values: Longitude is the directed-significator degree
+    the PDs-in-Chart wheel draws (``pd_in_chart.directed_significator_point``,
+    one function for both), and RA is the natal RA plus the arc (the
+    equal-declination point now in its place). The coordinate family, the
+    houses (cusp rows, House column) and the natal positions are the PD list's
+    (``pd_in_chart.pd_radix``), as Morinus did.
+    """
+    from engine import pd_in_chart
+
+    signed_arc = float((binding or {}).get("signedArc", 0.0))
+    system = int(getattr(options, "primarydir", primdirs.PrimDirs.PLACIDIANSEMIARC))
+
+    def directed(values: tuple[Any, ...]) -> tuple[Any, ...]:
+        lon, lat, ra = values[0], values[1], values[2]
+        moved = None if lon is None else pd_in_chart.directed_significator_point(
+            chrt, float(lon), float(lat or 0.0), signed_arc, options,
+        )
+        moved_ra = None if ra is None else util.normalize(float(ra) + signed_arc)
+        return (moved, lat, moved_ra, *values[3:])
+
+    regio = system in (primdirs.PrimDirs.REGIOMONTAN, primdirs.PrimDirs.CAMPANIAN)
+    payload = _positions(
+        pd_in_chart.pd_radix(chrt, options), options, directed=directed,
+        speculum_index=SPECULUM_REGIOMONTAN if regio else SPECULUM_PLACIDIAN,
+        extra_points=_pd_extra_significators(chrt, options),
+    )
+    payload.update(
+        tableId=table_id,
+        title=f"{_txt('PDsInChart', 'PDs in Chart')} · {_txt('Positions', 'Speculum')}",
+        titleKey=f"table.{table_id}",
+    )
+    payload["pdPositions"] = {
+        "signedArc": signed_arc, "system": system,
+        "significatorLatitude": pd_in_chart.significator_ray_latitude(options, 1.0) != 0.0,
+    }
+    # Header metadata, the same technique · key labels the PD list header shows.
+    from webapp.daemon.directions_service import _key_label, _system_label
+    payload["pdPositions"].update(systemLabel=_system_label(options), keyLabel=_key_label(options))
+    moment = (binding or {}).get("momentDatetime")
+    if moment:
+        payload["pdPositions"]["momentDatetime"] = str(moment)
+    return payload
+
+
+def _aspects(chrt, options, *, planet_matrix_only: bool = False, aspect_filter=None) -> dict[str, Any]:
     # Structured port of the wx AspectsWnd matrix (aspectswnd.py:194-469):
     # the payload carries the layout semantics — Asc/MC × planets section,
     # planet × planet upper triangle with diagonal glyph headers, and the
@@ -3227,7 +3517,7 @@ def _aspects(chrt, options) -> dict[str, Any]:
             lon,
             body.data[planets.Planet.SPLON],
             0.0,
-            list(options.orbis[idx]),
+            list(orb_policy.contributions(options)[idx]),
             node_only_conjunction=pid in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE),
         )
 
@@ -3307,9 +3597,45 @@ def _aspects(chrt, options) -> dict[str, Any]:
         whole, dot, frac = txt.partition('.')
         return whole + dot + (frac[0] if frac else "")
 
+    def shown_aspect(asp: Any, lon1: float | None, lon2: float | None, p: int = -1, p2: int = -1) -> Any:
+        # Select after the display gates: a hidden nearer aspect must not
+        # displace an enabled one that is also within orb.
+        return asp.nearest(lambda typ: show_asp(typ, lon1, lon2, p, p2)
+                           and (aspect_filter is None or aspect_filter(typ)))
+
+    def mirrored_node_pairs() -> set[frozenset[int]]:
+        # A body's mirrored aspects to both lunar nodes show in one cell
+        # (node_mirror); the other cell reads like an aspect-free one.
+        def contacts():
+            for ii, a in enumerate(body_ids):
+                for b in body_ids[ii + 1:]:
+                    if (a in node_mirror.NODES) == (b in node_mirror.NODES):
+                        continue
+                    try:
+                        selected = shown_aspect(planetary_aspect(a, b), planet_lon(a), planet_lon(b), a, b)
+                    except Exception:
+                        continue
+                    if selected is None:
+                        continue
+                    node, other = (a, b) if a in node_mirror.NODES else (b, a)
+                    yield frozenset((a, b)), other, node, selected.typ
+
+        return node_mirror.redundant_keys(contacts())
+
+    # The dashboard grid already drops the South Node row (dashboard-canvas.ts),
+    # so it keeps every North Node cell.
+    suppressed_pairs = set() if planet_matrix_only else mirrored_node_pairs()
+
     def matrix_cell(asp: Any, lon1: float | None, lon2: float | None, p: int = -1, p2: int = -1) -> dict[str, Any]:
-        shown = show_asp(asp.typ, lon1, lon2, p, p2)
-        cell: dict[str, Any] = {"orb": orb_text(asp, shown)}
+        suppressed = frozenset((p, p2)) in suppressed_pairs
+        selected = None if suppressed else shown_aspect(asp, lon1, lon2, p, p2)
+        shown = selected is not None
+        if shown:
+            asp = selected
+        cell: dict[str, Any] = {
+            "orb": orb_text(asp, shown),
+            "orbDegrees": float(asp.aspdif if shown else asp.dif),
+        }
         if shown:
             glyph, glyph_role = common.common.aspect_glyph(asp.typ)
             cell["aspectType"] = int(asp.typ)
@@ -3347,11 +3673,24 @@ def _aspects(chrt, options) -> dict[str, Any]:
 
     cells: dict[str, dict[str, Any]] = {}
 
-    # Asc/MC × planets section: header glyphs '0'/'1' in the Morinus face
-    # (aspectswnd.py:256-263), one column per angle (aspectswnd.py:265-320).
+    if planet_matrix_only:
+        # Chart dashboard grid (chart_dashboard.py): the planet triangle only,
+        # with the same cell truth as the full matrix below.
+        for ii, a in enumerate(body_ids):
+            for b in body_ids[ii + 1:]:
+                try:
+                    asp = planetary_aspect(a, b)
+                except Exception:
+                    continue
+                cells[f"planet:{a}:planet:{b}"] = matrix_cell(asp, planet_lon(a), planet_lon(b), a, b)
+        return {"planets": planet_axis, "cells": cells}
+
+    # Asc/MC × planets section, one column per angle (aspectswnd.py:265-320).
+    # Angles are written (Asc, MC), as in lists, never the Morinus angle
+    # glyph slots wx used (aspectswnd.py:256-263).
     ascmc_axis = [
-        {"id": "ascmc:0", "glyph": _angle_glyph("asc"), "glyphFont": "morinus", "label": _txt("Asc", "Asc")},
-        {"id": "ascmc:1", "glyph": _angle_glyph("mc"), "glyphFont": "morinus", "label": _txt("MC", "MC")},
+        {"id": "ascmc:0", "glyph": _txt("Asc", "Asc"), "glyphFont": "text", "label": _txt("Asc", "Asc")},
+        {"id": "ascmc:1", "glyph": _txt("MC", "MC"), "glyphFont": "text", "label": _txt("MC", "MC")},
     ]
     ar_ascmc = (chrt.houses.ascmc[houses.Houses.ASC], chrt.houses.ascmc[houses.Houses.MC])
     for angle_idx in range(len(ascmc_axis)):
@@ -3375,7 +3714,8 @@ def _aspects(chrt, options) -> dict[str, Any]:
                 continue
             lon1, lon2 = planet_lon(a), planet_lon(b)
             cells[f"planet:{a}:planet:{b}"] = matrix_cell(asp, lon1, lon2, a, b)
-            if show_asp(asp.typ, lon1, lon2, a, b):
+            asp = shown_aspect(asp, lon1, lon2, a, b)
+            if asp is not None and frozenset((a, b)) not in suppressed_pairs:
                 glyph, _glyph_role = common.common.aspect_glyph(asp.typ)
                 aspect_cell = _glyph(glyph)
                 color = _rgb_hex(options.clraspect[asp.typ])
@@ -3986,7 +4326,7 @@ def _mundane_positions(chrt, options) -> dict[str, Any]:
                 _lon_cell(mf[0], chrt, options),
                 _object_house_cell(chrt, mf[0]),
                 _text(_dms(mf[1], signed=True), align="center"),
-                _text(_ra(mf[2], options), align="center"),
+                _ra_cell(mf[2], options, align="center"),
                 _text(_dms(mf[3], signed=True), align="center"),
             ]))
         except Exception:
@@ -4175,8 +4515,8 @@ def _almuten_essentials_section(chrt, options) -> dict[str, Any]:
         cells.append(_text("—", align="center"))
         return _row(row_id, cells)
 
-    rows.append(_totals_row("alm-ess:shares", _txt("TotalShares1", "Total") + " " + _txt("TotalShares2", "Shares"), shares, maxshare))
-    rows.append(_totals_row("alm-ess:scores", _txt("TotalScores1", "Total") + " " + _txt("TotalScores2", "Scores"), scores, maxscore))
+    rows.append(_totals_row("alm-ess:shares", _txt("TotalShares", "Total Shares"), shares, maxshare))
+    rows.append(_totals_row("alm-ess:scores", _txt("TotalScores", "Total Scores"), scores, maxscore))
     return {"id": "essentials", "title": _txt("Essential", "Essentials"), "columns": cols, "rows": rows}
 
 
@@ -4203,13 +4543,13 @@ def _almuten_accidentals_sections(chrt, options) -> list[dict[str, Any]]:
     hourruler = list(getattr(acc, "hourruler", []) or [])
     phase_ids = tuple(range(astrology.SE_MARS, astrology.SE_SATURN + 1))
     return [
-        _grid("acc-houses", _txt("HouseScores1", "House") + " " + _txt("HouseScores2", "Scores"),
+        _grid("acc-houses", _txt("HouseScores", "House Scores"),
               _ALMUTEN_PLANETS, inhouses),
-        _grid("acc-phases", _txt("PhaseScores1", "Phase") + " " + _txt("PhaseScores2", "Scores"),
+        _grid("acc-phases", _txt("PhaseScores", "Phase Scores"),
               phase_ids, inphases),
-        _grid("acc-day", _txt("DayRulerScores1", "Day Ruler") + " " + _txt("DayRulerScores2", "Scores"),
+        _grid("acc-day", _txt("DayRulerScores", "Day Ruler Scores"),
               _ALMUTEN_PLANETS, dayruler),
-        _grid("acc-hour", _txt("HourRulerScores1", "Hour Ruler") + " " + _txt("HourRulerScores2", "Scores"),
+        _grid("acc-hour", _txt("HourRulerScores", "Hour Ruler Scores"),
               _ALMUTEN_PLANETS, hourruler),
     ]
 
@@ -4238,9 +4578,9 @@ def _almuten_totals_section(chrt, options) -> dict[str, Any]:
         return _row(row_id, cells)
 
     rows = [
-        _score_row("tot:ess", _txt("EssentialScores1", "Essential") + " " + _txt("EssentialScores2", "Scores"), ess_scores, winner_check=False),
-        _score_row("tot:acc", _txt("AccidentalScores1", "Accidental") + " " + _txt("AccidentalScores2", "Scores"), acc_scores, winner_check=False),
-        _score_row("tot:grand", _txt("GrandScores1", "Grand") + " " + _txt("GrandScores2", "Scores"), grand, winner_check=True),
+        _score_row("tot:ess", _txt("EssentialScores", "Essential Scores"), ess_scores, winner_check=False),
+        _score_row("tot:acc", _txt("AccidentalScores", "Accidental Scores"), acc_scores, winner_check=False),
+        _score_row("tot:grand", _txt("GrandScores", "Grand Scores"), grand, winner_check=True),
     ]
     return {"id": "totals", "title": _txt("Total", "Total"), "columns": cols, "rows": rows}
 
@@ -4465,8 +4805,8 @@ def _almuten_topical(chrt, options, binding: dict[str, Any] | None = None) -> di
         cells.append(_text("—", align="center"))
         return _row(row_id, cells)
 
-    rows.append(_totals_row(f"almt:{topic}:shares", _txt("TotalShares1", "Total") + " " + _txt("TotalShares2", "Shares"), topic_shares, topic_maxshare))
-    rows.append(_totals_row(f"almt:{topic}:scores", _txt("TotalScores1", "Total") + " " + _txt("TotalScores2", "Scores"), topic_scores, topic_maxscore))
+    rows.append(_totals_row(f"almt:{topic}:shares", _txt("TotalShares", "Total Shares"), topic_shares, topic_maxshare))
+    rows.append(_totals_row(f"almt:{topic}:scores", _txt("TotalScores", "Total Scores"), topic_scores, topic_maxscore))
 
     payload = _base_payload("almuten_topical", chrt, options, cols, rows or _empty(),
                             title=_txt("AlmutenTopical", "Almuten Topical"), source=source,
@@ -4501,7 +4841,7 @@ def _fixed_stars(chrt, options) -> dict[str, Any]:
             _lon_cell(fs[2], chrt, options),
             _object_house_cell(chrt, fs[2]),
             _text(_dms(fs[3], signed=True), sort_value=float(fs[3])),
-            _text(_ra(fs[4], options), sort_value=float(fs[4])),
+            _ra_cell(fs[4], options, sort_value=float(fs[4])),
             _text(_dms(fs[5], signed=True), sort_value=float(fs[5])),
         ]))
     return _base_payload("fixed_stars", chrt, options, cols, rows or _empty(), title="Fixed Stars", source="morin.py:15883-15896; fixstarswnd.py:15-312")
@@ -4573,6 +4913,7 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
                 "glyph": glyph,
                 "glyphFont": glyph_role,
                 "orb": "%0.1f" % o,
+                "orbDegrees": float(o),
             }
             color = _rgb_hex(options.clraspect[numasp])
             _set_semantic_color(
@@ -4603,19 +4944,20 @@ def _fixed_star_aspects(chrt, options) -> dict[str, Any]:
     DESC = util.normalize(ASC + 180.0)
     MC = chrt.houses.ascmc[houses.Houses.MC]
     IC = util.normalize(MC + 180.0)
-    # AscMC header glyphs ('0','3','1','2' = Asc/Dsc/MC/IC, Morinus face;
-    # fixstarsaspectswnd.py:228,561) with the longitude each represents.
+    # Asc/Dsc/MC/IC header columns with the longitude each represents,
+    # written as in lists, never the Morinus angle glyph slots wx used
+    # (fixstarsaspectswnd.py:228,561).
     ascmc_cols = [
-        {"glyph": _angle_glyph("asc"), "label": _txt("Asc", "Asc"), "lon": ASC},
-        {"glyph": _angle_glyph("dsc"), "label": _txt("Dsc", "Dsc"), "lon": DESC},
-        {"glyph": _angle_glyph("mc"), "label": _txt("MC", "MC"), "lon": MC},
-        {"glyph": _angle_glyph("ic"), "label": _txt("IC", "IC"), "lon": IC},
+        {"glyph": _txt("Asc", "Asc"), "label": _txt("Asc", "Asc"), "lon": ASC},
+        {"glyph": _txt("Dsc", "Dsc"), "label": _txt("Dsc", "Dsc"), "lon": DESC},
+        {"glyph": _txt("MC", "MC"), "label": _txt("MC", "MC"), "lon": MC},
+        {"glyph": _txt("IC", "IC"), "label": _txt("IC", "IC"), "lon": IC},
     ]
 
     col_axis: list[dict[str, Any]] = []
     col_lons: list[float] = []
     for c in ascmc_cols:
-        col_axis.append({"id": f"col:{len(col_axis)}", "glyph": c["glyph"], "glyphFont": "morinus", "label": c["label"]})
+        col_axis.append({"id": f"col:{len(col_axis)}", "glyph": c["glyph"], "glyphFont": "text", "label": c["label"]})
         col_lons.append(c["lon"])
 
     # Visible planets (fixstarsaspectswnd.py:273-305).
@@ -4751,8 +5093,8 @@ def _fixstar_parallel_label_color(key, chrt, options) -> str | None:
     # Point-symbol color (fixstarsparallelswnd._label_color:688-715).
     indiv = list(getattr(options, "clrindividual", []) or [])
     use = getattr(options, "useplanetcolors", False)
-    if key == astrology.SE_CHIRON:
-        return _planet_color(astrology.SE_CHIRON, chrt, options)
+    if key in (astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS):
+        return _planet_color(key, chrt, options)
     if isinstance(key, int) and astrology.SE_SUN <= key <= astrology.SE_PLUTO:
         return _planet_color(key, chrt, options)
     if key in ("NN", "SN"):
@@ -4767,7 +5109,7 @@ def _fixstar_parallel_label_color(key, chrt, options) -> str | None:
 
 
 def _fixstar_parallel_label_color_role(key, chrt, options, color: str | None) -> str | None:
-    if key == astrology.SE_CHIRON or (
+    if key in (astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS) or (
         isinstance(key, int) and astrology.SE_SUN <= key <= astrology.SE_PLUTO
     ):
         return _planet_color_role(int(key), chrt, options, color)
@@ -4837,6 +5179,9 @@ def _fixed_star_parallels(chrt, options) -> dict[str, Any]:
             points.append((astrology.SE_CHIRON, _planet_glyph(astrology.SE_CHIRON), True, chrt.chiron.dataEqu[planets.Planet.DECLEQU]))
         except Exception:
             pass
+    apogee = getattr(chrt, "apogee", None)
+    if apogee is not None and common.is_planet_visible(options, apogee.pId):
+        points.append((apogee.pId, _planet_glyph(apogee.pId), True, apogee.dataEqu[planets.Planet.DECLEQU]))
     try:
         node_decl = chrt.planets.planets[astrology.SE_PLUTO + 1].dataEqu[planets.Planet.DECLEQU]
         points.append(("NN", _planet_glyph(astrology.SE_MEAN_NODE), True, node_decl))
@@ -4904,7 +5249,7 @@ def _asteroids(chrt, options) -> dict[str, Any]:
         name = str(getattr(ast, "name", ""))
         if getattr(ast, "available", True) and float(getattr(ast, "speed", 0.0)) < 0.0:
             name += " R"
-        rows.append(_row(f"asteroid:{idx}", [_text(name), _lon_cell(data[0], chrt, options) if len(data) > 0 else _text("-"), _object_house_cell(chrt, data[0]) if len(data) > 0 else _text("—"), _text(_dms(data[1], signed=True) if len(data) > 1 else "-"), _text(_ra(data[2], options) if len(data) > 2 else "-"), _text(_dms(data[3], signed=True) if len(data) > 3 else "-")]))
+        rows.append(_row(f"asteroid:{idx}", [_text(name), _lon_cell(data[0], chrt, options) if len(data) > 0 else _text("-"), _object_house_cell(chrt, data[0]) if len(data) > 0 else _text("—"), _text(_dms(data[1], signed=True) if len(data) > 1 else "-"), _ra_cell(data[2], options) if len(data) > 2 else _text("-"), _text(_dms(data[3], signed=True) if len(data) > 3 else "-")]))
     return _base_payload("asteroids", chrt, options, cols, rows or _empty(), title="Asteroids", source="morin.py:17188-17190; asteroidswnd.py:13-294")
 
 
@@ -5126,13 +5471,6 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
         astrology.SE_TRUE_NODE,
     ]
     # Dignity colour table self.clrs (firdariawnd.py:64).
-    dign_clrs = [
-        getattr(options, "clrdomicil", (0, 0, 0)),
-        getattr(options, "clrexal", (0, 0, 0)),
-        getattr(options, "clrperegrin", (0, 0, 0)),
-        getattr(options, "clrcasus", (0, 0, 0)),
-        getattr(options, "clrexil", (0, 0, 0)),
-    ]
 
     def planet_color(internal_pid: int) -> str:
         # Glyph colour — useplanetcolors → clrindividual (nodes mapped to the
@@ -5144,7 +5482,7 @@ def _firdaria(chrt, options, binding: dict[str, Any] | None = None, *, current_d
                 if objidx > astrology.SE_SATURN:
                     objidx = 10
                 return _zr_hex(options.clrindividual[objidx])
-            return _zr_hex(dign_clrs[int(chrt.dignity(objidx))])
+            return _zr_hex(chart_dignity_color(chrt, options, objidx))
         except Exception:
             return "#888888"
 
@@ -5326,7 +5664,7 @@ def _vimshottari(chrt, options, binding: dict[str, Any] | None = None, *, curren
     a persisted Vimshottari binding and never mutates the chart/global option.
     """
     source = (
-        "vimshottari.py; doc/vimshottari.md; P.V.R. Narasimha Rao, Vedic Astrology: An Integrated "
+        "vimshottari.py; P.V.R. Narasimha Rao, Vedic Astrology: An Integrated "
         "Approach; Sanatan Veda, Calculation of Vimshottari Dasha; "
         "Shyamasundara Dasa, 360 vs. 365 Days"
     )
@@ -5573,6 +5911,11 @@ def _strip(chrt, options) -> dict[str, Any]:
         _push(i, body.data[planets.Planet.LONG], common.common.Planets[i], "morinus",
               common.common.get_planet_name(i))
 
+    apogee = getattr(chrt, "apogee", None)
+    if apogee is not None and common.is_planet_visible(options, apogee.pId):
+        _push(apogee.pId, apogee.data[planets.Planet.LONG],
+              common.common.get_planet_glyph(apogee.pId), "morinus",
+              common.common.get_planet_name(apogee.pId))
     if getattr(chrt, "chiron", None) is not None and common.common.is_planet_visible(options, astrology.SE_CHIRON):
         _push(astrology.SE_CHIRON, chrt.chiron.data[planets.Planet.LONG],
               common.common.get_planet_glyph(astrology.SE_CHIRON), "morinus",
@@ -5664,14 +6007,14 @@ def _sidereal_lon_cell(value: float, options) -> Cell:
     # 347-362, comment 349-350). Degree-in-sign + sign glyph, like every lon cell.
     try:
         lon = util.normalize(float(value))
-        d, m, _s = util.decToDeg(lon)
+        d, m, seconds = _rounded_sexagesimal_parts(lon, cycle=360)
         sign_idx = int(d / chart.Chart.SIGN_DEG)
         pos = int(d % chart.Chart.SIGN_DEG)
         signs = _signs(options)
         sign = signs[sign_idx] if 0 <= sign_idx < len(signs) else ""
         return {
             "runs": [
-                {"text": "%s°%02d' " % (str(pos).rjust(2), m), "glyph": False},
+                {"text": "%s°%02d'%02d\" " % (str(pos).rjust(2), m, seconds), "glyph": False},
                 _sign_run(options, sign_idx, sign),
             ],
         }
@@ -5712,14 +6055,7 @@ def _dodecatemoria(chrt, options) -> dict[str, Any]:
                 objidx -= 1
             if getattr(options, "useplanetcolors", False):
                 return _rgb_hex(options.clrindividual[objidx])
-            palette = (
-                getattr(options, "clrdomicil", None),
-                getattr(options, "clrexal", None),
-                getattr(options, "clrperegrin", None),
-                getattr(options, "clrcasus", None),
-                getattr(options, "clrexil", None),
-            )
-            return _rgb_hex(palette[chrt.dignity(objidx)])
+            return _rgb_hex(chart_dignity_color(chrt, options, objidx))
         except Exception:
             return _rgb_hex(getattr(options, "clrperegrin", None))
 
@@ -5842,7 +6178,7 @@ def _user_speculum_value_cell(field_idx: int, value: float, chrt, options, *, re
         return _text(_dms(value, signed=True, sec=True))
     # RA: in-time HH:MM:SS or 3-digit degrees (customerwnd.py:199-206 / 297-313).
     if field_idx == CPD.RA:
-        return _text(_ra(value, options, seconds=True))
+        return _ra_cell(value, options)
     # Placidian sign-coded magnitudes: SA(D/N), MD(M/I), HD(A/D), TH(D/N),
     # HOD(D/N), AODO(A/D) (customerwnd.py:210-228).
     if not regio and field_idx in (CPD.SA, CPD.MD, CPD.HD, CPD.TH, CPD.HOD, CPD.AODO):
@@ -5950,16 +6286,9 @@ def _transit_planet_color(planet_id: int, chrt, options, *, target: bool) -> str
             return _rgb_hex(options.clrindividual[idx])
         if not target:
             return _rgb_hex(getattr(options, "clrperegrin", None))
-        if int(planet_id) == astrology.SE_CHIRON:
+        if int(planet_id) in (astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS):
             return _rgb_hex(getattr(options, "clrperegrin", None))
-        palette = (
-            getattr(options, "clrdomicil", None),
-            getattr(options, "clrexal", None),
-            getattr(options, "clrperegrin", None),
-            getattr(options, "clrcasus", None),
-            getattr(options, "clrexil", None),
-        )
-        return _rgb_hex(palette[chrt.dignity(int(planet_id))])
+        return _rgb_hex(chart_dignity_color(chrt, options, int(planet_id)))
     except Exception:
         return _rgb_hex(getattr(options, "clrperegrin", None))
 
@@ -5974,6 +6303,9 @@ def _transit_is_hidden(tr, options) -> bool:
         ):
             if not options.transcendental[flag] and tr.objtype != transits.Transit.SIGN and (tr.plt == body or tr.obj == body):
                 return True
+    if not getattr(options, "showapogee", True):
+        if tr.objtype != transits.Transit.SIGN and (tr.plt in chart_bodies.APOGEE_IDS or tr.obj in chart_bodies.APOGEE_IDS):
+            return True
     if not getattr(options, "showchiron", True):
         if tr.objtype != transits.Transit.SIGN and (tr.plt == astrology.SE_CHIRON or tr.obj == astrology.SE_CHIRON):
             return True
@@ -6340,7 +6672,7 @@ def _fixedstar_angle_directions(chrt, options, binding: dict[str, Any] | None = 
                 _text(str(r.get("prom", "")), align="left"),
                 _text(dc, align="center"),
                 _text(angle_labels.get(sig, sig), align="center"),
-                _text(_dms(arc, signed=False, sec=False), align="right"),
+                _text(_dms(arc), align="right"),
                 _text(str(r.get("date", "")), align="center"),
             ],
             meta={"jd": float(r.get("jd", 0.0)), "dc": dc, "sig": sig},
@@ -6402,11 +6734,11 @@ def _lunar_mansions(chrt, options) -> dict[str, Any]:
     for entry in manazil.MANAZIL:
         index = int(entry["index"])
         start = index * manazil.MANZIL_WIDTH
-        degrees, minutes, _seconds = util.decToDeg(start)
+        degrees, minutes, seconds = _rounded_sexagesimal_parts(start, cycle=360)
         sign_index = int(degrees // chart.Chart.SIGN_DEG) % chart.Chart.SIGN_NUM
         start_cell: Cell = {
             "runs": [
-                {"text": "%d°%02d' " % (degrees % chart.Chart.SIGN_DEG, minutes), "glyph": False},
+                {"text": "%d°%02d'%02d\" " % (degrees % chart.Chart.SIGN_DEG, minutes, seconds), "glyph": False},
                 _sign_run(options, sign_index),
             ],
             "sortValue": start,
@@ -6451,6 +6783,8 @@ def _lunar_mansions(chrt, options) -> dict[str, Any]:
 _TABLE_BUILDERS = {
     "strip": _strip,
     "positions": _positions,
+    "pd_positions": _pd_positions,
+    "pd_speculum": _pd_positions,
     "aspects": _aspects,
     "rise_set": _rise_set,
     "planetary_hours": _planetary_hours,
@@ -6540,6 +6874,8 @@ class TablesService:
                 payload = _almuten_topical(chrt, options, binding=binding)
             elif spec.table_id == "monthly_transits":
                 payload = _monthly_transits(chrt, options, binding=binding, current_datetime=current_datetime)
+            elif spec.table_id in ("pd_positions", "pd_speculum"):
+                payload = _pd_positions(chrt, options, binding=binding, table_id=spec.table_id)
             elif spec.table_id == "fixedstar_angle_directions":
                 payload = _fixedstar_angle_directions(chrt, options, binding=binding)
             else:

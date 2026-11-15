@@ -785,6 +785,11 @@ const WHEEL_SEMANTIC_CLASS_INPUTS = {
     primitive: "text", capabilities: C.text,
     applicability: applicability("classic.comparison.default"), fontRole: "text", colorTarget: "palette-role",
   }),
+  "bodies.outer.position.minute": define({
+    labelKey: "styleLab.class.outerPositionMinute", groupId: "bodies", layer: "outer-label",
+    primitive: "text", capabilities: C.text,
+    applicability: applicability("classic.comparison.default"), fontRole: "text", colorTarget: "palette-role",
+  }),
   "bodies.outer.motion": define({
     labelKey: "styleLab.class.outerBodyMotion", groupId: "bodies", layer: "dynamic",
     primitive: "text", capabilities: C.text,

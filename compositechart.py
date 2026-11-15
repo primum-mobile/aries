@@ -5,6 +5,7 @@ import math
 
 import antzodpars
 import astrology
+import chart_bodies
 import chart
 import customerpd
 import default_location as default_location_model
@@ -629,12 +630,11 @@ def build_symbolic_midpoint_composite(chrt1, chrt2, opts, name=None, method=None
 		target.computePlacidianSpeculum(comp.place.lat, comp.houses.ascmc2)
 		target.computeRegiomontanSpeculum(comp.place.lat, comp.houses.ascmc2, comp.raequasc)
 
-	# Handle Chiron if present in all charts
-	if getattr(chrt1, 'chiron', None) is not None and getattr(chrt2, 'chiron', None) is not None and getattr(comp, 'chiron', None) is not None:
-		body1 = chrt1.chiron
-		body2 = chrt2.chiron
-		target = comp.chiron
-		
+	for body_id, target in chart_bodies.iter_dynamic_bodies(comp):
+		body1 = chart_bodies.dynamic_body(chrt1, body_id)
+		body2 = chart_bodies.dynamic_body(chrt2, body_id)
+		if body1 is None or body2 is None:
+			continue
 		data, dataEqu = _midpoint_body_data(body1, body2, comp.obl[0], comp.nolat, comp.ayanamsha_offset)
 		
 		target.data = tuple(data)
@@ -670,7 +670,7 @@ def build_composite_chart(chrt1, chrt2, opts, name=None):
 def build_davison_chart(chrt1, chrt2, opts, name=None):
 	import copy
 
-	composite_name = name or '%s + %s %s (%s)' % (chrt1.name, chrt2.name, mtexts.txts.get('Composite', 'Composite'), mtexts.txts.get('Davison', 'Davison'))
+	composite_name = name or '%s + %s %s' % (chrt1.name, chrt2.name, mtexts.txts['Davison'])
 	place = _build_davison_place(chrt1, chrt2)
 	time = _build_composite_time(chrt1, chrt2, place)
 	comp = chart.Chart(

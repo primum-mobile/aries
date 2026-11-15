@@ -6,6 +6,7 @@ import { loadChartPickerRows } from "@/lib/chart-picker/rows-cache";
 import { isTransientDaemonFetchError } from "@/lib/abort-error";
 import { resolveShellHost } from "@/lib/shell-host";
 import type { ThemeState } from "@/lib/daemon/client";
+import { useBrowserChartPickerStore } from "@/stores/browser-chart-picker-store";
 import { ensureThemeStateCached, getCachedThemeState } from "@/stores/theme-store";
 
 export type ChartPickerWindowMode = "open-radix" | "synastry-partner";
@@ -75,17 +76,6 @@ async function prewarmChartPickerWindow(title: string): Promise<void> {
   return prewarmPickerWindowPromise;
 }
 
-function openBrowserPicker(path: string, title: string): boolean {
-  const target = window.open(path, "chart-picker", "popup,width=760,height=660");
-  if (!target) {
-    window.location.assign(path);
-    return true;
-  }
-  target.document.title = title;
-  target.focus();
-  return true;
-}
-
 export async function openChartPickerWindow({
   mode,
   title,
@@ -124,7 +114,9 @@ export async function openChartPickerWindow({
 
     const shellHost = resolveShellHost();
     if (!shellHost.capabilities.chartPickerWindow) {
-      return openBrowserPicker(path, title);
+      // A browser popup would boot a second engine with its own session.
+      useBrowserChartPickerStore.getState().openPicker({ mode, title, parentRadixId, excludeNames });
+      return true;
     }
 
     try {

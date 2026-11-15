@@ -109,6 +109,24 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.color.signal": {
+      "cssVar": "--aries-signal",
+      "scope": "app",
+      "type": "color",
+      "unit": "",
+      "default": "rgb(0 191 255)",
+      "bounds": null,
+      "label": "Signal color",
+      "description": "Theme highlight for attention marks and eclipse paths, independent of chart geometry.",
+      "tier": "semantic-app",
+      "affectedSurfaces": [
+        "Astrocartography eclipse path, maximum marker and label"
+      ],
+      "safetyNotes": [
+        "Keep the signal distinct from neutral geometry and readable over the map."
+      ],
+      "variantApplicability": null
+    },
     "app.color.surface": {
       "cssVar": "--aries-surface",
       "scope": "app",
@@ -1945,6 +1963,28 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "app.inspector.ownGlyphOpacity": {
+      "cssVar": "--aries-inspector-own-glyph-opacity",
+      "scope": "app",
+      "type": "number",
+      "unit": "",
+      "default": "0.7",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      "label": "Inspected glyph opacity",
+      "description": "Alpha applied to the inspected planet's own dignity-coloured glyph in Inspector aspect rows, so the partner planet reads first.",
+      "tier": "component",
+      "affectedSurfaces": [
+        "inspector aspect rows"
+      ],
+      "safetyNotes": [
+        "Keep the dignity colour recognisable while the partner glyph stays dominant."
+      ],
+      "variantApplicability": null
+    },
     "app.inspector.statusDotSize": {
       "cssVar": "--aries-inspector-status-dot-size",
       "scope": "app",
@@ -2765,50 +2805,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "app.menu.quickOptionsMaxHeight": {
-      "cssVar": "--aries-menu-quick-max-height",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "620px",
-      "bounds": {
-        "min": 240,
-        "max": 900,
-        "step": 8
-      },
-      "label": "Quick-options maximum height",
-      "description": "Pixel cap on the retained quick-options menu before it scrolls.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "titlebar quick-options menu"
-      ],
-      "safetyNotes": [
-        "The viewport-relative cap still prevents the menu from escaping short windows."
-      ],
-      "variantApplicability": null
-    },
-    "app.menu.quickOptionsViewportMaxHeight": {
-      "cssVar": "--aries-menu-quick-viewport-max-height",
-      "scope": "app",
-      "type": "number",
-      "unit": "vh",
-      "default": "100vh",
-      "bounds": {
-        "min": 40,
-        "max": 95,
-        "step": 1
-      },
-      "label": "Quick-options viewport height cap",
-      "description": "Maximum share of viewport height available to the retained quick-options menu.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "titlebar quick-options menu"
-      ],
-      "safetyNotes": [
-        "Leave enough viewport around the menu to preserve its transient context."
-      ],
-      "variantApplicability": null
-    },
     "app.menu.quickOptionsWidth": {
       "cssVar": "--aries-menu-quick-width",
       "scope": "app",
@@ -2821,7 +2817,7 @@ _CATALOG = json.loads(r'''{
         "step": 4
       },
       "label": "Quick-options menu width",
-      "description": "Inline size of the retained quick-options menu opened from the titlebar.",
+      "description": "Minimum inline size of the retained quick-options menu; longer rows expand it to their full content width.",
       "tier": "component",
       "affectedSurfaces": [
         "titlebar quick-options menu"
@@ -5313,28 +5309,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "app.statusbar.actionSize": {
-      "cssVar": "--aries-statusbar-action-size",
-      "scope": "app",
-      "type": "number",
-      "unit": "px",
-      "default": "22px",
-      "bounds": {
-        "min": 18,
-        "max": 36,
-        "step": 1
-      },
-      "label": "Status bar action size",
-      "description": "Square target size for the status bar settings action.",
-      "tier": "component",
-      "affectedSurfaces": [
-        "workspace status bar settings action"
-      ],
-      "safetyNotes": [
-        "Keep the action within the total status bar height and clear of build text."
-      ],
-      "variantApplicability": null
-    },
     "app.statusbar.background": {
       "cssVar": "--aries-statusbar-background",
       "scope": "app",
@@ -6242,7 +6216,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "5px",
+      "default": "6px",
       "bounds": {
         "min": 2,
         "max": 12,
@@ -6265,7 +6239,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "19px",
+      "default": "21px",
       "bounds": {
         "min": 12,
         "max": 32,
@@ -6329,6 +6303,29 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "chart.aspectMatrix.exactWidth": {
+      "cssVar": "--aries-aspect-matrix-exact-width",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "bounds": {
+        "min": 1,
+        "max": 3,
+        "step": 1
+      },
+      "label": "Exact-aspect frame width",
+      "description": "Stroke width of the exact-aspect inset frame.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "safetyNotes": [
+        "Check that the frame clears the aspect glyph and orb at the selected cell size."
+      ],
+      "variantApplicability": null
+    },
     "chart.aspectMatrix.fixedStarRailWidth": {
       "cssVar": "--aries-aspect-matrix-fixed-star-rail-width",
       "scope": "chart",
@@ -6348,6 +6345,29 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Check long fixed-star names and horizontal scrolling at narrow values."
+      ],
+      "variantApplicability": null
+    },
+    "chart.aspectMatrix.frameWidth": {
+      "cssVar": "--aries-aspect-matrix-frame-width",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "var(--aries-chart-module-frame-width)",
+      "bounds": {
+        "min": 1,
+        "max": 4,
+        "step": 1
+      },
+      "label": "Aspect-matrix frame width",
+      "description": "Outline width of each framed matrix block, including the triangle staircase; defaults to the shared chart-module frame width.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "safetyNotes": [
+        "Keep the frame at least as heavy as the cell rules; whole pixels stay crisp at 1x."
       ],
       "variantApplicability": null
     },
@@ -6494,21 +6514,44 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "1px",
+      "default": "var(--aries-chart-module-rule-width)",
       "bounds": {
         "min": 0.5,
         "max": 3,
         "step": 0.25
       },
       "label": "Aspect-matrix rule width",
-      "description": "Stroke width for cell rules and exact-aspect inset frames.",
+      "description": "Stroke width for the rules between cells inside a matrix block; defaults to the shared chart-module rule width.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "aspect matrix",
         "fixed-star aspect matrix"
       ],
       "safetyNotes": [
-        "Interior cells draw adjacent rules, so verify dense matrices at the upper bound."
+        "Each rule is drawn once; keep it at or below the block frame width."
+      ],
+      "variantApplicability": null
+    },
+    "chart.aspectMatrix.sectionGap": {
+      "cssVar": "--aries-aspect-matrix-section-gap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "8px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Aspect-matrix section gap",
+      "description": "Space between the framed Asc/MC, planet, house and fixed-star blocks and their open axis labels.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "safetyNotes": [
+        "Keep blocks visibly separate; zero merges adjacent frames into a double rule."
       ],
       "variantApplicability": null
     },
@@ -6894,7 +6937,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgb(0 0 255)",
+      "default": "rgb(110 168 255)",
       "bounds": null,
       "label": "Jupiter color",
       "description": "Named Jupiter color used when individual body colors are active.",
@@ -6974,7 +7017,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgb(0 0 128)",
+      "default": "rgb(130 145 205)",
       "bounds": null,
       "label": "Neptune color",
       "description": "Named Neptune color used when individual body colors are active.",
@@ -7014,7 +7057,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgb(0 0 128)",
+      "default": "rgb(130 145 205)",
       "bounds": null,
       "label": "Pluto color",
       "description": "Named Pluto color used when individual body colors are active.",
@@ -7034,7 +7077,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgb(0 0 0)",
+      "default": "rgb(180 190 195)",
       "bounds": null,
       "label": "Saturn color",
       "description": "Named Saturn color used when individual body colors are active.",
@@ -7074,7 +7117,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "rgb(0 0 128)",
+      "default": "rgb(130 145 205)",
       "bounds": null,
       "label": "Uranus color",
       "description": "Named Uranus color used when individual body colors are active.",
@@ -7418,6 +7461,54 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "The derived dim role follows this color; review small chart annotations against the chart background."
+      ],
+      "variantApplicability": null
+    },
+    "chart.module.frameWidth": {
+      "cssVar": "--aries-chart-module-frame-width",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "2px",
+      "bounds": {
+        "min": 1,
+        "max": 4,
+        "step": 1
+      },
+      "label": "Chart-module frame width",
+      "description": "Heavier line shared by chart modules: matrix block outlines, the dashboard grid staircase and the declination scale axis.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix",
+        "chart dashboard"
+      ],
+      "safetyNotes": [
+        "Keep the frame at least as heavy as the rules; whole pixels stay crisp at 1x."
+      ],
+      "variantApplicability": null
+    },
+    "chart.module.ruleWidth": {
+      "cssVar": "--aries-chart-module-rule-width",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1px",
+      "bounds": {
+        "min": 0.5,
+        "max": 3,
+        "step": 0.25
+      },
+      "label": "Chart-module rule width",
+      "description": "Hairline width shared by chart modules: aspect-matrix and dashboard grid cell rules, declination ticks and the Moon list rule.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix",
+        "chart dashboard"
+      ],
+      "safetyNotes": [
+        "Each rule is drawn once; keep it at or below the module frame width."
       ],
       "variantApplicability": null
     },
@@ -7930,7 +8021,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "#d9b760",
+      "default": "var(--aries-signal)",
       "bounds": null,
       "label": "Astrocartography map eclipse center color",
       "description": "Astrocartography map eclipse center color color resolved once for the complete renderer paint.",
@@ -12103,6 +12194,78 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.color.contact": {
+      "cssVar": "--aries-astrolabe-contact",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-aspect-conjunction)",
+      "bounds": null,
+      "label": "Astrolabe contact",
+      "description": "Astrolabe contact color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.decanBoundary": {
+      "cssVar": "--aries-astrolabe-decan-boundary",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-frame)",
+      "bounds": null,
+      "label": "Astrolabe decan boundary",
+      "description": "Astrolabe decan boundary color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.declination": {
+      "cssVar": "--aries-astrolabe-declination",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-houses)",
+      "bounds": null,
+      "label": "Astrolabe declination",
+      "description": "Astrolabe declination color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.earth": {
+      "cssVar": "--aries-astrolabe-earth",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-positions)",
+      "bounds": null,
+      "label": "Astrolabe earth",
+      "description": "Astrolabe earth color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.color.ecliptic": {
       "cssVar": "--aries-astrolabe-ecliptic",
       "scope": "chart",
@@ -12193,42 +12356,6 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrolabe.color.infoAtmospheric": {
-      "cssVar": "--aries-astrolabe-info-atmospheric",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "var(--morinus-text-bright)",
-      "bounds": null,
-      "label": "Astrolabe info atmospheric",
-      "description": "Astrolabe info atmospheric color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Review Astrolabe foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrolabe.color.infoSchematic": {
-      "cssVar": "--aries-astrolabe-info-schematic",
-      "scope": "chart",
-      "type": "color",
-      "unit": "",
-      "default": "var(--morinus-text-bright)",
-      "bounds": null,
-      "label": "Astrolabe info schematic",
-      "description": "Astrolabe info schematic color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Review Astrolabe foreground/background contrast after changing this role."
-      ],
-      "variantApplicability": null
-    },
     "renderer.astrolabe.color.meridian": {
       "cssVar": "--aries-astrolabe-meridian",
       "scope": "chart",
@@ -12238,6 +12365,24 @@ _CATALOG = json.loads(r'''{
       "bounds": null,
       "label": "Astrolabe meridian",
       "description": "Astrolabe meridian color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.primeVertical": {
+      "cssVar": "--aries-astrolabe-prime-vertical",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-houses)",
+      "bounds": null,
+      "label": "Astrolabe prime vertical",
+      "description": "Astrolabe prime vertical color resolved once for the complete renderer paint.",
       "tier": "renderer-palette",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12265,6 +12410,24 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.color.regioZoomed": {
+      "cssVar": "--aries-astrolabe-regio-zoomed",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-houses)",
+      "bounds": null,
+      "label": "Astrolabe regio zoomed",
+      "description": "Astrolabe regio zoomed color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.color.star": {
       "cssVar": "--aries-astrolabe-star",
       "scope": "chart",
@@ -12274,6 +12437,42 @@ _CATALOG = json.loads(r'''{
       "bounds": null,
       "label": "Astrolabe star",
       "description": "Astrolabe star color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.starFaint": {
+      "cssVar": "--aries-astrolabe-star-faint",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-houses)",
+      "bounds": null,
+      "label": "Astrolabe star faint",
+      "description": "Astrolabe star faint color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.subdivisionGlyph": {
+      "cssVar": "--aries-astrolabe-subdivision-glyph",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-signs)",
+      "bounds": null,
+      "label": "Astrolabe subdivision glyph",
+      "description": "Astrolabe subdivision glyph color resolved once for the complete renderer paint.",
       "tier": "renderer-palette",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12301,6 +12500,42 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.color.termBoundary": {
+      "cssVar": "--aries-astrolabe-term-boundary",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-frame)",
+      "bounds": null,
+      "label": "Astrolabe term boundary",
+      "description": "Astrolabe term boundary color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.color.termRing": {
+      "cssVar": "--aries-astrolabe-term-ring",
+      "scope": "chart",
+      "type": "color",
+      "unit": "",
+      "default": "var(--morinus-frame)",
+      "bounds": null,
+      "label": "Astrolabe term ring",
+      "description": "Astrolabe term ring color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.color.tropic": {
       "cssVar": "--aries-astrolabe-tropic",
       "scope": "chart",
@@ -12316,6 +12551,50 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.angleLabelScale": {
+      "cssVar": "--aries-astrolabe-angle-label-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.7",
+      "bounds": {
+        "min": 0.175,
+        "max": 2.1,
+        "step": 0.01
+      },
+      "label": "Astrolabe angle label scale",
+      "description": "Astrolabe angle label scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.angleTickScale": {
+      "cssVar": "--aries-astrolabe-angle-tick-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.6",
+      "bounds": {
+        "min": 0.15,
+        "max": 1.8,
+        "step": 0.01
+      },
+      "label": "Astrolabe angle tick scale",
+      "description": "Astrolabe angle tick scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "variantApplicability": null
     },
@@ -12354,6 +12633,50 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrolabe band width scale",
       "description": "Astrolabe band width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.bareEclipticTickScale": {
+      "cssVar": "--aries-astrolabe-bare-ecliptic-tick-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.5",
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
+        "step": 0.01
+      },
+      "label": "Astrolabe bare ecliptic tick scale",
+      "description": "Astrolabe bare ecliptic tick scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.bareSignGlyphScale": {
+      "cssVar": "--aries-astrolabe-bare-sign-glyph-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.5",
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
+        "step": 0.01
+      },
+      "label": "Astrolabe bare sign glyph scale",
+      "description": "Astrolabe bare sign glyph scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12627,6 +12950,358 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.metric.contactGlow": {
+      "cssVar": "--aries-astrolabe-contact-glow",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "6px",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "label": "Astrolabe contact glow",
+      "description": "Astrolabe contact glow design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.contactHalfLength": {
+      "cssVar": "--aries-astrolabe-contact-half-length",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "40px",
+      "bounds": {
+        "min": 0,
+        "max": 160,
+        "step": 1
+      },
+      "label": "Astrolabe contact half length",
+      "description": "Astrolabe contact half length design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.decanBandScale": {
+      "cssVar": "--aries-astrolabe-decan-band-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.026",
+      "bounds": {
+        "min": 0.0065,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe decan band scale",
+      "description": "Astrolabe decan band scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.diskFillOpacity": {
+      "cssVar": "--aries-astrolabe-disk-fill-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.14",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe disk fill opacity",
+      "description": "Astrolabe disk fill opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.diskOutlineOpacity": {
+      "cssVar": "--aries-astrolabe-disk-outline-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.55",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe disk outline opacity",
+      "description": "Astrolabe disk outline opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.diskThreshold": {
+      "cssVar": "--aries-astrolabe-disk-threshold",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1.2",
+      "bounds": {
+        "min": 0,
+        "max": 3.6,
+        "step": 0.01
+      },
+      "label": "Astrolabe disk threshold",
+      "description": "Astrolabe disk threshold design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.divisionGlyphMin": {
+      "cssVar": "--aries-astrolabe-division-glyph-min",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "5px",
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Astrolabe division glyph min",
+      "description": "Astrolabe division glyph min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.divisionGlyphScale": {
+      "cssVar": "--aries-astrolabe-division-glyph-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.72",
+      "bounds": {
+        "min": 0.18,
+        "max": 2.16,
+        "step": 0.01
+      },
+      "label": "Astrolabe division glyph scale",
+      "description": "Astrolabe division glyph scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.divisionSignShare": {
+      "cssVar": "--aries-astrolabe-division-sign-share",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.6",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe division sign share",
+      "description": "Astrolabe division sign share design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticBandBoxDegrees": {
+      "cssVar": "--aries-astrolabe-ecliptic-band-box-degrees",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "5",
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      },
+      "label": "Astrolabe ecliptic band box degrees",
+      "description": "Astrolabe ecliptic band box degrees design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticBandTickShare": {
+      "cssVar": "--aries-astrolabe-ecliptic-band-tick-share",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      },
+      "label": "Astrolabe ecliptic band tick share",
+      "description": "Astrolabe ecliptic band tick share design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticBandWidthSteps": {
+      "cssVar": "--aries-astrolabe-ecliptic-band-width-steps",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1",
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      },
+      "label": "Astrolabe ecliptic band width steps",
+      "description": "Astrolabe ecliptic band width steps design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticScaleTick1": {
+      "cssVar": "--aries-astrolabe-ecliptic-scale-tick-1",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1",
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      },
+      "label": "Astrolabe ecliptic scale tick1",
+      "description": "Astrolabe ecliptic scale tick1 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticScaleTick10": {
+      "cssVar": "--aries-astrolabe-ecliptic-scale-tick-10",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "2.5",
+      "bounds": {
+        "min": 0.625,
+        "max": 7.5,
+        "step": 0.01
+      },
+      "label": "Astrolabe ecliptic scale tick10",
+      "description": "Astrolabe ecliptic scale tick10 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticScaleTick5": {
+      "cssVar": "--aries-astrolabe-ecliptic-scale-tick-5",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1.8",
+      "bounds": {
+        "min": 0.45,
+        "max": 5.4,
+        "step": 0.01
+      },
+      "label": "Astrolabe ecliptic scale tick5",
+      "description": "Astrolabe ecliptic scale tick5 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.eclipticScaleWeight": {
+      "cssVar": "--aries-astrolabe-ecliptic-scale-weight",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.8",
+      "bounds": {
+        "min": 0.2,
+        "max": 2.41,
+        "step": 0.01
+      },
+      "label": "Astrolabe ecliptic scale weight",
+      "description": "Astrolabe ecliptic scale weight design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.metric.equatorDashOff": {
       "cssVar": "--aries-astrolabe-equator-dash-off",
       "scope": "chart",
@@ -12706,94 +13381,6 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrolabe fine stroke min",
       "description": "Astrolabe fine stroke min design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrolabe.metric.infoFontDivisor": {
-      "cssVar": "--aries-astrolabe-info-font-divisor",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "16",
-      "bounds": {
-        "min": 8,
-        "max": 32,
-        "step": 1
-      },
-      "label": "Astrolabe info font divisor",
-      "description": "Astrolabe info font divisor design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrolabe.metric.infoFontScale": {
-      "cssVar": "--aries-astrolabe-info-font-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "0.75",
-      "bounds": {
-        "min": 0.1875,
-        "max": 2.25,
-        "step": 0.01
-      },
-      "label": "Astrolabe info font scale",
-      "description": "Astrolabe info font scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrolabe.metric.infoInsetDivisor": {
-      "cssVar": "--aries-astrolabe-info-inset-divisor",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "25",
-      "bounds": {
-        "min": 12,
-        "max": 50,
-        "step": 1
-      },
-      "label": "Astrolabe info inset divisor",
-      "description": "Astrolabe info inset divisor design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.astrolabe.metric.infoLineHeightScale": {
-      "cssVar": "--aries-astrolabe-info-line-height-scale",
-      "scope": "chart",
-      "type": "number",
-      "unit": "",
-      "default": "1.2",
-      "bounds": {
-        "min": 0.3,
-        "max": 3.6,
-        "step": 0.01
-      },
-      "label": "Astrolabe info line height scale",
-      "description": "Astrolabe info line height scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12935,19 +13522,41 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrolabe.metric.pdRowFontDivisor": {
-      "cssVar": "--aries-astrolabe-pd-row-font-divisor",
+    "renderer.astrolabe.metric.notchContactWidthScale": {
+      "cssVar": "--aries-astrolabe-notch-contact-width-scale",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "30",
+      "default": "2.4",
       "bounds": {
-        "min": 15,
-        "max": 60,
+        "min": 0.6,
+        "max": 7.2,
+        "step": 0.01
+      },
+      "label": "Astrolabe notch contact width scale",
+      "description": "Astrolabe notch contact width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.notchHalfLength": {
+      "cssVar": "--aries-astrolabe-notch-half-length",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "5px",
+      "bounds": {
+        "min": 0,
+        "max": 20,
         "step": 1
       },
-      "label": "Astrolabe pd row font divisor",
-      "description": "Astrolabe pd row font divisor design metric shared by every dependent paint and geometry path.",
+      "label": "Astrolabe notch half length",
+      "description": "Astrolabe notch half length design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12957,19 +13566,19 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrolabe.metric.pdRowHeightScale": {
-      "cssVar": "--aries-astrolabe-pd-row-height-scale",
+    "renderer.astrolabe.metric.notchRampEnd": {
+      "cssVar": "--aries-astrolabe-notch-ramp-end",
       "scope": "chart",
       "type": "number",
-      "unit": "",
-      "default": "1.3",
+      "unit": "px",
+      "default": "3px",
       "bounds": {
-        "min": 0.325,
-        "max": 3.91,
-        "step": 0.01
+        "min": 0,
+        "max": 16,
+        "step": 1
       },
-      "label": "Astrolabe pd row height scale",
-      "description": "Astrolabe pd row height scale design metric shared by every dependent paint and geometry path.",
+      "label": "Astrolabe notch ramp end",
+      "description": "Astrolabe notch ramp end design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -12979,19 +13588,85 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.astrolabe.metric.pdTokenGapScale": {
-      "cssVar": "--aries-astrolabe-pd-token-gap-scale",
+    "renderer.astrolabe.metric.notchRampStart": {
+      "cssVar": "--aries-astrolabe-notch-ramp-start",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "2px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      },
+      "label": "Astrolabe notch ramp start",
+      "description": "Astrolabe notch ramp start design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.notchWidthScale": {
+      "cssVar": "--aries-astrolabe-notch-width-scale",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "0.35",
+      "default": "1.6",
       "bounds": {
-        "min": 0.0875,
-        "max": 1.05,
+        "min": 0.4,
+        "max": 4.81,
         "step": 0.01
       },
-      "label": "Astrolabe pd token gap scale",
-      "description": "Astrolabe pd token gap scale design metric shared by every dependent paint and geometry path.",
+      "label": "Astrolabe notch width scale",
+      "description": "Astrolabe notch width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.notchZoomCap": {
+      "cssVar": "--aries-astrolabe-notch-zoom-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.8px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe notch zoom cap",
+      "description": "Astrolabe notch zoom cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.notchZoomExponent": {
+      "cssVar": "--aries-astrolabe-notch-zoom-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.3px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe notch zoom exponent",
+      "description": "Astrolabe notch zoom exponent design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -13006,14 +13681,190 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "18",
+      "default": "22.22",
       "bounds": {
-        "min": 9,
-        "max": 36,
-        "step": 1
+        "min": 11,
+        "max": 45,
+        "step": 0.1
       },
       "label": "Astrolabe planet font divisor",
       "description": "Astrolabe planet font divisor design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarAngleFontScale": {
+      "cssVar": "--aries-astrolabe-polar-angle-font-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.62",
+      "bounds": {
+        "min": 0.155,
+        "max": 1.86,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar angle font scale",
+      "description": "Astrolabe polar angle font scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarDivisionBandScale": {
+      "cssVar": "--aries-astrolabe-polar-division-band-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.018",
+      "bounds": {
+        "min": 0.0045,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar division band scale",
+      "description": "Astrolabe polar division band scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarDivisionOpacity": {
+      "cssVar": "--aries-astrolabe-polar-division-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.4",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar division opacity",
+      "description": "Astrolabe polar division opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarLaneGapScale": {
+      "cssVar": "--aries-astrolabe-polar-lane-gap-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.012",
+      "bounds": {
+        "min": 0.003,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar lane gap scale",
+      "description": "Astrolabe polar lane gap scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarLeaderOpacity": {
+      "cssVar": "--aries-astrolabe-polar-leader-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.72",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar leader opacity",
+      "description": "Astrolabe polar leader opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarRimFill": {
+      "cssVar": "--aries-astrolabe-polar-rim-fill",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.78",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar rim fill",
+      "description": "Astrolabe polar rim fill design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarRingFontScale": {
+      "cssVar": "--aries-astrolabe-polar-ring-font-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.5",
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar ring font scale",
+      "description": "Astrolabe polar ring font scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.polarStarLabelScale": {
+      "cssVar": "--aries-astrolabe-polar-star-label-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.62",
+      "bounds": {
+        "min": 0.155,
+        "max": 1.86,
+        "step": 0.01
+      },
+      "label": "Astrolabe polar star label scale",
+      "description": "Astrolabe polar star label scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -13155,15 +14006,81 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.metric.starBrightLimit": {
+      "cssVar": "--aries-astrolabe-star-bright-limit",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "2.5px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe star bright limit",
+      "description": "Astrolabe star bright limit design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.starFaintOpacity": {
+      "cssVar": "--aries-astrolabe-star-faint-opacity",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.35",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe star faint opacity",
+      "description": "Astrolabe star faint opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.starMagnitudeExponent": {
+      "cssVar": "--aries-astrolabe-star-magnitude-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.3px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe star magnitude exponent",
+      "description": "Astrolabe star magnitude exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.metric.starRadiusDivisor": {
       "cssVar": "--aries-astrolabe-star-radius-divisor",
       "scope": "chart",
       "type": "number",
       "unit": "",
-      "default": "360",
+      "default": "590",
       "bounds": {
-        "min": 180,
-        "max": 720,
+        "min": 295,
+        "max": 1180,
         "step": 1
       },
       "label": "Astrolabe star radius divisor",
@@ -13199,6 +14116,50 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
+    "renderer.astrolabe.metric.starScaleMax": {
+      "cssVar": "--aries-astrolabe-star-scale-max",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "1.6",
+      "bounds": {
+        "min": 0.4,
+        "max": 4.81,
+        "step": 0.01
+      },
+      "label": "Astrolabe star scale max",
+      "description": "Astrolabe star scale max design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.starScaleMin": {
+      "cssVar": "--aries-astrolabe-star-scale-min",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.3",
+      "bounds": {
+        "min": 0.075,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe star scale min",
+      "description": "Astrolabe star scale min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
     "renderer.astrolabe.metric.sunSphereScale": {
       "cssVar": "--aries-astrolabe-sun-sphere-scale",
       "scope": "chart",
@@ -13212,6 +14173,28 @@ _CATALOG = json.loads(r'''{
       },
       "label": "Astrolabe sun sphere scale",
       "description": "Astrolabe sun sphere scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.termBandScale": {
+      "cssVar": "--aries-astrolabe-term-band-scale",
+      "scope": "chart",
+      "type": "number",
+      "unit": "",
+      "default": "0.034",
+      "bounds": {
+        "min": 0.0085,
+        "max": 1,
+        "step": 0.01
+      },
+      "label": "Astrolabe term band scale",
+      "description": "Astrolabe term band scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "Astrolabe"
@@ -13287,19 +14270,305 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.ephemeris.curve.strokeLarge": {
-      "cssVar": "--aries-ephem-curve-width-large",
+    "renderer.astrolabe.metric.zoomGlyphCap": {
+      "cssVar": "--aries-astrolabe-zoom-glyph-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "2.5px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom glyph cap",
+      "description": "Astrolabe zoom glyph cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomGlyphExponent": {
+      "cssVar": "--aries-astrolabe-zoom-glyph-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.4px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom glyph exponent",
+      "description": "Astrolabe zoom glyph exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomHouseNumberCap": {
+      "cssVar": "--aries-astrolabe-zoom-house-number-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "2.6px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom house number cap",
+      "description": "Astrolabe zoom house number cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomHouseNumberExponent": {
+      "cssVar": "--aries-astrolabe-zoom-house-number-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.5px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom house number exponent",
+      "description": "Astrolabe zoom house number exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomLatticeFade": {
+      "cssVar": "--aries-astrolabe-zoom-lattice-fade",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.55px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom lattice fade",
+      "description": "Astrolabe zoom lattice fade design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomRampEnd": {
+      "cssVar": "--aries-astrolabe-zoom-ramp-end",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      },
+      "label": "Astrolabe zoom ramp end",
+      "description": "Astrolabe zoom ramp end design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomRampStart": {
+      "cssVar": "--aries-astrolabe-zoom-ramp-start",
       "scope": "chart",
       "type": "number",
       "unit": "px",
       "default": "2px",
       "bounds": {
-        "min": 1,
-        "max": 8,
+        "min": 0,
+        "max": 16,
         "step": 1
       },
-      "label": "Ephemeris curve stroke large",
-      "description": "Planet-curve stroke above the graphic-ephemeris curve breakpoint.",
+      "label": "Astrolabe zoom ramp start",
+      "description": "Astrolabe zoom ramp start design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomSphereCap": {
+      "cssVar": "--aries-astrolabe-zoom-sphere-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "4px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      },
+      "label": "Astrolabe zoom sphere cap",
+      "description": "Astrolabe zoom sphere cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomSphereExponent": {
+      "cssVar": "--aries-astrolabe-zoom-sphere-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.5px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom sphere exponent",
+      "description": "Astrolabe zoom sphere exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomStarCap": {
+      "cssVar": "--aries-astrolabe-zoom-star-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.6px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom star cap",
+      "description": "Astrolabe zoom star cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomStarExponent": {
+      "cssVar": "--aries-astrolabe-zoom-star-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.2px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom star exponent",
+      "description": "Astrolabe zoom star exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomStarLabelCap": {
+      "cssVar": "--aries-astrolabe-zoom-star-label-cap",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.3px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom star label cap",
+      "description": "Astrolabe zoom star label cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.astrolabe.metric.zoomStarLabelExponent": {
+      "cssVar": "--aries-astrolabe-zoom-star-label-exponent",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "0.12px",
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      },
+      "label": "Astrolabe zoom star label exponent",
+      "description": "Astrolabe zoom star label exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "variantApplicability": null
+    },
+    "renderer.ephemeris.curve.strokeInner": {
+      "cssVar": "--aries-ephem-curve-width-inner",
+      "scope": "chart",
+      "type": "number",
+      "unit": "px",
+      "default": "1.15px",
+      "bounds": {
+        "min": 1,
+        "max": 6,
+        "step": 0.25
+      },
+      "label": "Ephemeris inner curve stroke",
+      "description": "Planet-curve stroke for Mercury, Venus and Mars on the graphic ephemeris.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "graphic ephemeris Canvas",
@@ -13310,19 +14579,19 @@ _CATALOG = json.loads(r'''{
       ],
       "variantApplicability": null
     },
-    "renderer.ephemeris.curve.strokeSmall": {
-      "cssVar": "--aries-ephem-curve-width-small",
+    "renderer.ephemeris.curve.strokeOuter": {
+      "cssVar": "--aries-ephem-curve-width-outer",
       "scope": "chart",
       "type": "number",
       "unit": "px",
       "default": "1px",
       "bounds": {
-        "min": 1,
-        "max": 6,
-        "step": 1
+        "min": 0.5,
+        "max": 8,
+        "step": 0.25
       },
-      "label": "Ephemeris curve stroke small",
-      "description": "Planet-curve stroke below the graphic-ephemeris curve breakpoint.",
+      "label": "Ephemeris outer curve stroke",
+      "description": "Planet-curve stroke for Jupiter outward, Chiron and the nodes on the graphic ephemeris.",
       "tier": "renderer-metric",
       "affectedSurfaces": [
         "graphic ephemeris Canvas",
@@ -13384,11 +14653,11 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "4px",
+      "default": "1px",
       "bounds": {
-        "min": 1,
+        "min": 0.5,
         "max": 10,
-        "step": 1
+        "step": 0.25
       },
       "label": "Ephemeris frame stroke large",
       "description": "Frame stroke for large graphic-ephemeris canvases.",
@@ -13407,11 +14676,11 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "3px",
+      "default": "1px",
       "bounds": {
-        "min": 1,
+        "min": 0.5,
         "max": 9,
-        "step": 1
+        "step": 0.25
       },
       "label": "Ephemeris frame stroke medium",
       "description": "Frame stroke for medium graphic-ephemeris canvases.",
@@ -13430,11 +14699,11 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "2px",
+      "default": "1px",
       "bounds": {
-        "min": 1,
+        "min": 0.5,
         "max": 8,
-        "step": 1
+        "step": 0.25
       },
       "label": "Ephemeris frame stroke small",
       "description": "Frame stroke for small graphic-ephemeris canvases.",
@@ -13476,7 +14745,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "number",
       "unit": "px",
-      "default": "6px",
+      "default": "1px",
       "bounds": {
         "min": 1,
         "max": 16,
@@ -13501,9 +14770,9 @@ _CATALOG = json.loads(r'''{
       "unit": "px",
       "default": "1px",
       "bounds": {
-        "min": 1,
+        "min": 0.25,
         "max": 5,
-        "step": 1
+        "step": 0.25
       },
       "label": "Ephemeris grid stroke",
       "description": "Stroke width for graphic-ephemeris grid lines.",
@@ -13646,75 +14915,6 @@ _CATALOG = json.loads(r'''{
       ],
       "safetyNotes": [
         "Keep the retained header/hover UI usable at compact viewport sizes."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.ephemeris.station.stroke": {
-      "cssVar": "--aries-ephem-station-tick-line-width",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "1px",
-      "bounds": {
-        "min": 1,
-        "max": 5,
-        "step": 1
-      },
-      "label": "Ephemeris station stroke",
-      "description": "Stroke width for station marker ticks.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.ephemeris.station.tickMax": {
-      "cssVar": "--aries-ephem-station-tick-max",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "9px",
-      "bounds": {
-        "min": 4,
-        "max": 24,
-        "step": 1
-      },
-      "label": "Ephemeris station tick maximum",
-      "description": "Maximum half-length for a station marker tick.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
-      ],
-      "variantApplicability": null
-    },
-    "renderer.ephemeris.station.tickMin": {
-      "cssVar": "--aries-ephem-station-tick-min",
-      "scope": "chart",
-      "type": "number",
-      "unit": "px",
-      "default": "4px",
-      "bounds": {
-        "min": 2,
-        "max": 14,
-        "step": 1
-      },
-      "label": "Ephemeris station tick minimum",
-      "description": "Minimum half-length for a station marker tick.",
-      "tier": "renderer-metric",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
       ],
       "variantApplicability": null
     },
@@ -16251,7 +17451,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "var(--morinus-signs)",
+      "default": "currentColor",
       "bounds": null,
       "label": "Chart wheel decan glyph",
       "description": "Chart wheel decan glyph color resolved once for the complete renderer paint.",
@@ -16578,7 +17778,7 @@ _CATALOG = json.loads(r'''{
       "scope": "chart",
       "type": "color",
       "unit": "",
-      "default": "var(--morinus-signs)",
+      "default": "currentColor",
       "bounds": null,
       "label": "Chart wheel term glyph",
       "description": "Chart wheel term glyph color resolved once for the complete renderer paint.",
@@ -25187,16 +26387,8 @@ _CATALOG = json.loads(r'''{
       "id": "renderer.ephemeris.curve-width.order",
       "kind": "ascending",
       "tokens": [
-        "renderer.ephemeris.curve.strokeSmall",
-        "renderer.ephemeris.curve.strokeLarge"
-      ]
-    },
-    {
-      "id": "renderer.ephemeris.station-tick.range",
-      "kind": "ascending",
-      "tokens": [
-        "renderer.ephemeris.station.tickMin",
-        "renderer.ephemeris.station.tickMax"
+        "renderer.ephemeris.curve.strokeOuter",
+        "renderer.ephemeris.curve.strokeInner"
       ]
     },
     {
@@ -25319,7 +26511,6 @@ _CATALOG = json.loads(r'''{
       "kind": "ascending",
       "tokens": [
         "app.statusbar.lineBox",
-        "app.statusbar.actionSize",
         "app.statusbar.height"
       ]
     },
@@ -25394,6 +26585,14 @@ _CATALOG = json.loads(r'''{
       "tokens": [
         "renderer.astrocart.metric.mapAsterismStarRadiusMin",
         "renderer.astrocart.metric.mapAsterismStarRadiusMax"
+      ]
+    },
+    {
+      "id": "renderer.astrolabe.star-scale.range",
+      "kind": "ascending",
+      "tokens": [
+        "renderer.astrolabe.metric.starScaleMin",
+        "renderer.astrolabe.metric.starScaleMax"
       ]
     },
     {
@@ -25621,8 +26820,8 @@ _CATALOG = json.loads(r'''{
     "accent": "app.color.interactiveAccent",
     "background": "app.color.background",
     "borderSubtle": "app.color.borderSubtle",
-    "ephemCurveWidthLarge": "renderer.ephemeris.curve.strokeLarge",
-    "ephemCurveWidthSmall": "renderer.ephemeris.curve.strokeSmall",
+    "ephemCurveWidthInner": "renderer.ephemeris.curve.strokeInner",
+    "ephemCurveWidthOuter": "renderer.ephemeris.curve.strokeOuter",
     "ephemEventGlyphMax": "renderer.ephemeris.event.glyphMax",
     "ephemEventGlyphMin": "renderer.ephemeris.event.glyphMin",
     "ephemFrameWidthLarge": "renderer.ephemeris.frame.strokeLarge",
@@ -25637,9 +26836,6 @@ _CATALOG = json.loads(r'''{
     "ephemHoverPadX": "renderer.ephemeris.hover.paddingInline",
     "ephemHoverPadY": "renderer.ephemeris.hover.paddingBlock",
     "ephemStateFontSize": "renderer.ephemeris.state.fontSize",
-    "ephemStationTickLineWidth": "renderer.ephemeris.station.stroke",
-    "ephemStationTickMax": "renderer.ephemeris.station.tickMax",
-    "ephemStationTickMin": "renderer.ephemeris.station.tickMin",
     "fontSizeBase": "app.type.sizeBase",
     "fontSizeHeader": "app.type.sizeHeader",
     "fontSizeReading": "app.type.sizeReading",

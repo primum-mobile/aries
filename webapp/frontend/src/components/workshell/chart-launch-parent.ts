@@ -7,14 +7,7 @@ export function isChartLaunchParent(doc: WorkspaceDocument | null): boolean {
   return (
     doc?.kind === "radix" ||
     doc?.kind === "here-now" ||
-    (
-      doc?.kind === "supplementary" &&
-      (
-        doc.supplementaryFeatureKind !== undefined ||
-        doc.compoundKind === "composite_from_synastry" ||
-        doc.compoundKind === "synastry"
-      )
-    )
+    doc?.kind === "supplementary"
   );
 }
 

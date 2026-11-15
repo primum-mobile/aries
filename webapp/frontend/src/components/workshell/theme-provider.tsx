@@ -25,12 +25,13 @@ import {
   installAppMaterialStyleSheet,
 } from "@/lib/theme/app-material-runtime";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { useShallow } from "zustand/react/shallow";
 import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { syncThemeStateFromStorage, useThemeStore } from "@/stores/theme-store";
 import { useColorSettingsPreviewStore } from "@/stores/color-settings-preview-store";
-import { settingsColorPreviewMatchesTheme, withSettingsColorPreview } from "@/lib/chart/palette";
+import { settingsColorPreviewMatchesTheme, withSettingsColorPreview, withMinorDignityColors } from "@/lib/chart/palette";
 import { replaceThemeTokens, styleRevisionKey } from "@/lib/theme/style-state.mjs";
-import { revealMainWindow } from "@/lib/shell/main-window";
+import { revealMainWindow, syncMainWindowTheme } from "@/lib/shell/main-window";
 import { useLicenseStateStore } from "@/stores/license-state-store";
 import { resolveShellHost } from "@/lib/shell-host";
 import {
@@ -63,10 +64,39 @@ function pendingLegacyStyleMigration(): { raw: string; values: Record<string, un
 
 let installedMaterialSignature: string | null = null;
 
+/**
+ * Browser build: Safari tints its bars with `theme-color`, so it follows the
+ * active theme's title bar colour instead of the static boot fallback. The
+ * token is resolved through a probe so composite colours (var(), color-mix)
+ * reach the meta as one computed colour.
+ */
+function syncBrowserChromeColor(mode: "light" | "dark"): void {
+  if (resolveShellHost().kind !== "browser") return;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;width:0;height:0;visibility:hidden;background-color:var(--aries-titlebar-background)";
+  document.body.appendChild(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  const setMeta = (name: string, content: string) => {
+    let meta = document.head.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = name;
+      document.head.appendChild(meta);
+    }
+    meta.content = content;
+  };
+  if (color) setMeta("theme-color", color);
+  setMeta("color-scheme", mode);
+}
+
 function applyThemeToRoot(appearance: WindowThemeAppearance): void {
   const root = document.documentElement;
   const { appTokens, chartPalette, mode } = appearance;
-  replaceThemeTokens(root, { ...appTokens, ...chartPalette });
+  replaceThemeTokens(root, {
+    ...appTokens,
+    ...withMinorDignityColors(chartPalette, appearance.blendMinorDignities === true),
+  });
   root.style.colorScheme = mode;
   root.classList.toggle("dark", mode === "dark");
   root.classList.toggle("day", mode === "light");
@@ -94,7 +124,18 @@ function applyThemeToRoot(appearance: WindowThemeAppearance): void {
     }
     installedMaterialSignature = materialSignature;
   }
+  syncBrowserChromeColor(mode);
   root.dataset.themeReady = "ready";
+}
+
+function appAuthoringOverrides(
+  overrides: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [semanticId, value] of Object.entries(overrides)) {
+    if (semanticId.startsWith(APP_AUTHORING_OVERRIDE_PREFIX)) result[semanticId] = value;
+  }
+  return result;
 }
 
 export function ThemeProvider({ children, mainWindow = false }: { children: ReactNode; mainWindow?: boolean }) {
@@ -118,13 +159,15 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
   const styleLabBaseTheme = useChartStyleEditorStore(
     (state) => state.styleLabBaseTheme,
   );
+  // Content, not identity: a wheel geometry or chart-only edit rebuilds these
+  // maps without changing a value the app chrome reads, and must not restyle
+  // the document or publish to every window on each drag move.
   const styleLabCssOverrides = useChartStyleEditorStore(
-    (state) => state.cssOverrides,
+    useShallow((state) => state.cssOverrides),
   );
-  const styleLabSemanticOverrides = useChartStyleEditorStore(
-    (state) => state.resolvedOverrides,
+  const styleLabAppAuthoring = useChartStyleEditorStore(
+    useShallow((state) => appAuthoringOverrides(state.resolvedOverrides)),
   );
-  const styleLabRevision = useChartStyleEditorStore((state) => state.revision);
   const settingsColorPreview = useColorSettingsPreviewStore((state) => state.color);
 
   useEffect(() => {
@@ -316,11 +359,7 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
           },
           appAuthoring: {
             ...styleLabBaseTheme.appAuthoring,
-            ...Object.fromEntries(
-              Object.entries(styleLabSemanticOverrides).filter(([semanticId]) =>
-                semanticId.startsWith(APP_AUTHORING_OVERRIDE_PREFIX)
-              ),
-            ),
+            ...styleLabAppAuthoring,
           },
         } satisfies LiveThemePreview
       : undefined;
@@ -329,6 +368,8 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
       preview,
     );
     applyThemeToRoot(appearance);
+    // No-op until the startup reveal has set the native appearance.
+    if (mainWindow) syncMainWindowTheme();
     // Do not push yesterday's boot cache into already-mounted companions while
     // the main window is still reconciling its daemon theme and working draft.
     if (mainWindow && startupSettled) {
@@ -342,8 +383,7 @@ export function ThemeProvider({ children, mainWindow = false }: { children: Reac
     liveAppThemePreview,
     styleLabBaseTheme,
     styleLabCssOverrides,
-    styleLabRevision,
-    styleLabSemanticOverrides,
+    styleLabAppAuthoring,
     settingsColorPreview,
     theme,
   ]);

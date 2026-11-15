@@ -4,7 +4,7 @@ IDs retain their positions in the inherited mtexts tables; the other catalogs
 remain available to legacy code but are not release language choices.
 """
 
-RELEASE_LANG_IDS = (0, 3, 5, 2, 9)  # English, French, Spanish, Italian, German
+RELEASE_LANG_IDS = (0, 3, 5, 2, 9, 10, 11)  # English, French, Spanish, Italian, German, Japanese, Turkish
 
 
 def release_langid(value) -> int:

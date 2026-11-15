@@ -4,18 +4,21 @@
 "use client";
 
 import { acknowledgePaintedDocumentSnapshot } from "@/lib/chart/painted-snapshot-registry";
+import { resolveMinorDignityDecoration, triplicityColorRole } from "@/lib/chart/wheel-render-style";
 import { perfNow, recordChartPerf } from "@/lib/chart/perf";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
-import { CanvasDraw } from "@/lib/chart/canvas-draw";
-import { paintProjectedOuterRing, resolveProjectedOuterRing } from "@/lib/chart/draw-chart";
+import { CanvasDraw, paintTextMarker } from "@/lib/chart/canvas-draw";
+import { bundledGlyphInkBounds } from "@/lib/chart/chart-fonts";
+import { awaitFonts, chartFontsAreReady, paintProjectedOuterRing, resolveProjectedOuterRing } from "@/lib/chart/draw-chart";
 import { identityFrame } from "@/lib/chart/wheel-projection";
 import { resolveWheelGeometryPresetStyle } from "@/lib/chart/wheel-geometry-preset";
 import { DEFAULT_WHEEL_RENDER_STYLE, wheelTypographyProfileForTheme, type WheelRenderStyle } from "@/lib/chart/wheel-render-style";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import { resolveChartPaintTarget } from "@/lib/chart/outer-glyph-lane";
 import { ChartContextMenu } from "./chart-context-menu";
+import { InspectorValueSpans } from "./inspector-value-spans";
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import {
   registerChartExportRenderer,
@@ -263,12 +266,49 @@ function bodyLabelRuns(body: MundaneChartBody, fonts: FontSet) {
     : [{ text: body.glyph, font: body.glyphFont === "text" ? fonts.text : fonts.morinus, color: body.color }];
 }
 
+function bodyDecoration(
+  ctx: CanvasRenderingContext2D, body: MundaneChartBody, fonts: FontSet,
+  bounds: { x: number; y: number; w: number; h: number },
+  resolveColor?: ReturnType<typeof createResolvedSemanticChartColorResolver>,
+) {
+  const appearance = useThemeStore.getState().theme?.profileOverrides?.chartData;
+  if (!body.minorDignityCount || !(appearance?.showDignityGlyphs
+    || appearance?.showTermGlyphs || appearance?.showFaceGlyphs)) return;
+  const font = fonts.text.replace(/^[\d.]+px\s+/, "");
+  ctx.save(); ctx.font = body.glyphFont === "text" ? fonts.text : fonts.morinus;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  const ink = ctx.measureText(body.glyph); ctx.restore();
+  const glyphFont = body.glyphFont === "text" ? fonts.text : fonts.morinus;
+  const sourceInk = bundledGlyphInkBounds(body.glyph,
+    glyphFont.replace(/^[\d.]+px\s+/, ""), parseFloat(glyphFont));
+  return resolveMinorDignityDecoration(body,
+    { ...bounds, x: bounds.x + (sourceInk?.x ?? -(ink.actualBoundingBoxLeft || 0)),
+      w: sourceInk?.w ?? (ink.actualBoundingBoxLeft + ink.actualBoundingBoxRight || bounds.w),
+      h: sourceInk?.h ?? bounds.h }, parseFloat(fonts.morinus),
+    { font, dignityColor: resolveColor?.("--morinus-dignity-domicil", body.color) ?? body.color,
+      triplicityColor: resolveColor?.(triplicityColorRole(body.primaryTriplicityElement,
+        Boolean(appearance?.useZodiacElementColors)), body.color) ?? body.color,
+      measure: (text, size, markerFont, weight) => {
+        const sourceInk = bundledGlyphInkBounds(text, markerFont, size, weight);
+        if (sourceInk) return [sourceInk.w, sourceInk.h];
+        ctx.save();
+        ctx.font = `${weight ?? 400} ${Math.round(size)}px ${markerFont}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        const ink = ctx.measureText(text);
+        const measured: [number, number] = [ink.actualBoundingBoxLeft + ink.actualBoundingBoxRight,
+          ink.actualBoundingBoxAscent + ink.actualBoundingBoxDescent];
+        ctx.restore();
+        return measured;
+      } }, appearance ?? {});
+}
+
 function bodyTextSize(ctx: CanvasRenderingContext2D, body: MundaneChartBody, fonts: FontSet): [number, number] {
   let width = 0, height = 0;
   for (const run of bodyLabelRuns(body, fonts)) {
     const [w, h] = textSize(ctx, run.text, run.font);
-    width += w;
-    height = Math.max(height, h);
+    const decoration = run.text === body.glyph
+      ? bodyDecoration(ctx, body, fonts, { x: 0, y: 0, w, h }) : undefined;
+    width += decoration?.bounds.w ?? w;
+    height = Math.max(height, decoration?.bounds.h ?? h);
   }
   return [width, height];
 }
@@ -634,6 +674,7 @@ function drawPlanets(
   outer = false,
 ) {
   const colors = style.palette;
+  const resolveColor = createResolvedSemanticChartColorResolver();
   bodies.forEach((body) => {
     const shift = shifts.get(body.id) ?? 0;
     const box = bodyLabelRect(layout, body, bodyTextSize(ctx, body, fonts), radius, body.mundane + shift, style);
@@ -646,13 +687,19 @@ function drawPlanets(
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       const metrics = ctx.measureText(run.text);
-      const inkTop = box.y + (box.h - height) / 2;
+      const glyphRun = run.text === body.glyph;
+      const badge = glyphRun ? bodyDecoration(ctx, body, fonts,
+        { x: cursor, y: box.y, w: width, h: height })?.markers.length : undefined;
+      const inkTop = badge ? box.y : box.y + (box.h - height) / 2;
+      const outline = glyphRun ? bodyDecoration(ctx, body, fonts,
+        { x: cursor, y: inkTop, w: width, h: height }, resolveColor) : undefined;
       if (Number.isFinite(metrics.actualBoundingBoxAscent)) {
         ctx.fillText(run.text, cursor, inkTop + metrics.actualBoundingBoxAscent);
       } else {
         drawText(ctx, run.text, cursor, inkTop, run.font, run.color);
       }
-      cursor += width;
+      outline?.markers.forEach(marker => paintTextMarker(ctx, marker));
+      cursor += outline?.bounds.w ?? width;
     }
 
     if (body.motion) {
@@ -1088,6 +1135,9 @@ export function MundaneChartView({
     let cancelled = false;
     const draw = async () => {
       if (document.fonts?.status !== "loaded") await document.fonts?.ready;
+      if (!chartFontsAreReady(renderStyle.typography.fontUi, renderStyle.typography.fontSymbols)) {
+        await awaitFonts(renderStyle.typography.fontUi, renderStyle.typography.fontSymbols);
+      }
       if (cancelled || !canvasRef.current) return;
       const startedAt = perfNow();
       hoverTargetsRef.current = drawMundaneChart(
@@ -1160,6 +1210,7 @@ export function MundaneChartView({
   const surface = (
     <div
       ref={wrapRef}
+      data-aries-true-color=""
       className="font-morinus-text relative flex h-full w-full flex-1 min-h-0 min-w-0 items-center justify-center overflow-hidden bg-background"
       style={{ backgroundColor: renderStyle.palette.background }}
       onPointerMove={handlePointerMove}
@@ -1234,8 +1285,8 @@ function MundaneCornerLines({
       }}
     >
       <div className="flex flex-col">
-        {lines.map((line) => (
-          <div key={`${line}-${fontSize}`}>{line}</div>
+        {lines.map((line, index) => (
+          <div key={`${index}-${line}`}>{line}</div>
         ))}
       </div>
     </div>
@@ -1458,18 +1509,10 @@ function MundaneFlagRow({ row }: { row: InspectorFlagRow }) {
     <>
       <span className="whitespace-nowrap leading-tight text-foreground/45">{label}</span>
       {spans && spans.length > 0 ? (
-        <span className="whitespace-nowrap leading-tight text-foreground/85">
-          {spans.map((span, i) => (
-            <span
-              key={i}
-              style={{
-                color: semanticChartColor(span.colourRole, rgbCss(span.colour)),
-                fontFamily: span.glyph ? "var(--aries-font-symbols)" : undefined,
-              }}
-            >
-              {span.text}
-            </span>
-          ))}
+        <span className={spans.some((span) => span.wrapGroup !== undefined)
+          ? "min-w-0 whitespace-normal leading-tight text-foreground/85"
+          : "whitespace-nowrap leading-tight text-foreground/85"}>
+          <InspectorValueSpans spans={spans} />
         </span>
       ) : (
         <span

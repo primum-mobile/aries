@@ -29,12 +29,23 @@ const stepRefreshSource = await readFile(
   new URL("../src/components/workshell/step-refresh.ts", import.meta.url),
   "utf8",
 );
+
+test("a failed requested view cannot cache default singleton rows in its comparison world", async () => {
+  const panel = await readFile(
+    new URL("../src/components/workshell/aspect-list-panel.tsx", import.meta.url),
+    "utf8",
+  );
+  const load = panel.slice(panel.indexOf("const load = async () => {"), panel.indexOf("void load().catch"));
+  assert.match(load, /fetchAspectList\(documentId, requestedMode, controller\.signal\)/);
+  assert.equal((load.match(/fetchAspectList\(/g) ?? []).length, 1);
+  assert.doesNotMatch(load, /catch\s*\(/);
+});
 const stepRefreshJavascript = ts.transpileModule(stepRefreshSource, {
   compilerOptions: {
     module: ts.ModuleKind.ESNext,
     target: ts.ScriptTarget.ES2022,
   },
-}).outputText.replace(/^import \* as React from "react";\n/m, "");
+}).outputText.replace(/^import .*;\n/gm, "");
 const {
   advanceWorkspaceSemanticRefreshState,
   optionsTouchIds,

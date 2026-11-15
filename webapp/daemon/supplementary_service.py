@@ -12,6 +12,7 @@ surface the adapters expect.
 """
 from __future__ import annotations
 
+import copy
 import datetime
 import sys
 import threading
@@ -22,6 +23,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import default_location
+import chart
 import phasiscalc
 import moonphasejump
 import mtexts
@@ -89,6 +92,35 @@ PLANETARY_RETURN_BODY_NAMES = {
     6: "Saturn", 7: "Uranus", 8: "Neptune", 9: "Pluto",
 }
 
+def launch_location_binding(options, kind: str, binding_payload, radix):
+    """Capture the launch place once; explicit places always take precedence."""
+    payload = copy.deepcopy(binding_payload or {})
+    retained = dict(payload.get('retained_state') or {})
+    payload['retained_state'] = retained
+    prefix = 'physical_' if kind == 'converse-transits' else ''
+    place_key = prefix + 'place_payload'
+    if retained.get(place_key) is not None or retained.get('place') is not None:
+        return binding_payload
+    use_default = getattr(options, 'supplementary_location', 'radix') == 'default'
+    if use_default:
+        place = default_location.place_from_options(options)
+        clock = {
+            'cal': getattr(radix.time, 'cal', chart.Time.GREGORIAN),
+            'zt': chart.Time.ZONE,
+            'plus': bool(getattr(options, 'deflocplus', True)),
+            'zh': int(getattr(options, 'defloczhour', 0)),
+            'zm': int(getattr(options, 'defloczminute', 0)),
+            'daylight': bool(getattr(options, 'deflocdst', False)),
+            'tzid': str(getattr(options, 'defloctzid', '') or ''),
+            'tzauto': bool(getattr(options, 'defloctzauto', True)),
+        }
+    else:
+        place = radix.place
+        clock = {}
+    retained[place_key] = supplementary_adapter.place_to_payload(place)
+    retained.update({prefix + key: value for key, value in clock.items()})
+    return payload
+
 
 def normalize_public_kind(kind: str) -> str:
     if kind not in PUBLIC_TO_FEATURE_KIND:
@@ -143,6 +175,7 @@ class SupplementaryService:
             opts = chart_snapshot_service.options
             source_path = str(Path(source).expanduser()) if source else str(export_chart_json.DEFAULT_SOURCE)
             radix, _record = export_chart_json.load_chart(source_path, opts, name=source_name)
+            binding_payload = launch_location_binding(opts, kind, binding_payload, radix)
             result = self.build_result(
                 radix=radix,
                 kind=kind,

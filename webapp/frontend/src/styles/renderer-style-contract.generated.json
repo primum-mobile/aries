@@ -353,10 +353,14 @@
     {
       "match": [
         "--aries-astrolabe-almucantar",
+        "--aries-astrolabe-angle-label-scale",
+        "--aries-astrolabe-angle-tick-scale",
         "--aries-astrolabe-atmospheric-fill-opacity",
         "--aries-astrolabe-azimuth",
         "--aries-astrolabe-background",
         "--aries-astrolabe-band-width-scale",
+        "--aries-astrolabe-bare-ecliptic-tick-scale",
+        "--aries-astrolabe-bare-sign-glyph-scale",
         "--aries-astrolabe-body-label-pad-scale",
         "--aries-astrolabe-capricorn",
         "--aries-astrolabe-capricorn-dash-off",
@@ -371,7 +375,27 @@
         "--aries-astrolabe-connector-dash-off",
         "--aries-astrolabe-connector-dash-on",
         "--aries-astrolabe-connector-opacity",
+        "--aries-astrolabe-contact",
+        "--aries-astrolabe-contact-glow",
+        "--aries-astrolabe-contact-half-length",
+        "--aries-astrolabe-decan-band-scale",
+        "--aries-astrolabe-decan-boundary",
+        "--aries-astrolabe-declination",
+        "--aries-astrolabe-disk-fill-opacity",
+        "--aries-astrolabe-disk-outline-opacity",
+        "--aries-astrolabe-disk-threshold",
+        "--aries-astrolabe-division-glyph-min",
+        "--aries-astrolabe-division-glyph-scale",
+        "--aries-astrolabe-division-sign-share",
+        "--aries-astrolabe-earth",
         "--aries-astrolabe-ecliptic",
+        "--aries-astrolabe-ecliptic-band-box-degrees",
+        "--aries-astrolabe-ecliptic-band-tick-share",
+        "--aries-astrolabe-ecliptic-band-width-steps",
+        "--aries-astrolabe-ecliptic-scale-tick-1",
+        "--aries-astrolabe-ecliptic-scale-tick-10",
+        "--aries-astrolabe-ecliptic-scale-tick-5",
+        "--aries-astrolabe-ecliptic-scale-weight",
         "--aries-astrolabe-equator",
         "--aries-astrolabe-equator-dash-off",
         "--aries-astrolabe-equator-dash-on",
@@ -380,12 +404,6 @@
         "--aries-astrolabe-fine-stroke-min",
         "--aries-astrolabe-horizon",
         "--aries-astrolabe-hour",
-        "--aries-astrolabe-info-atmospheric",
-        "--aries-astrolabe-info-font-divisor",
-        "--aries-astrolabe-info-font-scale",
-        "--aries-astrolabe-info-inset-divisor",
-        "--aries-astrolabe-info-line-height-scale",
-        "--aries-astrolabe-info-schematic",
         "--aries-astrolabe-main-stroke-divisor",
         "--aries-astrolabe-main-stroke-min",
         "--aries-astrolabe-medium-stroke-divisor",
@@ -393,26 +411,63 @@
         "--aries-astrolabe-meridian",
         "--aries-astrolabe-meridian-dash-off",
         "--aries-astrolabe-meridian-dash-on",
-        "--aries-astrolabe-pd-row-font-divisor",
-        "--aries-astrolabe-pd-row-height-scale",
-        "--aries-astrolabe-pd-token-gap-scale",
+        "--aries-astrolabe-notch-contact-width-scale",
+        "--aries-astrolabe-notch-half-length",
+        "--aries-astrolabe-notch-ramp-end",
+        "--aries-astrolabe-notch-ramp-start",
+        "--aries-astrolabe-notch-width-scale",
+        "--aries-astrolabe-notch-zoom-cap",
+        "--aries-astrolabe-notch-zoom-exponent",
         "--aries-astrolabe-planet-font-divisor",
+        "--aries-astrolabe-polar-angle-font-scale",
+        "--aries-astrolabe-polar-division-band-scale",
+        "--aries-astrolabe-polar-division-opacity",
+        "--aries-astrolabe-polar-lane-gap-scale",
+        "--aries-astrolabe-polar-leader-opacity",
+        "--aries-astrolabe-polar-rim-fill",
+        "--aries-astrolabe-polar-ring-font-scale",
+        "--aries-astrolabe-polar-star-label-scale",
+        "--aries-astrolabe-prime-vertical",
         "--aries-astrolabe-regio",
         "--aries-astrolabe-regio-dash-off",
         "--aries-astrolabe-regio-dash-on",
+        "--aries-astrolabe-regio-zoomed",
         "--aries-astrolabe-sign-font-divisor",
         "--aries-astrolabe-sphere-outline-width",
         "--aries-astrolabe-sphere-radius-divisor",
         "--aries-astrolabe-sphere-radius-min",
         "--aries-astrolabe-star",
+        "--aries-astrolabe-star-bright-limit",
+        "--aries-astrolabe-star-faint",
+        "--aries-astrolabe-star-faint-opacity",
+        "--aries-astrolabe-star-magnitude-exponent",
         "--aries-astrolabe-star-radius-divisor",
         "--aries-astrolabe-star-radius-min",
+        "--aries-astrolabe-star-scale-max",
+        "--aries-astrolabe-star-scale-min",
+        "--aries-astrolabe-subdivision-glyph",
         "--aries-astrolabe-sun-fill",
         "--aries-astrolabe-sun-sphere-scale",
+        "--aries-astrolabe-term-band-scale",
+        "--aries-astrolabe-term-boundary",
+        "--aries-astrolabe-term-ring",
         "--aries-astrolabe-tick-step-scale",
         "--aries-astrolabe-tropic",
         "--aries-astrolabe-tropic-dash-off",
-        "--aries-astrolabe-tropic-dash-on"
+        "--aries-astrolabe-tropic-dash-on",
+        "--aries-astrolabe-zoom-glyph-cap",
+        "--aries-astrolabe-zoom-glyph-exponent",
+        "--aries-astrolabe-zoom-house-number-cap",
+        "--aries-astrolabe-zoom-house-number-exponent",
+        "--aries-astrolabe-zoom-lattice-fade",
+        "--aries-astrolabe-zoom-ramp-end",
+        "--aries-astrolabe-zoom-ramp-start",
+        "--aries-astrolabe-zoom-sphere-cap",
+        "--aries-astrolabe-zoom-sphere-exponent",
+        "--aries-astrolabe-zoom-star-cap",
+        "--aries-astrolabe-zoom-star-exponent",
+        "--aries-astrolabe-zoom-star-label-cap",
+        "--aries-astrolabe-zoom-star-label-exponent"
       ],
       "set": {
         "class": "public",
@@ -5462,6 +5517,50 @@
         "Review Astrolabe foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrolabe-angle-label-scale": {
+      "semanticId": "renderer.astrolabe.metric.angleLabelScale",
+      "label": "Astrolabe angle label scale",
+      "description": "Astrolabe angle label scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.angleLabelScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.175,
+        "max": 2.1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-angle-tick-scale": {
+      "semanticId": "renderer.astrolabe.metric.angleTickScale",
+      "label": "Astrolabe angle tick scale",
+      "description": "Astrolabe angle tick scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.angleTickScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.15,
+        "max": 1.8,
+        "step": 0.01
+      }
+    },
     "--aries-astrolabe-atmospheric-fill-opacity": {
       "semanticId": "renderer.astrolabe.metric.atmosphericFillOpacity",
       "label": "Astrolabe atmospheric fill opacity",
@@ -5537,6 +5636,50 @@
       "bounds": {
         "min": 0.03,
         "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-bare-ecliptic-tick-scale": {
+      "semanticId": "renderer.astrolabe.metric.bareEclipticTickScale",
+      "label": "Astrolabe bare ecliptic tick scale",
+      "description": "Astrolabe bare ecliptic tick scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.bareEclipticTickScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-bare-sign-glyph-scale": {
+      "semanticId": "renderer.astrolabe.metric.bareSignGlyphScale",
+      "label": "Astrolabe bare sign glyph scale",
+      "description": "Astrolabe bare sign glyph scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.bareSignGlyphScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
         "step": 0.01
       }
     },
@@ -5838,6 +5981,272 @@
         "step": 0.01
       }
     },
+    "--aries-astrolabe-contact": {
+      "semanticId": "renderer.astrolabe.color.contact",
+      "label": "Astrolabe contact",
+      "description": "Astrolabe contact color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.contact; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
+    "--aries-astrolabe-contact-glow": {
+      "semanticId": "renderer.astrolabe.metric.contactGlow",
+      "label": "Astrolabe contact glow",
+      "description": "Astrolabe contact glow design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.contactGlow; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-contact-half-length": {
+      "semanticId": "renderer.astrolabe.metric.contactHalfLength",
+      "label": "Astrolabe contact half length",
+      "description": "Astrolabe contact half length design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.contactHalfLength; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 160,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-decan-band-scale": {
+      "semanticId": "renderer.astrolabe.metric.decanBandScale",
+      "label": "Astrolabe decan band scale",
+      "description": "Astrolabe decan band scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.decanBandScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.0065,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-decan-boundary": {
+      "semanticId": "renderer.astrolabe.color.decanBoundary",
+      "label": "Astrolabe decan boundary",
+      "description": "Astrolabe decan boundary color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.decanBoundary; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
+    "--aries-astrolabe-declination": {
+      "semanticId": "renderer.astrolabe.color.declination",
+      "label": "Astrolabe declination",
+      "description": "Astrolabe declination color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.declination; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
+    "--aries-astrolabe-disk-fill-opacity": {
+      "semanticId": "renderer.astrolabe.metric.diskFillOpacity",
+      "label": "Astrolabe disk fill opacity",
+      "description": "Astrolabe disk fill opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.diskFillOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-disk-outline-opacity": {
+      "semanticId": "renderer.astrolabe.metric.diskOutlineOpacity",
+      "label": "Astrolabe disk outline opacity",
+      "description": "Astrolabe disk outline opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.diskOutlineOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-disk-threshold": {
+      "semanticId": "renderer.astrolabe.metric.diskThreshold",
+      "label": "Astrolabe disk threshold",
+      "description": "Astrolabe disk threshold design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.diskThreshold; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 3.6,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-division-glyph-min": {
+      "semanticId": "renderer.astrolabe.metric.divisionGlyphMin",
+      "label": "Astrolabe division glyph min",
+      "description": "Astrolabe division glyph min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.divisionGlyphMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-division-glyph-scale": {
+      "semanticId": "renderer.astrolabe.metric.divisionGlyphScale",
+      "label": "Astrolabe division glyph scale",
+      "description": "Astrolabe division glyph scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.divisionGlyphScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.18,
+        "max": 2.16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-division-sign-share": {
+      "semanticId": "renderer.astrolabe.metric.divisionSignShare",
+      "label": "Astrolabe division sign share",
+      "description": "Astrolabe division sign share design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.divisionSignShare; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-earth": {
+      "semanticId": "renderer.astrolabe.color.earth",
+      "label": "Astrolabe earth",
+      "description": "Astrolabe earth color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.earth; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
     "--aries-astrolabe-ecliptic": {
       "semanticId": "renderer.astrolabe.color.ecliptic",
       "label": "Astrolabe ecliptic",
@@ -5854,6 +6263,160 @@
       "safetyNotes": [
         "Review Astrolabe foreground/background contrast after changing this role."
       ]
+    },
+    "--aries-astrolabe-ecliptic-band-box-degrees": {
+      "semanticId": "renderer.astrolabe.metric.eclipticBandBoxDegrees",
+      "label": "Astrolabe ecliptic band box degrees",
+      "description": "Astrolabe ecliptic band box degrees design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticBandBoxDegrees; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-ecliptic-band-tick-share": {
+      "semanticId": "renderer.astrolabe.metric.eclipticBandTickShare",
+      "label": "Astrolabe ecliptic band tick share",
+      "description": "Astrolabe ecliptic band tick share design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticBandTickShare; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-ecliptic-band-width-steps": {
+      "semanticId": "renderer.astrolabe.metric.eclipticBandWidthSteps",
+      "label": "Astrolabe ecliptic band width steps",
+      "description": "Astrolabe ecliptic band width steps design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticBandWidthSteps; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 8,
+        "step": 0.25
+      }
+    },
+    "--aries-astrolabe-ecliptic-scale-tick-1": {
+      "semanticId": "renderer.astrolabe.metric.eclipticScaleTick1",
+      "label": "Astrolabe ecliptic scale tick1",
+      "description": "Astrolabe ecliptic scale tick1 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticScaleTick1; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.25,
+        "max": 3,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-ecliptic-scale-tick-10": {
+      "semanticId": "renderer.astrolabe.metric.eclipticScaleTick10",
+      "label": "Astrolabe ecliptic scale tick10",
+      "description": "Astrolabe ecliptic scale tick10 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticScaleTick10; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.625,
+        "max": 7.5,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-ecliptic-scale-tick-5": {
+      "semanticId": "renderer.astrolabe.metric.eclipticScaleTick5",
+      "label": "Astrolabe ecliptic scale tick5",
+      "description": "Astrolabe ecliptic scale tick5 design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticScaleTick5; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.45,
+        "max": 5.4,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-ecliptic-scale-weight": {
+      "semanticId": "renderer.astrolabe.metric.eclipticScaleWeight",
+      "label": "Astrolabe ecliptic scale weight",
+      "description": "Astrolabe ecliptic scale weight design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.eclipticScaleWeight; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.2,
+        "max": 2.41,
+        "step": 0.01
+      }
     },
     "--aries-astrolabe-equator": {
       "semanticId": "renderer.astrolabe.color.equator",
@@ -6002,128 +6565,6 @@
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
       "editTarget": "daemon style profile renderer.astrolabe.color.hour; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrolabe foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrolabe-info-atmospheric": {
-      "semanticId": "renderer.astrolabe.color.infoAtmospheric",
-      "label": "Astrolabe info atmospheric",
-      "description": "Astrolabe info atmospheric color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.color.infoAtmospheric; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Review Astrolabe foreground/background contrast after changing this role."
-      ]
-    },
-    "--aries-astrolabe-info-font-divisor": {
-      "semanticId": "renderer.astrolabe.metric.infoFontDivisor",
-      "label": "Astrolabe info font divisor",
-      "description": "Astrolabe info font divisor design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.infoFontDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "bounds": {
-        "min": 8,
-        "max": 32,
-        "step": 1
-      }
-    },
-    "--aries-astrolabe-info-font-scale": {
-      "semanticId": "renderer.astrolabe.metric.infoFontScale",
-      "label": "Astrolabe info font scale",
-      "description": "Astrolabe info font scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.infoFontScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.1875,
-        "max": 2.25,
-        "step": 0.01
-      }
-    },
-    "--aries-astrolabe-info-inset-divisor": {
-      "semanticId": "renderer.astrolabe.metric.infoInsetDivisor",
-      "label": "Astrolabe info inset divisor",
-      "description": "Astrolabe info inset divisor design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.infoInsetDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "bounds": {
-        "min": 12,
-        "max": 50,
-        "step": 1
-      }
-    },
-    "--aries-astrolabe-info-line-height-scale": {
-      "semanticId": "renderer.astrolabe.metric.infoLineHeightScale",
-      "label": "Astrolabe info line height scale",
-      "description": "Astrolabe info line height scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.infoLineHeightScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.3,
-        "max": 3.6,
-        "step": 0.01
-      }
-    },
-    "--aries-astrolabe-info-schematic": {
-      "semanticId": "renderer.astrolabe.color.infoSchematic",
-      "label": "Astrolabe info schematic",
-      "description": "Astrolabe info schematic color resolved once for the complete renderer paint.",
-      "tier": "renderer-palette",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.color.infoSchematic; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
         "Astrolabe"
       ],
@@ -6282,14 +6723,14 @@
         "step": 0.25
       }
     },
-    "--aries-astrolabe-pd-row-font-divisor": {
-      "semanticId": "renderer.astrolabe.metric.pdRowFontDivisor",
-      "label": "Astrolabe pd row font divisor",
-      "description": "Astrolabe pd row font divisor design metric shared by every dependent paint and geometry path.",
+    "--aries-astrolabe-notch-contact-width-scale": {
+      "semanticId": "renderer.astrolabe.metric.notchContactWidthScale",
+      "label": "Astrolabe notch contact width scale",
+      "description": "Astrolabe notch contact width scale design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.pdRowFontDivisor; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchContactWidthScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
         "Astrolabe"
       ],
@@ -6299,41 +6740,19 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 15,
-        "max": 60,
-        "step": 1
-      }
-    },
-    "--aries-astrolabe-pd-row-height-scale": {
-      "semanticId": "renderer.astrolabe.metric.pdRowHeightScale",
-      "label": "Astrolabe pd row height scale",
-      "description": "Astrolabe pd row height scale design metric shared by every dependent paint and geometry path.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.pdRowHeightScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
-      "affectedSurfaces": [
-        "Astrolabe"
-      ],
-      "inheritanceMode": "profile-overrides-css-fallback",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
-      ],
-      "bounds": {
-        "min": 0.325,
-        "max": 3.91,
+        "min": 0.6,
+        "max": 7.2,
         "step": 0.01
       }
     },
-    "--aries-astrolabe-pd-token-gap-scale": {
-      "semanticId": "renderer.astrolabe.metric.pdTokenGapScale",
-      "label": "Astrolabe pd token gap scale",
-      "description": "Astrolabe pd token gap scale design metric shared by every dependent paint and geometry path.",
+    "--aries-astrolabe-notch-half-length": {
+      "semanticId": "renderer.astrolabe.metric.notchHalfLength",
+      "label": "Astrolabe notch half length",
+      "description": "Astrolabe notch half length design metric shared by every dependent paint and geometry path.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "daemon-style-profile",
-      "editTarget": "daemon style profile renderer.astrolabe.metric.pdTokenGapScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchHalfLength; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
       "affectedSurfaces": [
         "Astrolabe"
       ],
@@ -6343,8 +6762,118 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 0.0875,
-        "max": 1.05,
+        "min": 0,
+        "max": 20,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-notch-ramp-end": {
+      "semanticId": "renderer.astrolabe.metric.notchRampEnd",
+      "label": "Astrolabe notch ramp end",
+      "description": "Astrolabe notch ramp end design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchRampEnd; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-notch-ramp-start": {
+      "semanticId": "renderer.astrolabe.metric.notchRampStart",
+      "label": "Astrolabe notch ramp start",
+      "description": "Astrolabe notch ramp start design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchRampStart; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-notch-width-scale": {
+      "semanticId": "renderer.astrolabe.metric.notchWidthScale",
+      "label": "Astrolabe notch width scale",
+      "description": "Astrolabe notch width scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchWidthScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.4,
+        "max": 4.81,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-notch-zoom-cap": {
+      "semanticId": "renderer.astrolabe.metric.notchZoomCap",
+      "label": "Astrolabe notch zoom cap",
+      "description": "Astrolabe notch zoom cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchZoomCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-notch-zoom-exponent": {
+      "semanticId": "renderer.astrolabe.metric.notchZoomExponent",
+      "label": "Astrolabe notch zoom exponent",
+      "description": "Astrolabe notch zoom exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.notchZoomExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
         "step": 0.01
       }
     },
@@ -6365,10 +6894,203 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 9,
-        "max": 36,
-        "step": 1
+        "min": 11,
+        "max": 45,
+        "step": 0.1
       }
+    },
+    "--aries-astrolabe-polar-angle-font-scale": {
+      "semanticId": "renderer.astrolabe.metric.polarAngleFontScale",
+      "label": "Astrolabe polar angle font scale",
+      "description": "Astrolabe polar angle font scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarAngleFontScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.155,
+        "max": 1.86,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-division-band-scale": {
+      "semanticId": "renderer.astrolabe.metric.polarDivisionBandScale",
+      "label": "Astrolabe polar division band scale",
+      "description": "Astrolabe polar division band scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarDivisionBandScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.0045,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-division-opacity": {
+      "semanticId": "renderer.astrolabe.metric.polarDivisionOpacity",
+      "label": "Astrolabe polar division opacity",
+      "description": "Astrolabe polar division opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarDivisionOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-lane-gap-scale": {
+      "semanticId": "renderer.astrolabe.metric.polarLaneGapScale",
+      "label": "Astrolabe polar lane gap scale",
+      "description": "Astrolabe polar lane gap scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarLaneGapScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.003,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-leader-opacity": {
+      "semanticId": "renderer.astrolabe.metric.polarLeaderOpacity",
+      "label": "Astrolabe polar leader opacity",
+      "description": "Astrolabe polar leader opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarLeaderOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-rim-fill": {
+      "semanticId": "renderer.astrolabe.metric.polarRimFill",
+      "label": "Astrolabe polar rim fill",
+      "description": "Astrolabe polar rim fill design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarRimFill; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-ring-font-scale": {
+      "semanticId": "renderer.astrolabe.metric.polarRingFontScale",
+      "label": "Astrolabe polar ring font scale",
+      "description": "Astrolabe polar ring font scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarRingFontScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.125,
+        "max": 1.5,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-polar-star-label-scale": {
+      "semanticId": "renderer.astrolabe.metric.polarStarLabelScale",
+      "label": "Astrolabe polar star label scale",
+      "description": "Astrolabe polar star label scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.polarStarLabelScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.155,
+        "max": 1.86,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-prime-vertical": {
+      "semanticId": "renderer.astrolabe.color.primeVertical",
+      "label": "Astrolabe prime vertical",
+      "description": "Astrolabe prime vertical color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.primeVertical; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
     },
     "--aries-astrolabe-regio": {
       "semanticId": "renderer.astrolabe.color.regio",
@@ -6430,6 +7152,23 @@
         "max": 8,
         "step": 0.25
       }
+    },
+    "--aries-astrolabe-regio-zoomed": {
+      "semanticId": "renderer.astrolabe.color.regioZoomed",
+      "label": "Astrolabe regio zoomed",
+      "description": "Astrolabe regio zoomed color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.regioZoomed; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
     },
     "--aries-astrolabe-sign-font-divisor": {
       "semanticId": "renderer.astrolabe.metric.signFontDivisor",
@@ -6536,6 +7275,89 @@
         "Review Astrolabe foreground/background contrast after changing this role."
       ]
     },
+    "--aries-astrolabe-star-bright-limit": {
+      "semanticId": "renderer.astrolabe.metric.starBrightLimit",
+      "label": "Astrolabe star bright limit",
+      "description": "Astrolabe star bright limit design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.starBrightLimit; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-star-faint": {
+      "semanticId": "renderer.astrolabe.color.starFaint",
+      "label": "Astrolabe star faint",
+      "description": "Astrolabe star faint color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.starFaint; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
+    "--aries-astrolabe-star-faint-opacity": {
+      "semanticId": "renderer.astrolabe.metric.starFaintOpacity",
+      "label": "Astrolabe star faint opacity",
+      "description": "Astrolabe star faint opacity design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.starFaintOpacity; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-star-magnitude-exponent": {
+      "semanticId": "renderer.astrolabe.metric.starMagnitudeExponent",
+      "label": "Astrolabe star magnitude exponent",
+      "description": "Astrolabe star magnitude exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.starMagnitudeExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
     "--aries-astrolabe-star-radius-divisor": {
       "semanticId": "renderer.astrolabe.metric.starRadiusDivisor",
       "label": "Astrolabe star radius divisor",
@@ -6553,8 +7375,8 @@
         "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
       ],
       "bounds": {
-        "min": 180,
-        "max": 720,
+        "min": 295,
+        "max": 1180,
         "step": 1
       }
     },
@@ -6579,6 +7401,67 @@
         "max": 8,
         "step": 0.5
       }
+    },
+    "--aries-astrolabe-star-scale-max": {
+      "semanticId": "renderer.astrolabe.metric.starScaleMax",
+      "label": "Astrolabe star scale max",
+      "description": "Astrolabe star scale max design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.starScaleMax; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.4,
+        "max": 4.81,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-star-scale-min": {
+      "semanticId": "renderer.astrolabe.metric.starScaleMin",
+      "label": "Astrolabe star scale min",
+      "description": "Astrolabe star scale min design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.starScaleMin; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.075,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-subdivision-glyph": {
+      "semanticId": "renderer.astrolabe.color.subdivisionGlyph",
+      "label": "Astrolabe subdivision glyph",
+      "description": "Astrolabe subdivision glyph color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.subdivisionGlyph; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
     },
     "--aries-astrolabe-sun-fill": {
       "semanticId": "renderer.astrolabe.color.sunFill",
@@ -6618,6 +7501,62 @@
         "max": 4.5,
         "step": 0.01
       }
+    },
+    "--aries-astrolabe-term-band-scale": {
+      "semanticId": "renderer.astrolabe.metric.termBandScale",
+      "label": "Astrolabe term band scale",
+      "description": "Astrolabe term band scale design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.termBandScale; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0.0085,
+        "max": 1,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-term-boundary": {
+      "semanticId": "renderer.astrolabe.color.termBoundary",
+      "label": "Astrolabe term boundary",
+      "description": "Astrolabe term boundary color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.termBoundary; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
+    },
+    "--aries-astrolabe-term-ring": {
+      "semanticId": "renderer.astrolabe.color.termRing",
+      "label": "Astrolabe term ring",
+      "description": "Astrolabe term ring color resolved once for the complete renderer paint.",
+      "tier": "renderer-palette",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.color.termRing; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Review Astrolabe foreground/background contrast after changing this role."
+      ]
     },
     "--aries-astrolabe-tick-step-scale": {
       "semanticId": "renderer.astrolabe.metric.tickStepScale",
@@ -6700,6 +7639,292 @@
         "min": 0.25,
         "max": 8,
         "step": 0.25
+      }
+    },
+    "--aries-astrolabe-zoom-glyph-cap": {
+      "semanticId": "renderer.astrolabe.metric.zoomGlyphCap",
+      "label": "Astrolabe zoom glyph cap",
+      "description": "Astrolabe zoom glyph cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomGlyphCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-glyph-exponent": {
+      "semanticId": "renderer.astrolabe.metric.zoomGlyphExponent",
+      "label": "Astrolabe zoom glyph exponent",
+      "description": "Astrolabe zoom glyph exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomGlyphExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-house-number-cap": {
+      "semanticId": "renderer.astrolabe.metric.zoomHouseNumberCap",
+      "label": "Astrolabe zoom house number cap",
+      "description": "Astrolabe zoom house number cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomHouseNumberCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-house-number-exponent": {
+      "semanticId": "renderer.astrolabe.metric.zoomHouseNumberExponent",
+      "label": "Astrolabe zoom house number exponent",
+      "description": "Astrolabe zoom house number exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomHouseNumberExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-lattice-fade": {
+      "semanticId": "renderer.astrolabe.metric.zoomLatticeFade",
+      "label": "Astrolabe zoom lattice fade",
+      "description": "Astrolabe zoom lattice fade design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomLatticeFade; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-ramp-end": {
+      "semanticId": "renderer.astrolabe.metric.zoomRampEnd",
+      "label": "Astrolabe zoom ramp end",
+      "description": "Astrolabe zoom ramp end design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomRampEnd; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-zoom-ramp-start": {
+      "semanticId": "renderer.astrolabe.metric.zoomRampStart",
+      "label": "Astrolabe zoom ramp start",
+      "description": "Astrolabe zoom ramp start design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomRampStart; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-zoom-sphere-cap": {
+      "semanticId": "renderer.astrolabe.metric.zoomSphereCap",
+      "label": "Astrolabe zoom sphere cap",
+      "description": "Astrolabe zoom sphere cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomSphereCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 1
+      }
+    },
+    "--aries-astrolabe-zoom-sphere-exponent": {
+      "semanticId": "renderer.astrolabe.metric.zoomSphereExponent",
+      "label": "Astrolabe zoom sphere exponent",
+      "description": "Astrolabe zoom sphere exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomSphereExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-star-cap": {
+      "semanticId": "renderer.astrolabe.metric.zoomStarCap",
+      "label": "Astrolabe zoom star cap",
+      "description": "Astrolabe zoom star cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomStarCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-star-exponent": {
+      "semanticId": "renderer.astrolabe.metric.zoomStarExponent",
+      "label": "Astrolabe zoom star exponent",
+      "description": "Astrolabe zoom star exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomStarExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-star-label-cap": {
+      "semanticId": "renderer.astrolabe.metric.zoomStarLabelCap",
+      "label": "Astrolabe zoom star label cap",
+      "description": "Astrolabe zoom star label cap design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomStarLabelCap; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
+      }
+    },
+    "--aries-astrolabe-zoom-star-label-exponent": {
+      "semanticId": "renderer.astrolabe.metric.zoomStarLabelExponent",
+      "label": "Astrolabe zoom star label exponent",
+      "description": "Astrolabe zoom star label exponent design metric shared by every dependent paint and geometry path.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "daemon-style-profile",
+      "editTarget": "daemon style profile renderer.astrolabe.metric.zoomStarLabelExponent; fallback webapp/frontend/src/lib/chart/astrolabe-render-style.ts",
+      "affectedSurfaces": [
+        "Astrolabe"
+      ],
+      "inheritanceMode": "profile-overrides-css-fallback",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the recorded safe bounds and run the Astrolabe renderer parity tests."
+      ],
+      "bounds": {
+        "min": 0,
+        "max": 16,
+        "step": 0.01
       }
     },
     "--aries-mundane-ascmc-medium-width": {
@@ -16712,6 +17937,15 @@
         "--aries-astrocart-map-asterism-star-radius-max"
       ],
       "description": "Astrocartography minimum does not exceed its maximum."
+    },
+    {
+      "id": "renderer.astrolabe.star-scale.range",
+      "kind": "ascending",
+      "tokens": [
+        "--aries-astrolabe-star-scale-min",
+        "--aries-astrolabe-star-scale-max"
+      ],
+      "description": "Astrolabe minimum does not exceed its maximum."
     },
     {
       "id": "renderer.sphere.body-font.range",

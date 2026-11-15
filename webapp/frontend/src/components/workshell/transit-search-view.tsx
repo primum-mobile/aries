@@ -3,6 +3,8 @@
 
 "use client";
 
+import { formatTableDegrees } from "@/lib/table/angle-precision";
+import { TablePrecisionChoices, useTablePrecision } from "./table-precision-menu";
 import * as React from "react";
 
 import { ArrowDown, ArrowUp, Clipboard, ListFilter, Search, Settings2, X } from "lucide-react";
@@ -58,6 +60,7 @@ import {
   type TransitSearchCatalog,
   type TransitSearchMotionFilter,
   type TransitSearchProgressResult,
+  type TransitSearchCursorState,
   type TransitSearchRequest,
   type TransitSearchTechnique,
   type TransitSearchObject,
@@ -148,6 +151,13 @@ type SearchRangeStream = {
   coverageFrom: string;
   coverageTo: string;
   exhaustedNext: boolean;
+  // A narrow query can cover decades while the wider retained source covers
+  // only weeks. Never promote that coverage to unsearched combinations.
+  facetCoverage?: Record<string, { coverageFrom: string; coverageTo: string }>;
+  queryCoverage?: SearchQueryCoverageProof[];
+};
+type SearchQueryCoverageProof = Omit<SearchRangeStream, "facetCoverage" | "queryCoverage"> & {
+  queryForm: SearchForm;
 };
 type RetainedSearchDeltaPlan = {
   universeForm: SearchForm;
@@ -158,6 +168,7 @@ type RetainedSearchDeltaPlan = {
 };
 type SearchObjectFilterAnchor = {
   rowKey: string;
+  eventDate: string;
   eventJd: number | null;
   sourceIndex: number;
   withinRowOffset: number;
@@ -275,6 +286,15 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   const [catalogOptionsSeq, setCatalogOptionsSeq] = React.useState(() => (initialCache ? optionsSeq : -1));
   const [catalogLoading, setCatalogLoading] = React.useState(false);
   const [searchLoading, setSearchLoading] = React.useState(false);
+  const [searchProgress, setSearchProgress] = React.useState<TransitSearchCursorState | null>(null);
+  const [invalidDateDrafts, setInvalidDateDrafts] = React.useState({ from: false, to: false });
+  const datesReady = !invalidDateDrafts.from && !invalidDateDrafts.to;
+  const setFromDateValidity = React.useCallback((valid: boolean) => {
+    setInvalidDateDrafts((current) => current.from === !valid ? current : { ...current, from: !valid });
+  }, []);
+  const setToDateValidity = React.useCallback((valid: boolean) => {
+    setInvalidDateDrafts((current) => current.to === !valid ? current : { ...current, to: !valid });
+  }, []);
   const [error, setError] = React.useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = React.useState(initialCache?.ui?.settingsOpen ?? false);
   const [filtersOpen, setFiltersOpen] = React.useState(initialCache?.ui?.filtersOpen ?? true);
@@ -301,8 +321,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     : "");
   const lastCatalogContextKeyRef = React.useRef("");
   const searchScrollerRef = React.useRef<HTMLDivElement | null>(null);
+  const searchRowHeightRef = React.useRef(28);
   const retainedScrollTopRef = React.useRef(initialCache?.ui?.scrollTop ?? 0);
   const objectFilterAnchorRef = React.useRef<SearchObjectFilterAnchor | null>(null);
+  const preserveSearchViewportRef = React.useRef<() => void>(() => undefined);
   const applyTimedChartOpenResult = useWorkspaceStore((s) => s.applyTimedChartOpenResult);
   const showRadix = useWorkspaceStore((s) => s.timedChartShowRadix);
 
@@ -322,15 +344,30 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   React.useEffect(() => {
     catalogRef.current = catalog;
   }, [catalog]);
-  React.useEffect(() => {
-    formRef.current = form;
-  }, [form]);
-  React.useEffect(() => {
-    rangeStreamRef.current = rangeStream;
-  }, [rangeStream]);
-  React.useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
+  const synchronizeSearchForm = React.useCallback((nextForm: SearchForm | null) => {
+    const previousForm = formRef.current;
+    formRef.current = nextForm;
+    if (previousForm && nextForm && JSON.stringify(searchSemanticQuery(previousForm)) === JSON.stringify(searchSemanticQuery(nextForm))) return;
+    // A retained projection can need no replacement request. Stop the old
+    // producer on intent anyway, before the debounced auto-search decision.
+    lastAutoRequestKeyRef.current = "";
+    searchRequestSeqRef.current += 1;
+    const sessionId = currentSearchSessionRef.current;
+    currentSearchSessionRef.current = null;
+    if (sessionId) void cancelTransitSearch(sessionId).catch(() => undefined);
+    searchControllerRef.current?.abort();
+    searchControllerRef.current = null;
+    rangeExtendControllerRef.current?.abort();
+    rangeExtendControllerRef.current = null;
+    rangeExtendInFlightRef.current = false;
+    setSearchLoading(false);
+    setSearchProgress(null);
+    setEdgeCheckNonce((value) => value + 1);
+  }, []);
+  React.useLayoutEffect(() => {
+    synchronizeSearchForm(datesReady ? form : null);
+  }, [datesReady, form, synchronizeSearchForm]);
+
   React.useEffect(() => {
     if (!catalog || !form) return;
     rememberSearchState({ optionsSeq, catalog, form, rows, summary, timeDisplay, rangeStream });
@@ -397,7 +434,12 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       const controller = new AbortController();
       searchControllerRef.current = controller;
       setSearchLoading(true);
+      setSearchProgress(null);
       setError(null);
+      const retainedStream = rangeStreamRef.current;
+      const retainedRows = retainedStream?.coverageTo ? rowsRef.current : EMPTY_SEARCH_ROWS;
+      const displayForm = options?.displayForm ?? nextForm;
+      const hasRetainedViewport = projectCoveredSearchRows(rowsRef.current, displayForm, retainedStream).length > 0;
       const seed = searchSeedRange(nextForm.fromDate, nextForm.toDate);
       const nextRangeStream = seed
         ? {
@@ -410,8 +452,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
             exhaustedNext: false,
           }
         : null;
-      rangeStreamRef.current = nextRangeStream;
-      setRangeStream(nextRangeStream);
+      if (!retainedStream?.coverageTo) {
+        rangeStreamRef.current = nextRangeStream;
+        setRangeStream(nextRangeStream);
+      }
       const request: TransitSearchRequest = {
         ...buildRequest(nextForm, options?.persistSettings ?? true),
         ...(seed
@@ -429,31 +473,67 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       };
       let lastProgressKey = "";
       let swappedRangeRows = false;
+      let startedSessionId = "";
+      let progressSessionId: string | null = null;
+      let preparedRows: TransitSearchRow[] = [];
+      let preparedCoverageTo = "";
+      let preparedCoverageStartJdUt: number | undefined;
       const applyProgress = (result: TransitSearchProgressResult) => {
         if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) return;
+        if (result.sessionId && result.sessionId !== progressSessionId) return;
         if (result.error) {
           throw new Error(result.error);
         }
+        if (result.cancelled || result.truncated) return;
+        const previousPreparedRowCount = preparedRows.length;
+        preparedRows = mergeSearchStreamRows(preparedRows, result.rows);
+        const incomingCursor = result.cursor;
+        if (preparedCoverageStartJdUt === undefined && incomingCursor?.coverageStartJdUt !== undefined) {
+          preparedCoverageStartJdUt = incomingCursor.coverageStartJdUt;
+        }
+        if (incomingCursor?.coverageTo && incomingCursor.coverageTo > preparedCoverageTo) {
+          preparedCoverageTo = incomingCursor.coverageTo;
+        }
+        const cursor = incomingCursor ? {
+          ...incomingCursor, coverageFrom: seed?.fromDate ?? incomingCursor.coverageFrom,
+          coverageTo: preparedCoverageTo,
+          coverageStartJdUt: preparedCoverageStartJdUt ?? incomingCursor.coverageStartJdUt,
+          rowCount: preparedRows.length, newRows: preparedRows.length - previousPreparedRowCount,
+        } : undefined;
+        if (cursor) setSearchProgress((current) =>
+          !controller.signal.aborted && searchRequestSeqRef.current === requestSeq ? cursor : current);
         if (result.rows.length === 0 && !result.cursor && !result.complete) return;
-        if (!swappedRangeRows && !searchCursorPayloadReadyForSwap(result)) return;
+        preserveSearchViewportRef.current();
+        const anchorDate = objectFilterAnchorRef.current?.eventDate;
+        const retainedCoverage = searchActiveRangeStream(retainedStream, displayForm);
+        const needsAnchorCoverage = hasRetainedViewport && anchorDate
+          && anchorDate >= displayForm.fromDate && anchorDate <= displayForm.toDate
+          && (!retainedCoverage || retainedCoverage.coverageTo < anchorDate);
+        const adequateRows = searchCursorPayloadReadyForSwap(result, !hasRetainedViewport)
+          || preparedRows.length >= SEARCH_INITIAL_MIN_ROWS;
+        const coversWarmViewport = !needsAnchorCoverage || (cursor && cursor.coverageTo >= anchorDate
+          && (cursor.exhaustedNext || projectTransitSearchRows(preparedRows, displayForm)
+            .filter((row) => row.eventDate >= anchorDate).length
+            >= searchViewportRowCount(searchScrollerRef.current, searchRowHeightRef.current)));
+        if (!swappedRangeRows && (!adequateRows || !coversWarmViewport)) return;
         const progressKey = [
           result.phase,
-          result.rows.length,
+          preparedRows.length,
           result.truncated ? "1" : "0",
           result.complete ? "1" : "0",
           result.summary,
           result.timeDisplay?.columnLabel ?? "",
           result.timeDisplay?.offsetsMinutes.join(",") ?? "",
-          result.cursor?.coverageFrom ?? "",
-          result.cursor?.coverageTo ?? "",
+          cursor?.coverageFrom ?? "",
+          cursor?.coverageTo ?? "",
         ].join(":");
         if (progressKey === lastProgressKey) return;
         lastProgressKey = progressKey;
         const nextTimeDisplay = result.timeDisplay ?? catalogRef.current?.timeDisplay ?? null;
-        const nextRows = normalizeSearchStreamRows(result.rows);
-        const cursor = result.cursor;
+        const nextRows = mergeSearchStreamRows(retainedRows, preparedRows);
+        const nextRowKeys = new Set(nextRows.map((row) => row.key));
         const stream = cursor
-          ? {
+          ? retainSearchQueryCoverage(rangeStreamRef.current, {
               queryKey: searchRangeQueryKey(nextForm),
               queryForm: nextForm,
               rangeFrom: cursor.rangeFrom,
@@ -461,20 +541,20 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               coverageFrom: cursor.coverageFrom,
               coverageTo: cursor.coverageTo,
               exhaustedNext: cursor.exhaustedNext,
-            }
+            })
           : nextRangeStream;
+        rowsRef.current = nextRows;
         rangeStreamRef.current = stream;
         React.startTransition(() => {
           setRows((current) => (
             searchRequestSeqRef.current === requestSeq ? nextRows : current
           ));
-          setSelectedRowKeys((current) => (
-            searchRequestSeqRef.current === requestSeq ? new Set() : current
-          ));
+          setSelectedRowKeys((current) => searchRequestSeqRef.current === requestSeq
+            ? new Set([...current].filter((key) => nextRowKeys.has(key)))
+            : current);
           setSummary((current) => {
             if (searchRequestSeqRef.current !== requestSeq) return current;
-            if (!options?.displayForm) return result.summary;
-            const visibleCount = projectTransitSearchRows(nextRows, options.displayForm).length;
+            const visibleCount = projectCoveredSearchRows(nextRows, displayForm, stream).length;
             return t("search.resultCount").replace("{count}", String(visibleCount));
           });
           setTimeDisplay((current) => (
@@ -488,23 +568,39 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           swappedRangeRows = true;
           requestAnimationFrame(() => {
             const scroller = searchScrollerRef.current;
-            if (!scroller || controller.signal.aborted) return;
+            if (!scroller || controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) return;
+            if (hasRetainedViewport) return;
             scroller.scrollTop = 0;
             scroller.dispatchEvent(new Event(SEARCH_VIRTUAL_SCROLL_SYNC_EVENT));
           });
         }
       };
       const startPromise = startSearchRequest(request, controller.signal);
-      let startedSessionId = "";
       void startPromise
         .then(async (initial) => {
-          if (controller.signal.aborted) {
-            void cancelTransitSearch(initial.sessionId).catch(() => undefined);
-            return;
+          let current = initial;
+          while (true) {
+            if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) {
+              void cancelTransitSearch(current.sessionId).catch(() => undefined);
+              return;
+            }
+            startedSessionId = current.sessionId;
+            progressSessionId = current.sessionId;
+            currentSearchSessionRef.current = current.sessionId;
+            const final = await followTransitSearchProgress(current, controller.signal, applyProgress);
+            progressSessionId = null;
+            if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq
+              || final.cancelled || final.truncated || swappedRangeRows || !hasRetainedViewport
+              || !preparedCoverageTo || preparedCoverageTo >= nextForm.toDate) return;
+            const following = nextIsoDate(preparedCoverageTo);
+            const nextSeed = following ? searchSeedRange(following, nextForm.toDate) : null;
+            if (!nextSeed) return;
+            current = await startSearchRequest({
+              ...request, persistSettings: false,
+              fromDate: nextSeed.fromDate, toDate: nextSeed.toDate,
+              cursorAnchorDate: nextSeed.fromDate,
+            }, controller.signal);
           }
-          startedSessionId = initial.sessionId;
-          currentSearchSessionRef.current = initial.sessionId;
-          await followTransitSearchProgress(initial, controller.signal, applyProgress);
         })
         .catch((err) => {
           if (
@@ -560,178 +656,37 @@ export function TransitSearchView(props: TransitSearchViewProps) {
 
   const extendRetainedSearchUniverse = React.useCallback(
     (activeForm: SearchForm, plan: RetainedSearchDeltaPlan) => {
-      const current = rangeStreamRef.current;
-      if (
-        !current?.coverageFrom
-        || !current.coverageTo
-        || (plan.deltaForms.length === 0 && plan.rangeForms.length === 0)
-      ) {
-        return false;
-      }
-      const requestSeq = searchRequestSeqRef.current + 1;
-      searchRequestSeqRef.current = requestSeq;
-      const previousSessionId = currentSearchSessionRef.current;
-      if (previousSessionId) {
-        currentSearchSessionRef.current = null;
-        void cancelTransitSearch(previousSessionId).catch(() => undefined);
-      }
-      searchControllerRef.current?.abort();
-      rangeExtendControllerRef.current?.abort();
-      rangeExtendControllerRef.current = null;
-      rangeExtendInFlightRef.current = false;
-      const controller = new AbortController();
-      searchControllerRef.current = controller;
-      setSearchLoading(true);
-      setError(null);
+      if (!rangeStreamRef.current?.coverageTo
+        || (plan.deltaForms.length === 0 && plan.rangeForms.length === 0)) return false;
+      // A new facet is a separate certified query world. Solve only the active
+      // demand; revisiting an older world keeps its rows and coverage proof.
       saveSettings(activeForm);
-
-      const load = async () => {
-        let mergedRows = rowsRef.current;
-        let nextTimeDisplay = catalogRef.current?.timeDisplay ?? null;
-        let prependedCoverageTo = "";
-        const slices = [
-          ...plan.deltaForms.map((deltaForm) => ({
-            form: deltaForm,
-            fromDate: current.coverageFrom,
-            toDate: current.coverageTo,
-            fillEntireSlice: true,
-          })),
-          ...plan.rangeForms.map((rangeForm) => ({
-            form: rangeForm,
-            fromDate: rangeForm.fromDate,
-            toDate: rangeForm.toDate,
-            fillEntireSlice: false,
-          })),
-        ];
-        for (const slice of slices) {
-          let nextFrom = slice.fromDate;
-          while (nextFrom <= slice.toDate) {
-            if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) return;
-            const seed = searchSeedRange(nextFrom, slice.toDate);
-            if (!seed) break;
-            const request: TransitSearchRequest = {
-              ...buildRequest(slice.form, false),
-              fromDate: seed.fromDate,
-              toDate: seed.toDate,
-              ownerScope: "search:range",
-              cursorDirection: "next",
-              cursorRowBudget: slice.fillEntireSlice ? 500 : SEARCH_INITIAL_MIN_ROWS,
-              cursorAnchorDate: seed.fromDate,
-              cursorRangeFrom: slice.fromDate,
-              cursorRangeTo: slice.toDate,
-            };
-            const initial = await startSearchRequest(request, controller.signal);
-            if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) {
-              void cancelTransitSearch(initial.sessionId).catch(() => undefined);
-              return;
-            }
-            currentSearchSessionRef.current = initial.sessionId;
-            const final = await followTransitSearchProgress(
-              initial,
-              controller.signal,
-              (result) => {
-                if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) return;
-                if (result.error) throw new Error(result.error);
-                mergedRows = mergeSearchStreamRows(mergedRows, result.rows);
-                nextTimeDisplay = result.timeDisplay ?? nextTimeDisplay;
-              },
-            );
-            if (final.error) throw new Error(final.error);
-            const coverageTo = final.cursor?.coverageTo ?? slice.toDate;
-            if (!slice.fillEntireSlice) {
-              prependedCoverageTo = coverageTo;
-              break;
-            }
-            if (coverageTo >= slice.toDate || final.cursor?.exhaustedNext) break;
-            const following = nextIsoDate(coverageTo);
-            if (!following || following <= nextFrom) break;
-            nextFrom = following;
-          }
-        }
-        if (controller.signal.aborted || searchRequestSeqRef.current !== requestSeq) return;
-        const nextStream: SearchRangeStream = {
-          ...current,
-          queryKey: searchRangeQueryKey(plan.universeForm),
-          queryForm: plan.universeForm,
-          rangeFrom: plan.universeForm.fromDate,
-          rangeTo: plan.universeForm.toDate,
-          coverageFrom: plan.extendsRangeBefore
-            ? plan.universeForm.fromDate
-            : current.coverageFrom,
-          coverageTo: plan.extendsRangeBefore && prependedCoverageTo
-            ? prependedCoverageTo
-            : current.coverageTo,
-          exhaustedNext: plan.extendsRangeAfter ? false : current.exhaustedNext,
-        };
-        rowsRef.current = mergedRows;
-        rangeStreamRef.current = nextStream;
-        React.startTransition(() => {
-          setRows(mergedRows);
-          setSummary(t("search.resultCount").replace(
-            "{count}",
-            String(projectTransitSearchRows(mergedRows, activeForm).length),
-          ));
-          setTimeDisplay(nextTimeDisplay);
-          setRangeStream(nextStream);
-        });
-      };
-
-      void load()
-        .catch((err) => {
-          if (
-            (err as { name?: string }).name === "AbortError"
-            || searchRequestSeqRef.current !== requestSeq
-          ) return;
-          setError((err as Error).message);
-        })
-        .finally(() => {
-          if (searchControllerRef.current === controller) {
-            setSearchLoading(false);
-          }
-          const sessionId = currentSearchSessionRef.current;
-          if (sessionId) {
-            currentSearchSessionRef.current = null;
-          }
-        });
+      executeSearch(retainedSearchSourceForm(activeForm), {
+        persistSettings: false,
+        displayForm: activeForm,
+      });
       return true;
     },
-    [buildRequest, saveSettings, startSearchRequest, t],
+    [executeSearch, saveSettings],
   );
 
   const refreshRetainedSearch = React.useCallback(
     (activeForm: SearchForm, options?: { persistSettings?: boolean }) => {
+      synchronizeSearchForm(activeForm);
       const currentStream = rangeStreamRef.current;
-      const sourceForm = currentStream?.queryForm ?? null;
-      if (sourceForm && currentStream && retainedSearchNeedsRangeReplacement(currentStream, activeForm)) {
-        if (options?.persistSettings ?? true) saveSettings(activeForm);
-        executeSearch(retainedSearchSourceForm(activeForm), {
-          persistSettings: false,
-          displayForm: activeForm,
-        });
-        return;
-      }
-      const plan = retainedSearchDeltaPlan(sourceForm, activeForm);
-      if (plan && plan.deltaForms.length === 0 && plan.rangeForms.length === 0) {
+      const activeStream = searchActiveRangeStream(currentStream, activeForm);
+      if (activeStream?.coverageTo
+        && activeStream.coverageFrom <= activeForm.fromDate
+        && activeStream.coverageTo >= activeForm.fromDate) {
         if (options?.persistSettings ?? true) saveSettings(activeForm);
         setSummary(t("search.resultCount").replace(
-          "{count}",
-          String(projectTransitSearchRows(rowsRef.current, activeForm).length),
+          "{count}", String(projectTransitSearchRows(rowsRef.current, activeForm).length),
         ));
-        const current = rangeStreamRef.current;
-        if (current && searchRangeQueryKey(current.queryForm ?? activeForm) !== searchRangeQueryKey(plan.universeForm)) {
-          const nextStream: SearchRangeStream = {
-            ...current,
-            queryKey: searchRangeQueryKey(plan.universeForm),
-            queryForm: plan.universeForm,
-            rangeFrom: plan.universeForm.fromDate,
-            rangeTo: plan.universeForm.toDate,
-            exhaustedNext: plan.extendsRangeAfter ? false : current.exhaustedNext,
-          };
-          rangeStreamRef.current = nextStream;
-          setRangeStream(nextStream);
-        }
+        setRows(rowsRef.current);
+        setRangeStream(currentStream);
         return;
       }
+      const plan = retainedSearchDeltaPlan(currentStream?.queryForm ?? null, activeForm);
       if (plan && extendRetainedSearchUniverse(activeForm, plan)) return;
       if (options?.persistSettings ?? true) saveSettings(activeForm);
       executeSearch(retainedSearchSourceForm(activeForm), {
@@ -739,7 +694,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         displayForm: activeForm,
       });
     },
-    [executeSearch, extendRetainedSearchUniverse, saveSettings, t],
+    [executeSearch, extendRetainedSearchUniverse, saveSettings, synchronizeSearchForm, t],
   );
 
   React.useEffect(() => {
@@ -764,15 +719,22 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         rangeStreamRef.current = cached.rangeStream ?? null;
         setCatalog(cached.catalog);
         setForm(cached.form);
+        rowsRef.current = cached.rows;
         setRows(cached.rows);
         setRangeStream(cached.rangeStream ?? null);
         setSummary(cached.summary);
         const cachedTimeDisplay = cached.timeDisplay ?? cached.catalog.timeDisplay ?? null;
         setTimeDisplay(cachedTimeDisplay);
       } else {
-        formRef.current = null;
+        const sameContext = lastCatalogContextKeyRef.current === catalogContextKey;
+        if (!sameContext) {
+          formRef.current = null;
+          rowsRef.current = [];
+          setRows([]);
+        }
+        // New semantic options invalidate coverage, while current-context
+        // selections and rows remain available until the replacement is ready.
         rangeStreamRef.current = null;
-        setRows([]);
         setRangeStream(null);
         setTimeDisplay(null);
         setSummary(catalogOptionsSeq === optionsSeq ? t("search.noResults") : t("search.updatingSearch"));
@@ -793,6 +755,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     promise
       .then((data) => {
         if (controller.signal.aborted) return;
+        setCatalogLoading(false);
         const workbenchRange = data.defaults.hasSavedState
           && data.defaults.workbenchFromDate
           && data.defaults.workbenchToDate
@@ -855,10 +818,12 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         }
       })
       .catch((err) => {
-        if ((err as { name?: string }).name === "AbortError") return;
+        if (controller.signal.aborted || (err as { name?: string }).name === "AbortError") return;
         setError((err as Error).message);
       })
-      .finally(() => setCatalogLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setCatalogLoading(false);
+      });
     return () => controller.abort();
   }, [
     catalogContextKey,
@@ -889,7 +854,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   }, []);
 
   React.useEffect(() => {
-    if (!catalog || !form) return;
+    if (!catalog || !form || !datesReady) return;
     if (catalogOptionsSeq !== optionsSeq) return;
     const key = buildAutoRequestKey({
       contextMode,
@@ -912,6 +877,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     return () => window.clearTimeout(timer);
   }, [
     catalog,
+    datesReady,
     catalogOptionsSeq,
     contextMode,
     customPointsKey,
@@ -960,10 +926,14 @@ export function TransitSearchView(props: TransitSearchViewProps) {
 
   const layoutPreset = useListLayoutPreset();
   const searchRowHeight = useListRowHeight("dense");
+  const activeRangeStream = React.useMemo(
+    () => form ? searchActiveRangeStream(rangeStream, form) : null,
+    [form, rangeStream],
+  );
   const sortedSourceRows = React.useMemo(() => sortTransitSearchRows(rows, sort), [rows, sort]);
   const sortedRows = React.useMemo(
-    () => projectTransitSearchRows(sortedSourceRows, form),
-    [form, sortedSourceRows],
+    () => projectCoveredSearchRows(sortedSourceRows, form, rangeStream),
+    [form, rangeStream, sortedSourceRows],
   );
 
   const prepareObjectFilterChange = React.useCallback(() => {
@@ -979,11 +949,16 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     const row = sortedRows[sourceIndex];
     objectFilterAnchorRef.current = {
       rowKey: row.key,
+      eventDate: row.eventDate,
       eventJd: row.eventJd,
       sourceIndex,
       withinRowOffset: scroller.scrollTop - sourceIndex * searchRowHeight,
     };
   }, [searchRowHeight, sortedRows]);
+  React.useLayoutEffect(() => {
+    searchRowHeightRef.current = searchRowHeight;
+    preserveSearchViewportRef.current = prepareObjectFilterChange;
+  }, [prepareObjectFilterChange, searchRowHeight]);
 
   const updateForm = React.useCallback((patch: Partial<SearchForm>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -1229,21 +1204,15 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     const value = Number((form?.fromDate ?? "").slice(0, 4));
     return Number.isFinite(value) && value > 0 ? value : new Date().getFullYear();
   }, [form?.fromDate]);
-  const activeRangeStream = React.useMemo(
-    () =>
-      rangeStream
-      && form
-      && retainedSearchSourceCoversForm(rangeStream.queryForm ?? form, form)
-        ? rangeStream
-        : null,
-    [form, rangeStream],
-  );
   const extendRange = React.useCallback(
     (direction: "previous" | "next") => {
-      if (direction !== "next" || !form || rangeExtendInFlightRef.current) return;
-      const current = rangeStreamRef.current;
+      if (direction !== "next" || !form || !datesReady || !canRunSearch(form) || rangeExtendInFlightRef.current) return;
+      const source = rangeStreamRef.current;
+      const current = searchActiveRangeStream(source, form);
       if (
-        !current
+        !source
+        || searchLoading
+        || !current
         || current.exhaustedNext
         || !current.coverageTo
         || !retainedSearchSourceCoversForm(current.queryForm ?? form, form)
@@ -1257,8 +1226,10 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       rangeExtendInFlightRef.current = true;
       rangeExtendControllerRef.current = controller;
       setSearchLoading(true);
+      setSearchProgress(null);
       setError(null);
       const sourceForm = current.queryForm ?? form;
+      const requestSeq = searchRequestSeqRef.current;
       const request: TransitSearchRequest = {
         ...buildRequest(sourceForm, false),
         fromDate: seed.fromDate,
@@ -1275,27 +1246,30 @@ export function TransitSearchView(props: TransitSearchViewProps) {
       };
       let startedSessionId = "";
       const applyProgress = (result: TransitSearchProgressResult) => {
-        if (controller.signal.aborted || result.cancelled) return;
+        if (controller.signal.aborted || result.cancelled || searchRequestSeqRef.current !== requestSeq) return;
         if (result.error) throw new Error(result.error);
-        if (!result.cursor) return;
+        if (!result.cursor || result.truncated) return;
+        setSearchProgress((current) =>
+          !controller.signal.aborted && searchRequestSeqRef.current === requestSeq ? result.cursor ?? current : current);
         const live = rangeStreamRef.current;
-        if (!live || live.queryKey !== current.queryKey) return;
+        if (!live || live.queryKey !== source.queryKey) return;
+        if (!formRef.current || searchRangeQueryKey(retainedSearchSourceForm(formRef.current)) !== current.queryKey) {
+          controller.abort();
+          return;
+        }
         const nextRows = mergeSearchStreamRows(rowsRef.current, result.rows);
-        const nextStream: SearchRangeStream = {
-          ...live,
-          coverageFrom: live.coverageFrom || result.cursor.coverageFrom,
-          coverageTo: result.cursor.coverageTo,
-          exhaustedNext: result.cursor.coverageTo >= live.rangeTo
-            ? result.cursor.exhaustedNext
-            : false,
-        };
+        const nextStream = mergeSearchRangeCoverage(live, current, result.cursor.coverageTo);
+        preserveSearchViewportRef.current();
         rowsRef.current = nextRows;
         rangeStreamRef.current = nextStream;
         React.startTransition(() => {
-          setRows(nextRows);
-          setSummary(t("search.resultCount").replace("{count}", String(nextRows.length)));
-          setTimeDisplay(result.timeDisplay ?? catalogRef.current?.timeDisplay ?? null);
-          setRangeStream(nextStream);
+          const isCurrent = () => !controller.signal.aborted && searchRequestSeqRef.current === requestSeq;
+          setRows((currentRows) => isCurrent() ? nextRows : currentRows);
+          setSummary((currentSummary) => isCurrent() ? t("search.resultCount").replace(
+            "{count}", String(projectTransitSearchRows(nextRows, formRef.current).length),
+          ) : currentSummary);
+          setTimeDisplay((currentDisplay) => isCurrent() ? result.timeDisplay ?? catalogRef.current?.timeDisplay ?? null : currentDisplay);
+          setRangeStream((currentStream) => isCurrent() ? nextStream : currentStream);
         });
       };
 
@@ -1306,10 +1280,11 @@ export function TransitSearchView(props: TransitSearchViewProps) {
             return;
           }
           startedSessionId = initial.sessionId;
+          currentSearchSessionRef.current = initial.sessionId;
           await followTransitSearchProgress(initial, controller.signal, applyProgress);
         })
         .catch((err) => {
-          if ((err as { name?: string }).name === "AbortError") return;
+          if ((err as { name?: string }).name === "AbortError" || searchRequestSeqRef.current !== requestSeq) return;
           setError((err as Error).message);
         })
         .finally(() => {
@@ -1322,9 +1297,12 @@ export function TransitSearchView(props: TransitSearchViewProps) {
           if (controller.signal.aborted && startedSessionId) {
             void cancelTransitSearch(startedSessionId).catch(() => undefined);
           }
+          if (currentSearchSessionRef.current === startedSessionId) {
+            currentSearchSessionRef.current = null;
+          }
         });
     },
-    [buildRequest, form, searchRowHeight, startSearchRequest, t],
+    [buildRequest, datesReady, form, searchLoading, searchRowHeight, startSearchRequest, t],
   );
   useFixedRowHeightAnchor(searchScrollerRef, sortedRows.length, searchRowHeight, {
     syncEvent: SEARCH_VIRTUAL_SCROLL_SYNC_EVENT,
@@ -1374,11 +1352,16 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     canExtendForward: Boolean(
       activeRangeStream
       && form
+      && datesReady
+      && canRunSearch(form)
+      && !searchLoading
+      && !error
       && activeRangeStream.coverageTo < form.toDate
       && !activeRangeStream.exhaustedNext
     ),
     onExtend: extendRange,
     recheckToken: edgeCheckNonce,
+    fillViewport: true,
   });
   const sourceQueryForm = rangeStream?.queryForm ?? form;
   const visibleColumns = React.useMemo(
@@ -1466,22 +1449,29 @@ export function TransitSearchView(props: TransitSearchViewProps) {
     );
   }
 
-  const canSearch = canRunSearch(form);
+  const canSearch = datesReady && canRunSearch(form);
   const dateConvention = coerceDateConvention(catalog.dateConvention);
-  const rangeStatus = activeRangeStream
-    ? activeRangeStream.exhaustedNext
+  const statusStream = searchLoading && searchProgress ? searchProgress : activeRangeStream;
+  const rangeStatus = statusStream
+    ? statusStream.exhaustedNext
       ? t("search.rangeComplete")
-      : activeRangeStream.coverageTo
+      : statusStream.coverageTo
         ? t("search.rangeLoadedThrough").replace(
             "{date}",
-            formatIsoDateDisplay(activeRangeStream.coverageTo, dateConvention),
+            formatIsoDateDisplay(statusStream.coverageTo, dateConvention),
           )
         : t("search.computing")
     : "";
   const projectedSummary = sortedRows.length === rows.length
     ? summary
     : t("search.resultCount").replace("{count}", String(sortedRows.length));
-  const displayedSummary = rangeStatus ? `${projectedSummary} · ${rangeStatus}` : projectedSummary;
+  const validDateRange = datesReady && searchDatesValid(form);
+  const searchStatus = !validDateRange
+    ? t("search.searchPausedInvalidDates")
+    : searchLoading
+      ? t("search.searchingStatus").replace("{count}", String(sortedRows.length))
+      : projectedSummary;
+  const displayedSummary = validDateRange && rangeStatus ? `${searchStatus} · ${rangeStatus}` : searchStatus;
   const paneSeedGlyph = props.mode === "context" ? (props.glyph ?? "") : "";
   const paneSeedLabel = props.mode === "context" ? (props.label ?? "") : "";
   const seedGlyph = catalog.initialSignificatorGlyph || paneSeedGlyph;
@@ -1510,7 +1500,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         onLunationOrbChange={changeLunationOrb}
       />
       <SelectionGroup
-        title={t("search.promissors")}
+        title={t("search.fromPoints")}
         selected={form.promittorIds}
         items={promittors}
         compact
@@ -1528,7 +1518,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
         ]}
       />
       <SelectionGroup
-        title={t("search.significators")}
+        title={t("search.toPoints")}
         selected={form.significatorIds}
         items={builtinSignificators}
         compact
@@ -1591,8 +1581,13 @@ export function TransitSearchView(props: TransitSearchViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background">
       <div className="grid gap-[var(--aries-control-gap)] border-b border-border px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]">
-        <div className="aries-search-panel-heading break-words text-sm">
-          {radixName || sourceName || catalog.sourceName}
+        <div className="flex items-center justify-between gap-[var(--aries-control-gap)]">
+          <div className="aries-search-panel-heading break-words text-sm">
+            {radixName || sourceName || catalog.sourceName}
+          </div>
+          {searchLoading ? <span className="shrink-0 aries-list-secondary-text text-muted-foreground">
+            <LoadingLabel label={t("search.searching")} />
+          </span> : null}
         </div>
         <div className="flex min-w-0 items-end gap-[var(--aries-control-gap)]">
           {onClose ? (
@@ -1612,12 +1607,14 @@ export function TransitSearchView(props: TransitSearchViewProps) {
               label={t("search.from")}
               value={form.fromDate}
               convention={dateConvention}
+              onValidityChange={setFromDateValidity}
               onChange={(fromDate) => updateForm({ fromDate })}
             />
             <DateField
               label={t("search.to")}
               value={form.toDate}
               convention={dateConvention}
+              onValidityChange={setToDateValidity}
               onChange={(toDate) => updateForm({ toDate })}
             />
           </div>
@@ -1640,8 +1637,8 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                 {seedLabel ? <span className="max-w-20 truncate">{seedLabel}</span> : null}
               </span>
             ) : null}
-            <span className="shrink-0 whitespace-nowrap">
-              {searchLoading ? <LoadingLabel label={rows.length > 0 ? displayedSummary : t("search.computing")} /> : displayedSummary}
+            <span className="min-w-0 flex-1 truncate" role="status" aria-live="polite" aria-atomic="true" title={displayedSummary}>
+              {displayedSummary}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-[var(--aries-control-gap-compact)]">
@@ -1760,7 +1757,7 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                   {error}
                 </div>
               ) : null}
-              <div ref={searchScrollerRef} className="aries-search-results-scroller flex-1 min-h-0 overflow-auto">
+              <div ref={searchScrollerRef} aria-busy={searchLoading || catalogLoading} className="aries-search-results-scroller flex-1 min-h-0 overflow-auto">
                 <table
                   className={cn(LIST_ROLE_CLASSES.dense, "border-collapse leading-tight", tableResize.tableClassName)}
                   style={tableResize.tableStyle}
@@ -1807,8 +1804,9 @@ export function TransitSearchView(props: TransitSearchViewProps) {
                   <VirtualizedSearchRows
                     rows={sortedRows}
                     loading={searchLoading}
-                    emptyLabel={t("search.noResultsSetRange")}
-                    loadingLabel={t("search.searching")}
+                    emptyLabel={validDateRange ? t("search.noResultsSetRange") : t("search.searchPausedInvalidDates")}
+                    loadingLabel={t("search.searchingEmpty")}
+                    loadingHint={t("search.searchingEmptyHint")}
                     colSpan={visibleColumns.length}
                     scrollerRef={searchScrollerRef}
                     rowHeight={searchRowHeight}
@@ -1956,6 +1954,7 @@ function VirtualizedSearchRows({
   loading,
   emptyLabel,
   loadingLabel,
+  loadingHint,
   colSpan,
   scrollerRef,
   rowHeight,
@@ -1965,6 +1964,7 @@ function VirtualizedSearchRows({
   loading: boolean;
   emptyLabel: string;
   loadingLabel: string;
+  loadingHint: string;
   colSpan: number;
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   rowHeight: number;
@@ -1980,8 +1980,12 @@ function VirtualizedSearchRows({
           <td
             className="px-[var(--aries-control-padding-x-compact)] py-[var(--aries-pane-title-gap)] text-center text-muted-foreground"
             colSpan={colSpan}
+            style={{ height: Math.max(rowHeight * 6, virtual.viewportHeight) }}
           >
-            {loading ? <LoadingLabel label={loadingLabel} /> : emptyLabel}
+            <div className="flex h-full flex-col items-center justify-center gap-[var(--aries-control-gap)]">
+              <span>{loading ? <LoadingLabel label={loadingLabel} /> : emptyLabel}</span>
+              {loading ? <span className="aries-list-secondary-text">{loadingHint}</span> : null}
+            </div>
           </td>
         </tr>
       </tbody>
@@ -2094,6 +2098,7 @@ function useSearchVirtualRows(
         endIndex: 0,
         paddingTop: 0,
         paddingBottom: 0,
+        viewportHeight: viewport.height,
       };
     }
     const visibleCount = Math.max(1, Math.ceil(viewport.height / rowHeight));
@@ -2117,6 +2122,7 @@ function useSearchVirtualRows(
       endIndex,
       paddingTop: startIndex * rowHeight,
       paddingBottom: (rowCount - endIndex) * rowHeight,
+      viewportHeight: viewport.height,
     };
   }, [rowCount, rowHeight, viewport.height, viewport.scrollTop]);
 }
@@ -2206,11 +2212,13 @@ function DateField({
   value,
   convention,
   onChange,
+  onValidityChange,
 }: {
   label: string;
   value: string;
   convention: DateConvention;
   onChange: (value: string) => void;
+  onValidityChange: (valid: boolean) => void;
 }) {
   const formatValue = React.useCallback(
     (nextValue: string) => formatIsoDateDisplay(nextValue, convention),
@@ -2224,11 +2232,16 @@ function DateField({
     const input = inputRef.current;
     if (!input || document.activeElement === input) return;
     setDraft(formattedValue);
-  }, [formattedValue]);
+    onValidityChange(true);
+  }, [formattedValue, onValidityChange]);
 
   const commitInput = React.useCallback(
     (nextDraft: string, reformat: boolean) => {
-      const iso = parseDateDisplayInput(nextDraft, convention);
+      // Partial years/months commit only on blur or Enter so typing a full
+      // date does not fire an intermediate search for 1 January.
+      const iso = parseDateDisplayInput(nextDraft, convention, { partial: reformat });
+      const partialValid = !reformat && Boolean(parseDateDisplayInput(nextDraft, convention, { partial: true }));
+      onValidityChange(Boolean(iso) || reformat || partialValid);
       if (iso) {
         if (iso !== value) onChange(iso);
         if (reformat) setDraft(formatValue(iso));
@@ -2237,7 +2250,7 @@ function DateField({
       if (reformat) setDraft(formattedValue);
       return false;
     },
-    [convention, formatValue, formattedValue, onChange, value],
+    [convention, formatValue, formattedValue, onChange, onValidityChange, value],
   );
 
   return (
@@ -2995,7 +3008,11 @@ function SegmentToken({
 }
 
 function LongitudeValue({ display }: { display: SearchDisplay }) {
-  const degreeText = stringValue(display.degree_text);
+  const precision = useTablePrecision();
+  const longitude = typeof display.display_longitude === "number" && Number.isFinite(display.display_longitude)
+    ? Math.min(display.display_longitude % 30, 30 - 1 / 3600)
+    : null;
+  const degreeText = longitude === null ? stringValue(display.degree_text) : formatTableDegrees(longitude, precision);
   const signGlyph = stringValue(display.sign_glyph);
   const signColor = semanticChartColor(
     stringValue(display.sign_color_role),
@@ -3004,7 +3021,7 @@ function LongitudeValue({ display }: { display: SearchDisplay }) {
   if (degreeText && signGlyph) {
     return (
       <span className="inline-flex items-center gap-[var(--aries-control-gap-compact)]">
-        <span>{degreeText}</span>
+        <span title={longitude === null ? undefined : formatTableDegrees(longitude, "seconds")}>{degreeText}</span>
         <Glyph ch={signGlyph} className="aries-search-sign-glyph shrink-0" color={signColor} />
       </span>
     );
@@ -3098,6 +3115,8 @@ function SearchRowContextMenu({
           <ContextMenuItem disabled={icsDisabled} onClick={exportIcs}>
             {t("search.exportSelectedToIcs")}
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <TablePrecisionChoices />
         </ContextMenuContent>
       ) : null}
     </ContextMenu>
@@ -3322,10 +3341,10 @@ function uniqueIds(ids: string[]): string[] {
 
 function searchRangeQueryKey(form: SearchForm): string {
   return JSON.stringify({
-    techniques: form.techniques,
-    promittorIds: form.promittorIds,
-    significatorIds: form.significatorIds,
-    aspects: form.aspects,
+    techniques: [...form.techniques].sort(),
+    promittorIds: [...form.promittorIds].sort(),
+    significatorIds: [...form.significatorIds].sort(),
+    aspects: [...form.aspects].sort(),
     includeSignChanges: form.includeSignChanges,
     promittorMotion: form.promittorMotion,
     significatorMotion: form.significatorMotion,
@@ -3333,6 +3352,136 @@ function searchRangeQueryKey(form: SearchForm): string {
     lunationOrb: form.lunationOrb,
     partFilter: form.partFilter,
   });
+}
+
+function searchCoverageProofs(stream: SearchRangeStream): SearchQueryCoverageProof[] {
+  const proofs = [...(stream.queryCoverage ?? [])];
+  if (stream.queryForm && stream.coverageFrom && stream.coverageTo) {
+    proofs.push({
+      queryKey: stream.queryKey, queryForm: stream.queryForm,
+      rangeFrom: stream.rangeFrom, rangeTo: stream.rangeTo,
+      coverageFrom: stream.coverageFrom, coverageTo: stream.coverageTo,
+      exhaustedNext: stream.exhaustedNext,
+    });
+    for (const [queryKey, coverage] of Object.entries(stream.facetCoverage ?? {})) {
+      try {
+        const queryForm: SearchForm = { ...stream.queryForm, ...JSON.parse(queryKey) };
+        proofs.push({ queryKey, queryForm, rangeFrom: stream.rangeFrom, rangeTo: stream.rangeTo,
+          ...coverage, exhaustedNext: coverage.coverageTo >= stream.rangeTo });
+      } catch {
+        // Ignore an obsolete cache entry that is not a serialized query key.
+      }
+    }
+  }
+  return proofs;
+}
+
+function searchProofCoversQuery(proof: SearchQueryCoverageProof, form: SearchForm): boolean {
+  return retainedSearchSourceCoversForm({
+    ...proof.queryForm, fromDate: form.fromDate, toDate: form.toDate,
+  }, form);
+}
+
+function searchActiveRangeStream(stream: SearchRangeStream | null, form: SearchForm): SearchRangeStream | null {
+  if (!stream) return null;
+  const queryForm = retainedSearchSourceForm(form);
+  const queryKey = searchRangeQueryKey(queryForm);
+  const candidates = searchCoverageProofs(stream).filter((proof) =>
+    searchProofCoversQuery(proof, queryForm)
+    && proof.coverageFrom <= form.fromDate && proof.coverageTo >= form.fromDate,
+  );
+  const proof = candidates.sort((left, right) => right.coverageTo.localeCompare(left.coverageTo))[0];
+  if (!proof) {
+    if (stream.queryKey !== queryKey || stream.rangeFrom !== form.fromDate || stream.coverageTo) return null;
+    return stream;
+  }
+  return {
+    ...stream, queryKey, queryForm,
+    rangeFrom: form.fromDate, rangeTo: form.toDate,
+    coverageFrom: proof.coverageFrom, coverageTo: proof.coverageTo,
+    exhaustedNext: proof.coverageTo >= form.toDate,
+  };
+}
+
+function rememberSearchQueryCoverage(
+  stream: SearchRangeStream,
+  incoming: SearchQueryCoverageProof,
+): SearchRangeStream {
+  let proof = incoming;
+  const bySpan = new Map<string, SearchQueryCoverageProof>();
+  for (const current of searchCoverageProofs(stream)) {
+    bySpan.set(`${current.queryKey}\u0000${current.coverageFrom}\u0000${current.coverageTo}`, current);
+  }
+  let candidates = [...bySpan.values()];
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const remaining: SearchQueryCoverageProof[] = [];
+    for (const current of candidates) {
+      const adjacent = current.queryKey === proof.queryKey
+        && current.coverageFrom <= (nextIsoDate(proof.coverageTo) ?? proof.coverageTo)
+        && proof.coverageFrom <= (nextIsoDate(current.coverageTo) ?? current.coverageTo);
+      if (!adjacent) {
+        remaining.push(current);
+        continue;
+      }
+      const rangeFrom = current.rangeFrom < proof.rangeFrom ? current.rangeFrom : proof.rangeFrom;
+      const rangeTo = current.rangeTo > proof.rangeTo ? current.rangeTo : proof.rangeTo;
+      const coverageFrom = current.coverageFrom < proof.coverageFrom ? current.coverageFrom : proof.coverageFrom;
+      const coverageTo = current.coverageTo > proof.coverageTo ? current.coverageTo : proof.coverageTo;
+      proof = { ...proof, rangeFrom, rangeTo, coverageFrom, coverageTo,
+        queryForm: { ...proof.queryForm, fromDate: rangeFrom, toDate: rangeTo },
+        exhaustedNext: coverageTo >= rangeTo };
+      merged = true;
+    }
+    candidates = remaining;
+  }
+  return { ...stream, queryCoverage: [...candidates, proof].slice(-32) };
+}
+
+function retainSearchQueryCoverage(previous: SearchRangeStream | null, next: SearchRangeStream): SearchRangeStream {
+  let retained: SearchRangeStream = { ...next, queryCoverage: previous?.queryCoverage ?? [] };
+  for (const proof of previous ? searchCoverageProofs(previous) : []) {
+    retained = rememberSearchQueryCoverage(retained, proof);
+  }
+  return retained;
+}
+
+function mergeSearchRangeCoverage(
+  source: SearchRangeStream,
+  active: SearchRangeStream,
+  coverageTo: string,
+): SearchRangeStream {
+  const queryForm = active.queryForm;
+  if (!queryForm) return source;
+  const proof: SearchQueryCoverageProof = {
+    queryKey: active.queryKey, queryForm,
+    rangeFrom: active.rangeFrom, rangeTo: active.rangeTo,
+    coverageFrom: active.coverageFrom, coverageTo,
+    exhaustedNext: coverageTo >= active.rangeTo,
+  };
+  const retained = rememberSearchQueryCoverage(source, proof);
+  const adjacentToSource = source.coverageFrom <= (nextIsoDate(coverageTo) ?? coverageTo)
+    && active.coverageFrom <= (nextIsoDate(source.coverageTo) ?? source.coverageTo);
+  if (source.queryKey === active.queryKey && adjacentToSource) {
+    const nextTo = source.coverageTo > coverageTo ? source.coverageTo : coverageTo;
+    return { ...retained, coverageTo: nextTo, exhaustedNext: nextTo >= source.rangeTo };
+  }
+  const facets = { ...source.facetCoverage };
+  delete facets[active.queryKey];
+  facets[active.queryKey] = { coverageFrom: active.coverageFrom, coverageTo };
+  return { ...retained, facetCoverage: Object.fromEntries(Object.entries(facets).slice(-32)) };
+}
+
+function projectCoveredSearchRows(
+  sourceRows: readonly TransitSearchRow[],
+  form: SearchForm | null,
+  stream: SearchRangeStream | null,
+): TransitSearchRow[] {
+  const rows = projectTransitSearchRows(sourceRows, form);
+  const active = form ? searchActiveRangeStream(stream, form) : null;
+  if (!active?.coverageTo) return rows;
+  return rows.filter((row) => row.eventDate >= active.coverageFrom && row.eventDate <= active.coverageTo);
 }
 
 function searchSeedRange(
@@ -3392,7 +3541,9 @@ function searchStreamRowKey(row: TransitSearchRow): string {
     : String(Math.round(row.eventJd * 86400));
   return [
     instant,
-    row.technique,
+    SEARCH_LUNAR_TECHNIQUES.has(row.technique) && row.metadata.eclipse === true
+      ? "eclipses"
+      : row.technique,
     row.aspect,
     row.promittorId,
     row.significatorId,
@@ -3423,22 +3574,14 @@ function compareSearchStreamRows(left: TransitSearchRow, right: TransitSearchRow
   return searchStreamRowKey(left).localeCompare(searchStreamRowKey(right));
 }
 
-function searchCursorPayloadReadyForSwap(payload: TransitSearchProgressResult): boolean {
-  if (payload.cancelled || payload.error) return false;
+function searchCursorPayloadReadyForSwap(payload: TransitSearchProgressResult, emptyViewport = false): boolean {
+  if (payload.cancelled || payload.error || payload.truncated) return false;
   return (
     payload.complete
     || payload.cursor?.satisfied === true
     || payload.cursor?.exhausted === true
+    || (emptyViewport && Boolean(payload.cursor?.coverageFrom && payload.cursor.coverageTo))
   );
-}
-
-function retainedSearchNeedsRangeReplacement(
-  stream: SearchRangeStream,
-  activeForm: SearchForm,
-): boolean {
-  if (!stream.coverageFrom || !stream.coverageTo) return true;
-  if (activeForm.fromDate === stream.rangeFrom) return false;
-  return activeForm.fromDate < stream.coverageFrom || activeForm.fromDate > stream.coverageTo;
 }
 
 function searchViewportRowCount(scroller: HTMLDivElement | null, rowHeight: number): number {
@@ -3509,9 +3652,12 @@ function retainedSearchSourceForm(form: SearchForm): SearchForm {
 }
 
 function retainedSearchSourceCoversForm(source: SearchForm, active: SearchForm): boolean {
+  const coveredTechniques = source.techniques.includes("lunations")
+    ? [...source.techniques, "eclipses"]
+    : source.techniques;
   return source.fromDate <= active.fromDate
     && source.toDate >= active.toDate
-    && isIdSubset(active.techniques, source.techniques)
+    && isIdSubset(active.techniques, coveredTechniques)
     && isIdSubset(active.promittorIds, source.promittorIds)
     && isIdSubset(active.significatorIds, source.significatorIds)
     && isIdSubset(active.aspects, source.aspects)
@@ -3540,7 +3686,10 @@ function retainedSearchDeltaPlan(
     includeSignChanges: source.includeSignChanges || active.includeSignChanges,
     limit: Math.max(source.limit, active.limit),
   };
-  const newTechniques = differenceIds(active.techniques, source.techniques);
+  const coveredTechniques = source.techniques.includes("lunations")
+    ? [...source.techniques, "eclipses"]
+    : source.techniques;
+  const newTechniques = differenceIds(active.techniques, coveredTechniques);
   const newPromittors = differenceIds(active.promittorIds, source.promittorIds);
   const newSignificators = differenceIds(active.significatorIds, source.significatorIds);
   const newAspects = differenceIds(active.aspects, source.aspects);
@@ -3627,14 +3776,18 @@ function projectTransitSearchRows(
   const promittors = new Set(form.promittorIds);
   const significators = new Set(form.significatorIds);
   const aspects = new Set(form.aspects);
+  const filterDates = searchDatesValid(form);
   return sourceRows.filter((row) => {
-    if (row.eventDate < form.fromDate || row.eventDate > form.toDate) return false;
+    if (filterDates && (row.eventDate < form.fromDate || row.eventDate > form.toDate)) return false;
+    const lunarEvent = SEARCH_LUNAR_TECHNIQUES.has(row.technique);
     if (row.technique === "sign_changes") {
       if (!form.includeSignChanges) return false;
+    } else if (lunarEvent) {
+      const eclipse = row.technique === "eclipses" || row.metadata.eclipse === true;
+      if (!techniques.has("lunations") && !(eclipse && techniques.has("eclipses"))) return false;
     } else if (!techniques.has(row.technique)) {
       return false;
     }
-    const lunarEvent = SEARCH_LUNAR_TECHNIQUES.has(row.technique);
     const signIngress = row.metadata.sign_change === true;
     // Celestial Weather emits each moving pair once in catalog order, which
     // can be the reverse of the selected From/To roles.
@@ -3708,7 +3861,20 @@ function nearestTransitSearchRowIndex(
   return nearestIndex;
 }
 
+function searchDatesValid(form: SearchForm): boolean {
+  const valid = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    return year > 0 && date.getUTCFullYear() === year
+      && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  };
+  return valid(form.fromDate) && valid(form.toDate) && form.fromDate <= form.toDate;
+}
+
 function canRunSearch(form: SearchForm): boolean {
+  if (!searchDatesValid(form)) return false;
   const supportsLunarEvents = (
     form.techniques.includes("lunations") || form.techniques.includes("eclipses")
   )

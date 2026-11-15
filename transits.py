@@ -5,6 +5,7 @@
 # Modified for Aries in 2026 by Max Lange.
 
 import astrology
+import chart_bodies
 import asteroids
 from aries.astrology.ephemeris_context import EphemerisContext
 import chart
@@ -42,6 +43,50 @@ class Transit:
 		self.sign_left = chart.Chart.NONE   # 표시에 쓸 '왼쪽' 사인 인덱스
 		self.sign_right = chart.Chart.NONE  # 표시에 쓸 '오른쪽' 사인 인덱스
 
+class TargetScanCache:
+	"""Search-local samples shared by exact-second target scans in one context.
+
+	The solver only reads these objects. Keep exact constructor inputs and a
+	bounded working set; no rounded Julian days or cross-search global cache.
+	"""
+
+	def __init__(self, context):
+		self.context = context
+		self._times = {}
+		self._planets = {}
+		self._days = {}
+
+	@staticmethod
+	def _remember(cache, key, value):
+		if len(cache) >= 8192:
+			cache.pop(next(iter(cache)))
+		cache[key] = value
+		return value
+
+	def time(self, *args):
+		key = (*args[:13], id(args[13]), *args[14:])
+		value = self._times.get(key)
+		if value is None:
+			value = self._remember(self._times, key, chart.Time(*args))
+		return value
+
+	def planet(self, jd, body, flags):
+		key = (jd, body, flags)
+		value = self._planets.get(key)
+		if value is None:
+			value = self._remember(self._planets, key, planets.Planet(jd, body, flags))
+		return value
+
+	def day_key(self, year, month, day, calendar, place, body, flags):
+		return (year, month, day, calendar, id(place), body, flags)
+
+	def remember_day(self, time1, time2, place, body, flags, planet1, planet2):
+		if (time1.hour, time1.minute, time1.second, time2.hour, time2.minute, time2.second) != (0, 0, 0, 0, 0, 0):
+			return
+		key = self.day_key(time1.year, time1.month, time1.day, time1.cal, place, body, flags)
+		self._remember(self._days, key, (planet1, planet2))
+
+
 class Transits:
 	NONE = -1
 
@@ -53,9 +98,16 @@ class Transits:
 	CIRCLE = 360.0
 	OFFSET = 20.0 # arbitrary, greater then the Moon's average speed
 
-	def __init__(self):
+	def __init__(self, scan_cache=None):
 		self.transits = []
 		self.flags = Transits.NONE
+		self._scan_cache = scan_cache
+
+	def _time(self, *args):
+		return chart.Time(*args) if self._scan_cache is None else self._scan_cache.time(*args)
+
+	def _planet(self, jd, body, flags):
+		return planets.Planet(jd, body, flags) if self._scan_cache is None else self._scan_cache.planet(jd, body, flags)
 
 
 	@staticmethod
@@ -68,27 +120,25 @@ class Transits:
 	def month(self, year, month, chrt, planet = -1, pos = None, context = None):
 		context = context or self._ephemeris_context(chrt)
 		self.flags = context.flags
+		if self._scan_cache is not None and self._scan_cache.context != context:
+			raise ValueError("transit scan cache context mismatch")
 
-		lastday = 1
-		for day in range(1, 31):
-			valid = util.checkDate(year, month, day)
-			if valid:	
-				lastday = day
-
-				valid = util.checkDate(year, month, day+1)
-				if valid:
-					lastday = day+1
-					self._day_with_context(year, month, day, chrt, planet, pos, context)
-				else:
-					break
-			else:
-				break
+		# Python date validation rejects astronomical years <= 0 and Julian
+		# leap days. Use the chart calendar for the entire daily scan instead.
+		calflag = astrology.SE_JUL_CAL if chrt.time.cal == chart.Time.JULIAN else astrology.SE_GREG_CAL
+		next_year, next_month = util.incrMonth(year, month)
+		lastday = int(round(
+			astrology.swe_julday(next_year, next_month, 1, 0.0, calflag) -
+			astrology.swe_julday(year, month, 1, 0.0, calflag)
+		))
+		for day in range(1, lastday):
+			self._day_with_context(year, month, day, chrt, planet, pos, context)
 
 		#lastday in month-first day in next month
-		time1 = chart.Time(year, month, lastday, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+		time1 = self._time(year, month, lastday, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 		
 		year, month = util.incrMonth(year, month)
-		time2 = chart.Time(year, month, 1, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+		time2 = self._time(year, month, 1, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 
 		cnt = len(self.transits)
 
@@ -106,17 +156,28 @@ class Transits:
 	def day(self, year, month, day, chrt, planet = -1, pos = None, context = None):
 		context = context or self._ephemeris_context(chrt)
 		self.flags = context.flags
+		if self._scan_cache is not None and self._scan_cache.context != context:
+			raise ValueError("transit scan cache context mismatch")
 		self._day_with_context(year, month, day, chrt, planet, pos, context)
 
 
 	def _day_with_context(self, year, month, day, chrt, planet, pos, context):
+		if self._scan_cache is not None and planet != Transits.NONE and pos is not None:
+			key = self._scan_cache.day_key(year, month, day, chrt.time.cal, chrt.place, planet, self.flags)
+			samples = self._scan_cache._days.get(key)
+			if samples is not None and not self.check(
+				samples[0].data[planets.Planet.LONG], samples[1].data[planets.Planet.LONG], util.normalize(pos),
+			):
+				# The exact same daily bracket already proves no crossing.
+				# No Swiss context switch or time/planet construction is needed.
+				return
 		with context.activate():
 			self._day_in_active_context(year, month, day, chrt, planet, pos)
 
 
 	def _day_in_active_context(self, year, month, day, chrt, planet, pos):
-		time1 = chart.Time(year, month, day, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
-		time2 = chart.Time(year, month, day+1, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+		time1 = self._time(year, month, day, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+		time2 = self._time(year, month, day+1, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 				
 		cnt = len(self.transits)
 		if planet == Transits.NONE:
@@ -161,9 +222,8 @@ class Transits:
 					if tr != None:
 						self.transits.append(tr)
 
-				# also aspect natal Chiron if visible
-				if getattr(chrt, 'chiron', None) is not None and getattr(chrt.options, 'showchiron', True):
-					lon = chrt.chiron.data[planets.Planet.LONG]
+				for body_id, body in chart_bodies.iter_dynamic_bodies(chrt):
+					lon = body.data[planets.Planet.LONG]
 					if l == 0:
 						lon += chart.Chart.Aspects[a]
 						if lon > 360.0:
@@ -172,7 +232,7 @@ class Transits:
 						lon -= chart.Chart.Aspects[a]
 						if lon < 0.0:
 							lon += 360.0
-					tr = self.get(planet1, planet2, time1, chrt, lon, j, astrology.SE_CHIRON, a, Transits.HOUR, Transit.PLANET)
+					tr = self.get(planet1, planet2, time1, chrt, lon, j, body_id, a, Transits.HOUR, Transit.PLANET)
 					if tr != None:
 						self.transits.append(tr)
 
@@ -235,16 +295,15 @@ class Transits:
 			if j == astrology.SE_MOON:
 				continue
 
-			planet1 = planets.Planet(time1.jd, j, self.flags)
-			planet2 = planets.Planet(time2.jd, j, self.flags)
+			planet1 = self._planet(time1.jd, j, self.flags)
+			planet2 = self._planet(time2.jd, j, self.flags)
 
 			self._cycle_one_transiting_planet(j, planet1, planet2, time1, chrt, time2)
 
-		# Transiting Chiron against all radix points
-		if getattr(chrt, 'chiron', None) is not None and getattr(chrt.options, 'showchiron', True):
-			j = astrology.SE_CHIRON
-			planet1 = planets.Planet(time1.jd, j, self.flags)
-			planet2 = planets.Planet(time2.jd, j, self.flags)
+		# Every computed dynamic body against all radix points.
+		for j, _body in chart_bodies.iter_dynamic_bodies(chrt):
+			planet1 = self._planet(time1.jd, j, self.flags)
+			planet2 = self._planet(time2.jd, j, self.flags)
 			self._cycle_one_transiting_planet(j, planet1, planet2, time1, chrt, time2)
 
 
@@ -252,8 +311,10 @@ class Transits:
 		# When self.flags has SEFLG_SIDEREAL, the search ephemeris runs
 		# in the chart's chosen (sidereal) zodiac. The target longitude
 		# must be in the same frame as the search.
-		planet1 = planets.Planet(time1.jd, planet, self.flags)
-		planet2 = planets.Planet(time2.jd, planet, self.flags)
+		planet1 = self._planet(time1.jd, planet, self.flags)
+		planet2 = self._planet(time2.jd, planet, self.flags)
+		if self._scan_cache is not None:
+			self._scan_cache.remember_day(time1, time2, chrt.place, planet, self.flags, planet1, planet2)
 
 		if pos is None:
 			natal_state = self._natal_planet_state(chrt, planet)
@@ -291,44 +352,44 @@ class Transits:
 			for val in range(fr, to):
 				time = None
 				if unit == Transits.HOUR:
-					time1 = chart.Time(time1.year, time1.month, time1.day, val, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+					time1 = self._time(time1.year, time1.month, time1.day, val, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					time2 = None
 					if val+1 < to:
-						time2 = chart.Time(time1.year, time1.month, time1.day, val+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+						time2 = self._time(time1.year, time1.month, time1.day, val+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					else:
 						y, m, d = util.incrDay(time1.year, time1.month, time1.day)
-						time2 = chart.Time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+						time2 = self._time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 				elif unit == Transits.MINUTE:
-					time1 = chart.Time(time1.year, time1.month, time1.day, time1.hour, val, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+					time1 = self._time(time1.year, time1.month, time1.day, time1.hour, val, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					time2 = None
 					if val+1 < to:
-						time2 = chart.Time(time1.year, time1.month, time1.day, time1.hour, val+1, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+						time2 = self._time(time1.year, time1.month, time1.day, time1.hour, val+1, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					else:
 						if time1.hour+1 < 24:
-							time2 = chart.Time(time1.year, time1.month, time1.day, time1.hour+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+							time2 = self._time(time1.year, time1.month, time1.day, time1.hour+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 						else:
 							y, m, d = util.incrDay(time1.year, time1.month, time1.day)
-							time2 = chart.Time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+							time2 = self._time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 				elif unit == Transits.SECOND:
-					time1 = chart.Time(time1.year, time1.month, time1.day, time1.hour, time1.minute, val, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+					time1 = self._time(time1.year, time1.month, time1.day, time1.hour, time1.minute, val, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					time2 = None
 					if val+1 < to:
-						time2 = chart.Time(time1.year, time1.month, time1.day, time1.hour, time1.minute, val+1, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+						time2 = self._time(time1.year, time1.month, time1.day, time1.hour, time1.minute, val+1, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 					else:
 						if time1.minute+1 < 60:
-							time2 = chart.Time(time1.year, time1.month, time1.day, time1.hour, time1.minute+1, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+							time2 = self._time(time1.year, time1.month, time1.day, time1.hour, time1.minute+1, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 						else:
 							if time1.hour+1 < 24:
-								time2 = chart.Time(time1.year, time1.month, time1.day, time1.hour+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+								time2 = self._time(time1.year, time1.month, time1.day, time1.hour+1, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 							else:
 								y, m, d = util.incrDay(time1.year, time1.month, time1.day)
-								time2 = chart.Time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
+								time2 = self._time(y, m, d, 0, 0, 0, False, chrt.time.cal, chart.Time.GREENWICH, True, 0, 0, False, chrt.place, False)
 				else:
 #					print 'unit > SECOND'
 					return None	
 
-				planet1 = planets.Planet(time1.jd, j, self.flags)
-				planet2 = planets.Planet(time2.jd, j, self.flags)
+				planet1 = self._planet(time1.jd, j, self.flags)
+				planet2 = self._planet(time2.jd, j, self.flags)
 	
 				if self.check(planet1.data[planets.Planet.LONG], planet2.data[planets.Planet.LONG], lon):
 					un = Transits.OVER

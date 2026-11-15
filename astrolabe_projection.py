@@ -4,18 +4,40 @@
 
 """Stereographic projection math for planispheric astrolabe rendering.
 
-Projection: south-polar stereographic onto the equatorial plane.
-Center of projection = South Celestial Pole.
-Center of diagram    = North Celestial Pole.
+Projection: polar stereographic onto the equatorial plane, from the pole
+below the horizon, as on a real astrolabe plate for that hemisphere.
+Northern charts (pole = +1): projected from the South Celestial Pole, the
+North Celestial Pole at the centre, the Tropic of Capricorn as the rim.
+Southern charts (pole = -1): projected from the North Celestial Pole, the
+South Celestial Pole at the centre, the Tropic of Cancer as the rim. Both
+keep MC up, east (Asc) left and the rete turning clockwise, as the chart
+wheel reads; a southern plate is the northern plate for |latitude| with the
+sky reflected through the equator, so the tympan builders below take
+|latitude| and sky points take ``pole * declination``.
 
 All angles in DEGREES unless a variable name ends with ``_rad``.
-All returned (x, y) are relative to the NCP at (0, 0) in screen
+All returned (x, y) are relative to the plate centre at (0, 0) in screen
 coordinates (x right, y down).
 """
 
 import math
 
 _DEG = math.pi / 180.0
+
+# On the terrestrial equator the horizon passes through the projection pole
+# and projects to a straight line; the plate is drawn for this latitude
+# instead, a circle the renderer draws exactly (radius 1/sin = 57296 R_eq).
+EQUATOR_PLATE_LATITUDE = 1e-3
+
+
+def plate_pole(latitude_deg):
+    """+1 when the North Celestial Pole is at the plate centre, -1 for South."""
+    return -1 if latitude_deg < 0 else 1
+
+
+def plate_latitude(latitude_deg):
+    """The (positive) latitude the tympan is drawn for."""
+    return max(abs(latitude_deg), EQUATOR_PLATE_LATITUDE)
 
 
 # ---------------------------------------------------------------------------
@@ -39,12 +61,12 @@ def _angle_from_north(ra_deg, ramc_deg):
     return -(ra_deg - ramc_deg)
 
 
-def equatorial_to_xy(ra_deg, decl_deg, ramc_deg, R_eq):
-    """Project equatorial (RA, Dec) to screen (x, y) relative to NCP=(0,0).
+def equatorial_to_xy(ra_deg, decl_deg, ramc_deg, R_eq, pole=1):
+    """Project equatorial (RA, Dec) to screen (x, y) relative to the plate centre.
 
     MC at 12 o'clock, west to the right, east to the left.
     """
-    r = decl_to_radius(decl_deg, R_eq)
+    r = decl_to_radius(pole * decl_deg, R_eq)
     a = _angle_from_north(ra_deg, ramc_deg) * _DEG
     return (r * math.sin(a), -r * math.cos(a))
 
@@ -79,11 +101,12 @@ def ecliptic_circle(obliquity_deg, R_eq):
     return offset, radius
 
 
-def ecliptic_center_xy(obliquity_deg, R_eq, ramc_deg):
+def ecliptic_center_xy(obliquity_deg, R_eq, ramc_deg, pole=1):
     """Screen (x, y) of the ecliptic circle centre for a given rete orientation."""
     offset, _ = ecliptic_circle(obliquity_deg, R_eq)
-    # The offset is along the RA = 270 direction (toward winter solstice).
-    a = _angle_from_north(270.0, ramc_deg) * _DEG
+    # The offset points toward the solstice on the plate's rim: RA 270
+    # (winter solstice) on a northern plate, RA 90 on a southern one.
+    a = _angle_from_north(270.0 if pole > 0 else 90.0, ramc_deg) * _DEG
     return (offset * math.sin(a), -offset * math.cos(a))
 
 
@@ -103,21 +126,57 @@ def ecl_lon_to_ra_dec(ecl_lon_deg, obliquity_deg):
     return ra_deg, math.degrees(dec)
 
 
-def sign_boundary_xy(sign_index, obliquity_deg, R_eq, ramc_deg):
+def sign_boundary_xy(sign_index, obliquity_deg, R_eq, ramc_deg, pole=1):
     """Screen (x, y) of the boundary BEFORE sign *sign_index* (0=Ari)."""
     ecl_lon = sign_index * 30.0
     ra, dec = ecl_lon_to_ra_dec(ecl_lon, obliquity_deg)
-    return equatorial_to_xy(ra, dec, ramc_deg, R_eq)
+    return equatorial_to_xy(ra, dec, ramc_deg, R_eq, pole)
 
 
-def ecliptic_degree_xy(ecl_lon_deg, obliquity_deg, R_eq, ramc_deg):
+def ecliptic_degree_xy(ecl_lon_deg, obliquity_deg, R_eq, ramc_deg, pole=1):
     """Screen (x, y) of any ecliptic longitude."""
     ra, dec = ecl_lon_to_ra_dec(ecl_lon_deg, obliquity_deg)
-    return equatorial_to_xy(ra, dec, ramc_deg, R_eq)
+    return equatorial_to_xy(ra, dec, ramc_deg, R_eq, pole)
+
+
+def ecliptic_cusp_line(ecl_lon_deg, obliquity_deg, R_eq, ramc_deg, pole=1):
+    """Project a zodiacal cusp meridian inside the plate.
+
+    Like the sphere view, extend the chart's calculated cusp along ecliptic
+    latitude. Start exactly at the plate rim and finish at the ecliptic pole
+    near the plate centre; include latitude zero so the line passes through
+    the exact cusp. This is display geometry, not a spatial house-position
+    calculation.
+    """
+    # Work in the plate's frame: a southern plate's reflected sky is the
+    # northern construction with the obliquity (and so latitude) reversed.
+    lam = ecl_lon_deg * _DEG
+    eps = pole * obliquity_deg * _DEG
+    a = math.sin(eps) * math.sin(lam)
+    b = math.cos(eps)
+    # sin(dec) = a*cos(beta) + b*sin(beta). Solve dec=-obliquity (the rim)
+    # for the visible meridian's lower end, avoiding the projection singularity.
+    start = math.degrees(
+        math.asin(max(-1.0, min(1.0, -math.sin(obliquity_deg * _DEG) / math.hypot(a, b))))
+        - math.atan2(a, b)
+    )
+    latitudes = sorted({start, 0.0, 90.0, *range(math.ceil(start), 90)})
+    points = []
+    for latitude in latitudes:
+        beta = latitude * _DEG
+        x = math.cos(beta) * math.cos(lam)
+        y = math.cos(beta) * math.sin(lam) * b - math.sin(beta) * math.sin(eps)
+        z = a * math.cos(beta) + b * math.sin(beta)
+        ra = math.degrees(math.atan2(y, x))
+        dec = math.degrees(math.asin(max(-1.0, min(1.0, z))))
+        # (ra, dec) are already in the plate's frame.
+        points.append(equatorial_to_xy(ra, dec, ramc_deg, R_eq))
+    return points
 
 
 # ---------------------------------------------------------------------------
-# Plate circles (fixed for a given latitude — no RA dependence)
+# Plate circles (fixed for a given latitude — no RA dependence). They take
+# |latitude|: the plate is always drawn for the pole at its centre.
 # ---------------------------------------------------------------------------
 
 def horizon_circle(latitude_deg, R_eq):

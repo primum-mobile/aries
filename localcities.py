@@ -10,8 +10,10 @@ import sys
 import threading
 import unicodedata
 import zipfile
+from pathlib import Path
 
 import app_paths
+import platform_compat
 
 
 GEONAMES_COLUMNS = [
@@ -410,6 +412,14 @@ def _build_database(db_file, source_file, source_signature):
             pass
 
 
+def _readonly_sqlite_uri(database_file):
+    if platform_compat.IS_WINDOWS:
+        # A Windows path is not a URI: '#', '?' or '%' in a user or folder name
+        # would cut it short. as_uri() gives file:///C:/... with escapes.
+        return Path(os.path.abspath(database_file)).as_uri() + '?mode=ro&immutable=1'
+    return 'file:%s?mode=ro&immutable=1' % database_file
+
+
 def _ensure_connection():
     database_file = db_path()
     if not os.path.exists(database_file):
@@ -421,7 +431,7 @@ def _ensure_connection():
         # SQLite's ordinary read-only mode can still create WAL/SHM siblings,
         # which invalidates the bundle signature after the first lookup.
         conn = sqlite3.connect(
-            'file:%s?mode=ro&immutable=1' % database_file,
+            _readonly_sqlite_uri(database_file),
             uri=True,
             check_same_thread=False,
         )
@@ -510,8 +520,7 @@ def search(query, maxnum=10):
                    CASE
                        WHEN p.search_name = ? THEN 0
                        WHEN p.search_ascii = ? THEN 0
-                       WHEN p.search_name >= ? AND p.search_name < ? THEN 1
-                       ELSE 1
+                       ELSE 2
                    END AS match_priority
             FROM places p
             WHERE p.search_name = ?
@@ -520,7 +529,7 @@ def search(query, maxnum=10):
                OR (p.search_ascii >= ? AND p.search_ascii < ?)
             UNION ALL
             SELECT pa.geonameid,
-                   CASE WHEN pa.alias = ? THEN 0 ELSE 1 END AS match_priority
+                   CASE WHEN pa.alias = ? THEN 1 ELSE 3 END AS match_priority
             FROM place_aliases pa
             WHERE pa.alias = ?
                OR (pa.alias >= ? AND pa.alias < ?)
@@ -549,7 +558,7 @@ def search(query, maxnum=10):
         LIMIT ?
         """,
         (
-            q, q, q, prefix_end,
+            q, q,
             q, q, q, prefix_end, q, prefix_end,
             q, q, q, prefix_end,
             limit,
@@ -653,20 +662,32 @@ def timezone_near(longitude, latitude):
     except (TypeError, ValueError):
         return None
 
-    row = conn.execute(
-        """
-        SELECT p.geonameid, p.longitude, p.latitude, p.elevation, p.timezone
-        FROM places p
-        WHERE p.timezone IS NOT NULL AND p.timezone != ''
-        ORDER BY
-            ((p.latitude - ?) * (p.latitude - ?)) + ((p.longitude - ?) * (p.longitude - ?)),
-            p.admin_priority ASC,
-            p.population DESC,
-            p.name ASC
-        LIMIT 1
-        """,
-        (lat, lat, lon, lon),
-    ).fetchone()
+    # The global distance sort scans every city. Expand an indexed square
+    # until its nearest candidate lies within the square's inscribed circle;
+    # then no point outside the square can be closer. Preserve the original
+    # distance and tie-break order exactly.
+    row = None
+    radius = 0.5
+    while radius <= 512.0:
+        row = conn.execute(
+            """
+            SELECT p.geonameid, p.longitude, p.latitude, p.elevation, p.timezone
+            FROM places_rtree r JOIN places p ON p.geonameid = r.geonameid
+            WHERE r.min_lon <= ? AND r.max_lon >= ?
+              AND r.min_lat <= ? AND r.max_lat >= ?
+              AND p.timezone IS NOT NULL AND p.timezone != ''
+            ORDER BY
+                ((p.latitude - ?) * (p.latitude - ?)) + ((p.longitude - ?) * (p.longitude - ?)),
+                p.admin_priority ASC,
+                p.population DESC,
+                p.name ASC
+            LIMIT 1
+            """,
+            (lon + radius, lon - radius, lat + radius, lat - radius, lat, lat, lon, lon),
+        ).fetchone()
+        if row is not None and (row['latitude'] - lat) ** 2 + (row['longitude'] - lon) ** 2 <= radius ** 2:
+            break
+        radius *= 2
     if row is None:
         return None
 

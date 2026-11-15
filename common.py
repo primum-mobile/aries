@@ -6,8 +6,8 @@
 
 import os
 import sys
-import wx
 import astrology
+import chart_bodies
 import arabicparts
 from antiscia import Antiscia
 import fixstars
@@ -16,7 +16,6 @@ import houses
 import mtexts
 import options
 import planets
-import wxcompat
 import util
 import fontprofiles
 
@@ -53,9 +52,13 @@ STEP_ALERT_BODY_IDS = (
 	astrology.SE_MEAN_NODE,
 	astrology.SE_TRUE_NODE,
 	astrology.SE_CHIRON,
+	astrology.SE_MEAN_APOG,
 )
 
 CHART_OBJECT_VERTEX = astrology.SE_CHIRON + 1
+CHART_OBJECT_FORTUNE = -1
+# Display rule: angles are always text (Asc, Dsc, MC, IC);
+# do not use these Morinus glyph slots for display.
 CHART_ANGLE_GLYPHS = {
 	'asc': '0',
 	'dsc': '3',
@@ -83,6 +86,8 @@ PLANET_TEXT_EXPORT_MARKS = {
 	astrology.SE_MEAN_NODE: '☊' + _TEXT_PRESENTATION,
 	astrology.SE_TRUE_NODE: '☋' + _TEXT_PRESENTATION,
 	astrology.SE_CHIRON: '⚷' + _TEXT_PRESENTATION,
+	astrology.SE_MEAN_APOG: '⚸' + _TEXT_PRESENTATION,
+	astrology.SE_OSCU_APOG: '⚸' + _TEXT_PRESENTATION,
 }
 SIGN_TEXT_EXPORT_MARKS = tuple(
 	chr(codepoint) + _TEXT_PRESENTATION for codepoint in range(0x2648, 0x2654)
@@ -210,6 +215,8 @@ def is_planet_visible(options, planet_idx):
 		return False
 	if planet_idx == astrology.SE_PLUTO and not options.transcendental[2]:
 		return False
+	if planet_idx in chart_bodies.APOGEE_IDS and not getattr(options, 'showapogee', True):
+		return False
 	if planet_idx == astrology.SE_CHIRON and not getattr(options, 'showchiron', True):
 		return False
 	if planet_idx in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE) and not options.shownodes:
@@ -220,8 +227,8 @@ def is_planet_visible(options, planet_idx):
 def get_chart_planet(chrt, planet_idx):
 	if chrt is None:
 		return None
-	if planet_idx == astrology.SE_CHIRON:
-		return getattr(chrt, 'chiron', None)
+	if planet_idx == astrology.SE_CHIRON or planet_idx in chart_bodies.APOGEE_IDS:
+		return chart_bodies.dynamic_body(chrt, planet_idx)
 	if planet_idx == astrology.SE_TRUE_NODE and hasattr(chrt, '_get_desc_node_body'):
 		return chrt._get_desc_node_body()
 	try:
@@ -236,8 +243,10 @@ def get_visible_chart_planet_ids(chrt, options, include_descnode=False, include_
 	for planet_idx in range(astrology.SE_SUN, last_main+1):
 		if is_planet_visible(options, planet_idx):
 			ids.append(planet_idx)
-	if include_chiron and getattr(chrt, 'chiron', None) is not None and is_planet_visible(options, astrology.SE_CHIRON):
-		ids.append(astrology.SE_CHIRON)
+	if include_chiron:
+		for body_id, body in chart_bodies.iter_dynamic_bodies(chrt):
+			if is_planet_visible(options, body_id):
+				ids.append(body_id)
 	return ids
 
 
@@ -245,7 +254,7 @@ def get_visible_fixstar_trigger_body_ids(chrt, options):
 	return get_visible_chart_planet_ids(
 		chrt,
 		options,
-		include_descnode=bool(getattr(options, 'showfixstarsnodes', False)),
+		include_descnode=True,
 		include_chiron=True,
 	)
 
@@ -269,7 +278,43 @@ def is_ring_opposition_hit(lon1, lon2, orb):
 	return abs(180.0 - angular_distance(lon1, lon2)) <= float(orb)
 
 
+def get_inner_chart_point_longitudes(chrt, options):
+	"""Visible Fortune, Vertex and prenatal points; no secondary-ring sources."""
+	points = []
+	if getattr(options, 'showlof', True):
+		try:
+			points.append(('fortune', float(chrt.fortune.fortune[fortune.Fortune.LON])))
+		except (AttributeError, IndexError, TypeError, ValueError):
+			pass
+	if getattr(options, 'showvertex', False):
+		try:
+			points.append(('vertex', float(chrt.houses.ascmc[houses.Houses.VERTEX])))
+		except (AttributeError, IndexError, TypeError, ValueError):
+			pass
+	if getattr(options, 'showprenatalsyzygy', False):
+		try:
+			if getattr(chrt, 'syzygy', None) is None:
+				chrt.calcSyzygy()
+			points.append(('syzygy', float(chrt.syzygy.lon)))
+		except Exception:
+			pass
+	if getattr(options, 'showprenataleclipse', False):
+		import eclipses
+		try:
+			result = eclipses.selected_prenatal_eclipse_point(chrt, options)
+			if result is not None:
+				points.append(('eclipse', float(result[2])))
+		except Exception:
+			pass  # Unavailable optional points cannot trigger a display hit.
+	return points
+
+
 def get_overlay_trigger_longitudes(chrt, options):
+	"""Display contacts from visible inner objects plus optional house cusps.
+
+	Use live visibility rather than the chart-build-time conjunction matrices.
+	No outer-ring object can reveal another outer-ring object.
+	"""
 	if chrt is None:
 		return []
 
@@ -284,14 +329,9 @@ def get_overlay_trigger_longitudes(chrt, options):
 			continue
 
 	try:
-		asc = float(chrt.houses.ascmc[houses.Houses.ASC])
-		mc = float(chrt.houses.ascmc[houses.Houses.MC])
-		targets.extend((
-			(None, asc),
-			(None, util.normalize(asc + 180.0)),
-			(None, mc),
-			(None, util.normalize(mc + 180.0)),
-		))
+		from chart import semantic_angle_longitude
+		targets.extend((None, semantic_angle_longitude(chrt, key))
+			for key in ('asc', 'dsc', 'mc', 'ic'))
 	except Exception:
 		pass
 
@@ -302,17 +342,15 @@ def get_overlay_trigger_longitudes(chrt, options):
 		except Exception:
 			pass
 
-	if getattr(options, 'showfixstarslof', False):
-		try:
-			targets.append((None, float(chrt.fortune.fortune[fortune.Fortune.LON])))
-		except Exception:
-			pass
+	targets.extend((None, lon) for _key, lon in get_inner_chart_point_longitudes(chrt, options))
 
 	return targets
 
 
-def chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=None):
-	for body_id, target_lon in get_overlay_trigger_longitudes(chrt, options):
+def chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=None, *, targets=None):
+	if targets is None:
+		targets = get_overlay_trigger_longitudes(chrt, options)
+	for body_id, target_lon in targets:
 		if skip_body_id is not None and body_id == skip_body_id:
 			continue
 		if is_ring_direct_hit(lon, target_lon, orb):
@@ -387,9 +425,10 @@ def collect_asteroid_ring_items(chrt, options, *, filter_hits=True):
 def collect_midpoint_ring_items(chrt, options, *, filter_hits=True):
 	orb = float(getattr(options, 'ringorb_midpoints', 1.5))
 	items = []
+	targets = get_overlay_trigger_longitudes(chrt, options) if filter_hits else []
 	for midpoint in getattr(getattr(chrt, 'midpoints', None), 'mids', ()) or ():
 		lon = float(midpoint.m)
-		if filter_hits and not chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if filter_hits and not chart_has_ring_direct_hit(chrt, options, lon, orb, targets=targets):
 			continue
 		items.append({
 			'family': 'midpoint',
@@ -404,6 +443,7 @@ def collect_midpoint_ring_items(chrt, options, *, filter_hits=True):
 def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 	orb = float(getattr(options, 'ringorb_hybrid', 1.5))
 	items = []
+	targets = get_overlay_trigger_longitudes(chrt, options) if filter_hits else []
 
 	try:
 		varga_cache = getattr(chrt, '_varga_overlay_longitudes', None)
@@ -432,10 +472,10 @@ def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 			if body_id is None or not is_planet_visible(options, body_id):
 				continue
 			lon = float(longitude)
-			if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
+			if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, targets=targets):
 				items.append({
 					'family': 'dodecatemoria',
-					'name': '%s dodec' % get_planet_name(body_id),
+					'name': mtexts.txts.get('DodecatemorionRingLabel', '%s dodec') % get_planet_name(body_id),
 					'lon': lon,
 					'bodyId': int(body_id),
 				})
@@ -456,7 +496,7 @@ def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 			name = part[arabicparts.ArabicParts.NAME]
 		except Exception:
 			continue
-		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, targets=targets):
 			config_index = active_part_indices[active_index] if active_index < len(active_part_indices) else active_index
 			items.append({
 				'family': 'arabic_part',
@@ -473,7 +513,7 @@ def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 			name = astrology.display_fixstar_name(star[fixstars.FixStars.NOMNAME], options, star[fixstars.FixStars.NAME])
 		except Exception:
 			continue
-		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, targets=targets):
 			code = str(star[fixstars.FixStars.NOMNAME] or '')
 			try:
 				original_index = int(fixstar_obj.mixed[star_index])
@@ -487,7 +527,7 @@ def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 		if not getattr(body, 'data', None) or len(body.data) < 4:
 			continue
 		lon = float(body.data[0])
-		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None)):
+		if not filter_hits or chart_has_ring_direct_hit(chrt, options, lon, orb, skip_body_id=getattr(body, 'aId', None), targets=targets):
 			items.append({
 				'family': 'asteroid',
 				'name': getattr(body, 'name', mtexts.txts.get('Asteroid', 'Asteroid')),
@@ -498,6 +538,9 @@ def collect_hybrid_ring_items(chrt, options, *, filter_hits=True):
 
 	items.sort(key=lambda item: item['lon'])
 	return items
+
+
+_PLANET_NAME_KEYS = ('Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto')
 
 
 class Common:
@@ -602,12 +645,8 @@ class Common:
 		self.Planets = ('A', 'B', 'C', 'D', 'E', 'F', 'G', uranus, 'I', pluto, 'K', 'L')
 
 	def _configure_fonts(self, opts):
+		# Native webviews and ReportLab load their own fonts.
 		fontprofiles.apply_to_common(self, opts, self.base_dir)
-		symbols_path = os.path.abspath(self.symbols)
-		wxcompat.register_private_font(self.symbols, wxcompat.MORINUS_BUNDLED_FACE)
-		for font_path in fontprofiles.common_font_paths(self):
-			if os.path.abspath(font_path) != symbols_path:
-				wxcompat.register_private_font(font_path)
 
 	def get_planet_glyph(self, planet_idx):
 		if planet_idx == CHART_OBJECT_VERTEX:
@@ -620,6 +659,8 @@ class Common:
 		Swiss Pholus (16) shares the historical Vertex display-point number.
 		Bodies without a bundled glyph are rendered by their semantic name.
 		"""
+		if body_id in chart_bodies.APOGEE_IDS:
+			return chart_bodies.APOGEE_GLYPH
 		if body_id == astrology.SE_CHIRON:
 			return self.Chiron
 		if 0 <= body_id < len(self.Planets):
@@ -644,18 +685,27 @@ class Common:
 	def get_planet_name(self, planet_idx):
 		if planet_idx == CHART_OBJECT_VERTEX:
 			return mtexts.txts.get('Vertex', 'Vertex')
+		if planet_idx in chart_bodies.APOGEE_IDS:
+			return mtexts.txts['Apogee']
 		if planet_idx == astrology.SE_CHIRON:
 			return mtexts.txts.get('Chiron', 'Chiron')
 		if planet_idx == astrology.SE_MEAN_NODE:
 			return mtexts.txts.get('NorthNode', 'North Node')
 		if planet_idx == astrology.SE_TRUE_NODE:
 			return mtexts.txts.get('SouthNode', 'South Node')
+		# Swiss Ephemeris names are English-only; the classical and modern
+		# planets are display vocabulary resolved in the active language.
+		if astrology.SE_SUN <= planet_idx <= astrology.SE_PLUTO:
+			key = _PLANET_NAME_KEYS[planet_idx - astrology.SE_SUN]
+			return mtexts.txts.get(key, key)
 		try:
 			return astrology.swe_get_planet_name(planet_idx)
 		except Exception:
 			return mtexts.txts.get('TopicalPlanet', 'Planet')
 
 	def get_planet_color_index(self, planet_idx):
+		if planet_idx in chart_bodies.APOGEE_IDS:
+			return astrology.SE_MOON
 		if planet_idx == astrology.SE_CHIRON:
 			return astrology.SE_PLUTO+3
 		if planet_idx == astrology.SE_TRUE_NODE:

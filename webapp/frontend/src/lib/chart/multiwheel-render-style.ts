@@ -1,3 +1,4 @@
+import { drawingAngles, drawingCusps, pointAngle, positionSignGlyph, positionSignIndex, type DrawingPoint } from "./chart-coordinates";
 import { resolveWheelArrowSize } from "./wheel-render-style";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -12,6 +13,8 @@ import type {
 } from "./types";
 import {
   resolveWheelLinePaint,
+  resolveMinorDignityDecoration,
+  triplicityElementColor,
   resolveWheelOverlayMetrics,
   resolveWheelTypographyPaint,
   type WheelTypographyProfile,
@@ -40,6 +43,7 @@ export interface MultiwheelLayoutInput {
   ringCount: number;
   ringZodiac: MultiwheelZodiacPosition;
   bodiesPerRing?: readonly number[];
+  showZodiac?: boolean;
   showTerms?: boolean;
   showDecans?: boolean;
 }
@@ -173,7 +177,7 @@ export function resolveMultiwheelLayout(input: MultiwheelLayoutInput): Multiwhee
   const maxRadius = Math.max(80, input.maxRadius);
   const ringCount = clamp(Math.round(input.ringCount), 3, 4);
   const rim = maxRadius - Math.max(3, maxRadius * 0.01);
-  const zodiacThickness = clamp(maxRadius * 0.052, 18, 26);
+  const zodiacThickness = input.showZodiac === false ? 0 : clamp(maxRadius * 0.052, 18, 26);
   const termThickness = input.showTerms ? clamp(maxRadius * 0.026, 8, 13) : 0;
   const decanThickness = input.showDecans ? clamp(maxRadius * 0.026, 8, 13) : 0;
   const decorationThickness = zodiacThickness + termThickness + decanThickness;
@@ -247,6 +251,11 @@ type Body = {
   glyphFont: "text" | "morinus";
   glyphScale: number;
   color: string;
+  dignity?: string;
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("./types").ZodiacElement | null;
   degText: string;
   minText: string;
   motion: string;
@@ -270,6 +279,9 @@ type MultiwheelHoverBody =
   | { kind: "eclipse"; longitude: number; house?: number; label?: string };
 
 type MultiwheelHitIdentity = {
+  viewDocumentId?: string;
+  coordinateMode?: "zodiacal" | "ascensional";
+  coordinateRevision?: number;
   x: number;
   y: number;
   r: number;
@@ -278,6 +290,7 @@ type MultiwheelHitIdentity = {
 };
 
 export type MultiwheelHitRegion =
+  | ({kind: "secondary_ring"; itemId: string; family: string; label: string; longitude: number; searchObjectId?: string; shape: "rect"; left: number; top: number; width: number; height: number} & MultiwheelHitIdentity)
   | (MultiwheelHoverBody & MultiwheelHitIdentity)
   | ({
       kind: "angle";
@@ -301,11 +314,16 @@ const forwardGap = (from: number, to: number) => normalized(to - from);
 
 function chartBodies(chart: Chart, palette: ChartPalette): Body[] {
   const bodies: Body[] = chart.planets.map((planet) => ({
-    longitude: planet.longitude,
+    longitude: pointAngle(planet),
     glyph: planet.glyph ?? "",
     glyphFont: "morinus",
     glyphScale: 1,
     color: planet.color ?? palette.peregrin,
+    dignity: planet.dignity,
+    minorDignityCount: planet.minorDignityCount,
+    hasTermDignity: planet.hasTermDignity,
+    hasFaceDignity: planet.hasFaceDignity,
+    primaryTriplicityElement: planet.primaryTriplicityElement,
     degText: planet.degText ?? String(Math.floor(normalized(planet.longitude) % 30)),
     minText: planet.minText ?? "",
     motion: planet.motion ?? "",
@@ -320,7 +338,7 @@ function chartBodies(chart: Chart, palette: ChartPalette): Body[] {
       dignity: planet.dignity,
     },
   }));
-  const append = (point: {
+  const append = (point: DrawingPoint & {
     longitude: number;
     glyph?: string;
     color?: string;
@@ -334,9 +352,9 @@ function chartBodies(chart: Chart, palette: ChartPalette): Body[] {
   glyphScale = 1,
   fallbackFont: "text" | "morinus" = "morinus",
   ) => {
-    if (!point?.glyph && !fallbackGlyph) return;
+    if ((!point?.glyph && !fallbackGlyph) || !Number.isFinite(pointAngle(point))) return;
     bodies.push({
-      longitude: point?.longitude ?? 0,
+      longitude: pointAngle(point),
       glyph: point?.glyph ?? fallbackGlyph,
       glyphFont: point?.glyphFont ?? fallbackFont,
       glyphScale,
@@ -379,7 +397,7 @@ function chartBodies(chart: Chart, palette: ChartPalette): Body[] {
       label: eclipseVisible.label,
     }, 0.58, "text");
   }
-  return bodies.filter((body) => body.glyph);
+  return bodies.filter((body) => body.glyph && Number.isFinite(body.longitude));
 }
 
 /** Ordered circular relaxation with the largest real gap used as the seam. */
@@ -492,10 +510,10 @@ const MULTIWHEEL_ANGLE_ENTRIES = (
   label?: "AC" | "MC";
   longitude: number;
 }>[] => [
-  { angleId: "asc", label: "AC", longitude: chart.angles.asc },
-  { angleId: "dsc", longitude: chart.angles.dsc },
-  { angleId: "mc", label: "MC", longitude: chart.angles.mc },
-  { angleId: "ic", longitude: chart.angles.ic },
+  { angleId: "asc", label: "AC", longitude: drawingAngles(chart).asc },
+  { angleId: "dsc", longitude: drawingAngles(chart).dsc },
+  { angleId: "mc", label: "MC", longitude: drawingAngles(chart).mc },
+  { angleId: "ic", longitude: drawingAngles(chart).ic },
 ];
 
 function drawMultiwheelAngleArrowhead(
@@ -566,7 +584,7 @@ function drawMultiwheelAngles(
     hitRegions.push({
       kind: "angle",
       angleId,
-      longitude,
+      longitude: chart.angles[angleId],
       x: outer[0],
       y: outer[1],
       r: Math.max(8, layout.glyphSize * 0.5),
@@ -581,7 +599,7 @@ function drawMultiwheelAngles(
     });
   });
   if (chart.options.showAngleArrowheads !== false) {
-    [chart.angles.asc, chart.angles.mc].forEach((longitude) => {
+    [drawingAngles(chart).asc, drawingAngles(chart).mc].forEach((longitude) => {
       drawMultiwheelAngleArrowhead(
         draw,
         center,
@@ -657,7 +675,8 @@ function drawZodiac(
   frameWidth: number,
 ) {
   drawAnnulusFrame(draw, center, band, palette.frame, frameWidth);
-  const asc = chart.angles.asc;
+  const asc = chart.coordinateFrame ? chart.coordinateFrame.ramc + 90 : chart.angles.asc;
+  if (chart.coordinateFrame && !chart.coordinateFrame.showEquatorialSigns) return;
   const radius = (band.inner + band.outer) / 2;
   for (let sign = 0; sign < 12; sign += 1) {
     drawRadialLine(draw, center, band.inner, band.outer, sign * 30, asc, palette.frame, frameWidth * 0.6, 0.75);
@@ -685,7 +704,7 @@ function drawTermStrip(
   frameWidth: number,
 ) {
   drawAnnulusFrame(draw, center, band, palette.houses, frameWidth * 0.55);
-  const asc = chart.angles.asc;
+  const asc = drawingAngles(chart).asc;
   for (const signTerms of chart.options.terms ?? []) {
     for (const term of signTerms) {
       if (Number.isFinite(term.boundaryLon)) {
@@ -715,7 +734,7 @@ function drawDecanStrip(
   frameWidth: number,
 ) {
   drawAnnulusFrame(draw, center, band, palette.houses, frameWidth * 0.55);
-  const asc = chart.angles.asc;
+  const asc = drawingAngles(chart).asc;
   for (let longitude = 0; longitude < 360; longitude += 10) {
     drawRadialLine(draw, center, band.inner, band.outer, longitude, asc, palette.houses, 0.5, 0.65);
   }
@@ -746,10 +765,11 @@ function drawChartBand(
   hitRegions: MultiwheelHitRegion[],
   conjunctionFeet: ReadonlyMap<string, MultiwheelConjunctionFoot>,
   style: WheelRenderStyle,
+  onBodyLayout?: (ms: number) => void,
 ) {
   drawAnnulusFrame(draw, center, band, palette.frame, layout.frameWidth);
   if (chart.options.showHouses !== false) {
-    chart.houses.cusps.forEach((cusp, index) => {
+    drawingCusps(chart).forEach((cusp, index) => {
       if (index !== 0 && index !== 3 && index !== 6 && index !== 9) {
         drawRadialLine(
           draw,
@@ -763,7 +783,7 @@ function drawChartBand(
           0.28,
         );
       }
-      const next = chart.houses.cusps[(index + 1) % 12];
+      const next = drawingCusps(chart)[(index + 1) % 12];
       const middle = normalized(cusp + forwardGap(cusp, next) / 2);
       draw.text(polar(center, band.outer - layout.houseSize * 0.78, middle, rootAsc), String(index + 1), {
         font: fontUi,
@@ -794,6 +814,28 @@ function drawChartBand(
   const degreeSize = clamp(layout.positionSize * 1.20, 10, 12);
   const signSize = clamp(layout.positionSize * 1.24, 10, 13);
   const minuteSize = clamp(layout.positionSize * 0.94, 8, 10);
+  const minorOutline = (body: Body, bounds: { x: number; y: number; w: number; h: number }) => {
+    if (!body.minorDignityCount || !(chart.options.showDignityGlyphs
+      || chart.options.showTermGlyphs || chart.options.showFaceGlyphs)) return;
+    const ink = draw.textbounds(body.glyph, { font: body.glyphFont === "text" ? fontUi : fontSymbols,
+      size: layout.glyphSize * body.glyphScale, align: "center", baseline: "middle" });
+    const painted = { ...ink, x: Math.round(bounds.x + bounds.w / 2) + ink.x,
+      y: Math.round(bounds.y + bounds.h / 2) + ink.y };
+    return resolveMinorDignityDecoration(body, painted, layout.glyphSize * body.glyphScale,
+      { font: fontUi, dignityColor: palette.domicil,
+        triplicityColor: triplicityElementColor(body.primaryTriplicityElement, palette,
+          Boolean(chart.options.useZodiacElementColors)),
+        measure: (text, size, font, weight) => {
+          const ink = draw.textbounds(text, { font, size, weight, baseline: "alphabetic" });
+          return [ink.w, ink.h];
+        },
+        motionBounds: body.motion ? (() => {
+          const [w, h] = draw.textsize(body.motion, { font: fontUi, size: layout.positionSize * 0.8 });
+          return { x: bounds.x + bounds.w / 2 + layout.glyphSize * 0.44 - w / 2,
+            y: bounds.y + bounds.h / 2 + layout.glyphSize * 0.12 - h / 2, w, h };
+        })() : undefined }, chart.options);
+  };
+  const layoutStartedAt = onBodyLayout ? performance.now() : 0;
   const measuredBodies = bodies.map((body) => {
     const glyphFont = body.glyphFont === "text" ? fontUi : fontSymbols;
     const glyphMeasure = draw.textsize(body.glyph, {
@@ -805,7 +847,7 @@ function drawChartBand(
       : [0, 0] as const;
     const signMeasure = showPositions
       ? draw.textsize(
-        signGlyph(Math.floor(normalized(body.longitude) / 30), chart.options.signVariant),
+        positionSignGlyph(chart, body.longitude, signGlyph),
         { font: fontSymbols, size: signSize },
       )
       : [0, 0] as const;
@@ -815,13 +857,16 @@ function drawChartBand(
         { font: fontUi, size: minuteSize },
       )
       : [0, 0] as const;
+    const outline = minorOutline(body, { x: 0, y: 0, w: glyphMeasure[0], h: glyphMeasure[1] });
+    const glyphFootprint = outline ? [outline.bounds.w, outline.bounds.h] as const : glyphMeasure;
     return {
       glyphMeasure,
+      glyphFootprint,
       degreeMeasure,
       signMeasure,
       minuteMeasure,
       widest: Math.max(
-        glyphMeasure[0] + (body.motion ? layout.positionSize * 0.8 : 0),
+        glyphFootprint[0] + (body.motion ? layout.positionSize * 0.8 : 0),
         degreeMeasure[0],
         signMeasure[0],
         minuteMeasure[0],
@@ -830,7 +875,7 @@ function drawChartBand(
   });
   const rowDepths = measuredBodies.reduce<MultiwheelBodyStackDepths>(
     (depths, body) => ({
-      glyph: Math.max(depths.glyph, body.glyphMeasure[1]),
+      glyph: Math.max(depths.glyph, body.glyphFootprint[1]),
       degree: Math.max(depths.degree, body.degreeMeasure[1]),
       sign: Math.max(depths.sign, body.signMeasure[1]),
       minute: Math.max(depths.minute, body.minuteMeasure[1]),
@@ -861,6 +906,7 @@ function drawChartBand(
     17,
   );
   const displayed = spreadLongitudes(bodies.map((body) => body.longitude), minimumGap);
+  onBodyLayout?.(performance.now() - layoutStartedAt);
   const bodyFootLength = resolveMultiwheelBodyFootLength(band, layout, style);
   const resolvedBodyFootPaint = resolveWheelLinePaint(
     style,
@@ -911,10 +957,14 @@ function drawChartBand(
         paintedFoot,
       );
     }
+    const [glyphW, glyphH] = measuredBodies[index].glyphMeasure;
+    const outline = minorOutline(body, { x: glyphPoint[0] - glyphW / 2,
+      y: glyphPoint[1] - glyphH / 2, w: glyphW, h: glyphH });
     draw.text(glyphPoint, body.glyph, {
       font: body.glyphFont === "text" ? fontUi : fontSymbols,
       size: layout.glyphSize * body.glyphScale,
       fill: body.color,
+      markers: outline?.markers,
       align: "center",
       baseline: "middle",
     });
@@ -922,7 +972,7 @@ function drawChartBand(
       ...body.hover,
       x: glyphPoint[0],
       y: glyphPoint[1],
-      r: Math.max(8, layout.glyphSize * body.glyphScale * 0.72),
+      r: Math.max(8, layout.glyphSize * body.glyphScale * 0.72, outline ? Math.hypot(outline.bounds.w, outline.bounds.h) / 2 : 0),
       ringIndex,
       chartRole: ringIndex === 0 ? "primary" : "outer",
     });
@@ -943,12 +993,12 @@ function drawChartBand(
         align: "center",
         baseline: "middle",
       });
-      const signIndex = Math.floor(normalized(body.longitude) / 30);
-      draw.text(signPoint, signGlyph(signIndex, chart.options.signVariant), {
+      const signIndex = positionSignIndex(chart, body.longitude);
+      draw.text(signPoint, signIndex == null ? "" : signGlyph(signIndex, chart.options.signVariant), {
         font: fontSymbols,
         size: signSize,
         fill: chart.options.multiwheelUseSignColors
-          ? chart.options.multiwheelSignColors?.[signIndex] ?? palette.signs
+          ? chart.options.multiwheelSignColors?.[signIndex ?? 0] ?? palette.signs
           : palette.signs,
         align: "center",
         baseline: "middle",
@@ -1093,12 +1143,13 @@ export function drawMultiwheel(
   fonts: { symbols: string; ui: string },
   viewport: MultiwheelViewport,
   style: WheelRenderStyle,
+  onBodyLayout?: (ms: number) => void,
 ): MultiwheelHitRegion[] {
   const rings = (snapshot.rings ?? []).slice(0, layout.ringBands.length);
   const hitRegions: MultiwheelHitRegion[] = [];
   if (rings.length < 3) return hitRegions;
   const root = rings[0];
-  const rootAsc = root.angles.asc;
+  const rootAsc = root.coordinateFrame ? 0 : root.angles.asc;
   const conjunctionFeet = resolveMultiwheelConjunctionFeet(snapshot);
 
   draw.fillBackground(palette.background);
@@ -1119,6 +1170,7 @@ export function drawMultiwheel(
         hitRegions,
         conjunctionFeet,
         style,
+        onBodyLayout,
       );
     }
   });
@@ -1152,7 +1204,9 @@ export function drawMultiwheel(
     layout,
     style,
   );
-  return hitRegions;
+  return hitRegions.map(region => ({...region, viewDocumentId: snapshot.document?.documentId,
+    coordinateMode: root.coordinateFrame ? "ascensional" : "zodiacal",
+    coordinateRevision: root.coordinateFrame?.revision}));
 }
 
 export function findMultiwheelHitRegion(
@@ -1165,7 +1219,11 @@ export function findMultiwheelHitRegion(
   for (const region of regions) {
     let distance: number;
     let inside: boolean;
-    if (region.kind === "angle" && region.shape === "line") {
+    if (region.kind === "secondary_ring") {
+      const dx = x - region.x, dy = y - region.y;
+      distance = dx * dx + dy * dy;
+      inside = x >= region.left && x <= region.left + region.width && y >= region.top && y <= region.top + region.height;
+    } else if (region.kind === "angle" && region.shape === "line") {
       const vx = region.x2 - region.x1;
       const vy = region.y2 - region.y1;
       const lengthSq = vx * vx + vy * vy;

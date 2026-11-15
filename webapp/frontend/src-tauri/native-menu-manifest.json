@@ -24,7 +24,7 @@
             { "type": "item", "id": "menu.save.as", "label": "Save As...", "accelerator": "CmdOrCtrl+Shift+S", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14208,14589" }
           ]
         },
-        { "type": "item", "id": "menu.export", "label": "Export...", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14210,14590,15534-15576,21271; Packet 10C /api/io/export" },
+        { "type": "item", "id": "menu.export", "label": "Export...", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14210,14590,15534-15576,21271; /api/io/export-rendered" },
         { "type": "item", "id": "menu.copy-chart-png", "label": "Copy Chart as PNG", "accelerator": "CmdOrCtrl+Shift+C", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "Aries retained WYSIWYG chart renderer and native clipboard" },
         { "type": "item", "id": "menu.startup.set", "label": "Use Current As Startup Chart", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14211,14696,15374-15390,21262; Packet 10B /api/io/startup/set-current" },
         { "type": "item", "id": "menu.startup.clear", "label": "Clear Startup Chart", "enabled": true, "status": "live", "source": "morin.py:14212,14697,15393-15396,21263; Packet 10B /api/io/startup/clear" },
@@ -45,6 +45,14 @@
         { "type": "separator" },
         { "type": "item", "id": "synastry", "label": "Synastry", "accelerator": "CmdOrCtrl+Y", "enabled": false, "status": "live", "runtimeEnablement": "active-chart", "source": "morin.py:14227,14591,21273" },
         { "type": "item", "id": "menu.find-time", "label": "Find Time and Place", "enabled": false, "status": "deferred", "deferredTo": "rectification-find-time", "source": "morin.py:14228,14592" }
+      ]
+    },
+    {
+      "type": "submenu",
+      "id": "menu.view",
+      "label": "View",
+      "children": [
+        { "type": "item", "id": "menu.view.edit-sidebar", "label": "Edit Sidebar…", "enabled": true, "status": "live", "source": "design A2 (2026-10-16)" }
       ]
     },
     {
@@ -308,9 +316,12 @@
       "id": "menu.help",
       "label": "Help",
       "children": [
-        { "type": "item", "id": "menu.help.help", "label": "Help", "enabled": true, "status": "live", "source": "morin.py:14478,14709" },
+        { "type": "item", "id": "menu.help.help", "label": "Quick Start", "enabled": true, "status": "live", "source": "Aries Quick Start drawer" },
+        { "type": "item", "id": "menu.help.find-setting", "label": "Find a setting…", "labelKey": "settings.findMenu", "enabled": true, "status": "live", "source": "Aries settings search" },
+        { "type": "item", "id": "menu.help.walkthrough", "label": "Walkthrough", "labelKey": "urania.menu", "accelerator": "CmdOrCtrl+I", "enabled": true, "status": "live", "source": "Urania walkthrough" },
         { "type": "item", "id": "menu.help.features", "label": "Features", "enabled": true, "status": "live", "source": "webapp feature catalog" },
         { "type": "item", "id": "menu.help.license", "label": "License…", "enabled": true, "status": "live", "source": "Aries licensing" },
+        { "type": "item", "id": "menu.help.report-bug", "label": "Report a bug", "enabled": true, "status": "live", "source": "Aries beta diagnostics" },
         { "type": "item", "id": "menu.help.about", "label": "About", "enabled": true, "status": "live", "source": "morin.py:14479,14710" }
       ]
     }

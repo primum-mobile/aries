@@ -28,8 +28,6 @@ pieces it coordinates are reused verbatim:
   Binding -> Deriver -> Chart child-rebuild path (the same construction
   ``webapp/daemon/supplementary_service.py`` uses).
 
-The full extraction spec, with ``morin.py`` ``file:line`` citations for every
-behaviour, is ``doc/migration/surfaces/workspace-session.md``.
 
 Presentation (drawBkg/Refresh/status/caption/focus/AT-popup/notes/table/
 stepper-dialog/step-burst render deferral) is deliberately NOT reproduced — the
@@ -52,6 +50,7 @@ import horary_session
 import posfordate
 import workspace_model
 from engine import supplementary_adapter
+from engine.workspace_chart_naming import specialized_chart_name
 from engine.supplementary_headless_driver import (
     HeadlessChartSession,
     SupplementaryHeadlessDriver,
@@ -93,6 +92,10 @@ class SessionChangedEvent:
     change_reason: str
     is_active: bool
     rebuilt_child_ids: List[str] = field(default_factory=list)
+    # False marks a repaint-only tick whose retained-list data is owned by
+    # another event (see ``list_neutral_option_refresh``); None keeps the
+    # reason-derived default.
+    list_data_changed: Optional[bool] = None
 
 
 @dataclass
@@ -128,6 +131,7 @@ class WorkspaceSessionController:
         self._on_event: Optional[Callable[[SessionChangedEvent], None]] = None
         self._child_refresh_suppression_depth = 0
         self._child_refresh_batch_depth = 0
+        self._list_neutral_option_refresh_depth = 0
 
     # -- accessors ---------------------------------------------------------
 
@@ -156,8 +160,27 @@ class WorkspaceSessionController:
         self._on_event = callback
 
     def _emit(self, event: SessionChangedEvent) -> None:
+        if self._list_neutral_option_refresh_depth > 0 and event.list_data_changed is None:
+            event.list_data_changed = False
         if self._on_event is not None:
             self._on_event(event)
+
+    @contextmanager
+    def list_neutral_option_refresh(self):
+        """Publish every session tick of an options refresh as repaint-only.
+
+        Charts still repaint from these ticks, while retained lists follow the
+        options patch's own ``options.changed`` event. Without this, each
+        refreshed session would ask the same list to recalculate (the
+        house-system ``options-refresh`` reason applies the same contract).
+        """
+        self._list_neutral_option_refresh_depth += 1
+        try:
+            yield
+        finally:
+            self._list_neutral_option_refresh_depth = max(
+                0, self._list_neutral_option_refresh_depth - 1,
+            )
 
     @contextmanager
     def suspend_child_refresh(self):
@@ -337,7 +360,7 @@ class WorkspaceSessionController:
         if cs is not None and getattr(cs, 'chart', None) is not None:
             chrt = cs.chart
         custom_root = session.get('saved_event_name') or session.get('custom_title_root') or ''
-        name = custom_root or getattr(chrt, 'name', '') or session.get('base_title') or ''
+        name = specialized_chart_name(session) or custom_root or getattr(chrt, 'name', '') or session.get('base_title') or ''
         dirty = bool(session.get('dirty', False))
         title = ('%s *' % name) if (dirty and name) else name
         if title:
@@ -1053,10 +1076,25 @@ class WorkspaceSessionController:
             change_reason=change_reason,
             is_active=bool(is_active),
             rebuilt_child_ids=rebuilt,
+            list_data_changed=True if self._step_replaced_radix(cs, change_reason) else None,
         )
         if not self._child_refresh_batch_depth:
             self._emit(event)
         return event
+
+    @staticmethod
+    def _step_replaced_radix(cs, change_reason: str) -> bool:
+        """A 'step' whose new chart is also the session's radix.
+
+        Self-anchored sessions (``DirtyRadixSession`` rectification stepping,
+        ``HorarySession``) assign ``radix = chart`` on every step, so every
+        radix-derived list row changes.  An ordinary cursor/derived-chart step
+        leaves ``radix`` on the natal chart and is not a list-data change.
+        """
+        if change_reason != 'step' or cs is None:
+            return False
+        chart = getattr(cs, 'chart', None)
+        return chart is not None and getattr(cs, 'radix', None) is chart
 
     def _sync_binding_state(self, cs, session: Optional[dict]) -> None:
         """morin.py:6700-6790 _sync_workspace_*_binding_state (cursor-derivable

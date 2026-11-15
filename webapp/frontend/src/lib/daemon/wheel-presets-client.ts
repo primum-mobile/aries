@@ -12,17 +12,23 @@ export type WheelPreset = {
   layout: WheelTypographyProfile;
   factory: boolean;
   overrides: WheelGeometryOverrides;
+  appearance?: Record<string, StyleLabTokenValue>;
+  appearanceRoles?: Record<string, string>;
   composition: WheelComposition;
 };
 export type WheelPresetDraft = {
   sourcePresetId: string;
   overrides: WheelGeometryOverrides;
+  appearance?: Record<string, StyleLabTokenValue>;
+  appearanceRoles?: Record<string, string>;
   composition: WheelComposition;
   dirty: boolean;
 };
 export type WheelPresetsState = {
   schemaVersion: 1;
   revision: number;
+  /** Source identity for atomic theme capture; not rendering authority. */
+  context?: {sourceThemeName: string; revision: number};
   /** Damaged persisted data is preserved; the editor offers a read-only fallback. */
   loadError?: string | null;
   /** Canonical fields affected by ring edits; avoids reloading all Settings. */
@@ -42,6 +48,7 @@ export type WheelPresetMutation = {
   name?: string;
   overrides?: Record<string, StyleLabTokenValue | null>;
   composition?: WheelComposition;
+  appearance?: Record<string, StyleLabTokenValue>;
 };
 
 export class WheelPresetApiError extends Error {

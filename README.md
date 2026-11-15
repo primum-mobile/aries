@@ -21,15 +21,21 @@ official supported installers.
 | `Cmd/Ctrl + S` | Save |
 | `Cmd/Ctrl + Shift + S` | Save As |
 | `Cmd/Ctrl + Shift + C` | Copy chart as PNG |
+| `Cmd/Ctrl + I` | Walkthrough |
 | `Cmd/Ctrl + W` | Close active document |
+| `^` | Toggle sidebar |
 | `Cmd/Ctrl + B` | Toggle sidebar |
 | `Cmd/Ctrl + F` | Search |
 | `Cmd/Ctrl + Y` | Synastry |
 | `Cmd/Ctrl + G` | Cycle the secondary-ring view |
 | `Cmd/Ctrl + Alt + A` | Ascensional Transits |
+| `Alt/Option + A` | Ascensional view |
+| `Alt/Option + E` | Export poster |
 | `Cmd/Ctrl + Shift + A` | Appearance |
 | `Cmd/Ctrl + Shift + E` | Chart Style Lab |
+| `Cmd/Ctrl + Shift + H` | Cycle house system |
 | `I` | Toggle Inspector |
+| `N` | Toggle notes |
 | `Shift`, then `Shift` | Open Spotlight |
 | `0`–`9` | Open Spotlight with that digit |
 | `T` | Transits |
@@ -49,6 +55,7 @@ official supported installers.
 | `Left` / `Right` | Previous / next contextual time step |
 | `Shift + Left` / `Shift + Right` | Finer contextual time step |
 | `Alt/Option + Left` / `Alt/Option + Right` | Finest contextual time step |
+| `Shift + Alt/Option + Left` / `Shift + Alt/Option + Right` | Step by one second |
 | `Up` / `Down` | Contextual week or list navigation |
 | `Shift + Up` / `Shift + Down` | Previous / next lunar quarter |
 | `Space` | Reset to the document's initial chart |

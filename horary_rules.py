@@ -68,7 +68,6 @@ _THEME_SLUGS = {
 # Question category → default significator houses. The UI picker feeds
 # these into `context` when the user opens a horary chart; pack rules read
 # the houses via the context-aware predicates in `corpus_predicates`.
-# See doc/horary/lilly-book-ii.md for Lilly's house-taxonomy table.
 DEFAULT_SIGNIFICATORS = {
     # General chart-state aphorisms (radicality, considerations before
     # judgment, dignity preponderance) — Lilly CA I Ch.XIX + general

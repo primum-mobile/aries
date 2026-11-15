@@ -5,23 +5,28 @@
 
 import * as React from "react";
 
-import { Check, CopyPlus, Save, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, CopyPlus, RotateCcw, Save, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ASPECT_GLYPHS,
   FORTUNE_GLYPH,
   PLANET_GLYPHS,
   PLANET_GLYPH_SEQUENCE,
   SE_CHIRON,
+  SE_MEAN_APOG,
   VERTEX_GLYPH,
 } from "@/lib/chart/glyphs";
 import type { OptionsPatch, OptionsPrimaryDirections, PrimaryDirectionPresetCommand } from "@/lib/daemon/client";
 import { useT } from "@/lib/i18n/i18n";
+import type { PrimaryDirectionsSettingsTab, SettingsSearchTarget } from "@/lib/settings-search";
+import { PD_SYSTEM_LABEL_KEYS } from "@/lib/settings-search-fields";
 import { cn } from "@/lib/utils";
+import { ListSegmentedControl } from "./list-controls";
 
 // ---------------------------------------------------------------------------
 // The COMPLETE Primary Directions settings panel — a faithful migration of the
@@ -102,30 +107,24 @@ const SMITER_LABEL_KEYS = [
   "primdir.iteration3",
 ] as const;
 
-// mtexts.typeListStat / typeListDyn (resolved via setLang(0)).
+// Index order follows primdirs.py PrimDirs static (NAIBOD..CUSTOMER) and
+// dynamic (TRUESOLAREQUATORIALARC..BIRTHDAYSOLARECLIPTICALARC) keys.
 const KEY_STAT_LABEL_KEYS = [
   "primdir.keyNaibod",
   "primdir.keyCardan",
   "primdir.keyPtolemy",
-  "primdir.keyUserP",
+  "primdir.keyCustom",
 ] as const;
 const KEY_DYN_LABEL_KEYS = [
-  "primdir.keyTrueSolarEquatorial",
-  "primdir.keyTrueSolarEquatorialBirthday",
-  "primdir.keyTrueSolarEcliptical",
-  "primdir.keyTrueSolarEclipticalBirthday",
+  "primdir.keyTrueSolarArcEquatorial",
+  "primdir.keyBirthSunMotionEquatorial",
+  "primdir.keyTrueSolarArcEcliptical",
+  "primdir.keyBirthSunMotionEcliptical",
 ] as const;
 const KEY_CUSTOMER_IDX = 3; // primdirs.py:130 PrimDirs.CUSTOMER
 
 // Display-label i18n keys for the radio/grid constants defined above. The
 // English/values live in the constants; these carry the translated captions.
-const PD_SYSTEM_LABEL_KEYS = [
-  "primdir.systemPlacidusSemiarc",
-  "primdir.systemPlacidusPole",
-  "primdir.systemRegiomontanus",
-  "primdir.systemCampanus",
-  "primdir.systemTopocentric",
-] as const;
 const PD_SUBMODE_LABEL_KEYS = [
   "primdir.modeMundane",
   "primdir.modeZodiacal",
@@ -191,14 +190,23 @@ type PrimaryDirectionPreset = {
   description: string;
   patch: Patch;
   buildPatch?: (settings: OptionsPrimaryDirections) => Patch;
-  optionsPatch?: OptionsPatch;
 };
 
-type PresetGlobalState = {
-  planetsPoints?: {
-    meannode?: boolean;
+/** The chart settings the PD engine directs: the node and the Moon parallax
+ * correction. Every shipped preset overrides both (mean node, parallax off). */
+export type PrimaryDirectionGlobals = { meannode: boolean; topocentric: boolean };
+
+// Shipped presets use the mean node (Marr, Estadella) and the geocentric
+// Moon (Polich/Page; Morin's worked examples, although AG16 ch. 5 states the
+// parallax rule).
+const PRESET_GLOBALS: PrimaryDirectionGlobals = { meannode: true, topocentric: false };
+
+function globalsPatch(globals: Partial<PrimaryDirectionGlobals>): OptionsPatch {
+  return {
+    ...(globals.meannode == null ? {} : { planetsPoints: { meannode: globals.meannode } }),
+    ...(globals.topocentric == null ? {} : { display: { topocentric: globals.topocentric } }),
   };
-};
+}
 
 const allBools = (length: number, value: boolean) => Array.from({ length }, () => value);
 const CORE_7 = [true, true, true, true, true, true, true, false, false, false, false, false];
@@ -274,7 +282,9 @@ const PRIMARY_ENGINE_PRESET_BASE: Patch = {
   pdsecmotion: false,
   pdsecmotioniter: 0,
   pdpromchiron: true,
+  pdpromapogee: true,
   pdpromarabicparts: false,
+  pdpromasteroids: false,
   promlof: true,
   pdcustomer: false,
   pdcustomersouthern: false,
@@ -286,8 +296,10 @@ const PRIMARY_ENGINE_PRESET_BASE: Patch = {
   siglof: true,
   pdsyzygy: true,
   pdsigchiron: true,
+  pdsigapogee: true,
   pdsigvertex: false,
   pdsigarabicparts: false,
+  pdsigasteroids: false,
   pdcustomer2: false,
   pdcustomer2southern: false,
   pdcircumoa: 1,
@@ -308,7 +320,8 @@ function presetPatch(overrides: Patch): Patch {
     promplanets: patch.promplanets?.slice(),
     pdaspects: patch.pdaspects?.slice(),
     pdparallels: patch.pdparallels?.slice(),
-    pdfixstarssel: patch.pdfixstarssel?.slice(),
+    // Presets without a star selection leave the current chooser intact.
+    ...(patch.pdfixstarssel !== undefined ? { pdfixstarssel: patch.pdfixstarssel.slice() } : {}),
     sigangles: patch.sigangles?.slice(),
     sigplanets: patch.sigplanets?.slice(),
   };
@@ -346,6 +359,9 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       bianchini: false,
       morin_excentric: true,
       morin_antiscia: true,
+      // Morin's converse: the significator carried to the promissor, under
+      // the promissor's pole (AG 22 ch. 7; his own nativity, AG 23).
+      pdconverse: 1,
       zodpromsigasps: [true, false],
       ascmchcsasproms: false,
       promplanets: CORE_7,
@@ -354,6 +370,7 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       pdmidpoints: false,
       pdterms: false,
       pdpromchiron: false,
+      pdpromapogee: false,
       pdpromarabicparts: false,
       promlof: true,
       pdaspects: MORIN_ACCEPTED_ASPECTS,
@@ -364,6 +381,7 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       siglof: true,
       pdsyzygy: false,
       pdsigchiron: false,
+      pdsigapogee: false,
       pdsigvertex: false,
       pdsigarabicparts: false,
     }),
@@ -378,6 +396,8 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       subprimarydir: 1,
       subzodiacal: 2,
       bianchini: false,
+      // Marr and Estadella keep the significator's own pole: modern converse.
+      pdconverse: 0,
       zodpromsigasps: [true, true],
       // Angles act as significators (planets' aspect rays are directed TO the
       // ASC/MC via "Aspects of Promissors to Significators"). Directing the
@@ -393,6 +413,7 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       pdfixstars: false,
       pdsecmotion: false,
       pdpromchiron: false,
+      pdpromapogee: false,
       pdpromarabicparts: false,
       promlof: true,
       pdaspects: TOPOCENTRIC_ASPECTS,
@@ -403,6 +424,7 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       siglof: true,
       pdsyzygy: false,
       pdsigchiron: false,
+      pdsigapogee: false,
       pdsigvertex: false,
       pdsigarabicparts: false,
       pdcustomer: false,
@@ -422,6 +444,7 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       promplanets: CORE_7,
       pdterms: false,
       pdpromchiron: false,
+      pdpromapogee: false,
       pdpromarabicparts: false,
       promlof: false,
       pdaspects: MAJOR_ASPECTS,
@@ -432,8 +455,13 @@ const PRIMARY_DIRECTION_PRESETS: PrimaryDirectionPreset[] = [
       siglof: true,
       pdsyzygy: false,
       pdsigchiron: false,
+      pdsigapogee: false,
       pdsigvertex: false,
       pdkeys: 2,
+      // Ptolemy's prorogation in the order of the leading signs: the
+      // prorogator "moves toward them" by the primary motion, the
+      // traditional converse (Tetrabiblos III.10).
+      pdconverse: 1,
     }),
   },
 ];
@@ -446,33 +474,25 @@ function patchValueEquals(actual: unknown, expected: unknown): boolean {
   return actual === expected;
 }
 
-function presetOptionsPatchMatches(globalState: PresetGlobalState | undefined, optionsPatch: OptionsPatch | undefined) {
-  if (!optionsPatch?.planetsPoints) return true;
-  const expectedMeanNode = optionsPatch.planetsPoints.meannode;
-  if (expectedMeanNode !== undefined) {
-    return globalState?.planetsPoints?.meannode === expectedMeanNode;
-  }
-  return true;
-}
-
 function presetMatchesSettings(
   settings: OptionsPrimaryDirections,
   preset: PrimaryDirectionPreset,
-  globalState?: PresetGlobalState,
+  globals?: PrimaryDirectionGlobals,
 ): boolean {
+  if (globals && (globals.meannode !== PRESET_GLOBALS.meannode
+      || globals.topocentric !== PRESET_GLOBALS.topocentric)) return false;
   const patch = presetResolvedPatch(preset, settings);
-  const primaryMatches = Object.entries(patch).every(([key, expected]) => {
+  return Object.entries(patch).every(([key, expected]) => {
     if (expected === undefined) return true;
     return patchValueEquals(settings[key as keyof OptionsPrimaryDirections], expected);
   });
-  return primaryMatches && presetOptionsPatchMatches(globalState, preset.optionsPatch);
 }
 
 function activePrimaryDirectionPreset(
   settings: OptionsPrimaryDirections,
-  globalState?: PresetGlobalState,
+  globals?: PrimaryDirectionGlobals,
 ): PrimaryDirectionPreset | null {
-  return PRIMARY_DIRECTION_PRESETS.find((preset) => presetMatchesSettings(settings, preset, globalState)) ?? null;
+  return PRIMARY_DIRECTION_PRESETS.find((preset) => presetMatchesSettings(settings, preset, globals)) ?? null;
 }
 
 function presetResolvedPatch(preset: PrimaryDirectionPreset, settings: OptionsPrimaryDirections): Patch {
@@ -482,14 +502,11 @@ function presetResolvedPatch(preset: PrimaryDirectionPreset, settings: OptionsPr
   };
 }
 
-function presetResolvedOptionsPatch(preset: PrimaryDirectionPreset): OptionsPatch | undefined {
-  return preset.optionsPatch;
-}
-
 function GlyphCheck({
   glyph,
   textGlyph,
   label,
+  hint,
   checked,
   disabled,
   className,
@@ -498,6 +515,7 @@ function GlyphCheck({
   glyph?: string;
   textGlyph?: string;
   label: string;
+  hint?: string;
   checked: boolean;
   disabled?: boolean;
   className?: string;
@@ -506,8 +524,9 @@ function GlyphCheck({
   return (
     <button
       type="button"
-      title={label}
+      title={hint ?? label}
       disabled={disabled}
+      aria-pressed={checked}
       onClick={onToggle}
       className={cn(
         "flex items-center gap-2 rounded px-1.5 py-1 text-left text-xs",
@@ -519,7 +538,7 @@ function GlyphCheck({
       <span
         aria-hidden
         className={cn(
-          "inline-flex h-4 w-4 items-center justify-center rounded-xs border text-[length:var(--aries-font-size-section)]",
+          "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border text-[length:var(--aries-font-size-section)]",
           checked ? "border-primary bg-primary text-primary-foreground" : "border-border",
         )}
       >
@@ -539,17 +558,19 @@ function GlyphCheck({
 
 function PlainCheck({
   label,
+  hint,
   checked,
   disabled,
   onToggle,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   disabled?: boolean;
   onToggle: () => void;
 }) {
   return (
-    <GlyphCheck label={label} checked={checked} disabled={disabled} onToggle={onToggle} />
+    <GlyphCheck label={label} hint={hint} checked={checked} disabled={disabled} onToggle={onToggle} />
   );
 }
 
@@ -561,7 +582,7 @@ function RadioRow<T extends string | number>({
   wrapLabels = false,
   onChange,
 }: {
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; searchAnchor?: string }[];
   value: T;
   disabled?: boolean;
   disabledValues?: readonly T[];
@@ -576,6 +597,7 @@ function RadioRow<T extends string | number>({
           <button
             key={o.value}
             type="button"
+            data-settings-search-anchor={o.searchAnchor}
             disabled={optionDisabled}
             onClick={() => onChange(o.value)}
             className={cn(
@@ -583,16 +605,17 @@ function RadioRow<T extends string | number>({
               "hover:bg-accent disabled:opacity-40 disabled:pointer-events-none",
             )}
           >
-            <span
-              aria-hidden
-              className={cn(
-              "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border",
-                value === o.value ? "border-primary" : "border-border",
-              )}
-            >
-              {value === o.value ? (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              ) : null}
+            <span aria-hidden className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+              <span
+                className={cn(
+                  "inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border",
+                  value === o.value ? "border-primary" : "border-border",
+                )}
+              >
+                {value === o.value ? (
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                ) : null}
+              </span>
             </span>
             <span className={wrapLabels ? "whitespace-normal" : "truncate"}>{o.label}</span>
           </button>
@@ -602,9 +625,9 @@ function RadioRow<T extends string | number>({
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children, searchAnchor }: { children: React.ReactNode; searchAnchor?: string }) {
   return (
-    <div className="mt-1 text-[length:var(--aries-font-size-small)] font-semibold text-muted-foreground">
+    <div data-settings-search-anchor={searchAnchor} className="mt-1 text-[length:var(--aries-font-size-small)] font-semibold text-muted-foreground">
       {children}
     </div>
   );
@@ -614,12 +637,14 @@ function SmallNumberInput({
   value,
   min,
   max,
+  label,
   disabled,
   onCommit,
 }: {
   value: number;
   min: number;
   max: number;
+  label?: string;
   disabled?: boolean;
   onCommit: (value: number) => void;
 }) {
@@ -627,6 +652,7 @@ function SmallNumberInput({
     <Input
       key={value}
       type="number"
+      aria-label={label}
       min={min}
       max={max}
       defaultValue={value}
@@ -677,13 +703,13 @@ function CustomerPointBlock({
   };
 
   return (
-    <div className="mt-1 rounded border border-border/60 p-2">
+    <div className="mt-1">
       <PlainCheck
         label={title}
         checked={enabled}
         onToggle={() => onPatch({ [enabledKey]: !enabled } as Patch)}
       />
-      <div className="mt-1 grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
+      <div hidden={!enabled} className="ml-1 grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
         <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.lon")}</span>
         <span className="flex items-center gap-1">
           <SmallNumberInput value={lon[0] ?? 0} min={0} max={359} disabled={!enabled} onCommit={(v) => setTriple(lonKey, lon, 0, v)} />
@@ -697,7 +723,7 @@ function CustomerPointBlock({
           <SmallNumberInput value={lat[2] ?? 0} min={0} max={59} disabled={!enabled} onCommit={(v) => setTriple(latKey, lat, 2, v)} />
         </span>
       </div>
-      <div className="mt-1">
+      <div hidden={!enabled} className="ml-1">
         <PlainCheck
           label={t("primdir.southernLatitude")}
           checked={southern}
@@ -709,149 +735,110 @@ function CustomerPointBlock({
   );
 }
 
-// --- Fixed-Star PD selection picker (the fixstarspddlg.FixStarsPDDlg sub-dialog,
-// fixstarspddlg.py). The desktop opens a modal checklist of the catalog stars
-// with name/code filtering, Select/Deselect All, and a 200-star cap
-// (FixStarPDSelectionModel.MAX_SELECTED). Here it is an inline picker that
-// commits pdfixstarssel live through the same options patch; the daemon supplies
-// the catalog (ordinal/code/name) and enforces the same parallel-bool contract
-// consumed by primdirs._pd_fixstar_selected (primdirs.py:497-511).
-function FixStarPdPicker({
-  catalog,
-  selection,
-  maxSelected,
-  disabled,
-  onPatch,
-}: {
-  catalog: OptionsPrimaryDirections["pdFixStarCatalog"];
-  selection: boolean[];
-  maxSelected: number;
-  disabled?: boolean;
-  onPatch: (patch: Patch) => void;
+function SelectionActions({ onReset, onSelectAll, onClear }: {
+  onReset: () => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button type="button" size="icon-xs" variant="ghost" onClick={onReset}
+        title={t("primdir.resetSelection")} aria-label={t("primdir.resetSelection")}>
+        <RotateCcw className="size-3.5" aria-hidden />
+      </Button>
+      <Button type="button" size="xs" variant="ghost" onClick={onClear}>
+        {t("primdir.deselectAll")}
+      </Button>
+      <Button type="button" size="xs" variant="ghost" onClick={onSelectAll}>
+        {t("primdir.selectAll")}
+      </Button>
+    </div>
+  );
+}
+
+// Retained, inline React drawer: the family switch and its chooser are one
+// control. Selection remains canonical option state when collapsed or off.
+function PointFamilyPicker({ label, enabled, items, selectedIds, maxSelected,
+  onEnabledChange, onSelectionChange, onReset }: {
+  label: string;
+  enabled: boolean;
+  items: { id: string; label: string; code?: string }[];
+  selectedIds: string[];
+  maxSelected?: number;
+  onEnabledChange: (enabled: boolean) => void;
+  onSelectionChange: (ids: string[]) => void;
+  onReset: () => void;
 }) {
   const t = useT();
   const [open, setOpen] = React.useState(false);
-  const [nameQuery, setNameQuery] = React.useState("");
-  const [codeQuery, setCodeQuery] = React.useState("");
-
-  const sel = React.useMemo(() => {
-    const out = catalog.map((entry) => !!selection[entry.ordinal]);
-    return out;
-  }, [catalog, selection]);
-  const selectedCount = sel.filter(Boolean).length;
-  const remaining = Math.max(0, maxSelected - selectedCount);
-
-  const commit = React.useCallback(
-    (next: boolean[]) => {
-      // pdfixstarssel is indexed by catalog ordinal; rebuild the full list.
-      const full = selection.slice();
-      catalog.forEach((entry, i) => {
-        full[entry.ordinal] = next[i];
-      });
-      onPatch({ pdfixstarssel: full });
-    },
-    [catalog, onPatch, selection],
-  );
-
-  const toggle = (i: number) => {
-    const next = sel.slice();
-    if (!next[i] && selectedCount >= maxSelected) return; // cap (set_selected:88-97)
-    next[i] = !next[i];
-    commit(next);
-  };
-  const selectAll = () => {
-    // FixStarPDSelectionModel.select_all caps at MAX_SELECTED (:102-106).
-    let count = 0;
-    const next = catalog.map(() => {
-      if (count >= maxSelected) return false;
-      count += 1;
-      return true;
-    });
-    commit(next);
-  };
-  const deselectAll = () => commit(catalog.map(() => false));
-
-  const nq = nameQuery.trim().toLowerCase();
-  const cq = codeQuery.trim().toLowerCase();
-  const visible = catalog
-    .map((entry, i) => ({ entry, i }))
-    .filter(({ entry }) => {
-      if (nq && !entry.name.toLowerCase().includes(nq)) return false;
-      if (cq && !entry.code.toLowerCase().includes(cq)) return false;
-      return true;
-    });
-
+  const [query, setQuery] = React.useState("");
+  const drawerId = React.useId();
+  const selected = new Set(selectedIds);
+  const visible = items.filter(item => `${item.label} ${item.code ?? ""}`.toLocaleLowerCase()
+    .includes(query.trim().toLocaleLowerCase()));
+  const choose = (ids: string[]) => onSelectionChange(maxSelected ? ids.slice(0, maxSelected) : ids);
   return (
-    <div className="ml-6 mt-1">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="text-[length:var(--aries-font-size-small)] text-primary hover:underline disabled:opacity-40 disabled:pointer-events-none"
-      >
-        {open ? t("primdir.hide") : t("primdir.selectStars")} {t("primdir.selectedCount", { count: selectedCount })}
-      </button>
-      {open ? (
-        <div className="mt-1 rounded border border-border p-2">
-          <div className="mb-1 flex items-center gap-1.5">
-            <Input
-              value={nameQuery}
-              onChange={(e) => setNameQuery(e.target.value)}
-              placeholder={t("primdir.placeholderName")}
-              className="h-6 text-[length:var(--aries-font-size-small)]"
-            />
-            <Input
-              value={codeQuery}
-              onChange={(e) => setCodeQuery(e.target.value)}
-              placeholder={t("primdir.placeholderCode")}
-              className="h-6 text-[length:var(--aries-font-size-small)]"
-            />
-          </div>
-          <div className="mb-1 flex items-center justify-between text-[length:var(--aries-font-size-section)] text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={deselectAll}>
-                {t("primdir.deselectAll")}
-              </Button>
-              <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={selectAll}>
-                {t("primdir.selectAll")}
-              </Button>
-            </div>
-            <span>{t("primdir.starsLeft", { count: remaining })}</span>
-          </div>
-          <ScrollArea className="h-40">
-            <div className="flex flex-col">
-              {visible.map(({ entry, i }) => (
-                <GlyphCheck
-                  key={entry.code}
-                  label={`${entry.name} (${entry.code})`}
-                  checked={sel[i]}
-                  onToggle={() => toggle(i)}
-                />
-              ))}
-              {visible.length === 0 ? (
-                <span className="px-1.5 py-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">{t("primdir.noStars")}</span>
-              ) : null}
-            </div>
-          </ScrollArea>
+    <div className="col-span-2 min-w-0">
+      <div className="flex items-center gap-1">
+        <GlyphCheck label={label} checked={enabled} onToggle={() => {
+          onEnabledChange(!enabled);
+          setOpen(!enabled);
+        }} />
+        <Button type="button" size="xs" variant="ghost" aria-expanded={open}
+          aria-controls={drawerId} title={label} onClick={() => setOpen(value => !value)}
+          className="gap-1 text-muted-foreground">
+          <span>{t("primdir.selectedCount", { count: selectedIds.length })}</span>
+          <ChevronDown aria-hidden className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+        </Button>
+      </div>
+      <div id={drawerId} hidden={!open} className="space-y-1 border-y border-border/70 py-2">
+        <div className="flex flex-wrap items-center gap-1">
+          <Input value={query} onChange={event => setQuery(event.target.value)}
+            placeholder={t("primdir.placeholderName")} aria-label={t("primdir.placeholderName")}
+            className="h-6 min-w-0 flex-1 text-[length:var(--aries-font-size-small)]" />
+          <SelectionActions onReset={onReset} onClear={() => choose([])}
+            onSelectAll={() => choose(items.map(item => item.id))} />
         </div>
-      ) : null}
+        <ScrollArea className="max-h-40 [&>[data-slot=scroll-area-viewport]]:max-h-40">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {visible.map(item => (
+              <Button key={item.id} type="button" size="xs"
+                variant={selected.has(item.id) ? "default" : "outline"}
+                aria-pressed={selected.has(item.id)} title={item.code ? `${item.label} (${item.code})` : item.label}
+                disabled={!selected.has(item.id) && maxSelected !== undefined && selectedIds.length >= maxSelected}
+                onClick={() => choose(selected.has(item.id)
+                  ? selectedIds.filter(id => id !== item.id) : [...selectedIds, item.id])}
+                className="h-auto min-h-6 whitespace-normal px-2 text-left text-[length:var(--aries-font-size-small)]">
+                {item.label}
+              </Button>
+            ))}
+            {!visible.length && <span className="text-xs text-muted-foreground">{t("astrocart.config.noMatchingPoints")}</span>}
+          </div>
+        </ScrollArea>
+        {maxSelected !== undefined && <p className="text-[length:var(--aries-font-size-section)] text-muted-foreground">
+          {t("primdir.starsLeft", { count: Math.max(0, maxSelected - selectedIds.length) })}
+        </p>}
+      </div>
     </div>
   );
 }
 
 function EngineSelection({
   settings,
-  presetGlobalState,
+  globals,
   dock,
   onPatch,
+  onPresetChange,
 }: {
   settings: OptionsPrimaryDirections;
-  presetGlobalState?: PresetGlobalState;
+  globals?: PrimaryDirectionGlobals;
+  onPresetChange: (settings: OptionsPrimaryDirections) => void;
   dock: "right" | "bottom";
   onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
-  const activePreset = activePrimaryDirectionPreset(settings, presetGlobalState);
+  const activePreset = activePrimaryDirectionPreset(settings, globals);
   const userPresets = settings.userPresets;
   const [naming, setNaming] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -881,10 +868,10 @@ function EngineSelection({
 
   return (
     <div className={cn("min-w-0", dock === "bottom" && "col-span-2")}>
-      <div className={cn("grid gap-[var(--aries-pane-content-padding)] rounded border border-border/70 p-2", dock === "bottom" ? "grid-cols-2" : "grid-cols-1")}>
+      <div className={cn("grid gap-[var(--aries-pane-content-padding)]", dock === "bottom" ? "grid-cols-2" : "grid-cols-1")}>
         <div className="min-w-0">
           <div className="mb-1 flex items-center justify-between gap-2">
-            <SectionLabel>{t("primdir.enginePreset")}</SectionLabel>
+            <SectionLabel searchAnchor="primdir.enginePreset">{t("primdir.enginePreset")}</SectionLabel>
             {activePreset == null ? (
               <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.custom")}</span>
             ) : null}
@@ -901,13 +888,16 @@ function EngineSelection({
                   disabled={busy}
                   onClick={() => {
                     const patch = presetResolvedPatch(preset, settings);
-                    const globalPatch = presetResolvedOptionsPatch(preset);
-                    if (userPresets?.selectedId) void perform({ action: "clear" }, patch, globalPatch);
-                    else onPatch(patch, globalPatch);
+                    onPresetChange({ ...settings, ...patch });
+                    // A shipped preset sets the chart's node and Moon parallax
+                    // correction, which the PD engine directs.
+                    const chartPatch = globalsPatch(PRESET_GLOBALS);
+                    if (userPresets?.selectedId) void perform({ action: "clear" }, patch, chartPatch);
+                    else onPatch(patch, chartPatch);
                   }}
                   className={cn(
-                    "flex min-h-7 w-full items-center gap-2 rounded border border-border/70 px-2 py-1 text-left text-[length:var(--aries-font-size-small)] hover:bg-muted",
-                    selected && "border-primary/70 bg-muted text-foreground",
+                    "flex min-h-7 w-full items-center gap-2 rounded px-2 py-1 text-left text-[length:var(--aries-font-size-small)] hover:bg-muted/50",
+                    selected ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
                   <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
@@ -930,7 +920,7 @@ function EngineSelection({
                 }} />
             ) : (
               <select data-aries-surface="control" aria-label={t("pdPreset.title")}
-                className="h-7 min-w-0 flex-1 rounded border border-border bg-transparent px-2 text-[length:var(--aries-font-size-small)]"
+                className="h-7 min-w-0 flex-1 rounded border border-[color:var(--aries-control-outline)] bg-transparent px-2 text-[length:var(--aries-font-size-small)] [--aries-material-state-background:transparent]"
                 value={userPresets?.selectedId ?? ""} disabled={busy || !userPresets}
                 onChange={event => void perform(event.target.value ? { action: "select", id: event.target.value } : { action: "clear" })}>
                 <option value="">{t("pdPreset.title")}</option>
@@ -965,9 +955,11 @@ function EngineSelection({
           {failed && <p role="alert" className="mt-1 text-[length:var(--aries-font-size-small)] text-destructive">{t("pdPreset.error")}</p>}
         </div>
         <div className="min-w-0">
-          <SectionLabel>{t("primdir.houseSystem")}</SectionLabel>
+          <SectionLabel searchAnchor="primdir.houseSystem">{t("primdir.houseSystem")}</SectionLabel>
           <RadioRow
-            options={PD_SYSTEMS.map((o, i) => ({ value: o.value, label: t(PD_SYSTEM_LABEL_KEYS[i]) }))}
+            options={PD_SYSTEMS.map(({ value }, i) => ({
+              value, label: t(PD_SYSTEM_LABEL_KEYS[i]), searchAnchor: PD_SYSTEM_LABEL_KEYS[i],
+            }))}
             value={settings.primarydir}
             wrapLabels
             onChange={(v) =>
@@ -982,22 +974,50 @@ function EngineSelection({
 
 export function PrimDirSettingsBody({
   settings: s,
+  globals,
   planetGlyphs,
-  presetGlobalState,
   dock = "right",
   paneDock,
   onPaneDockChange,
+  searchTarget,
   onPatch,
 }: {
   settings: OptionsPrimaryDirections;
+  /** The chart's node and Moon parallax correction, shown and set here too. */
+  globals?: PrimaryDirectionGlobals;
   planetGlyphs: readonly string[];
-  presetGlobalState?: PresetGlobalState;
   dock?: "right" | "bottom";
   paneDock?: "right" | "bottom";
   onPaneDockChange?: (dock: "right" | "bottom") => void;
+  searchTarget?: SettingsSearchTarget | null;
   onPatch: (patch: Patch, optionsPatch?: OptionsPatch) => void | Promise<boolean>;
 }) {
   const t = useT();
+  const [activeTab, setActiveTab] = React.useState<PrimaryDirectionsSettingsTab>(
+    () => searchTarget?.directionsTab ?? "calculation",
+  );
+  const [lastSearchTarget, setLastSearchTarget] = React.useState(searchTarget);
+  if (lastSearchTarget !== searchTarget) {
+    setLastSearchTarget(searchTarget);
+    if (searchTarget?.directionsTab) setActiveTab(searchTarget.directionsTab);
+  }
+  const [baseline, setBaseline] = React.useState(() => ({ settings: s, presetId: s.userPresets?.selectedId }));
+  if (s.userPresets?.selectedId !== baseline.presetId && !s.userPresets?.dirty) {
+    setBaseline({ settings: s, presetId: s.userPresets?.selectedId });
+  }
+  const initial = s.userPresets?.resetSettings
+    ? { ...baseline.settings, ...s.userPresets.resetSettings } : baseline.settings;
+  const resetFields = (keys: (keyof OptionsPrimaryDirections)[]) => {
+    const patch = Object.fromEntries(keys.map(key => [key, initial[key]])) as Patch;
+    onPatch(patch);
+  };
+  const partItems = s.arabicPartNames.map(name => ({ id: name, label: name }));
+  const asteroidItems = (s.pdAsteroidCatalog ?? []).map(item => ({ id: String(item.number), label: item.name }));
+  const starItems = s.pdFixStarCatalog.map(item => ({ id: item.code, label: item.name, code: item.code }));
+  const starIds = (selection: boolean[]) => s.pdFixStarCatalog.filter(item => selection[item.ordinal]).map(item => item.code);
+  const starPatch = (ids: string[]): Patch => ({ pdfixstarssel: s.pdFixStarCatalog.map(item => ids.includes(item.code)) });
+  const partSelection = (settings: OptionsPrimaryDirections, role: "prom" | "sig") =>
+    settings[`pd${role}arabicpartnames`] ?? (settings[`pd${role}arabicpartname`] ? [settings[`pd${role}arabicpartname`]] : []);
   const isPlacidianSemiarc = s.primarydir === 0;
   const zodiacalActive = s.subprimarydir === 1 || s.subprimarydir === 2; // Zodiacal|Both
   const bottomWideSectionClass = dock === "bottom" ? "col-span-2" : undefined;
@@ -1029,6 +1049,12 @@ export function PrimDirSettingsBody({
       pdterms: val,
       pdfixstars: val,
       pdpromarabicparts: val,
+      pdpromchiron: val,
+      pdpromapogee: val,
+      pdpromasteroids: val,
+      ...(val ? { pdpromarabicpartnames: s.arabicPartNames,
+        pdpromasteroidnumbers: (s.pdAsteroidCatalog ?? []).map(item => item.number),
+        pdfixstarssel: s.pdFixStarCatalog.map((_, index) => index < s.pdFixStarMaxSelected) } : {}),
     });
   };
   // Aspects Deselect/Select All (:1290-1309): pdaspects + pdparallels.
@@ -1048,431 +1074,448 @@ export function PrimDirSettingsBody({
       pdsyzygy: val,
       pdsigvertex: val,
       pdsigchiron: val,
+      pdsigapogee: val,
       pdsigarabicparts: val,
+      pdsigasteroids: val,
+      ...(val ? { pdsigarabicpartnames: s.arabicPartNames,
+        pdsigasteroidnumbers: (s.pdAsteroidCatalog ?? []).map(item => item.number) } : {}),
     });
   };
 
-  return (
-    <div
-      className={cn(
-        "min-h-0 w-full flex-1 gap-[var(--aries-pane-content-padding)] overflow-auto px-[var(--aries-pane-header-compact-padding-x)] pb-[var(--aries-pane-title-gap)]",
-        dock === "bottom"
-          ? "grid grid-cols-2 items-start [&>[data-slot=separator]]:hidden"
-          : "flex flex-col",
-      )}
-    >
-      {paneDock && onPaneDockChange ? (
-        <div>
-          <SectionLabel>{t("primdir.settingsTitle")}</SectionLabel>
-          <RadioRow
-            options={[
-              { value: "right", label: t("search.filtersPaneRight") },
-              { value: "bottom", label: t("search.filtersPaneBottom") },
-            ] as const}
-            value={paneDock}
-            onChange={onPaneDockChange}
-          />
-        </div>
-      ) : null}
-
-      {paneDock && onPaneDockChange ? <Separator /> : null}
-
-      <EngineSelection settings={s} presetGlobalState={presetGlobalState} dock={dock} onPatch={onPatch} />
-
-      {/* Keys block */}
-      <KeysBlock settings={s} onPatch={onPatch} />
-
-      <Separator />
-
-      {/* Mundane / Zodiacal / Both */}
-      <div>
-        <SectionLabel>{t("primdir.sectionMode")}</SectionLabel>
-        <RadioRow
-          options={PD_SUBMODES.map((o, i) => ({ value: o.value, label: t(PD_SUBMODE_LABEL_KEYS[i]) }))}
-          value={s.subprimarydir}
-          onChange={(v) => onPatch({ subprimarydir: v })}
-        />
-      </div>
-
-      {/* Use Latitude of */}
-      <div>
-        <SectionLabel>{t("primdir.useLatitudeOf")}</SectionLabel>
-        <RadioRow
-          options={PD_SZ.map((o, i) => ({ value: o.value, label: t(PD_SZ_LABEL_KEYS[i]) }))}
-          value={s.subzodiacal}
-          onChange={(v) => onPatch(withZodiacalMode({ subzodiacal: v }))}
-        />
-        <div className="ml-4 mt-0.5 flex flex-col">
-          <PlainCheck
-            label={t("primdir.bianchini")}
-            checked={s.bianchini}
-            onToggle={() => onPatch(withBothLatitudes({ bianchini: !s.bianchini }))}
-          />
-          <PlainCheck
-            label={t("primdir.morinExcentric")}
-            checked={s.morin_excentric}
-            onToggle={() => onPatch(withBothLatitudes({ morin_excentric: !s.morin_excentric }))}
-          />
-          <PlainCheck
-            label={t("primdir.morinAntiscia")}
-            checked={s.morin_antiscia}
-            onToggle={() => onPatch({ morin_antiscia: !s.morin_antiscia })}
-          />
-        </div>
-      </div>
-
-      {/* Zodiacal options */}
-      <div>
-        <SectionLabel>{t("primdir.zodiacalOptions")}</SectionLabel>
-        <div className="flex flex-col">
-          <PlainCheck
-            label={t("primdir.aspectsPromsToSigs")}
-            checked={!!s.zodpromsigasps[0]}
-            onToggle={() => {
-              const next = s.zodpromsigasps.slice();
-              next[0] = !next[0];
-              onPatch(withZodiacalMode({ zodpromsigasps: next }));
-            }}
-          />
-          <PlainCheck
-            label={t("primdir.promsToAspectsSigs")}
-            checked={!!s.zodpromsigasps[1]}
-            onToggle={() => {
-              const next = s.zodpromsigasps.slice();
-              next[1] = !next[1];
-              onPatch(withZodiacalMode({ zodpromsigasps: next }));
-            }}
-          />
-          <PlainCheck
-            label={t("primdir.ascMcAsProms")}
-            checked={s.ascmchcsasproms}
-            onToggle={() => onPatch(withZodiacalMode({ ascmchcsasproms: !s.ascmchcsasproms }))}
-          />
-          <PlainCheck
-            label={t("primdir.cuspsAsProms")}
-            checked={s.pdcusppromissors}
-            onToggle={() => onPatch(withZodiacalMode({ pdcusppromissors: !s.pdcusppromissors }))}
-          />
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Promissors grid */}
-      <div className={bottomWideSectionClass}>
-        <div className="flex items-center justify-between">
-          <SectionLabel>{t("primdir.promissors")}</SectionLabel>
-          <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => promSelectAll(false)}>
-              {t("primdir.deselectAll")}
-            </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => promSelectAll(true)}>
-              {t("primdir.selectAll")}
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-x-2">
-          {PD_PLANET_NAMES.map((name, i) => (
-            <GlyphCheck
-              key={name}
-              glyph={planetGlyphs[i] ?? PD_PLANET_GLYPHS[i]}
-              label={t(PD_PLANET_LABEL_KEYS[i])}
-              checked={!!s.promplanets[i]}
-              onToggle={() => toggleVec("promplanets", i)}
-            />
-          ))}
-          <div className="flex flex-col">
-            <GlyphCheck label={t("primdir.antiscia")} checked={s.pdantiscia} onToggle={() => onPatch({ pdantiscia: !s.pdantiscia })} />
-            <GlyphCheck
-              label={t("primdir.conjOnlyNoCa")}
-              checked={s.pdmorinpromittorset}
-              className="ml-6 text-[length:var(--aries-font-size-small)]"
-              onToggle={() => onPatch(s.pdantiscia
-                ? { pdmorinpromittorset: !s.pdmorinpromittorset }
-                : { pdantiscia: true, pdmorinpromittorset: true })}
-            />
-          </div>
-          <GlyphCheck label={t("primdir.midpoints")} checked={s.pdmidpoints} onToggle={() => onPatch({ pdmidpoints: !s.pdmidpoints })} />
-          <GlyphCheck glyph={FORTUNE_GLYPH} label={t("primdir.fortunaLof")} checked={s.promlof} onToggle={() => onPatch(withZodiacalMode({ promlof: !s.promlof }))} />
-          <GlyphCheck label={t("primdir.terms")} checked={s.pdterms} onToggle={() => onPatch(withZodiacalMode({ pdterms: !s.pdterms }))} />
-          <GlyphCheck label={t("primdir.fixedStars")} checked={s.pdfixstars} onToggle={() => onPatch(withZodiacalMode({ pdfixstars: !s.pdfixstars }))} />
-          <GlyphCheck glyph={PLANET_GLYPHS[SE_CHIRON]} label={t("primdir.chiron")} checked={s.pdpromchiron} onToggle={() => onPatch({ pdpromchiron: !s.pdpromchiron })} />
-          <GlyphCheck label={t("primdir.arabicParts")} checked={s.pdpromarabicparts} onToggle={() => onPatch({ pdpromarabicparts: !s.pdpromarabicparts })} />
-        </div>
-        {s.pdpromarabicparts && s.arabicPartNames.length > 0 ? (
-          <select
-            data-aries-control-appearance="local"
-            value={s.pdpromarabicpartname}
-            onChange={(e) => onPatch({ pdpromarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
-          >
-            {s.arabicPartNames.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        {/* Fixed-Star PD selection sub-dialog (fixstarspddlg.py). Only meaningful
-            when Fixed Stars are enabled as promissors and zodiacal sub-mode is on. */}
-        <FixStarPdPicker
-          catalog={s.pdFixStarCatalog ?? []}
-          selection={s.pdfixstarssel ?? []}
-          maxSelected={s.pdFixStarMaxSelected ?? 200}
-          disabled={!s.pdfixstars}
-          onPatch={onPatch}
-        />
-        <CustomerPointBlock
-          title={t("primdir.keyUserP")}
-          enabled={s.pdcustomer}
-          lon={s.pdcustomerlon}
-          lat={s.pdcustomerlat}
-          southern={s.pdcustomersouthern}
-          onPatch={onPatch}
-          enabledKey="pdcustomer"
-          lonKey="pdcustomerlon"
-          latKey="pdcustomerlat"
-          southernKey="pdcustomersouthern"
-        />
-        {/* Sec. Motion (gated on Moon promissor — onPromMoon:700) + iteration */}
-        <div className="ml-1 mt-1 flex items-center gap-2">
-          <GlyphCheck
-            label={t("primdir.secMotion")}
-            checked={s.pdsecmotion}
-            onToggle={() => {
-              if (s.promplanets[1]) {
-                onPatch({ pdsecmotion: !s.pdsecmotion });
-                return;
-              }
-              const promplanets = s.promplanets.slice();
-              promplanets[1] = true;
-              onPatch({ promplanets, pdsecmotion: true });
-            }}
-          />
-          <select
-            data-aries-control-appearance="local"
-            disabled={!s.promplanets[1] || !s.pdsecmotion}
-            value={s.pdsecmotioniter}
-            onChange={(e) => onPatch({ pdsecmotioniter: Number(e.target.value) })}
-            className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] disabled:opacity-40"
-          >
-            {SMITER_LABEL_KEYS.map((k, i) => (
-              <option key={k} value={i}>
-                {t(k)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Aspects grid */}
-      <div className={bottomWideSectionClass}>
-        <div className="flex items-center justify-between">
-          <SectionLabel>{t("primdir.aspects")}</SectionLabel>
-          <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => aspSelectAll(false)}>
-              {t("primdir.deselectAll")}
-            </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => aspSelectAll(true)}>
-              {t("primdir.selectAll")}
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-x-2">
-          {PD_ASPECTS.map((a, i) => (
-            <GlyphCheck
-              key={a.name}
-              glyph={a.glyph}
-              label={t(PD_ASPECT_LABEL_KEYS[i])}
-              checked={!!s.pdaspects[i]}
-              onToggle={() => toggleVec("pdaspects", i)}
-            />
-          ))}
-          {/* pdparallels[0]=Parallel, [1]=RaptParallel (rapt only Placidian) */}
-          <GlyphCheck glyph={PD_PARALLELS[0].glyph} label={t("primdir.parallelParallel")} checked={!!s.pdparallels[0]} onToggle={() => toggleVec("pdparallels", 0)} />
-          <GlyphCheck textGlyph="∥" label={t("primdir.parallelRapt")} checked={!!s.pdparallels[1]} disabled={!raptEnabled} onToggle={() => toggleVec("pdparallels", 1)} />
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Significators grid */}
-      <div className={bottomWideSectionClass}>
-        <div className="flex items-center justify-between">
-          <SectionLabel>{t("primdir.significators")}</SectionLabel>
-          <div className="flex gap-1">
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => sigSelectAll(false)}>
-              {t("primdir.deselectAll")}
-            </Button>
-            <Button size="xs" variant="ghost" className="h-5 px-1.5 text-[length:var(--aries-font-size-section)]" onClick={() => sigSelectAll(true)}>
-              {t("primdir.selectAll")}
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-x-2">
-          {PD_ANGLE_NAMES.map((name, i) => (
-            <GlyphCheck key={name} label={t(PD_ANGLE_LABEL_KEYS[i])} checked={!!s.sigangles[i]} onToggle={() => toggleVec("sigangles", i)} />
-          ))}
-          <GlyphCheck label={t("primdir.houseCusps")} checked={s.sighouses} onToggle={() => onPatch({ sighouses: !s.sighouses })} />
-          {PD_PLANET_NAMES.map((name, i) => (
-            <GlyphCheck
-              key={`sig-${name}`}
-              glyph={planetGlyphs[i] ?? PD_PLANET_GLYPHS[i]}
-              label={t(PD_PLANET_LABEL_KEYS[i])}
-              checked={!!s.sigplanets[i]}
-              onToggle={() => toggleVec("sigplanets", i)}
-            />
-          ))}
-          <GlyphCheck glyph={FORTUNE_GLYPH} label={t("primdir.fortunaLof")} checked={s.siglof} onToggle={() => onPatch(withZodiacalMode({ siglof: !s.siglof }))} />
-          <GlyphCheck label={t("primdir.syzygy")} checked={s.pdsyzygy} onToggle={() => onPatch(withZodiacalMode({ pdsyzygy: !s.pdsyzygy }))} />
-          <GlyphCheck glyph={PLANET_GLYPHS[SE_CHIRON]} label={t("primdir.chiron")} checked={s.pdsigchiron} onToggle={() => onPatch({ pdsigchiron: !s.pdsigchiron })} />
-          <GlyphCheck glyph={VERTEX_GLYPH} label={t("primdir.vertex")} checked={s.pdsigvertex} onToggle={() => onPatch({ pdsigvertex: !s.pdsigvertex })} />
-          <GlyphCheck label={t("primdir.arabicParts")} checked={s.pdsigarabicparts} onToggle={() => onPatch({ pdsigarabicparts: !s.pdsigarabicparts })} />
-        </div>
-        <CustomerPointBlock
-          title={t("primdir.keyUserS")}
-          enabled={s.pdcustomer2}
-          lon={s.pdcustomer2lon}
-          lat={s.pdcustomer2lat}
-          southern={s.pdcustomer2southern}
-          onPatch={onPatch}
-          enabledKey="pdcustomer2"
-          lonKey="pdcustomer2lon"
-          latKey="pdcustomer2lat"
-          southernKey="pdcustomer2southern"
-        />
-        {/* Arabic-part significator picker (primarydirsdlg.py:828 SingleChoice) */}
-        {s.pdsigarabicparts && s.arabicPartNames.length > 0 ? (
-          <select
-            data-aries-control-appearance="local"
-            value={s.pdsigarabicpartname}
-            onChange={(e) => onPatch({ pdsigarabicpartname: e.target.value })}
-            className="ml-1 mt-1 h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
-          >
-            {s.arabicPartNames.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        ) : null}
-      </div>
-
-      <Separator />
-
-      {/* Circumambulation method */}
-      <div>
-        <SectionLabel>{t("primdir.circumambulationMethod")}</SectionLabel>
-        <RadioRow
-          options={[
-            { value: 0, label: t("primdir.ascensionalTimes") },
-            { value: 1, label: t("primdir.usePdSettings") },
-          ] as const}
-          value={s.pdcircumoa}
-          onChange={(v) => onPatch({ pdcircumoa: v })}
-        />
-        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
-          {t("primdir.promissors")}
-        </div>
-        <RadioRow
-          options={[
-            { value: 0, label: t("dirview.followPd") },
-            { value: 1, label: t("dirview.traditional") },
-          ] as const}
-          value={s.pdcircumprommode}
-          onChange={(v) => onPatch({ pdcircumprommode: v })}
-        />
-      </div>
-
-      <Separator />
-
-      {/* PDs in Chart — pdsinchartdlgopts + pdsinchartterrdlgopts. */}
-      <div>
-        <SectionLabel>{t("primdir.pdsInChart")}</SectionLabel>
-        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
-          {t("primdir.celestialChartProjection")}
-        </div>
-        <RadioRow
-          options={[
-            { value: 0, label: t("primdir.fromMundanePositions") },
-            { value: 1, label: t("primdir.fromZodiacalPositions") },
-          ] as const}
-          value={s.pdincharttyp}
-          onChange={(v) => onPatch({ pdincharttyp: v })}
-        />
-        <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
-          {t("primdir.celestialProjectionExplanation")}
-        </p>
-        <label className="mt-2 block">
-          <span className="text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
-            {t("primdir.converseView")}
-          </span>
-          <select
-            data-aries-control-appearance="local"
-            value={s.pdinchartreverse ? "fixed-radix" : "traditional-converse"}
-            onChange={(e) => onPatch({ pdinchartreverse: e.target.value === "fixed-radix" })}
-            className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
-          >
-            <option value="fixed-radix">{t("primdir.fixedRadixPromissorsMoveOutside")}</option>
-            <option value="traditional-converse">{t("primdir.traditionalConverseSignificatorsMoveInside")}</option>
-          </select>
-          <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
-            {t("primdir.converseViewExplanation")}
-          </p>
-        </label>
-        <div className="mt-2 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
-          {t("primdir.terrestrialChartProjection")}
-        </div>
-        <PlainCheck
-          label={t("primdir.secMotion")}
-          checked={s.pdinchartterrsecmotion}
-          onToggle={() => onPatch({ pdinchartterrsecmotion: !s.pdinchartterrsecmotion })}
-        />
-        <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
-          {t("primdir.terrestrialSecondaryMotionExplanation")}
-        </p>
-      </div>
-
-      <Separator />
-
-      {/* Revolutions */}
-      <div>
-        <SectionLabel>{t("primdir.revolutions")}</SectionLabel>
-        <RadioRow
-          options={[
-            { value: 0, label: t("primdir.solarSr365") },
-            { value: 1, label: t("primdir.solarSr360") },
-          ] as const}
-          value={s.pdrevsunyearmode}
-          onChange={(v) => onPatch({ pdrevsunyearmode: v })}
-        />
-        <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">{t("primdir.annualDirectionsSr")}</div>
-      </div>
-
-      {/* List View */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">{t("primdir.listView")}</span>
-          <select
-            data-aries-control-appearance="local"
-            value={s.pdlistmode}
-            onChange={(e) => onPatch({ pdlistmode: Number(e.target.value) })}
-            className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
-          >
-            <option value={0}>{t("primdir.paged")}</option>
-            <option value={1}>{t("primdir.continuous")}</option>
-          </select>
-        </div>
-        <PlainCheck
-          label={t("primdir.coloredGlyphRows")}
-          checked={s.pdlistglyphcolors}
-          onToggle={() => onPatch({ pdlistglyphcolors: !s.pdlistglyphcolors })}
-        />
-      </div>
-    </div>
+  const contentClassName = cn(
+    "min-h-0 w-full flex-1 gap-[var(--aries-pane-content-padding)] overflow-auto px-[var(--aries-pane-header-compact-padding-x)] pb-[var(--aries-pane-title-gap)]",
+    dock === "bottom"
+      ? "grid grid-cols-2 items-start [&>[data-slot=separator]]:hidden"
+      : "flex flex-col",
   );
+
+  return (
+    <Tabs value={activeTab} onValueChange={value => {
+      if (value === "calculation" || value === "chart" || value === "list") setActiveTab(value);
+    }} className="min-h-0 w-full flex-1 overflow-hidden">
+      <div className="shrink-0 space-y-2 px-[var(--aries-pane-header-compact-padding-x)]">
+        {paneDock && onPaneDockChange ? (
+          <div>
+            <SectionLabel>{t("primdir.settingsTitle")}</SectionLabel>
+            <RadioRow
+              options={[
+                { value: "right", label: t("search.filtersPaneRight") },
+                { value: "bottom", label: t("search.filtersPaneBottom") },
+              ] as const}
+              value={paneDock}
+              onChange={onPaneDockChange}
+            />
+          </div>
+        ) : null}
+
+        <TabsList variant="line" className="w-full" aria-label={t("primdir.settingsTitle")}>
+          <TabsTrigger value="calculation" data-settings-search-anchor="pd-tab:calculation" className="text-[length:var(--aries-font-size-small)] after:hidden">{t("primdir.calculationTab")}</TabsTrigger>
+          <TabsTrigger value="chart" data-settings-search-anchor="pd-tab:chart" className="text-[length:var(--aries-font-size-small)] after:hidden">{t("primdir.chartTab")}</TabsTrigger>
+          <TabsTrigger value="list" data-settings-search-anchor="pd-tab:list" className="text-[length:var(--aries-font-size-small)] after:hidden">{t("primdir.listTab")}</TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent value="calculation" keepMounted className="flex min-h-0 flex-col data-[hidden]:hidden">
+        <div className={contentClassName}>
+          <EngineSelection settings={s} globals={globals} dock={dock} onPatch={onPatch}
+            onPresetChange={settings => setBaseline({ settings, presetId: s.userPresets?.selectedId })} />
+
+          {/* Keys, beside the chart's own positions the engine directs. */}
+          <div className={cn(!globals && bottomWideSectionClass)}>
+            <KeysBlock settings={s} onPatch={onPatch} />
+          </div>
+
+          {/* The chart's own node and Moon parallax correction (the menu's
+              settings), which the PD engine directs (recalc). */}
+          {globals ? (
+            <div>
+              <SectionLabel searchAnchor="primdir.chartPositions">{t("primdir.chartPositions")}</SectionLabel>
+              <RadioRow
+                options={[
+                  { value: 1, label: t("primdir.meanNode") },
+                  { value: 0, label: t("primdir.trueNode") },
+                ] as const}
+                value={globals.meannode ? 1 : 0}
+                onChange={(v) => onPatch({}, globalsPatch({ meannode: v === 1 }))}
+              />
+              <PlainCheck
+                label={t("primdir.parallaxCorrection")}
+                checked={globals.topocentric}
+                onToggle={() => onPatch({}, globalsPatch({ topocentric: !globals.topocentric }))}
+              />
+            </div>
+          ) : null}
+
+          <Separator />
+
+          {/* Mundane / Zodiacal / Both */}
+          <div>
+            <SectionLabel searchAnchor="primdir.sectionMode">{t("primdir.sectionMode")}</SectionLabel>
+            <RadioRow
+              options={PD_SUBMODES.map((o, i) => ({ value: o.value, label: t(PD_SUBMODE_LABEL_KEYS[i]) }))}
+              value={s.subprimarydir}
+              onChange={(v) => onPatch({ subprimarydir: v })}
+            />
+          </div>
+
+          {/* Which converse is calculated; changes the converse arcs (recalc). */}
+          <div>
+            <SectionLabel searchAnchor="primdir.converseCalculation">{t("primdir.converseCalculation")}</SectionLabel>
+            <RadioRow
+              options={[
+                { value: 0, label: t("primdir.converseModern") },
+                { value: 1, label: t("primdir.converseTraditional") },
+              ] as const}
+              value={s.pdconverse}
+              wrapLabels
+              onChange={(v) => onPatch({ pdconverse: v })}
+            />
+            {/* The regressive Sun: modern converse rows timed by the Sun's
+                motion before birth. Only a true solar arc key follows the
+                real Sun; traditional converse rows perfect after birth. */}
+            <div className="ml-4 mt-0.5 flex flex-col">
+              <PlainCheck
+                label={t("primdir.prenatalSun")}
+                hint={t("primdir.prenatalSunHint")}
+                checked={s.useregressive}
+                disabled={!prenatalSunApplies(s)}
+                onToggle={() => onPatch({ useregressive: !s.useregressive })}
+              />
+            </div>
+          </div>
+
+          {/* Use Latitude of */}
+          <div>
+            <SectionLabel searchAnchor="primdir.useLatitudeOf">{t("primdir.useLatitudeOf")}</SectionLabel>
+            <RadioRow
+              options={PD_SZ.map((o, i) => ({ value: o.value, label: t(PD_SZ_LABEL_KEYS[i]) }))}
+              value={s.subzodiacal}
+              onChange={(v) => onPatch(withZodiacalMode({ subzodiacal: v }))}
+            />
+            <div className="ml-4 mt-0.5 flex flex-col">
+              <PlainCheck
+                label={t("primdir.bianchini")}
+                checked={s.bianchini}
+                onToggle={() => onPatch(withBothLatitudes({ bianchini: !s.bianchini }))}
+              />
+              <PlainCheck
+                label={t("primdir.morinExcentric")}
+                checked={s.morin_excentric}
+                onToggle={() => onPatch(withBothLatitudes({ morin_excentric: !s.morin_excentric }))}
+              />
+              <PlainCheck
+                label={t("primdir.morinAntiscia")}
+                checked={s.morin_antiscia}
+                onToggle={() => onPatch({ morin_antiscia: !s.morin_antiscia })}
+              />
+            </div>
+          </div>
+
+          {/* Zodiacal options */}
+          <div>
+            <SectionLabel searchAnchor="primdir.zodiacalOptions">{t("primdir.zodiacalOptions")}</SectionLabel>
+            <div className="flex flex-col">
+              <PlainCheck
+                label={t("primdir.aspectsPromsToSigs")}
+                checked={!!s.zodpromsigasps[0]}
+                onToggle={() => {
+                  const next = s.zodpromsigasps.slice();
+                  next[0] = !next[0];
+                  onPatch(withZodiacalMode({ zodpromsigasps: next }));
+                }}
+              />
+              <PlainCheck
+                label={t("primdir.promsToAspectsSigs")}
+                checked={!!s.zodpromsigasps[1]}
+                onToggle={() => {
+                  const next = s.zodpromsigasps.slice();
+                  next[1] = !next[1];
+                  onPatch(withZodiacalMode({ zodpromsigasps: next }));
+                }}
+              />
+              <PlainCheck
+                label={t("primdir.ascMcAsProms")}
+                checked={s.ascmchcsasproms}
+                onToggle={() => onPatch(withZodiacalMode({ ascmchcsasproms: !s.ascmchcsasproms }))}
+              />
+              <PlainCheck
+                label={t("primdir.cuspsAsProms")}
+                checked={s.pdcusppromissors}
+                onToggle={() => onPatch(withZodiacalMode({ pdcusppromissors: !s.pdcusppromissors }))}
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Promissors grid */}
+          <div className={bottomWideSectionClass}>
+            <div className="flex items-center justify-between">
+              <SectionLabel searchAnchor="primdir.promissors">{t("primdir.promissors")}</SectionLabel>
+              <SelectionActions onReset={() => resetFields(['promplanets', 'pdantiscia', 'pdmorinpromittorset', 'pdmidpoints', 'promlof', 'pdterms', 'pdfixstars', 'pdfixstarssel', 'pdpromchiron', 'pdpromapogee', 'pdpromarabicparts', 'pdpromarabicpartnames', 'pdpromarabicpartname', 'pdpromasteroids', 'pdpromasteroidnumbers', 'pdcustomer', 'pdsecmotion'])}
+                onClear={() => promSelectAll(false)} onSelectAll={() => promSelectAll(true)} />
+            </div>
+            <div className="grid grid-cols-2 gap-x-2">
+              {PD_PLANET_NAMES.map((name, i) => (
+                <GlyphCheck
+                  key={name}
+                  glyph={planetGlyphs[i] ?? PD_PLANET_GLYPHS[i]}
+                  label={t(PD_PLANET_LABEL_KEYS[i])}
+                  checked={!!s.promplanets[i]}
+                  onToggle={() => toggleVec("promplanets", i)}
+                />
+              ))}
+              <div className="flex flex-col">
+                <GlyphCheck label={t("primdir.antiscia")} checked={s.pdantiscia} onToggle={() => onPatch({ pdantiscia: !s.pdantiscia })} />
+                <GlyphCheck
+                  label={t("primdir.conjOnlyNoCa")}
+                  checked={s.pdmorinpromittorset}
+                  className="ml-6 text-[length:var(--aries-font-size-small)]"
+                  onToggle={() => onPatch(s.pdantiscia
+                    ? { pdmorinpromittorset: !s.pdmorinpromittorset }
+                    : { pdantiscia: true, pdmorinpromittorset: true })}
+                />
+              </div>
+              <GlyphCheck label={t("primdir.midpoints")} checked={s.pdmidpoints} onToggle={() => onPatch({ pdmidpoints: !s.pdmidpoints })} />
+              <GlyphCheck glyph={FORTUNE_GLYPH} label={t("primdir.fortunaLof")} checked={s.promlof} onToggle={() => onPatch(withZodiacalMode({ promlof: !s.promlof }))} />
+              <GlyphCheck label={t("primdir.terms")} checked={s.pdterms} onToggle={() => onPatch(withZodiacalMode({ pdterms: !s.pdterms }))} />
+              <GlyphCheck glyph={PLANET_GLYPHS[SE_CHIRON]} label={t("primdir.chiron")} checked={s.pdpromchiron} onToggle={() => onPatch({ pdpromchiron: !s.pdpromchiron })} />
+              <GlyphCheck glyph={PLANET_GLYPHS[SE_MEAN_APOG]} label={t("astrocart.point.apogee")} checked={s.pdpromapogee} onToggle={() => onPatch({ pdpromapogee: !s.pdpromapogee })} />
+              <PointFamilyPicker label={t("primdir.arabicParts")} enabled={s.pdpromarabicparts}
+                items={partItems} selectedIds={partSelection(s, "prom")}
+                onEnabledChange={enabled => onPatch({ pdpromarabicparts: enabled })}
+                onSelectionChange={ids => onPatch({ pdpromarabicpartnames: ids, pdpromarabicpartname: ids[0] ?? "" })}
+                onReset={() => onPatch({ pdpromarabicpartnames: partSelection(initial, "prom") })} />
+              <PointFamilyPicker label={t("chartmenu.asteroids")} enabled={s.pdpromasteroids}
+                items={asteroidItems} selectedIds={(s.pdpromasteroidnumbers ?? []).map(String)}
+                onEnabledChange={enabled => onPatch({ pdpromasteroids: enabled })}
+                onSelectionChange={ids => onPatch({ pdpromasteroidnumbers: ids.map(Number) })}
+                onReset={() => onPatch({ pdpromasteroidnumbers: initial.pdpromasteroidnumbers ?? [] })} />
+              <PointFamilyPicker label={t("primdir.fixedStars")} enabled={s.pdfixstars}
+                items={starItems} selectedIds={starIds(s.pdfixstarssel)} maxSelected={s.pdFixStarMaxSelected}
+                onEnabledChange={enabled => onPatch(withZodiacalMode({ pdfixstars: enabled }))}
+                onSelectionChange={ids => onPatch(starPatch(ids))}
+                onReset={() => onPatch(starPatch(starIds(initial.pdfixstarssel)))} />
+            </div>
+
+            <CustomerPointBlock
+              title={t("primdir.keyUserP")}
+              enabled={s.pdcustomer}
+              lon={s.pdcustomerlon}
+              lat={s.pdcustomerlat}
+              southern={s.pdcustomersouthern}
+              onPatch={onPatch}
+              enabledKey="pdcustomer"
+              lonKey="pdcustomerlon"
+              latKey="pdcustomerlat"
+              southernKey="pdcustomersouthern"
+            />
+            {/* Sec. Motion (gated on Moon promissor — onPromMoon:700) + iteration */}
+            <div className="ml-1 mt-1 flex items-center gap-2">
+              <GlyphCheck
+                label={t("primdir.secMotion")}
+                checked={s.pdsecmotion}
+                onToggle={() => {
+                  if (s.promplanets[1]) {
+                    onPatch({ pdsecmotion: !s.pdsecmotion });
+                    return;
+                  }
+                  const promplanets = s.promplanets.slice();
+                  promplanets[1] = true;
+                  onPatch({ promplanets, pdsecmotion: true });
+                }}
+              />
+              <select
+                data-aries-control-appearance="local"
+                disabled={!s.promplanets[1] || !s.pdsecmotion}
+                value={s.pdsecmotioniter}
+                onChange={(e) => onPatch({ pdsecmotioniter: Number(e.target.value) })}
+                className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-control-outline)] bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)] disabled:opacity-40"
+              >
+                {SMITER_LABEL_KEYS.map((k, i) => (
+                  <option key={k} value={i}>
+                    {t(k)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Aspects grid */}
+          <div className={bottomWideSectionClass}>
+            <div className="flex items-center justify-between">
+              <SectionLabel searchAnchor="primdir.aspects">{t("primdir.aspects")}</SectionLabel>
+              <SelectionActions onReset={() => resetFields(['pdaspects', 'pdparallels'])}
+                onClear={() => aspSelectAll(false)} onSelectAll={() => aspSelectAll(true)} />
+            </div>
+            <div className="grid grid-cols-2 gap-x-2">
+              {PD_ASPECTS.map((a, i) => (
+                <GlyphCheck
+                  key={a.name}
+                  glyph={a.glyph}
+                  label={t(PD_ASPECT_LABEL_KEYS[i])}
+                  checked={!!s.pdaspects[i]}
+                  onToggle={() => toggleVec("pdaspects", i)}
+                />
+              ))}
+              {/* pdparallels[0]=Parallel, [1]=RaptParallel (rapt only Placidian) */}
+              <GlyphCheck glyph={PD_PARALLELS[0].glyph} label={t("primdir.parallelParallel")} checked={!!s.pdparallels[0]} onToggle={() => toggleVec("pdparallels", 0)} />
+              <GlyphCheck textGlyph="∥" label={t("primdir.parallelRapt")} checked={!!s.pdparallels[1]} disabled={!raptEnabled} onToggle={() => toggleVec("pdparallels", 1)} />
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Significators grid */}
+          <div className={bottomWideSectionClass}>
+            <div className="flex items-center justify-between">
+              <SectionLabel searchAnchor="primdir.significators">{t("primdir.significators")}</SectionLabel>
+              <SelectionActions onReset={() => resetFields(['sigangles', 'sighouses', 'sigplanets', 'siglof', 'pdsyzygy', 'pdsigvertex', 'pdsigchiron', 'pdsigapogee', 'pdsigarabicparts', 'pdsigarabicpartnames', 'pdsigarabicpartname', 'pdsigasteroids', 'pdsigasteroidnumbers', 'pdcustomer2'])}
+                onClear={() => sigSelectAll(false)} onSelectAll={() => sigSelectAll(true)} />
+            </div>
+            <div className="grid grid-cols-2 gap-x-2">
+              {PD_ANGLE_NAMES.map((name, i) => (
+                <GlyphCheck key={name} label={t(PD_ANGLE_LABEL_KEYS[i])} checked={!!s.sigangles[i]} onToggle={() => toggleVec("sigangles", i)} />
+              ))}
+              <GlyphCheck label={t("primdir.houseCusps")} checked={s.sighouses} onToggle={() => onPatch({ sighouses: !s.sighouses })} />
+              {PD_PLANET_NAMES.map((name, i) => (
+                <GlyphCheck
+                  key={`sig-${name}`}
+                  glyph={planetGlyphs[i] ?? PD_PLANET_GLYPHS[i]}
+                  label={t(PD_PLANET_LABEL_KEYS[i])}
+                  checked={!!s.sigplanets[i]}
+                  onToggle={() => toggleVec("sigplanets", i)}
+                />
+              ))}
+              <GlyphCheck glyph={FORTUNE_GLYPH} label={t("primdir.fortunaLof")} checked={s.siglof} onToggle={() => onPatch(withZodiacalMode({ siglof: !s.siglof }))} />
+              <GlyphCheck label={t("primdir.syzygy")} checked={s.pdsyzygy} onToggle={() => onPatch(withZodiacalMode({ pdsyzygy: !s.pdsyzygy }))} />
+              <GlyphCheck glyph={PLANET_GLYPHS[SE_CHIRON]} label={t("primdir.chiron")} checked={s.pdsigchiron} onToggle={() => onPatch({ pdsigchiron: !s.pdsigchiron })} />
+              <GlyphCheck glyph={PLANET_GLYPHS[SE_MEAN_APOG]} label={t("astrocart.point.apogee")} checked={s.pdsigapogee} onToggle={() => onPatch({ pdsigapogee: !s.pdsigapogee })} />
+              <GlyphCheck glyph={VERTEX_GLYPH} label={t("primdir.vertex")} checked={s.pdsigvertex} onToggle={() => onPatch({ pdsigvertex: !s.pdsigvertex })} />
+              <PointFamilyPicker label={t("primdir.arabicParts")} enabled={s.pdsigarabicparts}
+                items={partItems} selectedIds={partSelection(s, "sig")}
+                onEnabledChange={enabled => onPatch({ pdsigarabicparts: enabled })}
+                onSelectionChange={ids => onPatch({ pdsigarabicpartnames: ids, pdsigarabicpartname: ids[0] ?? "" })}
+                onReset={() => onPatch({ pdsigarabicpartnames: partSelection(initial, "sig") })} />
+              <PointFamilyPicker label={t("chartmenu.asteroids")} enabled={s.pdsigasteroids}
+                items={asteroidItems} selectedIds={(s.pdsigasteroidnumbers ?? []).map(String)}
+                onEnabledChange={enabled => onPatch({ pdsigasteroids: enabled })}
+                onSelectionChange={ids => onPatch({ pdsigasteroidnumbers: ids.map(Number) })}
+                onReset={() => onPatch({ pdsigasteroidnumbers: initial.pdsigasteroidnumbers ?? [] })} />
+            </div>
+            <CustomerPointBlock
+              title={t("primdir.keyUserS")}
+              enabled={s.pdcustomer2}
+              lon={s.pdcustomer2lon}
+              lat={s.pdcustomer2lat}
+              southern={s.pdcustomer2southern}
+              onPatch={onPatch}
+              enabledKey="pdcustomer2"
+              lonKey="pdcustomer2lon"
+              latKey="pdcustomer2lat"
+              southernKey="pdcustomer2southern"
+            />
+
+          </div>
+
+          <Separator />
+
+          {/* Circumambulation method */}
+          <div>
+            <SectionLabel searchAnchor="primdir.circumambulationMethod">{t("primdir.circumambulationMethod")}</SectionLabel>
+            <RadioRow
+              options={[
+                { value: 0, label: t("primdir.ascensionalTimes") },
+                { value: 1, label: t("primdir.usePdSettings") },
+              ] as const}
+              value={s.pdcircumoa}
+              onChange={(v) => onPatch({ pdcircumoa: v })}
+            />
+            <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">
+              {t("primdir.promissors")}
+            </div>
+            <RadioRow
+              options={[
+                { value: 0, label: t("dirview.followPd") },
+                { value: 1, label: t("dirview.traditional") },
+              ] as const}
+              value={s.pdcircumprommode}
+              onChange={(v) => onPatch({ pdcircumprommode: v })}
+            />
+          </div>
+
+          <Separator />
+
+          {/* Revolutions */}
+          <div>
+            <SectionLabel searchAnchor="primdir.revolutions">{t("primdir.revolutions")}</SectionLabel>
+            <RadioRow
+              options={[
+                { value: 0, label: t("primdir.solarSr365") },
+                { value: 1, label: t("primdir.solarSr360") },
+              ] as const}
+              value={s.pdrevsunyearmode}
+              onChange={(v) => onPatch({ pdrevsunyearmode: v })}
+            />
+            <div className="mt-1 text-[length:var(--aries-font-size-section)] font-medium text-muted-foreground">{t("primdir.annualDirectionsSr")}</div>
+          </div>
+        </div>
+      </TabsContent>
+      <TabsContent value="chart" keepMounted className="flex min-h-0 flex-col data-[hidden]:hidden">
+        <div className={contentClassName}>
+          <div>
+            <SectionLabel searchAnchor="primdir.terrestrialChartProjection">{t("primdir.terrestrialChartProjection")}</SectionLabel>
+            <div data-settings-search-anchor="primdir.planetarySecondaryMotion">
+              <PlainCheck
+                label={t("primdir.planetarySecondaryMotion")}
+                checked={s.pdinchartterrsecmotion}
+                onToggle={() => onPatch({ pdinchartterrsecmotion: !s.pdinchartterrsecmotion })}
+              />
+            </div>
+            <p className="mt-1 text-[length:var(--aries-font-size-small)] leading-snug text-muted-foreground">
+              {t("primdir.terrestrialSecondaryMotionExplanation")}
+            </p>
+          </div>
+        </div>
+      </TabsContent>
+      <TabsContent value="list" keepMounted className="flex min-h-0 flex-col data-[hidden]:hidden">
+        <div className={contentClassName}>
+          {/* List View */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2" data-settings-search-anchor="primdir.listView">
+              <span className="text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">{t("primdir.listView")}</span>
+              <select
+                data-aries-control-appearance="local"
+                value={s.pdlistmode}
+                onChange={(e) => onPatch({ pdlistmode: Number(e.target.value) })}
+                className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-control-outline)] bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
+              >
+                <option value={0}>{t("primdir.paged")}</option>
+                <option value={1}>{t("primdir.continuous")}</option>
+              </select>
+            </div>
+            <div data-settings-search-anchor="primdir.coloredGlyphRows">
+              <PlainCheck
+                label={t("primdir.coloredGlyphRows")}
+                checked={s.pdlistglyphcolors}
+                onToggle={() => onPatch({ pdlistglyphcolors: !s.pdlistglyphcolors })}
+              />
+            </div>
+          </div>
+        </div>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+// PrimDirs.TRUESOLAREQUATORIALARC and TRUESOLARECLIPTICALARC; the
+// birthday keys are constant rates, so running them backwards changes nothing.
+const TRUE_SOLAR_ARC_KEYS: readonly number[] = [0, 2];
+const TRADITIONAL_CONVERSE = 1;
+
+function prenatalSunApplies(s: OptionsPrimaryDirections): boolean {
+  return s.pdconverse !== TRADITIONAL_CONVERSE && s.pdkeydyn && TRUE_SOLAR_ARC_KEYS.includes(s.pdkeyd);
 }
 
 function KeysBlock({
@@ -1486,26 +1529,33 @@ function KeysBlock({
   const dynamic = s.pdkeydyn;
   const presetKeys = dynamic ? KEY_DYN_LABEL_KEYS : KEY_STAT_LABEL_KEYS;
   const presetSel = dynamic ? s.pdkeyd : s.pdkeys;
-  const isCustomer = !dynamic && s.pdkeys === KEY_CUSTOMER_IDX;
+  const isCustom = !dynamic && s.pdkeys === KEY_CUSTOMER_IDX;
+  // A preset static key's rate is the reciprocal of the daemon's read-only
+  // coefficient (years per degree). Dynamic keys follow the Sun, so no rate.
+  const presetRate = !dynamic && !isCustom && s.pdkeycoeff > 0 ? formatKeyRate(1 / s.pdkeycoeff) : null;
 
   return (
     <div>
-      <SectionLabel>{t("primdir.keys")}</SectionLabel>
-      <RadioRow
-        options={[
-          { value: 0, label: t("primdir.dynamic") },
-          { value: 1, label: t("primdir.static") },
-        ] as const}
-        value={dynamic ? 0 : 1}
-        onChange={(v) => onPatch({ pdkeydyn: v === 0 })}
-      />
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-[var(--aries-control-gap)]">
+        <SectionLabel searchAnchor="primdir.keys">{t("primdir.keys")}</SectionLabel>
+        <ListSegmentedControl
+          label={t("primdir.keys")}
+          options={[
+            { value: 0, label: t("primdir.dynamic") },
+            { value: 1, label: t("primdir.static") },
+          ] as const}
+          value={dynamic ? 0 : 1}
+          onChange={(v) => onPatch({ pdkeydyn: v === 0 })}
+        />
+      </div>
       <select
         data-aries-control-appearance="local"
+        aria-label={t("primdir.keys")}
         value={presetSel}
         onChange={(e) =>
           onPatch(dynamic ? { pdkeyd: Number(e.target.value) } : { pdkeys: Number(e.target.value) })
         }
-        className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border bg-background px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
+        className="mt-1 h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-control-outline)] bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-small)]"
       >
         {presetKeys.map((k, i) => (
           <option key={k} value={i}>
@@ -1513,55 +1563,32 @@ function KeysBlock({
           </option>
         ))}
       </select>
-      <div className="mt-1 grid grid-cols-4 gap-2">
-        <KeyField key={`deg-${s.pdkeydeg}`} label={t("primdir.deg")} value={s.pdkeydeg} disabled={!isCustomer} max={9} onCommit={(v) => onPatch({ pdkeydeg: v })} />
-        <KeyField key={`min-${s.pdkeymin}`} label={t("primdir.min")} value={s.pdkeymin} disabled={!isCustomer} max={59} onCommit={(v) => onPatch({ pdkeymin: v })} />
-        <KeyField key={`sec-${s.pdkeysec}`} label={t("primdir.sec")} value={s.pdkeysec} disabled={!isCustomer} max={59} onCommit={(v) => onPatch({ pdkeysec: v })} />
-        <div className="flex flex-col">
-          <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{t("primdir.coefficient")}</span>
-          <Input readOnly value={s.pdkeycoeff.toFixed(8)} className="h-6 text-[length:var(--aries-font-size-small)]" />
+      {isCustom ? (
+        // The user's own rate (PrimDirs.CUSTOMER): degrees 0..9, minutes and
+        // seconds 0..59 (primarydirsdlg.py:467). The daemon recalculates on commit.
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[length:var(--aries-font-size-small)] text-muted-foreground">
+          <SmallNumberInput value={s.pdkeydeg} min={0} max={9} label={t("primdir.deg")} onCommit={(v) => onPatch({ pdkeydeg: v })} />
+          <span aria-hidden>°</span>
+          <SmallNumberInput value={s.pdkeymin} min={0} max={59} label={t("primdir.min")} onCommit={(v) => onPatch({ pdkeymin: v })} />
+          <span aria-hidden>′</span>
+          <SmallNumberInput value={s.pdkeysec} min={0} max={59} label={t("primdir.sec")} onCommit={(v) => onPatch({ pdkeysec: v })} />
+          <span aria-hidden>″</span>
+          <span>{t("primdir.perYear")}</span>
         </div>
-      </div>
-      <div className="mt-2">
-        <PlainCheck label={t("primdir.useRegressiveSun")} checked={s.useregressive} onToggle={() => onPatch({ useregressive: !s.useregressive })} />
-      </div>
+      ) : presetRate ? (
+        <div className="mt-0.5 px-1.5 text-[length:var(--aries-font-size-small)] text-muted-foreground tabular-nums">
+          {t("primdir.keyRatePerYear", { rate: presetRate })}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function KeyField({
-  label,
-  value,
-  disabled,
-  max,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  disabled?: boolean;
-  max: number;
-  onCommit: (v: number) => void;
-}) {
-  // Seeded from the daemon value; the caller remounts via key={value} so an
-  // external commit resets the draft without a setState-in-effect.
-  const [draft, setDraft] = React.useState(String(value));
-  return (
-    <div className="flex flex-col">
-      <span className="text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
-      <Input
-        inputMode="numeric"
-        disabled={disabled}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
-        onBlur={() => {
-          // Clamp 0..max then commit (intvalidator.IntValidator, primarydirsdlg
-          // .py:467). The daemon re-runs the calc on commit.
-          const n = Math.max(0, Math.min(max, Number(draft || 0)));
-          if (n !== value) onCommit(n);
-          setDraft(String(n));
-        }}
-        className="h-6 text-[length:var(--aries-font-size-small)]"
-      />
-    </div>
-  );
+/** Degrees per year as d°mm′ss″, rounded to the second. */
+function formatKeyRate(degreesPerYear: number): string {
+  const totalSeconds = Math.round(degreesPerYear * 3600);
+  const deg = Math.floor(totalSeconds / 3600);
+  const min = Math.floor((totalSeconds % 3600) / 60);
+  const sec = totalSeconds % 60;
+  return `${deg}°${String(min).padStart(2, "0")}′${String(sec).padStart(2, "0")}″`;
 }

@@ -101,7 +101,13 @@ export function buildStyleTokenInventory(frontendRoot) {
     ...externalTokens.map(({ name }) => name),
   ]);
   const knownNames = new Set(allNames);
+  // Design Lab mockups declare their own slider custom properties as `params`
+  // object keys; those names are local to the mockups, never app tokens.
+  const designLab = join(root, "src", "design-lab") + sep;
+  const inDesignLab = (path) => resolve(path).startsWith(designLab);
+  const designLabParams = new Set(inlineProviders.filter(({ path }) => inDesignLab(path)).map(({ name }) => name));
   for (const reference of references) {
+    if (inDesignLab(reference.path) && designLabParams.has(reference.name)) continue;
     if (!knownNames.has(reference.name)) {
       pushError(errors, reference.path, reference.line, `undefined style token ${reference.name}`);
     }
@@ -161,9 +167,14 @@ export function buildStyleTokenInventory(frontendRoot) {
     if (metadata.type === "infer") metadata.type = inferred.type;
     if (metadata.unit === "infer") metadata.unit = inferred.unit;
     const consumerFiles = uniqueSorted(
-      (consumersByName.get(name) ?? []).map(({ path }) => displayPath(root, path)),
+      (consumersByName.get(name) ?? []).filter(({ path }) => !inDesignLab(path)).map(({ path }) => displayPath(root, path)),
     );
-    const providerFiles = uniqueSorted((inlineProvidersByName.get(name) ?? []).map(({ path }) => displayPath(root, path)));
+    // The inventory describes the shipped app. Design Lab files are owner
+    // tooling outside the public source tree, so they are checked above but
+    // never recorded; the inventory is then the same with or without them.
+    const providerFiles = uniqueSorted(
+      (inlineProvidersByName.get(name) ?? []).filter(({ path }) => !inDesignLab(path)).map(({ path }) => displayPath(root, path)),
+    );
     const record = {
       id: name,
       name,
@@ -800,7 +811,8 @@ function collectInlineProviders(sourceRecords, root) {
   const providers = [];
   const patterns = [
     new RegExp(`\\.setProperty\\s*\\(\\s*["'\\x60](${TOKEN_NAME_SOURCE})["'\\x60]`, "g"),
-    new RegExp(`["'\\x60](${TOKEN_NAME_SOURCE})["'\\x60]\\s*:`, "g"),
+    // An object key, not the true branch of a ternary (`a ? "--x" : "--y"`).
+    new RegExp(`(?<!\\?\\s*)["'\\x60](${TOKEN_NAME_SOURCE})["'\\x60]\\s*:`, "g"),
   ];
   for (const record of sourceRecords) {
     for (const pattern of patterns) {

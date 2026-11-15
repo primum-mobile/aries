@@ -87,7 +87,7 @@ class Pack(object):
         # Populated from `[themes.<discipline>.<slug>]` blocks in the
         # manifest. Empty for packs that don't declare themes (those rely
         # on whatever built-in theme registration the discipline shim
-        # provides). See doc/corpus-packs.md "Manifest schema".
+        # provides).
         self.themes = {}
         for discipline, slots in (manifest.get('themes') or {}).items():
             if not isinstance(slots, dict):
@@ -429,8 +429,8 @@ def _parse_rule_blocks(md_text, source=None, strict=False):
 def _load_inspector_content(pack, strict=False):
     """Load the optional passive inspector-content map for one pack.
 
-    The map contains source selectors only; source prose remains in its parsed
-    corpus asset. Loading it with the pack keeps edits and reloads inside the
+    The map contains parsed-corpus selectors or attributed inline passages.
+    Loading it with the pack keeps edits and reloads inside the
     existing transactional pack lifecycle without involving rule evaluation.
     """
     content = pack.manifest.get('content') or {}
@@ -467,13 +467,18 @@ def _load_inspector_content(pack, strict=False):
 
     source = spec.get('source')
     mapping = spec.get('mapping')
+    if type(spec.get('display_order', 100)) is not int:
+        message = f'{pack.root}/manifest.toml: content.inspector.display_order must be an integer'
+        if strict:
+            raise CorpusPackLoadError(message)
+        _log.warning('corpus: %s; using default order', message)
     if not isinstance(source, str) or not source.strip():
         message = f'{pack.root}/manifest.toml: content.inspector.source is missing'
         if strict:
             raise CorpusPackLoadError(message)
         _log.warning('corpus: %s', message)
         return {}
-    if source.strip() not in {'valens'}:
+    if source.strip() not in {'valens', 'inline'}:
         message = f'{pack.root}/manifest.toml: unsupported inspector source {source}'
         if strict:
             raise CorpusPackLoadError(message)
@@ -529,6 +534,7 @@ def _load_inspector_content(pack, strict=False):
             chapter = entry.get('chapter')
             paragraph = entry.get('paragraph')
             heading = entry.get('heading')
+            asset = entry.get('asset')
             valid_id = (
                 isinstance(object_id, (str, int))
                 and not isinstance(object_id, bool)
@@ -537,15 +543,22 @@ def _load_inspector_content(pack, strict=False):
                 isinstance(book, int) and not isinstance(book, bool)
                 and isinstance(chapter, int) and not isinstance(chapter, bool)
                 and (heading is None or isinstance(heading, str))
+                and asset in (None, 'valens-bounds')
                 and (paragraph is None or (
                     isinstance(paragraph, int) and not isinstance(paragraph, bool)
                     and paragraph >= 1
                 ))
             )
+            if source.strip() == 'inline':
+                valid_location = not corpus_pack_validation.inspector_inline_entry_errors(entry)
             if not isinstance(kind, str) or not kind.strip() or not valid_id:
                 message = f'{where} requires string kind and scalar object_id'
             elif not valid_location:
-                message = f'{where} requires integer book/chapter and a valid heading/paragraph'
+                message = (
+                    f'{where} requires text/source_label/citation'
+                    if source.strip() == 'inline' else
+                    f'{where} requires integer book/chapter and a valid heading/paragraph'
+                )
             else:
                 key = (kind.strip(), str(object_id))
                 if key in loaded:

@@ -1,0 +1,13 @@
+{
+  "minorBlendWeights": [
+    0,
+    0.3,
+    0.6,
+    0.8
+  ],
+  "minorColorRoles": [
+    "--morinus-minor-dignity-1",
+    "--morinus-minor-dignity-2",
+    "--morinus-minor-dignity-3"
+  ]
+}

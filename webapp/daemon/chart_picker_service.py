@@ -12,11 +12,15 @@ from pathlib import Path
 from typing import Any
 
 import astrology
+import asteroids
+import arabicparts
 import chartcollectionsearchbackend
 import chartcollectionsearchquery
 import chartfile
 import common
+import mtexts
 import note_storage
+import platform_compat
 import searchcatalog
 import app_paths
 from webapp.daemon.chart_picker_workbench import ChartPickerWorkbenchStore
@@ -60,36 +64,45 @@ class ChartPickerService:
             "rows": rows,
         }
 
-    def search_catalog(self) -> dict[str, Any]:
+    def search_catalog(self, objects: list[searchcatalog.SearchObject] | None = None) -> dict[str, Any]:
+        # Option labels resolve through mtexts at serve time, so the catalog
+        # follows the active daemon language; values stay language-neutral.
+        any_label = mtexts.txts.get("FilterAny", "Any")
         return {
-            "objects": self._choices(chartcollectionsearchbackend.OBJECT_CHOICES),
+            "objects": self._search_object_choices(objects),
             "signs": self._choices(
-                (("", "Any"),)
+                (("", any_label),)
                 + tuple(
                     (str(idx), label)
                     for idx, label in chartcollectionsearchbackend.SIGN_CHOICES
                 )
             ),
             "houses": self._choices(
-                (("", "Any"),) + tuple((str(idx), str(idx)) for idx in range(1, 13))
+                (("", any_label),) + tuple((str(idx), str(idx)) for idx in range(1, 13))
             ),
             "motions": self._choices(
                 (
-                    ("", "Any"),
-                    (chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_DIRECT, "Direct"),
-                    (chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_RETROGRADE, "Retrograde"),
+                    ("", any_label),
+                    (
+                        chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_DIRECT,
+                        mtexts.txts.get("ChartSearchMotionDirect", "Direct"),
+                    ),
+                    (
+                        chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_RETROGRADE,
+                        mtexts.txts.get("ChartSearchMotionRetrograde", "Retrograde"),
+                    ),
                     (
                         chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_STATION_DIRECT,
-                        "Station direct",
+                        mtexts.txts.get("ChartSearchMotionStationDirect", "Station direct"),
                     ),
                     (
                         chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_STATION_RETROGRADE,
-                        "Station retrograde",
+                        mtexts.txts.get("ChartSearchMotionStationRetrograde", "Station retrograde"),
                     ),
                 )
             ),
             "aspects": self._choices(
-                ((str(-1), "Any"),)
+                ((str(-1), any_label),)
                 + tuple(
                     (str(idx), label)
                     for idx, label in chartcollectionsearchbackend.ASPECT_CHOICES
@@ -100,7 +113,7 @@ class ChartPickerService:
 
     def search(self, payload: dict[str, Any]) -> dict[str, Any]:
         _rows, chart_infos = self._rows_and_infos()
-        query = self._build_search_query(payload)
+        query = self.build_search_query(payload)
         if not query.is_active():
             raise ValueError("set at least one placement or aspect")
         canonical_options = chart_snapshot_service.options
@@ -109,6 +122,7 @@ class ChartPickerService:
             canonical_options,
             query,
             limit=1000,
+            catalog_factory=self._semantic_catalog,
         )
         display_options = effective_display_options(canonical_options)
         return {
@@ -128,6 +142,7 @@ class ChartPickerService:
                     "date": result.date,
                     "time": result.time,
                     "type": result.type,
+                    "chartType": _chart_type_id(result.type),
                     "collection": result.collection,
                     "place": result.place,
                     "matches": result.matches_text(),
@@ -158,9 +173,13 @@ class ChartPickerService:
                     "name": record.get("name", f"Chart {record_index + 1}"),
                     "date": record.get("date", ""),
                     "time": record.get("time", ""),
+                    # ``type``/``gender`` are English fallbacks; the picker
+                    # localizes the stable ``chartType``/``male`` at render.
                     "type": str(record.get("type", "radix") or "radix").capitalize(),
+                    "chartType": _chart_type_id(record.get("type")),
                     "place": record.get("place", ""),
                     "gender": self._gender_label(record),
+                    "male": record.get("male") if isinstance(record.get("male"), bool) else None,
                     "collection": collection_name,
                     "modified": self._format_modified(record.get("modified_at", "")),
                     "lastOpened": self._last_opened_for_chart(
@@ -408,6 +427,8 @@ class ChartPickerService:
             raise ValueError("collection name is invalid")
         if re.search(r"[/\\:\x00-\x1f]", clean_name):
             raise ValueError("collection name contains unsupported characters")
+        if platform_compat.IS_WINDOWS and platform_compat.windows_filename_problem(clean_name):
+            raise ValueError("collection name contains unsupported characters")
 
         hors_dir = self._hors_dir().resolve()
         candidate = hors_dir / f"{clean_name}.jsonl"
@@ -598,10 +619,11 @@ class ChartPickerService:
     def _timestamp(self) -> str:
         return datetime.datetime.now().replace(microsecond=0).isoformat()
 
-    def _build_search_query(self, payload: dict[str, Any]) -> chartcollectionsearchquery.ChartCollectionSearchQuery:
+    @classmethod
+    def build_search_query(cls, payload: dict[str, Any]) -> chartcollectionsearchquery.ChartCollectionSearchQuery:
         query = chartcollectionsearchquery.ChartCollectionSearchQuery()
-        query.include_asteroids = payload.get("includeAsteroids") is True
-        query.station_window_days = self._float_value(
+        query.include_asteroids = payload.get("includeAsteroids", True) is True
+        query.station_window_days = cls._float_value(
             payload.get("stationWindowDays"),
             query.DEFAULT_STATION_WINDOW_DAYS,
         )
@@ -610,11 +632,11 @@ class ChartPickerService:
                 continue
             query.add_placement(
                 chartcollectionsearchquery.PlacementClause(
-                    object_ids=self._list_value(raw.get("objectIds")),
-                    sign_indices=self._list_value(raw.get("signIndices")),
+                    object_ids=cls._list_value(raw.get("objectIds")),
+                    sign_indices=cls._list_value(raw.get("signIndices")),
                     degree=raw.get("degree"),
                     degree_orb=raw.get("degreeOrb"),
-                    house_numbers=self._list_value(raw.get("houseNumbers")),
+                    house_numbers=cls._list_value(raw.get("houseNumbers")),
                     motion=raw.get("motion") or "",
                     motions=raw.get("motions"),
                     exclude=raw.get("exclude") is True,
@@ -625,9 +647,9 @@ class ChartPickerService:
                 continue
             query.add_aspect(
                 chartcollectionsearchquery.AspectClause(
-                    object_a_ids=self._list_value(raw.get("objectAIds")),
+                    object_a_ids=cls._list_value(raw.get("objectAIds")),
                     aspect_type=raw.get("aspectType"),
-                    object_b_ids=self._list_value(raw.get("objectBIds")),
+                    object_b_ids=cls._list_value(raw.get("objectBIds")),
                     orb=raw.get("orb", 1.0),
                     aspect_types=raw.get("aspectTypes"),
                     exclude=raw.get("exclude") is True,
@@ -635,17 +657,65 @@ class ChartPickerService:
             )
         return query
 
+    @staticmethod
+    def _semantic_catalog(chrt) -> searchcatalog.SearchCatalog:
+        catalog = searchcatalog.SearchCatalog(chrt)
+        allowed = {choice["value"] for choice in ChartPickerService._search_object_choices(catalog.objects, options=chrt.options)}
+        catalog.objects = [obj for obj in catalog.objects if obj.id in allowed]
+        catalog.objects_by_id = {obj.id: obj for obj in catalog.objects}
+        return catalog
+
+    @staticmethod
+    def _search_object_choices(objects: list[searchcatalog.SearchObject] | None = None, *, options=None) -> list[dict[str, str]]:
+        # Search availability follows semantic configuration, not wheel visibility.
+        # Otherwise a saved selection becomes "unavailable" after hiding its glyph,
+        # and full-chart queries silently lose candidates that the fast path keeps.
+        opts = options if options is not None else chart_snapshot_service.options
+        regular = dict(chartcollectionsearchbackend.OBJECT_CHOICES)
+        part_family = regular.pop(chartcollectionsearchbackend.OBJECT_FAMILY_PART)
+        regular.update({
+            "angle:dsc": mtexts.txts["Dsc"],
+            "angle:ic": mtexts.txts["IC"],
+            "point:vertex": mtexts.txts["Vertex"],
+            "point:syzygy": mtexts.txts["PrenatalSyzygy"],
+        })
+        asteroid_choices = {
+            "asteroid:%s" % asteroids.asteroid_body_id(number):
+                astrology.swe_get_planet_name(asteroids.asteroid_body_id(number))
+            for number in asteroids.normalize_asteroid_numbers(getattr(opts, "asteroids", None))
+            if asteroids.asteroid_body_id(number) != astrology.SE_CHIRON
+        }
+        active_parts = [part for part in getattr(opts, "arabicparts", ()) or ()
+                        if arabicparts.ArabicParts.is_active_item(part)]
+        part_choices = {chartcollectionsearchbackend.OBJECT_FAMILY_PART: part_family} if active_parts else {}
+        part_choices.update({"part:%03d" % index: part[0] for index, part in enumerate(active_parts)})
+        for obj in objects or ():
+            if obj.id.startswith("asteroid:"):
+                if obj.id in asteroid_choices:
+                    asteroid_choices[obj.id] = obj.label
+            elif obj.id in regular:
+                regular[obj.id] = obj.label
+            elif obj.id == "point:eclipse":
+                regular[obj.id] = obj.label
+        return [
+            {"value": value, "label": str(label), "group": group}
+            for group, choices in (("points", regular), ("asteroids", asteroid_choices), ("parts", part_choices))
+            for value, label in choices.items()
+        ]
+
     def _choices(self, values: tuple[Any, ...]) -> list[dict[str, str]]:
         return [{"value": str(value), "label": str(label)} for value, label in values]
 
-    def _list_value(self, value: Any) -> list[Any]:
+    @staticmethod
+    def _list_value(value: Any) -> list[Any]:
         if value is None:
             return []
         if isinstance(value, list):
             return value
         return [value]
 
-    def _float_value(self, value: Any, default: float) -> float:
+    @staticmethod
+    def _float_value(value: Any, default: float) -> float:
         try:
             return float(value)
         except (TypeError, ValueError):
@@ -665,7 +735,14 @@ _OBJECT_GLYPH_IDS = {
     "planet:neptune": astrology.SE_NEPTUNE,
     "planet:pluto": astrology.SE_PLUTO,
     "planet:chiron": astrology.SE_CHIRON,
+    "planet:apogee": astrology.SE_MEAN_APOG,
 }
+
+
+def _chart_type_id(value: Any) -> str:
+    """Canonical schema-v1 chart type; unknown or missing records read as radix."""
+    text = str(value or "radix").strip().lower()
+    return text if text in chartfile._STR_TO_HTYPE else "radix"
 
 
 def _first_match_longitude_sort(matches: list[str]) -> float | None:

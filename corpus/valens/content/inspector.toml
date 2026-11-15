@@ -1,7 +1,7 @@
 version = 1
 
 # Standing source passages shown for chart objects in the inspector. The text
-# remains in corpus/parsed/valens.json; this editable map only selects the
+# remains in corpus/parsed/valens*.json; this editable map only selects the
 # canonical section or paragraph for each target.
 
 [[entries]]
@@ -220,3 +220,483 @@ object_id = 12
 book = 9
 chapter = 17
 paragraph = 12
+
+[[entries]]
+kind = "term"
+object_id = "0:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aries — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "0:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aries — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "0:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aries — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "0:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aries — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "0:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aries — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "1:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Taurus — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "1:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Taurus — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "1:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Taurus — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "1:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Taurus — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "1:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Taurus — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "2:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Gemini — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "2:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Gemini — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "2:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Gemini — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "2:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Gemini — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "2:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Gemini — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "3:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Cancer — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "3:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Cancer — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "3:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Cancer — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "3:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Cancer — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "3:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Cancer — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "4:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Leo — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "4:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Leo — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "4:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Leo — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "4:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Leo — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "4:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Leo — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "5:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Virgo — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "5:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Virgo — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "5:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Virgo — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "5:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Virgo — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "5:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Virgo — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "6:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Libra — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "6:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Libra — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "6:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Libra — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "6:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Libra — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "6:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Libra — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "7:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Scorpio — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "7:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Scorpio — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "7:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Scorpio — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "7:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Scorpio — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "7:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Scorpio — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "8:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Sagittarius — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "8:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Sagittarius — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "8:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Sagittarius — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "8:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Sagittarius — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "8:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Sagittarius — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "9:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Capricorn — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "9:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Capricorn — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "9:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Capricorn — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "9:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Capricorn — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "9:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Capricorn — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "10:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aquarius — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "10:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aquarius — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "10:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aquarius — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "10:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aquarius — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "10:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Aquarius — Saturn"
+
+[[entries]]
+kind = "term"
+object_id = "11:2"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Pisces — Mercury"
+
+[[entries]]
+kind = "term"
+object_id = "11:3"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Pisces — Venus"
+
+[[entries]]
+kind = "term"
+object_id = "11:4"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Pisces — Mars"
+
+[[entries]]
+kind = "term"
+object_id = "11:5"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Pisces — Jupiter"
+
+[[entries]]
+kind = "term"
+object_id = "11:6"
+asset = "valens-bounds"
+book = 1
+chapter = 3
+heading = "Pisces — Saturn"

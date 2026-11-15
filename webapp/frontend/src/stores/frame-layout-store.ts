@@ -4,8 +4,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-// Desktop IDE frame geometry. Collapse is a separate boolean state; width is only
-// the remembered expanded width.
+// Global desktop frame geometry. Chart and right-pane changes never override
+// the left sidebar; collapse is separate from its remembered expanded width.
 export const SIDEBAR_MIN_WIDTH = 148;
 export const SIDEBAR_MAX_WIDTH = 520;
 export const SIDEBAR_STARTUP_WIDTH = 272;
@@ -33,10 +33,10 @@ export type RightPaneModuleKind =
   | "decennials"
   | "profections"
   | "eclipses"
+  | "pd-positions"
   | "lunar-mansions"
   | "chart-events"
   | "aspect-list"
-  | "ascensional-transits"
   | "calendar"
   | "astrocart-controls"
   | "feature-catalog";
@@ -56,11 +56,12 @@ export type RightPaneWidthPolicy = {
   role: RightPaneModuleRole;
   minContentWidth: number;
   preferredWidth: number;
-  reclaimSidebar: boolean;
 };
 
 export type SearchFiltersDock = "right" | "bottom";
 export type PrimaryDirectionsSettingsDock = SearchFiltersDock;
+export type LeftSidebarSize = "normal" | "larger" | "extra-large";
+export type NotesFocusRequest = { opener: Element | null; documentId: string };
 
 const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolicy> = {
   "hover-inspector": {
@@ -68,133 +69,114 @@ const RIGHT_PANE_WIDTH_POLICIES: Record<RightPaneModuleKind, RightPaneWidthPolic
     role: "hover-inspector",
     minContentWidth: 360,
     preferredWidth: 390,
-    reclaimSidebar: true,
   },
   "chart-style": {
     kind: "chart-style",
     role: "hover-inspector",
     minContentWidth: 360,
     preferredWidth: 390,
-    reclaimSidebar: true,
   },
   notes: {
     kind: "notes",
     role: "text-pane",
     minContentWidth: 360,
     preferredWidth: 420,
-    reclaimSidebar: true,
   },
   "inspector-notes": {
     kind: "inspector-notes",
     role: "text-pane",
     minContentWidth: 420,
     preferredWidth: 460,
-    reclaimSidebar: true,
   },
   "transit-search": {
     kind: "transit-search",
     role: "dense-event-list",
     minContentWidth: RIGHT_PANE_DENSE_LIST_MIN_WIDTH,
     preferredWidth: 640,
-    reclaimSidebar: true,
   },
   directions: {
     kind: "directions",
     role: "symbolic-directions-list",
     minContentWidth: RIGHT_PANE_DIRECTIONS_MIN_WIDTH,
     preferredWidth: 600,
-    reclaimSidebar: true,
   },
   "synodic-cycles": {
     kind: "synodic-cycles",
     role: "symbolic-directions-list",
     minContentWidth: RIGHT_PANE_SYNODIC_MIN_WIDTH,
     preferredWidth: 600,
-    reclaimSidebar: true,
   },
   "zodiacal-releasing": {
     kind: "zodiacal-releasing",
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 560,
-    reclaimSidebar: true,
   },
   firdaria: {
     kind: "firdaria",
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 520,
-    reclaimSidebar: true,
   },
   decennials: {
     kind: "decennials",
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 540,
-    reclaimSidebar: true,
   },
   profections: {
     kind: "profections",
     role: "time-lord-table",
     minContentWidth: RIGHT_PANE_TIME_LORD_LIST_MIN_WIDTH,
     preferredWidth: 540,
-    reclaimSidebar: true,
   },
   eclipses: {
     kind: "eclipses",
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 640,
-    reclaimSidebar: true,
+  },
+  "pd-positions": {
+    kind: "pd-positions",
+    role: "standard-inspector-table",
+    minContentWidth: 480,
+    preferredWidth: 600,
   },
   "lunar-mansions": {
     kind: "lunar-mansions",
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 640,
-    reclaimSidebar: true,
   },
   "chart-events": {
     kind: "chart-events",
     role: "dense-event-list",
     minContentWidth: 360,
     preferredWidth: 390,
-    reclaimSidebar: true,
   },
   "aspect-list": {
     kind: "aspect-list",
     role: "standard-inspector-table",
     minContentWidth: RIGHT_PANE_STANDARD_TABLE_MIN_WIDTH,
     preferredWidth: 520,
-    reclaimSidebar: true,
-  },
-  "ascensional-transits": {
-    kind: "ascensional-transits",
-    role: "dense-event-list",
-    minContentWidth: RIGHT_PANE_DENSE_LIST_MIN_WIDTH,
-    preferredWidth: 520,
-    reclaimSidebar: true,
   },
   calendar: {
     kind: "calendar",
     role: "calendar",
     minContentWidth: 420,
     preferredWidth: 680,
-    reclaimSidebar: true,
   },
   "astrocart-controls": {
     kind: "astrocart-controls",
     role: "configuration-pane",
     minContentWidth: 360,
     preferredWidth: 390,
-    reclaimSidebar: true,
   },
   "feature-catalog": {
     kind: "feature-catalog",
     role: "text-pane",
     minContentWidth: 340,
     preferredWidth: 420,
-    reclaimSidebar: true,
   },
 };
 
@@ -216,49 +198,27 @@ export function clampRightPaneWidth(
   return Math.max(minWidth, width);
 }
 
-export function rightPanePriorityLayout(
-  sidebarOpen: boolean,
-  sidebarWidth: number,
-  rightPaneWidth: number,
-  rightPaneKind: RightPaneModuleKind | null,
-): { sidebarWidth: number; rightPaneWidth: number } {
-  const savedSidebarWidth = clampSidebarWidth(sidebarWidth);
-  if (!rightPaneKind) {
-    return { sidebarWidth: savedSidebarWidth, rightPaneWidth: 0 };
-  }
-
-  const policy = rightPaneWidthPolicy(rightPaneKind);
-  const savedRightPaneWidth = clampRightPaneWidth(rightPaneWidth, policy);
-  const effectiveRightPaneWidth = Math.max(savedRightPaneWidth, policy.minContentWidth);
-  if (!sidebarOpen) {
-    return { sidebarWidth: 0, rightPaneWidth: savedRightPaneWidth };
-  }
-  if (!policy.reclaimSidebar) {
-    return { sidebarWidth: savedSidebarWidth, rightPaneWidth: savedRightPaneWidth };
-  }
-
-  const reclaimableSidebarWidth = Math.max(0, savedSidebarWidth - SIDEBAR_MIN_WIDTH);
-  return {
-    sidebarWidth: savedSidebarWidth - Math.min(reclaimableSidebarWidth, effectiveRightPaneWidth),
-    rightPaneWidth: effectiveRightPaneWidth,
-  };
-}
-
 type FrameLayoutState = {
   sidebarOpen: boolean;
   sidebarWidth: number;
+  leftSidebarSize: LeftSidebarSize;
   sidebarDragging: boolean;
   rightPaneWidth: number;
   rightPaneDragging: boolean;
   inspectorOpen: boolean;
   notesPaneOpen: boolean;
+  notesFocusRequest: NotesFocusRequest | null;
   styleEditorOpen: boolean;
   searchFiltersDock: SearchFiltersDock;
   primaryDirectionsSettingsDock: PrimaryDirectionsSettingsDock;
+  /** Local chart presentation; null adopts the daemon's initial view. */
+  dashboardView: boolean | null;
+  toggleDashboardView: (initial: boolean) => void;
 
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
+  setLeftSidebarSize: (size: LeftSidebarSize) => void;
   resetSidebarWidth: () => void;
   setSidebarDragging: (dragging: boolean) => void;
   setRightPaneWidth: (width: number) => void;
@@ -267,7 +227,6 @@ type FrameLayoutState = {
   setInspectorOpen: (open: boolean) => void;
   toggleInspector: () => void;
   setNotesPaneOpen: (open: boolean) => void;
-  toggleNotesPane: () => void;
   setStyleEditorOpen: (open: boolean) => void;
   toggleStyleEditor: () => void;
   setSearchFiltersDock: (dock: SearchFiltersDock) => void;
@@ -286,23 +245,32 @@ function persistedPaneDock(value: unknown, fallback: SearchFiltersDock): SearchF
   return value === "right" || value === "bottom" ? value : fallback;
 }
 
+function persistedLeftSidebarSize(value: unknown): LeftSidebarSize {
+  return value === "larger" || value === "extra-large" ? value : "normal";
+}
+
 export const useFrameLayoutStore = create<FrameLayoutState>()(
   persist(
     (set) => ({
       sidebarOpen: true,
       sidebarWidth: SIDEBAR_STARTUP_WIDTH,
+      leftSidebarSize: "normal",
       sidebarDragging: false,
       rightPaneWidth: RIGHT_PANE_STARTUP_WIDTH,
       rightPaneDragging: false,
       inspectorOpen: false,
       notesPaneOpen: false,
+      notesFocusRequest: null,
       styleEditorOpen: false,
       searchFiltersDock: "bottom",
       primaryDirectionsSettingsDock: "bottom",
+      dashboardView: null,
+      toggleDashboardView: (initial) => set((state) => ({ dashboardView: !(state.dashboardView ?? initial) })),
 
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarWidth: (width) => set({ sidebarWidth: clampSidebarWidth(width) }),
+      setLeftSidebarSize: (size) => set({ leftSidebarSize: size }),
       resetSidebarWidth: () => set({ sidebarWidth: SIDEBAR_STARTUP_WIDTH }),
       setSidebarDragging: (dragging) => set({ sidebarDragging: dragging }),
       setRightPaneWidth: (width) => set({ rightPaneWidth: clampRightPaneWidth(width) }),
@@ -314,8 +282,7 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
           const open = !state.inspectorOpen;
           return { inspectorOpen: open };
         }),
-      setNotesPaneOpen: (open) => set({ notesPaneOpen: open }),
-      toggleNotesPane: () => set((state) => ({ notesPaneOpen: !state.notesPaneOpen })),
+      setNotesPaneOpen: (open) => set({ notesPaneOpen: open, notesFocusRequest: null }),
       setStyleEditorOpen: (open) => set({ styleEditorOpen: open }),
       toggleStyleEditor: () =>
         set((state) => ({ styleEditorOpen: !state.styleEditorOpen })),
@@ -327,20 +294,24 @@ export const useFrameLayoutStore = create<FrameLayoutState>()(
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
         sidebarWidth: state.sidebarWidth,
+        leftSidebarSize: state.leftSidebarSize,
         rightPaneWidth: state.rightPaneWidth,
         inspectorOpen: state.inspectorOpen,
         notesPaneOpen: state.notesPaneOpen,
         searchFiltersDock: state.searchFiltersDock,
         primaryDirectionsSettingsDock: state.primaryDirectionsSettingsDock,
+        dashboardView: state.dashboardView,
       }),
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<FrameLayoutState>;
         return {
           ...current,
+          dashboardView: typeof saved.dashboardView === "boolean" ? saved.dashboardView : null,
           sidebarOpen: persistedBool(saved.sidebarOpen, current.sidebarOpen),
           sidebarWidth: clampSidebarWidth(
             persistedNumber(saved.sidebarWidth, current.sidebarWidth),
           ),
+          leftSidebarSize: persistedLeftSidebarSize(saved.leftSidebarSize),
           rightPaneWidth: clampRightPaneWidth(
             persistedNumber(saved.rightPaneWidth, current.rightPaneWidth),
           ),

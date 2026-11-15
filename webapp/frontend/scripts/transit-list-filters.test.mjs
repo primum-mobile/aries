@@ -7,14 +7,14 @@ import ts from 'typescript';
 
 const source = await readFile(new URL('../src/lib/transit-list-filters.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { resolveTransitListFilters, transitListFilterKey, toggleTransitListIds, transitPointRoleIds, resolveTransitPointIds } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { resolveTransitListFilters, transitListDefaultRoles, transitListFilterKey, toggleTransitListIds, transitPointRoleIds, resolveTransitPointIds } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 const catalog = {
   promittorIds: ['planet:sun', 'planet:moon', 'planet:chiron', 'asteroid:10433', 'planet:desc_node'],
   significatorIds: ['planet:sun', 'planet:moon', 'planet:chiron', 'asteroid:10433', 'planet:desc_node', 'planet:venus', 'angle:asc', 'angle:mc', 'point:lof', 'point:syzygy', 'point:eclipse', 'fixstar:regulus', 'part:000', 'custom:one'],
   aspects: [{id: 'conjunction'}, {id: 'square'}, {id: 'quincunx'}],
   presets: {
-    promittors: {standard: ['planet:sun']},
-    significators: {standard: ['planet:sun', 'planet:moon', 'planet:venus', 'angle:asc']},
+    promittors: {standard: ['planet:sun'], listDefault: ['planet:sun', 'planet:chiron']},
+    significators: {standard: ['planet:sun', 'planet:moon', 'planet:venus', 'angle:asc'], listDefault: ['planet:sun', 'planet:moon', 'planet:venus', 'angle:asc', 'angle:mc']},
     aspects: {major: ['conjunction', 'square']},
   },
 };
@@ -28,8 +28,11 @@ catalog.objects = [...new Set([...catalog.promittorIds, ...catalog.significatorI
 // Search also uses stars as actors for other techniques, such as heliacal phases.
 catalog.promittorIds.push('fixstar:regulus');
 
-test('standard remains the initial preset while all supported transit roles are selectable', () => {
-  assert.deepEqual(resolveTransitListFilters(catalog, {}).promittorIds, ['planet:moon', 'planet:sun']);
+test('the daemon list default is the initial selection while all supported transit roles are selectable', () => {
+  const initial = resolveTransitListFilters(catalog, {});
+  assert.deepEqual(initial.promittorIds, ['planet:chiron', 'planet:sun']);
+  assert.deepEqual(initial.significatorIds, ['angle:asc', 'angle:mc', 'planet:moon', 'planet:sun', 'planet:venus']);
+  assert.deepEqual(transitListDefaultRoles(catalog), {fromIds: ['planet:chiron', 'planet:sun'], toIds: initial.significatorIds});
   const all = resolveTransitListFilters(catalog, {
     selectedPointIds: catalog.objects.map(({id}) => id),
     selectedAspectIds: catalog.aspects.map(({id}) => id),

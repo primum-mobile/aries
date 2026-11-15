@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   defaultAspectListSecondaryRingIncluded,
+  isAspectListAspectClassIncluded,
   isAspectListInclusionFilterId,
   isAspectListPhaseIncluded,
   isAspectListRowIncluded,
@@ -421,4 +422,15 @@ test("Arabic Parts default off while other secondary-ring modes default on", () 
   assert.equal(defaultAspectListSecondaryRingIncluded("hybrid_hits"), true);
   assert.equal(isAspectListSecondaryRingFilterId("outer:outer:midpoint"), true);
   assert.equal(isAspectListSecondaryRingFilterId("point:vertex"), false);
+});
+
+test("Minor and Decl. pills project their always-calculated families", () => {
+  for (const [minor, decl] of [[false, false], [true, false], [false, true], [true, true]]) {
+    assert.equal(isAspectListAspectClassIncluded("major", minor, decl), true);
+    assert.equal(isAspectListAspectClassIncluded(undefined, minor, decl), true);
+    assert.equal(isAspectListAspectClassIncluded("minor", minor, decl), minor);
+    assert.equal(isAspectListAspectClassIncluded("declination", minor, decl), decl);
+  }
+  assert.equal(isAspectListAspectClassIncluded("minor"), false);
+  assert.equal(isAspectListAspectClassIncluded("declination"), false);
 });

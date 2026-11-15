@@ -6,6 +6,7 @@ import math
 from collections import OrderedDict
 
 import astrology
+import chart_bodies
 import eclipses
 import phasiscalc
 
@@ -20,6 +21,7 @@ CLASSICAL_PLANETS = (
 	astrology.SE_MERCURY,
 )
 EXTENDED_STATION_PLANETS = (
+	astrology.SE_OSCU_APOG,
 	astrology.SE_URANUS,
 	astrology.SE_NEPTUNE,
 	astrology.SE_PLUTO,
@@ -81,6 +83,8 @@ def _is_station_planet_enabled(ipl, options):
 		return len(transcendental) < 2 or transcendental[1]
 	if ipl == astrology.SE_PLUTO:
 		return len(transcendental) < 3 or transcendental[2]
+	if ipl == astrology.SE_OSCU_APOG:
+		return not getattr(options, 'meanapogee', True) and bool(getattr(options, 'showapogee', True))
 	if ipl == astrology.SE_CHIRON:
 		return bool(getattr(options, 'showchiron', True))
 	return True
@@ -136,8 +140,8 @@ def _planet_body(radix, ipl):
 			return body
 	except Exception:
 		pass
-	if ipl == astrology.SE_CHIRON:
-		return getattr(radix, 'chiron', None)
+	if ipl in chart_bodies.APOGEE_IDS or ipl == astrology.SE_CHIRON:
+		return chart_bodies.dynamic_body(radix, ipl)
 	try:
 		return radix.planets.planets[int(ipl)]
 	except Exception:
@@ -489,6 +493,15 @@ def _normalize_cazimi_mode(mode):
 	return CAZIMI_MODE_HELLENISTIC
 
 
+def matches_cazimi_mode(mode, lon_delta, lat_delta):
+	if mode == CAZIMI_MODE_HELLENISTIC:
+		return lon_delta <= CAZIMI_HELLENISTIC_ORB_DEG
+	within_longitude = lon_delta <= CAZIMI_SIXTEEN_MIN_ORB_DEG
+	if mode == CAZIMI_MODE_ABU_MASHAR:
+		return within_longitude
+	return within_longitude and lat_delta <= CAZIMI_SIXTEEN_MIN_ORB_DEG
+
+
 def _get_cazimi_signals(radix, cazimi_mode=CAZIMI_MODE_HELLENISTIC, options=None, days_window=CAZIMI_WINDOW_DAYS):
 	if options is not None and not bool(getattr(options, 'showcazimi', True)):
 		return []
@@ -518,13 +531,7 @@ def _get_cazimi_signals(radix, cazimi_mode=CAZIMI_MODE_HELLENISTIC, options=None
 			else:
 				lon_delta = _angular_distance(body_exact[0], sun_exact[0])
 				lat_delta = abs(float(body_exact[1]) - float(sun_exact[1]))
-		if mode == CAZIMI_MODE_HELLENISTIC:
-			matches = lon_delta <= CAZIMI_HELLENISTIC_ORB_DEG
-		elif mode == CAZIMI_MODE_ABU_MASHAR:
-			matches = lon_delta <= CAZIMI_SIXTEEN_MIN_ORB_DEG
-		else:
-			matches = lon_delta <= CAZIMI_SIXTEEN_MIN_ORB_DEG and lat_delta <= CAZIMI_SIXTEEN_MIN_ORB_DEG
-		if matches:
+		if matches_cazimi_mode(mode, lon_delta, lat_delta):
 			signals.append({
 				'planet': ipl,
 				'code': 'CAZ',

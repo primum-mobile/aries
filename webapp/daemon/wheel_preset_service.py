@@ -20,11 +20,12 @@ from typing import Mapping
 import uuid
 
 from webapp.daemon.file_transaction import exclusive_file_transaction
-from webapp.daemon.wheel_factory import PROFILES, factory_wheel_composition
+from webapp.daemon.wheel_factory import PROFILES, factory_wheel_composition, factory_wheel_presentation
 from webapp.daemon.wheel_composition import ARCHETYPES, validate_compositions
 from webapp.daemon.wheel_geometry_ownership import geometry_for_layout, is_geometry_key
 from webapp.daemon.style_authoring_service import validate_authoring_override
 from webapp.daemon.style_profile_service import _validate_token_value
+from webapp.daemon.style_profile_catalog_generated import STYLE_PROFILE_TOKENS
 
 
 SCHEMA_VERSION = 1
@@ -33,6 +34,8 @@ _NAME_KEYS = {'classic': 'ClassicWheel', 'compact': 'CompactWheel', 'anglo': 'An
               'houses': 'HouseWheel', 'cusps': 'CuspWheel'}
 VISIBILITY_FIELDS = {'houses': 'houses', 'terms': 'showterms', 'decans': 'showdecans'}
 logger = logging.getLogger(__name__)
+_APPEARANCE_TOKENS = {spec['cssVar']: (key, spec) for key, spec in STYLE_PROFILE_TOKENS.items()
+                      if key.startswith('renderer.wheel.') and not is_geometry_key(key)}
 
 
 class WheelPresetError(ValueError):
@@ -56,6 +59,64 @@ def _factory(layout):
             'factory': True, 'overrides': {}, 'composition': factory_wheel_composition(layout)}
 
 
+def _traditional():
+    import mtexts
+    return {'id': 'factory.traditional-morinus',
+            'name': str(mtexts.txts['TraditionalMorinusWheel']), 'layout': 'compact',
+            'factory': True, 'overrides': {'wheel.presentation': 'traditional-morinus'},
+            'composition': factory_wheel_composition('compact')}
+
+
+def _vintage():
+    import mtexts
+    definition = factory_wheel_presentation('vintage-magazine')
+    composition = factory_wheel_composition(definition['layout'])
+    return {'id': 'factory.vintage-magazine', 'name': str(mtexts.txts[definition['nameKey']]),
+            'layout': definition['layout'], 'factory': True,
+            'overrides': {'wheel.presentation': 'vintage-magazine'},
+            'composition': composition,
+            'visibility': {ring['archetypeId']: ring['enabled'] for ring in composition['rings']}}
+
+
+def _theorem():
+    """The harmonic-proportion Anglo design: geometry here, its stroke and type
+    tiers travel with the presentation (wheel-factory-v2.json) to the renderer."""
+    import mtexts
+    definition = factory_wheel_presentation('theorem')
+    composition = factory_wheel_composition(definition['layout'])
+    for ring in composition['rings']:
+        if ring['archetypeId'] in definition['visibility']:
+            ring['enabled'] = definition['visibility'][ring['archetypeId']]
+    return {'id': 'factory.theorem', 'name': str(mtexts.txts[definition['nameKey']]),
+            'layout': definition['layout'], 'factory': True,
+            'overrides': _overrides({'wheel.presentation': 'theorem', **definition['overrides']}),
+            'composition': composition,
+            'visibility': {ring['archetypeId']: ring['enabled'] for ring in composition['rings']}}
+
+
+def _apollo_11():
+    """A shipped Anglo design carried like a saved wheel: its geometry, ring
+    switches and wheel paint live in wheel-factory-v2.json. It sets no
+    wheel.presentation, so the renderer treats it as plain Anglo."""
+    import mtexts
+    definition = factory_wheel_presentation('apollo-11')
+    layout = definition['layout']
+    composition = factory_wheel_composition(layout)
+    for ring in composition['rings']:
+        if ring['archetypeId'] in definition['visibility']:
+            ring['enabled'] = definition['visibility'][ring['archetypeId']]
+    return {'id': 'factory.apollo-11', 'name': str(mtexts.txts[definition['nameKey']]),
+            'layout': layout, 'factory': True,
+            'overrides': _overrides(definition['overrides']),
+            'composition': composition,
+            'appearance': _appearance(layout, definition['appearance']),
+            'visibility': {ring['archetypeId']: ring['enabled'] for ring in composition['rings']}}
+
+
+def _named_factories():
+    return (_traditional(), _vintage(), _theorem(), _apollo_11())
+
+
 def _name(layout):
     import mtexts
     return str(mtexts.txts.get(_NAME_KEYS[layout], layout))
@@ -68,6 +129,11 @@ def _overrides(value):
     for key, item in value.items():
         if not isinstance(key, str) or not is_geometry_key(key):
             raise WheelPresetError('wheel preset accepts geometry only')
+        if key == 'wheel.presentation':
+            if item not in ('traditional-morinus', 'vintage-magazine', 'theorem'):
+                raise WheelPresetError('unknown wheel presentation')
+            result[key] = item
+            continue
         result[key] = (validate_authoring_override(key, item)
                        if key.startswith('authoring.wheel.') else _validate_token_value(key, item))
     return result
@@ -75,6 +141,39 @@ def _overrides(value):
 
 def _composition(layout, value):
     return validate_compositions({layout: value})[layout]
+
+
+def _appearance(layout, value):
+    """Wheel-local paint only; never app chrome, chart palette or dimensions.
+
+    Class values are frozen into the wheel's scope by the editor. Legacy wheel
+    tokens retain their canonical CSS names so screen and export share one map.
+    """
+    if not isinstance(value, Mapping):
+        raise WheelPresetError('wheel appearance must be an object')
+    result = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or is_geometry_key(key):
+            raise WheelPresetError('invalid wheel appearance key')
+        if key.startswith(f'authoring.wheel.{layout}.') or (layout == 'cusps' and key.startswith('authoring.wheel.vintage.')):
+            result[key] = validate_authoring_override(key, item)
+        elif key in _APPEARANCE_TOKENS:
+            result[key] = _validate_token_value(_APPEARANCE_TOKENS[key][0], item)
+        else:
+            raise WheelPresetError('wheel appearance accepts wheel styling only')
+    return result
+
+
+def _appearance_roles(record):
+    """Carry only referenced catalog routes, never another theme's colours."""
+    roles = {}
+    for value in record.get('appearance', {}).values():
+        if isinstance(value, str) and value.startswith('{') and value.endswith('}'):
+            target = value[1:-1]
+            token = STYLE_PROFILE_TOKENS.get(target)
+            if token and token.get('type') == 'color':
+                roles[target] = token['cssVar']
+    return {**record, **({'appearanceRoles': roles} if roles else {})}
 
 
 def _shape(value):
@@ -101,7 +200,8 @@ def validate_theme_geometry(value):
         if not isinstance(design, Mapping):
             raise WheelPresetError('invalid theme wheel design')
         result[key] = {'overrides': _overrides(design.get('overrides', {})),
-                       'composition': _composition(key, design.get('composition'))}
+                       'composition': _composition(key, design.get('composition')),
+                       **({'appearance': _appearance(key, design['appearance'])} if 'appearance' in design else {})}
     return {'schemaVersion': 1, 'layout': layout, 'designs': result}
 
 
@@ -189,6 +289,8 @@ class WheelPresetStore:
                     raise WheelPresetError('factory wheel presets cannot be replaced')
                 preset['overrides'] = _overrides(preset['overrides'])
                 preset['composition'] = _composition(layout, preset['composition'])
+                if 'appearance' in preset:
+                    preset['appearance'] = _appearance(layout, preset['appearance'])
                 if 'visibility' in preset:
                     self._validate_visibility({layout: preset['visibility']})
                 if 'themeVisibility' in preset:
@@ -200,6 +302,8 @@ class WheelPresetStore:
                 preset = self._preset(normalized, identity)
                 draft['overrides'] = _overrides(draft['overrides'])
                 draft['composition'] = _composition(preset['layout'], draft['composition'])
+                if 'appearance' in draft:
+                    draft['appearance'] = _appearance(preset['layout'], draft['appearance'])
                 if 'visibility' in draft:
                     self._validate_visibility({preset['layout']: draft['visibility']})
             for source in normalized['migrationSources'].values():
@@ -218,6 +322,14 @@ class WheelPresetStore:
 
     @staticmethod
     def _preset(state, identity):
+        if identity == 'factory.vintage-magazine':
+            return _vintage()
+        if identity == 'factory.theorem':
+            return _theorem()
+        if identity == 'factory.apollo-11':
+            return _apollo_11()
+        if identity == 'factory.traditional-morinus':
+            return _traditional()
         if identity in {f'factory.{key}' for key in PROFILES}:
             return _factory(identity.split('.', 1)[1])
         if identity not in state['presets']:
@@ -230,6 +342,8 @@ class WheelPresetStore:
         preset = cls._preset(state, identity)
         draft = deepcopy(state['workingCopies'].get(identity) or {
             'overrides': preset['overrides'], 'composition': preset['composition']})
+        if 'appearance' not in draft and 'appearance' in preset:
+            draft['appearance'] = deepcopy(preset['appearance'])
         draft['sourcePresetId'] = identity
         # A named wheel saves its switches as well as its structure. Keep
         # factory/theme display switches independent, but let a named wheel's
@@ -261,6 +375,7 @@ class WheelPresetStore:
             originals = [{'id': f'factory.{key}', 'name': _name(key), 'layout': key, 'factory': True}
                          for key in PROFILES]
             return originals + [{key: preset[key] for key in ('id', 'name', 'layout', 'factory')}
+                for preset in _named_factories()] + [{key: preset[key] for key in ('id', 'name', 'layout', 'factory')}
                 for identity, preset in self._state['presets'].items() if identity.startswith('user.')]
 
     def payload(self):
@@ -268,9 +383,10 @@ class WheelPresetStore:
             drafts = {layout: self._draft(self._state, layout) for layout in PROFILES}
             for layout, draft in drafts.items():
                 draft['composition'] = self._visible_composition(self._state, layout, draft['composition'])
+                drafts[layout] = _appearance_roles(draft)
             return deepcopy({'schemaVersion': SCHEMA_VERSION, 'revision': self._state['revision'],
-                             'presets': [_factory(key) for key in PROFILES] + [preset for identity, preset in self._state['presets'].items() if identity.startswith('user.')],
-                             'activePresets': {key: self._preset(self._state, self._state['selected'][key]) for key in PROFILES},
+                             'presets': [_factory(key) for key in PROFILES] + list(_named_factories()) + [_appearance_roles(preset) for identity, preset in self._state['presets'].items() if identity.startswith('user.')],
+                             'activePresets': {key: _appearance_roles(self._preset(self._state, self._state['selected'][key])) for key in PROFILES},
                              'selected': self._state['selected'], 'drafts': drafts,
                              'loadError': self._load_error})
 
@@ -317,17 +433,23 @@ class WheelPresetStore:
         self._state = state
 
     def mutate(self, action, layout, *, base_revision, preset_id=None, name=None,
-               overrides=None, composition=None):
+               overrides=None, composition=None, appearance=None):
         layout = _layout(layout)
         with self._transaction() as state:
             if type(base_revision) is not int or base_revision != state['revision']:
                 raise WheelPresetConflict(self.payload())
             identity = state['selected'][layout]
+            if appearance is not None and action != 'save':
+                raise WheelPresetError('wheel appearance capture requires save')
             if action == 'select':
-                # Built-in layout entries resume the active theme's modification.
+                # Resume the theme's modification of this presentation. Compact
+                # and Traditional share a layout but remain distinct choices.
                 theme_id = f'working.{layout}'
-                if preset_id == f'factory.{layout}' and theme_id in state['presets']:
-                    preset_id = theme_id
+                if preset_id in (f'factory.{layout}', 'factory.traditional-morinus', 'factory.vintage-magazine', 'factory.theorem') and theme_id in state['presets']:
+                    target = self._preset(state, preset_id)
+                    themed = state['workingCopies'].get(theme_id) or state['presets'][theme_id]
+                    if target['layout'] == layout and target['overrides'].get('wheel.presentation') == themed['overrides'].get('wheel.presentation'):
+                        preset_id = theme_id
                 if identity.startswith('working.'):
                     parked = self._draft(state, layout)
                     state['workingCopies'][identity] = {key: parked[key] for key in ('overrides', 'composition')}
@@ -396,6 +518,8 @@ class WheelPresetStore:
                 state['presets'][target] = {'id': target, 'name': name.strip() if name else source['name'],
                                             'layout': layout, 'factory': False, 'overrides': draft['overrides'],
                                             'composition': draft['composition'],
+                                            **({'appearance': _appearance(layout, appearance)} if appearance is not None
+                                               else {'appearance': deepcopy(draft['appearance'])} if 'appearance' in draft else {}),
                                             'visibility': {ring['archetypeId']: ring['enabled'] for ring in
                                                            self._visible_composition(state, layout, draft['composition'])['rings']}}
                 state['selected'][layout] = target
@@ -484,7 +608,7 @@ class WheelPresetStore:
                 else:
                     identity = refs.get(key, f'factory.{key}')
                     preset = self._preset(self._state, identity)
-                    designs[key] = {'overrides': preset['overrides'], 'composition': preset['composition']}
+                    designs[key] = {field: preset[field] for field in ('overrides', 'composition', 'appearance') if field in preset}
             return validate_theme_geometry({'schemaVersion': 1, 'layout': active, 'designs': designs})
 
     def apply_theme_geometry(self, value):
@@ -611,7 +735,9 @@ class WheelPresetStore:
                 draft = self._draft(self._state, layout)
                 opts.wheel_compositions[layout] = self._visible_composition(self._state, layout, draft['composition'])
                 opts.wheel_geometry_presets[layout] = {'id': draft['sourcePresetId'],
-                    'revision': self._state['revision'], 'overrides': deepcopy(draft['overrides'])}
+                    'revision': self._state['revision'], 'overrides': deepcopy(draft['overrides']),
+                    **({field: deepcopy(value) for field, value in _appearance_roles({'appearance': draft['appearance']}).items()}
+                       if 'appearance' in draft else {})}
             opts.wheel_style_catalog = self.public_catalog()
             opts.wheel_presets_active = True
             opts.wheel_preset_revision = self._state['revision']

@@ -337,8 +337,7 @@ class ArabicParts:
                 enabled_idx.append(ii)
 
             def _lof_lon():
-                idAsc = self.adjustAscendant(ArabicParts.ASC, opts)
-                asclon = cps[idAsc]
+                asclon = cps[ArabicParts.ASC]
                 return self.getLoFLon(opts.lotoffortune, asclon, pls, fort.abovehorizon)
 
             def _freeze_regime(value):
@@ -459,11 +458,11 @@ class ArabicParts:
                         selector_trace.append(_fallback_trace('depth', code))
                         return _lof_lon()
                     if code < ArabicParts.PLOFFS:
-                        return cps[self.adjustAscendant(code, opts)]
+                        return cps[code]
                     elif code < ArabicParts.LORDOFFS:
                         return pls.planets[code - ArabicParts.PLOFFS].data[planets.Planet.LONG]
                     elif code < ArabicParts.SPECIAL:
-                        cid = self.adjustAscendant(code - ArabicParts.LORDOFFS, opts)
+                        cid = code - ArabicParts.LORDOFFS
                         sign, lord = _sign_lord(cps[cid])
                         selector_trace.append(('houseLord', int(code), int(cid), sign, lord))
                         if lord == -1:
@@ -678,15 +677,6 @@ class ArabicParts:
 
             self.motion_regimes = tuple(self.motion_regimes)
             self.motion_regimes_by_config = tuple(self.motion_regimes_by_config)
-
-
-    def adjustAscendant(self, Id, opts):
-        if opts.arabicpartsref != 0:
-            Id += opts.arabicpartsref
-            if Id > ArabicParts.HNUM:
-                Id -= ArabicParts.HNUM
-
-        return Id
 
 
     def getLoFLon(self, typ, asclon, pls, abovehorizon):

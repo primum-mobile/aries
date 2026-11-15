@@ -18,6 +18,8 @@ export type LicenseStatus = {
   seats?: number | null;
   leaseExpiresAt?: string | null;
   refreshAfter?: string | null;
+  /** No local lease, but a stored activation can renew it on the same seat. */
+  recoverable?: boolean;
 };
 
 export type LicensedUpdate = {
@@ -45,6 +47,23 @@ export type LicenseDevices = {
   devices: LicenseDevice[];
   revokedCurrent: boolean;
 };
+
+type DistributionWindow = Window & { __ARIES_DISTRIBUTION__?: string };
+
+/**
+ * Microsoft Store builds (`ARIES_DISTRIBUTION=store`) are updated by the Store,
+ * so they never look for or offer an in-app update. Direct downloads, browser
+ * runs and older shells without the flag keep the in-app updater.
+ */
+export function selfUpdatesEnabled(distribution?: string | null): boolean {
+  const channel =
+    distribution !== undefined
+      ? distribution
+      : typeof window === "undefined"
+        ? null
+        : (window as DistributionWindow).__ARIES_DISTRIBUTION__;
+  return channel !== "store";
+}
 
 async function nativeInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -83,7 +102,10 @@ export function revokeLicenseDevice(
   });
 }
 
-export function checkLicensedUpdate(channel: "stable" | "beta" = "stable") {
+export async function checkLicensedUpdate(
+  channel: "stable" | "beta" = "stable",
+): Promise<LicensedUpdate | null> {
+  if (!selfUpdatesEnabled()) return null;
   return nativeInvoke<LicensedUpdate | null>("license_check_update", { channel });
 }
 

@@ -1,12 +1,11 @@
-import { ringEnabled, WHEEL_RING_ARCHETYPES, WHEEL_FACTORY_SETTINGS, type WheelRingArchetypeId } from "./wheel-composition";
+import { ringEnabled, WHEEL_RING_ARCHETYPES, WHEEL_FACTORY_SETTINGS, HISTORICAL_WHEEL_FACTORY_SETTINGS, type WheelRingArchetypeId } from "./wheel-composition";
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
  * Declared radial band model for the chart wheel.
  *
- * Stage 1 of `doc/ui-specs/style-editor-relational-geometry-research.md`:
- * this module states the containment structure that
+ * This module states the containment structure that
  * `resolveCanonicalWheelRingSet` in `wheel-render-style.ts` encodes as inline
  * arithmetic. The wheel is an ordered stack of annular bands from the canvas
  * edge to the hub; every `WheelRingSet` radius is either a band edge or an
@@ -30,6 +29,7 @@ import type {
   WheelTypographyProfile,
   WheelLinePaintRole,
   WheelAuthoringFillClass,
+  WheelAuthoringTypographyClass,
 } from "./wheel-render-style";
 
 /** Paint and editor share the semantic ownership of each resolved band. */
@@ -40,10 +40,10 @@ export const WHEEL_BAND_FILL_CLASSES: Partial<Record<WheelRingArchetypeId, Wheel
   hub: "fills.centerField",
 };
 export const WHEEL_BAND_BOUNDARY_ROLES: Record<WheelRingArchetypeId, WheelLinePaintRole> = {
-  zodiac: "zodiacOuterRing", degree: "innerDegreeRing", terms: "termRing",
-  decans: "zodiacInnerRing", cuspRuler: "cuspOuterRing", cuspLabels: "outerDegreeRing",
+  zodiac: "zodiacOuterRing", degree: "innerDegreeRing", terms: "zodiacInnerRing",
+  decans: "termRing", cuspRuler: "cuspOuterRing", cuspLabels: "outerDegreeRing",
   bodies: "innerBoundaryRing", houses: "houseBoundaryRing", hub: "baseRing",
-  aspects: "aspectBoundaryRing", outerHouses: "outerHouseRing", outerBodies: "outerMaximumRing",
+  aspects: "aspectBoundaryRing", outerHouses: "outerMaximumRing", outerBodies: "outerHouseRing",
 };
 
 /**
@@ -80,6 +80,14 @@ export interface ResolvedWheelBand {
   readonly overlay?: boolean;
   /** Annotation space outside the enclosure; never consumes primary stack width. */
   readonly floating?: boolean;
+  /** Hosted instruments derive both endpoints from the final host edge.
+   * Their free endpoint is a depth, never another independent stack edge. */
+  readonly attachment?: Readonly<{
+    hostBandId: "zodiac";
+    edge: "outer" | "inner";
+    preferredDepth: number;
+    maxDepthFraction: number;
+  }>;
   /** Outer edge radius in canvas px. */
   readonly outer: number;
   /** Inner edge radius in canvas px. Always <= outer for a valid layout. */
@@ -109,6 +117,15 @@ export function resolveWheelBandFillRegions(bands: readonly ResolvedWheelBand[])
   return regions;
 }
 
+/** Preserve the original clearance-biased annotation run while the two
+ * allocated cusp parts still form the same contiguous material. */
+export function wheelCuspAnnotationsShareRuler(bands: readonly ResolvedWheelBand[]): boolean {
+  const allocated = (id: WheelBandId) => bands.find(band => band.id === id && band.visible
+    && !band.overlay && !band.floating && band.outer > band.inner);
+  const ruler = allocated("cuspRuler"), labels = allocated("cuspLabels");
+  return Boolean(ruler && labels && Math.abs(ruler.inner - labels.outer) < 1e-7);
+}
+
 export interface ResolvedWheelLayout {
   readonly family: WheelLayoutFamily;
   /** Ordered outer -> inner. */
@@ -122,15 +139,23 @@ export interface ResolvedWheelLayout {
   readonly violations: readonly WheelLayoutViolation[];
 }
 
-/** External cusp annotations need space, but no enclosing rim. Open comparison
- * tracks do not enclose the primary stack. Paint and editor use this same rule. */
+/** External cusp annotations need space, but no enclosing rim. Annotations
+ * directly inside the cusp ruler share its material rim, as in the original
+ * recipe. Open comparison tracks do not enclose the primary stack. Paint and
+ * editor use this same rule; the two cusp bands retain their own width handles. */
 export function wheelBandOuterBoundaryRole(
   band: ResolvedWheelBand,
   bands: readonly ResolvedWheelBand[],
 ): WheelLinePaintRole | null {
   if (band.id === "margin" || !band.visible || band.overlay || band.floating) return null;
-  if (band.id === "cuspLabels" && bands.find(item => item.id !== "margin"
-    && item.visible && !item.overlay && item.outer > item.inner) === band) return null;
+  if (band.id === "cuspLabels") {
+    const allocated = bands.filter(item => item.id !== "margin"
+      && item.visible && !item.overlay && !item.floating && item.outer > item.inner);
+    const index = allocated.indexOf(band);
+    if (index === 0) return null;
+    const outside = allocated[index - 1];
+    if (outside?.id === "cuspRuler" && Math.abs(outside.inner - band.outer) < 1e-7) return null;
+  }
   return WHEEL_BAND_BOUNDARY_ROLES[band.id];
 }
 
@@ -273,13 +298,38 @@ export function wheelBandFloor(maxRadius: number): number {
   return Math.max(1, maxRadius * 0.005);
 }
 
-// NOTE: this is a *structural* floor — it stops a band inverting, and 0.5% of
-// the radius is ample for that. It is not enough for a band that must contain
-// a symbol: a decan ring squeezed to two pixels still draws its boundaries and
-// shows a glyph nobody can read. Giving glyph-bearing bands a larger minimum
-// requires per-interval gaps in solveOrderedBoundaries, which currently
-// assumes a uniform gap (`gap * n`), so it is a solver change rather than a
-// constant change and is deliberately not folded into the ceiling work.
+/** Content minima use authored type, before the renderer's band ceiling, so
+ * they cannot feed solved geometry back into the next solve. The archetype
+ * remains the upper bound; small type may use a narrower, readable lane. */
+export function wheelBandMinimumWidth(style: WheelRenderStyle, input: WheelGeometryInput,
+  band: Pick<ResolvedWheelBand, "id" | "visible">): number {
+  if (!band.visible || band.id === "margin") return 0;
+  const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
+  const nominal = WHEEL_RING_ARCHETYPES[band.id].minWidth * scale;
+  if (input.bandMinimumPolicy === "nominal") return nominal;
+  const readable = (classId: WheelAuthoringTypographyClass, fallback: number) => {
+    const authored = style.authoringOverrides.typography[input.profile]?.[classId]?.fontSizePx;
+    const size = authored != null && Number.isFinite(authored) ? authored * scale : fallback;
+    return Math.min(nominal, Math.max(8 * scale, size));
+  };
+  if (band.id === "terms" || band.id === "decans") {
+    const ratios = style.typography.ratios;
+    return readable(band.id === "terms" ? "subdivisions.term.glyph" : "subdivisions.decan.glyph",
+      input.maxRadius * ratios.subdivision[input.profile]
+        * (band.id === "terms" ? ratios.termGlyphScale : ratios.decanGlyphScale));
+  }
+  if (band.id === "cuspLabels" && input.profile === "anglo") {
+    const primary = input.composition?.rings.filter(ring => ring.enabled && ring.chartRole === "primary");
+    const at = primary?.findIndex(ring => ring.archetypeId === "cuspLabels") ?? -1;
+    // The original Anglo run borrows radial clearance from its adjacent
+    // ruler. Standalone/reordered annotations must keep the full lane.
+    if (!primary || (at > 0 && primary[at - 1].archetypeId === "cuspRuler")) {
+      return readable("houses.inner.position.degree",
+        input.maxRadius / 16 * style.typography.ratios.angloHousePosition.degreeScale);
+    }
+  }
+  return nominal;
+}
 
 export interface WheelBoundarySolveOptions {
   /** Radius of the enclosing edge; no boundary may reach it. */
@@ -433,6 +483,13 @@ export function solveOrderedBoundaries(
     blocked.push(pinned && Math.abs(value - authored) > 1e-9);
   }
 
+  // Unpinned canonical positions are preferences too. Per-boundary bounds
+  // alone do not protect two adjacent unpinned edges after a minimum grows.
+  for (let index = 1; index < count; index++) {
+    resolved[index] = Math.min(resolved[index], resolved[index - 1] - perInterval[index]);
+    if (pins[index] !== undefined) blocked[index] = Math.abs(resolved[index] - pins[index]!) > 1e-9;
+  }
+
   const pushIndex = options.pushIndex;
   if (
     pushIndex !== undefined
@@ -509,6 +566,7 @@ export const WHEEL_BAND_CONTENTS: Readonly<
     "bodies.outer.glyph",
     "bodies.outer.motion",
     "bodies.outer.position",
+    "bodies.outer.position.minute",
     "bodies.outer.leader",
     "angles.outer.ray",
     "angles.outer.arrowhead",
@@ -801,6 +859,8 @@ function interiorThird(from: number, to: number): readonly [number, number] {
   return [from + third, from + third * 2];
 }
 
+export const TRADITIONAL_MORINUS_SINGLE_ZODIAC_RATIO = 0.85;
+
 /**
  * Canonical classic/compact layout as a band walk. Transcribed from
  * `resolveClassicBaseRings` and the classic/compact branches of
@@ -811,10 +871,26 @@ function resolveClassicFamilyLayout(
   input: WheelGeometryInput,
 ): { edges: Partial<Record<WheelBandId, BandEdges>>; rings: MutableRings } {
   const { maxRadius } = input;
-  const classic = style.geometry.classic;
+  // Keep TradMorinus's projected-object recipe for every single-wheel family.
+  // Its original fixed-star/bare branches resized individual bands and the
+  // glyphs independently. Outer objects now reserve space in the viewport,
+  // without changing the centre-to-zodiac proportions.
+  const traditional = style.presentation === "traditional-morinus" && input.profile === "compact";
+  const original = style.geometry.classic;
+  const classic = traditional ? {
+    ...original,
+    outer: { ...original.outer, zodiac: TRADITIONAL_MORINUS_SINGLE_ZODIAC_RATIO,
+      line: 0.88, projectedLabel: 0.92, projectedLine: 0.88 },
+  } : original;
+  const historical = HISTORICAL_WHEEL_FACTORY_SETTINGS.geometry.classic;
+  const historicalCompact = HISTORICAL_WHEEL_FACTORY_SETTINGS.geometry.compact;
   const compact = style.geometry.compact;
-  const biwheel = style.geometry.biwheel;
+  const biwheel = traditional ? {...style.geometry.biwheel, outerPlanetSector: 0.15} : style.geometry.biwheel;
   const comparison = input.mode === "comparison";
+  const bare = !traditional && !comparison && !input.hasOuterRing ? classic.bareSingle : undefined;
+  const signSector = bare ? bare.signSector + (classic.signSectorLength - historical.signSectorLength) : classic.signSectorLength;
+  const planetSector = bare ? bare.planetSector + (classic.planetSectorLength - historical.planetSectorLength) : classic.planetSectorLength;
+  const houseSector = bare ? bare.houseSector + (classic.houseSectorLength - historical.houseSectorLength) : classic.houseSectorLength;
   const isCompact = input.profile === "compact";
   const rings: MutableRings = {};
   const edges: Partial<Record<WheelBandId, BandEdges>> = {};
@@ -848,7 +924,7 @@ function resolveClassicFamilyLayout(
     rings.rOuterRetr = rings.rOuterLine + biwheel.retrogradeOffset * maxRadius;
     rings.rOuterMin = maxRadius * biwheel.outerMinimum;
   } else {
-    r30 = maxRadius * classic.outer.zodiac;
+    r30 = maxRadius * (bare ? bare.zodiac + (original.outer.zodiac - historical.outer.zodiac) : classic.outer.zodiac);
     edges.margin = { outer: maxRadius, inner: r30, visible: true };
     rings.rOuterLine = maxRadius * classic.outer.line;
     rings.rAntis = maxRadius * classic.outer.projectedLabel;
@@ -857,13 +933,13 @@ function resolveClassicFamilyLayout(
 
   // --- Zodiac band ------------------------------------------------------
   const degreeTick = classic.degreeTickLength * maxRadius;
-  const r0 = r30 - classic.signSectorLength * maxRadius;
+  const r0 = r30 - signSector * maxRadius;
   edges.zodiac = { outer: r30, inner: r0, visible: true };
   rings.r30 = r30;
   rings.r0 = r0;
-  rings.rSign = r30 - (classic.signSectorLength / 2) * maxRadius;
-  rings.rASCMC = rings.rSign;
-  rings.rArrow = rings.rSign + classic.arrowLength * maxRadius;
+  rings.rSign = r30 - (bare ? bare.signInset + (signSector - bare.signSector) / 2 : signSector / 2) * maxRadius;
+  rings.rASCMC = bare ? maxRadius * (bare.angle + (original.outer.zodiac - historical.outer.zodiac)) : rings.rSign;
+  rings.rArrow = rings.rASCMC + classic.arrowLength * maxRadius;
   // Degree-ruler ticks stay attached to their terminal circles; interior
   // radii are exact thirds (`applyPaintedRingRadiusOverrides` repair pass).
   // Terminal radii keep the renderer's sequential accumulation so the parity
@@ -912,13 +988,13 @@ function resolveClassicFamilyLayout(
   // --- Bodies band ------------------------------------------------------
   // Compact narrows the bodies band to its position inset in single mode
   // only; comparison layouts keep the classic planet sector.
-  const bodiesSector = isCompact && !comparison
-    ? compact.positionInset * maxRadius
-    : classic.planetSectorLength * maxRadius;
+  const bodiesSector = isCompact && !comparison && !traditional
+    ? (bare ? compact.positionInset + bare.planetSector - historical.planetSectorLength : compact.positionInset) * maxRadius
+    : planetSector * maxRadius;
   const rAsp = rInner - bodiesSector;
   edges.bodies = { outer: rInner, inner: rAsp, visible: true };
   rings.rAsp = rAsp;
-  rings.rPlanet = rInner - (classic.planetSectorLength / 2) * maxRadius;
+  rings.rPlanet = rInner - (planetSector / 2) * maxRadius;
   rings.rLLine = rInner - classic.planetLineLength * maxRadius;
   rings.rLLine2 = rAsp + classic.planetLineLength * maxRadius;
   rings.rRetr = rings.rLLine2 + classic.retrogradeOffset * maxRadius;
@@ -928,20 +1004,22 @@ function resolveClassicFamilyLayout(
   if (isCompact) {
     const laneTable = comparison
       ? compact.positionLaneComparison
-      : compact.positionLaneSingle;
-    const lane = laneTable[density] * maxRadius;
+      : bare && compact.barePositionLanes
+        ? compact.barePositionLanes.map((lane, i) => lane + (compact.positionLaneSingle[i] - historicalCompact.positionLaneSingle[i]))
+        : compact.positionLaneSingle;
+    const lane = (traditional ? (bare ? 0.42 : 0.34) : laneTable[density]) * maxRadius;
     const minuteInset = comparison
       ? compact.positionMinuteInsetComparison
       : input.hasOuterRing
         ? compact.positionMinuteInsetWithOuter
         : compact.positionMinuteInsetSingle;
-    const rPosDeg = rInner - compact.positionInset * maxRadius;
-    const rPosMin = rPosDeg - minuteInset * maxRadius;
+    const rPosDeg = rInner - (traditional ? planetSector : compact.positionInset + (bare ? bare.planetSector - historical.planetSectorLength : 0)) * maxRadius;
+    const rPosMin = rPosDeg - (traditional && !comparison ? 0.04 : minuteInset) * maxRadius;
     const laneMinute = compact.positionMinuteInsetComparison * maxRadius;
     rings.rPos = rPosDeg;
     rings.rPosDeg = rPosDeg;
     rings.rPosMin = rPosMin;
-    rings.rRetr = rPosMin - compact.retrogradeInset * maxRadius;
+    rings.rRetr = rPosMin - (traditional ? 0.05 : compact.retrogradeInset) * maxRadius;
     rings.rAspAscMC = lane;
     rings.rPosAscMC = lane;
     rings.rPosAscMCMin = lane - laneMinute;
@@ -950,7 +1028,12 @@ function resolveClassicFamilyLayout(
   } else {
     const laneTable = comparison
       ? classic.comparisonPositionLanes
-      : classic.singlePositionLanes;
+      : bare ? bare.positionLanes.map((lane, i) => ({
+          position: lane.position + (classic.singlePositionLanes[i].position - historical.singlePositionLanes[i].position),
+          aspectAngle: lane.aspectAngle + (classic.singlePositionLanes[i].aspectAngle - historical.singlePositionLanes[i].aspectAngle),
+          positionAngle: lane.positionAngle + (classic.singlePositionLanes[i].positionAngle - historical.singlePositionLanes[i].positionAngle),
+          positionHouses: lane.positionHouses + (classic.singlePositionLanes[i].positionHouses - historical.singlePositionLanes[i].positionHouses),
+        })) : classic.singlePositionLanes;
     const lane = laneTable[density];
     rings.rPos = maxRadius * lane.position;
     rings.rAspAscMC = maxRadius * lane.aspectAngle;
@@ -961,7 +1044,7 @@ function resolveClassicFamilyLayout(
       // before scaling; keep the identical rounding order.
       rings.rRetr =
         rInner -
-        classic.planetSectorLength * maxRadius +
+        planetSector * maxRadius +
         (classic.planetLineLength + classic.retrogradeOffset) * maxRadius;
     }
   }
@@ -969,19 +1052,24 @@ function resolveClassicFamilyLayout(
   // --- House band and hub ----------------------------------------------
   let rBase: number;
   let rHouse: number;
-  if (isCompact) {
+  if (traditional) {
+    const offset = density === 2 ? 0.08 : 0;
+    rBase = maxRadius * (0.30 - offset);
+    rHouse = rBase + houseSector * maxRadius;
+    rings.rHouseName = (rBase + rHouse) / 2;
+  } else if (isCompact) {
     const offsets = input.showPositions
       ? compact.densityOffsetWithPositions
       : compact.densityOffsetWithoutPositions;
     const densityOffset =
       maxRadius * offsets[density + Number(input.hasOuterRing)];
     rBase = maxRadius * compact.base - densityOffset;
-    rHouse = rBase + compact.houseSector * maxRadius;
-    rings.rHouseName = maxRadius * compact.houseName - densityOffset;
+    rHouse = rBase + (compact.houseSector + (bare ? bare.houseSector - historical.houseSectorLength : 0)) * maxRadius;
+    rings.rHouseName = maxRadius * (compact.houseName + (bare ? (bare.houseSector - historical.houseSectorLength) / 2 : 0)) - densityOffset;
   } else {
-    rBase = maxRadius * classic.inner.base;
-    rHouse = rBase + classic.houseSectorLength * maxRadius;
-    rings.rHouseName = maxRadius * classic.inner.houseName;
+    rBase = maxRadius * (classic.inner.base + (bare ? bare.base - historical.inner.base : 0));
+    rHouse = rBase + houseSector * maxRadius;
+    rings.rHouseName = maxRadius * (classic.inner.houseName + (bare ? bare.houseName - historical.inner.houseName : 0));
   }
   edges.aspects = { outer: rAsp, inner: rHouse, visible: true };
   edges.houses = { outer: rHouse, inner: rBase, visible: input.showHouses };
@@ -1275,6 +1363,100 @@ export function resolveWheelBandLayout(
   return usesOriginalWheelTopology(input) ? originalAuthoringBands(style, input, layout) : layout;
 }
 
+/** Boundary aliases follow the band's topology, not coincident radius values. */
+export function wheelBandOuterField(input: WheelGeometryInput, id: WheelBandId,
+  reordered: boolean): keyof WheelRingSet | undefined {
+  if (id === "margin") return undefined;
+  if (!reordered) {
+    if (id === "cuspLabels" && isCuspBandProfile(input.profile)) return "r30";
+    const at = WHEEL_BAND_ORDER[wheelLayoutFamily(input)].indexOf(id);
+    return at > 0 ? WHEEL_BAND_BOUNDARY_FIELDS[wheelLayoutFamily(input)][at - 1] : undefined;
+  }
+  const fields: Partial<Record<WheelBandId, keyof WheelRingSet>> = {
+    zodiac: "r30", terms: "rTerms", decans: "rDecans", degree: "rDegreeOuter",
+    cuspRuler: "rCuspOuter", cuspLabels: "rCuspLabelOuter", bodies: "rInner",
+    houses: "rHouse", aspects: "rAsp", hub: "rBase",
+    outerBodies: ringEnabled(input.composition, "outerHouses")
+      && (input.showOuterHouses ?? input.comparisonWithOuterHouses) ? "rOuterHouse" : "rOuterMax",
+    outerHouses: "rOuterMax",
+  };
+  return fields[id];
+}
+
+export function resolvedWheelLayout(rings: Readonly<WheelRingSet>): ResolvedWheelLayout | undefined {
+  return COMPOSED_LAYOUTS.get(rings) ?? ORIGINAL_WIDTH_LAYOUTS.get(rings);
+}
+
+/** Carry the solved composition artifact through a boundary edit. Match old
+ * edges to ring fields before moving them; reordered bands cannot be rebuilt
+ * from the original recipe's field order. */
+export function retainWheelRadiusLayout(style: WheelRenderStyle, input: WheelGeometryInput,
+  source: Readonly<WheelRingSet>, target: Readonly<WheelRingSet>,
+  edgeFields?: readonly (keyof WheelRingSet)[],
+  radiusFields: readonly (keyof WheelRingSet)[] = [],
+  hostedDegreeInnerRadius?: number): ResolvedWheelLayout {
+  const stored = COMPOSED_LAYOUTS.get(source) ?? ORIGINAL_WIDTH_LAYOUTS.get(source);
+  if (!stored) return resolveWheelBandLayout(style, input, target);
+  const fields = edgeFields ?? Object.keys(source) as (keyof WheelRingSet)[];
+  const mapEdge = (edge: number) => {
+    const changed = fields.find(field => source[field] === edge && target[field] !== source[field]);
+    return changed ? target[changed] as number : edge;
+  };
+  const stack = stored.bands.filter(band => !band.overlay && !band.floating && band.visible);
+  const bands = stored.bands.map(band => {
+    if (band.overlay) return {...band, outer: mapEdge(band.outer), inner: mapEdge(band.inner)};
+    if (band.floating) return {...band};
+    const outerField = wheelBandOuterField(input, band.id, COMPOSED_LAYOUTS.has(source));
+    const next = stack[stack.indexOf(band) + 1];
+    const innerField = next ? wheelBandOuterField(input, next.id, COMPOSED_LAYOUTS.has(source)) : undefined;
+    const outer = outerField ? target[outerField] as number : band.outer;
+    const inner = band.id === "hub" ? 0 : innerField ? target[innerField] as number : outer;
+    return {...band, outer, inner};
+  });
+  const primary = bands.find(band => band.visible && !band.overlay && !band.floating
+    && band.id !== "margin" && !band.id.startsWith("outer"));
+  if (primary) for (let index = 0; index < bands.length; index++) {
+    const band = bands[index];
+    if (!band.floating) continue;
+    const width = band.outer - band.inner;
+    bands[index] = {...band, inner: primary.outer, outer: primary.outer + width};
+  }
+  // Stack edges have reached their final positions. Hosted rulers follow the
+  // adjoining edge and retain their preferred depth within the host's budget;
+  // matching their endpoints by coordinate coincidence can invert a ruler.
+  for (let index = 0; index < bands.length; index++) {
+    const band = bands[index], attachment = band.attachment;
+    if (!attachment) continue;
+    const host = bands.find(item => item.id === attachment.hostBandId && item.visible);
+    if (!host) continue;
+    const maximum = Math.max(0, host.outer - host.inner) * attachment.maxDepthFraction;
+    const minimum = Math.min(maximum, wheelBandMinimumWidth(style, input, band));
+    const preferredDepth = band.id === "degree" && attachment.edge === "outer"
+      && hostedDegreeInnerRadius !== undefined ? host.outer - hostedDegreeInnerRadius : attachment.preferredDepth;
+    const depth = Math.min(maximum, Math.max(minimum, preferredDepth));
+    const outer = attachment.edge === "outer" ? host.outer : host.inner + depth;
+    const inner = attachment.edge === "outer" ? host.outer - depth : host.inner;
+    bands[index] = {...band, outer, inner, widthBounds: {min: minimum, max: maximum}};
+  }
+  const hub = bands.find(band => band.id === "hub")!;
+  const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
+  const remaining = Math.max(0, hub.outer - Math.min(hub.outer, WHEEL_RING_ARCHETYPES.hub.minWidth * scale));
+  const bounded = bands.map(band => {
+    const index = stack.findIndex(item => item.id === band.id);
+    const outer = wheelBandOuterField(input, band.id, COMPOSED_LAYOUTS.has(source));
+    const inner = stack[index + 1] ? wheelBandOuterField(input, stack[index + 1].id, COMPOSED_LAYOUTS.has(source)) : undefined;
+    const locked = !band.overlay && outer && inner && radiusFields.includes(outer) && radiusFields.includes(inner);
+    const width = band.outer - band.inner;
+    return {...band, widthBounds: band.overlay || band.floating ? band.widthBounds : {
+      min: locked ? width : wheelBandMinimumWidth(style, input, band),
+      max: locked ? width : width + remaining,
+    }};
+  });
+  const layout = {...stored, rings: target, bands: bounded};
+  (COMPOSED_LAYOUTS.has(source) ? COMPOSED_LAYOUTS : ORIGINAL_WIDTH_LAYOUTS).set(target, layout);
+  return layout;
+}
+
 /** Secondary tracks reserve their own space beyond the actual primary rim.
  * Absolute primary-radius edits must not consume the comparison recipe's
  * clearance. Grow outward and let the common paint-envelope fitter fit the
@@ -1296,6 +1478,34 @@ export function reserveWheelSecondarySpace(
   const rim = Math.max(rings.r30, ...layout.bands.filter(band =>
     band.id !== "margin" && !band.id.startsWith("outer") && band.visible && !band.overlay && !band.floating,
   ).map(band => band.outer));
+  // A reordered enclosed comparison owns explicit body/house bands. Reserve
+  // glyph clearance in those bands, rather than independently pushing their
+  // anchors with offsets from the original recipe. Independent offsets make
+  // the visible width cease to be the dimension the next solve consumes.
+  const enclosed = COMPOSED_LAYOUTS.get(rings)?.bands.find(band => band.id === "outerBodies" && !band.overlay);
+  if (input.composition && enclosed) {
+    const houses = layout.bands.find(band => band.id === "outerHouses" && !band.overlay);
+    const width = Math.max(enclosed.outer - enclosed.inner, glyphClearance * 2);
+    const bodyOuter = rim + width;
+    const houseWidth = houses ? houses.outer - houses.inner : 0;
+    const next = {...rings} as {-readonly [K in keyof WheelRingSet]: WheelRingSet[K]};
+    next.rOuterPlanet = rim + width / 2;
+    next.rOuterRetr = rim + width / 4;
+    next.rOuterMin = rim;
+    next.rOuterHouse = houses ? bodyOuter : undefined;
+    next.rOuterHouseName = houses ? bodyOuter + houseWidth / 2 : undefined;
+    next.rOuterMax = bodyOuter + houseWidth;
+    next.rOuterASCMC = next.rOuterArrow = next.rOuterLine = next.rOuterMax;
+    next.rAntis = next.rOuterPlanet;
+    next.rAntisLines = next.rOuterLine;
+    const result = Object.freeze(next);
+    const bands = layout.bands.map(band => band === enclosed ? {...band, inner: rim, outer: bodyOuter}
+      : band === houses ? {...band, inner: bodyOuter, outer: next.rOuterMax!}
+      : band.id === "margin" ? {...band, inner: next.rOuterMax!,
+        outer: Math.max(band.outer, next.rOuterMax! + glyphClearance)} : band);
+    COMPOSED_LAYOUTS.set(result, {...layout, rings: result, bands});
+    return result;
+  }
   if (rings[glyphField]! - rim >= glyphClearance - 1e-9) return rings;
   const naturalClearance = Math.max(0, canonical[glyphField]! - canonical.r30);
   const clearance = Math.max(naturalClearance, glyphClearance);
@@ -1376,6 +1586,35 @@ const OFFSET_ANCHORS: ReadonlySet<string> = new Set([
   "rRetr",
   "rArrow",
 ]);
+
+/** Anglo body glyphs sit a fixed inset behind their rim ticks, rather than in
+ * the middle of the body band. Keep that relationship when the band changes
+ * width. A band too shallow for the normal inset seats the glyph at its centre;
+ * production's ink-aware leader clipping handles the remaining clearance.
+ * Classic/Compact intentionally retain their centred, proportional lane. */
+function remapBodyGlyphLane(
+  profile: WheelTypographyProfile,
+  sourceBands: readonly ResolvedWheelBand[],
+  targetBands: readonly ResolvedWheelBand[],
+  source: Readonly<WheelRingSet>,
+  target: {-readonly [K in keyof WheelRingSet]: WheelRingSet[K]},
+): void {
+  if (!isAngloFamilyProfile(profile)) return;
+  const from = sourceBands.find(band => band.id === "bodies");
+  const to = targetBands.find(band => band.id === "bodies");
+  if (!from || !to || !to.visible || to.outer <= to.inner
+    || (from.outer === to.outer && from.inner === to.inner)) return;
+  const inset = from.outer - source.rPlanet;
+  if (!(inset > 0) || source.rPlanet < from.inner) return;
+  target.rPlanet = to.outer - Math.min(inset, (to.outer - to.inner) / 2);
+  // These Anglo anchors belong to the same body run. Preserve their offsets
+  // from its glyph; independent ratio mapping compressed the degree/motion
+  // lanes as well as the gap to the leader.
+  for (const field of ["rPos", "rRetr"] as const) {
+    const value = source[field];
+    if (value != null) target[field] = Math.max(to.inner, target.rPlanet + value - source.rPlanet);
+  }
+}
 
 export function remapWheelAnchorsToBands(
   profile: WheelTypographyProfile,
@@ -1593,6 +1832,13 @@ export const WHEEL_CLASS_BAND: Readonly<Record<string, WheelBandId>> =
  */
 const BAND_GLYPH_INSET = 0.88;
 
+/** The physical container wall, independent of the preferred glyph inset. */
+export function resolveWheelClassBandThickness(classId: string, bands: readonly ResolvedWheelBand[]): number | null {
+  const bandId = WHEEL_CLASS_BAND[classId];
+  const band = bandId ? bands.find(candidate => candidate.id === bandId) : undefined;
+  return band && band.outer - band.inner > 1e-9 ? band.outer - band.inner : null;
+}
+
 export function resolveWheelClassFontSizeCeiling(
   classId: string,
   bands: readonly ResolvedWheelBand[],
@@ -1619,6 +1865,12 @@ const ORIGINAL_WIDTH_LAYOUTS = new WeakMap<Readonly<WheelRingSet>, ResolvedWheel
 const OUTER_ATTACHMENT_RADII = new WeakMap<Readonly<WheelRingSet>, number>();
 export function composedWheelLayout(rings: Readonly<WheelRingSet>): ResolvedWheelLayout | undefined {
   return COMPOSED_LAYOUTS.get(rings);
+}
+
+/** Hosted instruments use the same bounds in original and reordered layouts. */
+export function wheelHostedCuspRuler(rings: Readonly<WheelRingSet>): ResolvedWheelBand | undefined {
+  return (COMPOSED_LAYOUTS.get(rings) ?? ORIGINAL_WIDTH_LAYOUTS.get(rings))?.bands
+    .find(band => band.id === "cuspRuler" && band.visible && band.overlay);
 }
 
 /** Open annotations occupy local label boxes, not an enclosing circle. */
@@ -1687,10 +1939,26 @@ export function wheelCuspRulerTickEnds(
     : {base: band.outer, tip: band.inner};
 }
 
-function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
+/** Attachment is authored order, not a consequence of a temporary layer
+ * toggle. Hidden allocating rows remain relationship separators; unchecked
+ * ruler instruments have no active effect on that order. */
+export function wheelRulerAttachmentEdge(
+  composition: WheelGeometryInput["composition"], kind: "degree" | "cuspRuler",
+): "outer" | "inner" | undefined {
+  if (!composition) return undefined;
+  const optional = (id: WheelRingArchetypeId) => id === "degree" || id === "cuspRuler";
+  const primary = composition.rings.filter(ring => ring.chartRole === "primary"
+    && (ring.enabled || !optional(ring.archetypeId)));
+  const zodiac = primary.findIndex(ring => ring.archetypeId === "zodiac" && ring.enabled);
+  const instrument = primary.findIndex(ring => ring.archetypeId === kind && ring.enabled);
+  if (zodiac < 0 || instrument < 0 || Math.abs(instrument - zodiac) !== 1) return undefined;
+  return instrument < zodiac ? "outer" : "inner";
+}
+
+export function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
   const composition = input.composition;
   if (!composition) return false;
-  const original = WHEEL_FACTORY_SETTINGS.layouts[input.profile].composition;
+  const original = WHEEL_FACTORY_SETTINGS.layouts[input.profile].composition as NonNullable<WheelGeometryInput["composition"]>;
   // Rulers and cusp annotations are optional instruments of the original
   // layout. Hiding/removing one must not select a different packing and paint
   // recipe for every remaining band. Reordering or adding instruments still
@@ -1700,10 +1968,21 @@ function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
     || composition.rings.some(ring => ring.archetypeId === source.archetypeId && ring.enabled));
   const activeOrder = composition.rings.filter(ring => !optional(ring.archetypeId) || ring.enabled);
   if (composition.projection !== original.projection || activeOrder.length !== retained.length) return false;
+  // An unchecked annotation can still separate a ruler from Signs. Ignoring
+  // its position for compatibility must not silently overwrite that authored
+  // relationship with the factory adapter's hosted ruler.
+  const factoryVisibility = {...original, rings: original.rings.map(source => ({...source,
+    enabled: composition.rings.find(ring => ring.archetypeId === source.archetypeId)?.enabled ?? false}))};
+  for (const kind of ["degree", "cuspRuler"] as const) {
+    if (wheelRulerAttachmentEdge(composition, kind) !== wheelRulerAttachmentEdge(factoryVisibility, kind)) return false;
+  }
   return activeOrder.every((ring, index) => {
     const source = retained[index];
     if (ring.archetypeId !== source.archetypeId || ring.chartRole !== source.chartRole) return false;
-    if (optional(ring.archetypeId) && source.enabled) return true;
+    // Anglo has a hosted Degree lane even with its factory default off.
+    // Other absent instruments need reflow to allocate an actual visible band.
+    if (optional(ring.archetypeId)) return source.enabled
+      || (input.profile === "anglo" && ring.archetypeId === "degree");
     if (ring.chartRole === "outer" && (input.mode !== "comparison"
       || (ring.archetypeId === "outerHouses" && !(input.showOuterHouses ?? input.comparisonWithOuterHouses)))) return true;
     const enabled = ring.archetypeId === "terms" ? input.showTerms && !isCuspBandProfile(input.profile)
@@ -1717,20 +1996,28 @@ function usesOriginalWheelTopology(input: WheelGeometryInput): boolean {
  * its sign band, or retaining the invisible Anglo ruler slot in Cusp/House. */
 function originalAuthoringBands(style: WheelRenderStyle, input: WheelGeometryInput, layout: ResolvedWheelLayout): ResolvedWheelLayout {
   const rings = layout.rings;
+  const cuspAttachment = input.profile === "anglo" ? wheelRulerAttachmentEdge(input.composition, "cuspRuler") : undefined;
   const bands: ResolvedWheelBand[] = layout.bands.map(band => {
     const instance = input.composition?.rings.find(ring => ring.archetypeId === band.id);
-    const adjusted = isCuspBandProfile(input.profile) && band.id === "cuspLabels"
+    const cuspDepth = Math.min(band.outer - band.inner, (rings.r30 - rings.r0) * WHEEL_RULER_DEPTH_RANGE.max);
+    const adjusted = cuspAttachment && band.id === "cuspRuler"
+      ? {...band, overlay: true, inner: cuspAttachment === "outer" ? rings.r30 - cuspDepth : rings.r0,
+        outer: cuspAttachment === "outer" ? rings.r30 : rings.r0 + cuspDepth,
+        attachment: {hostBandId: "zodiac" as const, edge: cuspAttachment,
+          preferredDepth: band.outer - band.inner, maxDepthFraction: WHEEL_RULER_DEPTH_RANGE.max}}
+      : isCuspBandProfile(input.profile) && band.id === "cuspLabels"
       ? {...band, outer: rings.r30}
       : isCuspBandProfile(input.profile) && band.id === "cuspRuler"
         ? {...band, outer: rings.r30, inner: rings.r30, visible: false} : band;
     const visible = adjusted.visible && (!input.composition || Boolean(instance?.enabled) || band.id === "margin");
     return {...adjusted, visible, instanceId: instance?.instanceId};
   });
-  const addOverlay = (id: WheelRingArchetypeId, outer: number, inner: number, visible: boolean) => {
+  const addOverlay = (id: WheelRingArchetypeId, outer: number, inner: number, visible: boolean,
+    attachment?: ResolvedWheelBand["attachment"]) => {
     const instance = input.composition?.rings.find(ring => ring.archetypeId === id);
     if (!instance?.enabled || !visible || outer <= inner) return;
     bands.push({id, instanceId: instance.instanceId, outer, inner, visible: true,
-      overlay: true, contents: WHEEL_RING_ARCHETYPES[id].paintClasses});
+      overlay: true, ...(attachment ? {attachment} : {}), contents: WHEEL_RING_ARCHETYPES[id].paintClasses});
   };
   const outerRuler = isAngloFamilyProfile(input.profile);
   const attachedAnglo = input.profile === "anglo" && wheelHasOuterDegreeRuler(input);
@@ -1740,7 +2027,9 @@ function originalAuthoringBands(style: WheelRenderStyle, input: WheelGeometryInp
       Math.abs(rings.rOuter0 - rings.rOuter10))) : 0;
   addOverlay("degree", attachedAnglo ? rings.r0 + attachedDepth : outerRuler ? rings.rOuter0 : rings.r10,
     attachedAnglo ? rings.r0 : outerRuler ? rings.rOuter10 : rings.r0,
-    !outerRuler || wheelHasOuterDegreeRuler(input));
+    !outerRuler || wheelHasOuterDegreeRuler(input), attachedAnglo || !outerRuler
+      ? {hostBandId: "zodiac", edge: "inner", preferredDepth: attachedAnglo ? attachedDepth : rings.r10 - rings.r0,
+        maxDepthFraction: attachedAnglo ? WHEEL_RULER_DEPTH_RANGE.max : 1} : undefined);
   if (layout.family === "angloComparisonNoHouses" || (input.hasOuterRing && input.mode !== "comparison")) {
     const center = rings.rOuterPlanet ?? rings.rAntis ?? rings.r30;
     addOverlay("outerBodies", 2 * center - rings.r30, rings.r30, true);
@@ -1754,19 +2043,19 @@ function originalAuthoringBands(style: WheelRenderStyle, input: WheelGeometryInp
  * width consumes the hub, then stops. Only jointly oversized imported edits
  * share the available growth, never the unedited bands. */
 function resizeWheelBandStack(style: WheelRenderStyle, input: WheelGeometryInput,
-  stack: readonly ResolvedWheelBand[], carriedWidths: Readonly<Record<string, number>> = {}): ResolvedWheelBand[] {
+  stack: readonly ResolvedWheelBand[], carriedWidths: Readonly<Record<string, number>> = {},
+  preferredWidths: Readonly<Partial<Record<WheelBandId, number>>> = {}): ResolvedWheelBand[] {
   const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
   const widths = style.authoringOverrides.ringWidths?.[input.profile] ?? {};
   const hub = stack.find(band => band.id === "hub")!;
-  const hubMinimum = Math.min(hub.outer, WHEEL_RING_ARCHETYPES.hub.minWidth * scale);
+  const hubMinimum = wheelBandMinimumWidth(style, input, hub);
   const minimum = (band: ResolvedWheelBand) => band.id === "margin" ? band.outer - band.inner
-    : Math.min(band.outer - band.inner, WHEEL_RING_ARCHETYPES[band.id].minWidth * scale);
-  // Authored radii can leave depth in an invisible subdivision slot. Give that
-  // depth to Signs, keeping the inner bands and the wheel's outer edge fixed.
-  // The saved radii remain untouched, so showing the subdivisions restores
-  // their original widths.
+    : wheelBandMinimumWidth(style, input, band);
+  // Direct legacy renderer callers retain their historical redistribution.
+  // Native saved recipes retain all preferred widths and release hidden depth
+  // into the hub.
   const zodiac = stack.find(band => band.id === "zodiac" && band.visible);
-  const reclaimed = zodiac ? stack.reduce((total, band) =>
+  const reclaimed = zodiac && style.authoringOverrides.recipeRadii?.[input.profile] === undefined ? stack.reduce((total, band) =>
     total + ((!band.visible && (band.id === "terms" || band.id === "decans"))
       ? band.outer - band.inner : 0), 0) : 0;
   const pinnedAngloCusp = input.profile === "anglo"
@@ -1781,15 +2070,19 @@ function resizeWheelBandStack(style: WheelRenderStyle, input: WheelGeometryInput
       - style.authoringOverrides.ringRadii.anglo.innerBoundaryRing!) * scale
       - (fullCuspWidth!.outer - fullCuspWidth!.inner)) : undefined;
   const desired = stack.map(band => {
-    const old = band.outer - band.inner;
+    const old = preferredWidths[band.id] ?? band.outer - band.inner;
     const requested = band.instanceId ? widths[band.instanceId] : undefined;
-    if (!band.visible && (band.id === "terms" || band.id === "decans"
+    // Traditional Morinus keeps its central field fixed when H hides houses.
+    if (!band.visible && band.id === "houses" && style.presentation === "traditional-morinus"
+      && input.profile === "compact") return old;
+    if (!band.visible && (style.authoringOverrides.recipeRadii?.[input.profile] !== undefined
+      || band.id === "terms" || band.id === "decans"
       || band.id === "cuspRuler" || band.id === "cuspLabels")) return 0;
     if (band === zodiac) return (requested == null ? old
       : Math.max(minimum(band), requested * scale)) + reclaimed;
-    // Anglo's automatic ruler width grows as subdivision density falls. A
-    // pinned cusp boundary instead keeps the ruler's saved full-density width;
-    // the newly free depth belongs to Signs rather than a blank ruler band.
+    // Raw historical Anglo pins keep their full-density Cusp dimension when
+    // the old automatic density formula changes. Native recipes have already
+    // separated this source preference from live pins before reaching here.
     if (band.id === "cuspRuler" && pinnedAngloCusp && requested == null)
       return Math.max(minimum(band), fullCuspWidth!.outer - fullCuspWidth!.inner);
     if (band.id === "cuspLabels" && pinnedCuspLabels !== undefined && requested == null)
@@ -1797,17 +2090,29 @@ function resizeWheelBandStack(style: WheelRenderStyle, input: WheelGeometryInput
     return band.id === "hub" || !band.visible || requested == null ? old
       : Math.max(minimum(band), requested * scale + (band.instanceId ? carriedWidths[band.instanceId] ?? 0 : 0));
   });
+  // Reserve all required minima before allocating preferred growth. Even an
+  // imported radius set with an undersized hub cannot grandfather a collapse.
+  const budget = (stack[0]?.outer ?? input.maxRadius) - hubMinimum;
+  const floors = stack.map(band => band.id === "hub" ? 0 : minimum(band));
+  const baseline = stack.map((band, index) => band.id === "hub" ? 0
+    : Math.max(floors[index], band.outer - band.inner));
+  const floorTotal = floors.reduce((sum, width) => sum + width, 0);
+  const baseTotal = baseline.reduce((sum, width) => sum + width, 0);
+  const availableShare = baseTotal > budget
+    ? Math.max(0, (budget - floorTotal) / (baseTotal - floorTotal)) : 1;
+  baseline.forEach((width, index) => { baseline[index] = floors[index] + (width - floors[index]) * availableShare; });
   let growth = 0, released = 0;
   stack.forEach((band, index) => {
-    const delta = desired[index] - (band.outer - band.inner);
+    desired[index] = band.id === "hub" ? 0 : Math.max(floors[index], desired[index]);
+    const delta = desired[index] - baseline[index];
     growth += Math.max(0, delta);
     released += Math.max(0, -delta);
   });
-  const capacity = Math.max(0, hub.outer - hubMinimum) + released;
+  const capacity = Math.max(0, budget - baseline.reduce((sum, width) => sum + width, 0)) + released;
   const growthShare = growth > capacity ? capacity / growth : 1;
   let edge = stack[0]?.outer ?? input.maxRadius;
   const solved = stack.map((band, index): ResolvedWheelBand => {
-    const old = band.outer - band.inner;
+    const old = baseline[index];
     const delta = desired[index] - old;
     const used = old + (delta > 0 ? delta * growthShare : delta);
     const outer = edge;
@@ -1827,7 +2132,7 @@ function resizeOpenWheelTrack(style: WheelRenderStyle, input: WheelGeometryInput
   next: {-readonly [K in keyof WheelRingSet]: WheelRingSet[K]}): ResolvedWheelBand {
   const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
   const oldWidth = band.outer - band.inner;
-  const minimum = Math.min(oldWidth, WHEEL_RING_ARCHETYPES[band.id as WheelRingArchetypeId].minWidth * scale);
+  const minimum = wheelBandMinimumWidth(style, input, band);
   const maximum = Math.max(oldWidth, minimum, input.maxRadius - band.inner);
   const requested = band.instanceId ? style.authoringOverrides.ringWidths?.[input.profile]?.[band.instanceId] : undefined;
   const width = requested == null ? oldWidth : Math.min(maximum, Math.max(minimum, requested * scale));
@@ -1843,13 +2148,41 @@ function resizeOpenWheelTrack(style: WheelRenderStyle, input: WheelGeometryInput
   return {...band, outer: band.inner + width, widthBounds: {min: minimum, max: maximum}};
 }
 
+/** Exterior widths act on their final reserved tracks, after primary pins.
+ * Saving the visible width is then an identity even when clearance grew the
+ * natural track. Reuse the same track resize and retained layout artifact. */
+export function resizeWheelOpenTracks(style: WheelRenderStyle, input: WheelGeometryInput,
+  rings: Readonly<WheelRingSet>): Readonly<WheelRingSet> {
+  const layout = resolvedWheelLayout(rings);
+  if (!layout || !layout.bands.some(band => band.overlay && band.id.startsWith("outer")
+    && band.instanceId && style.authoringOverrides.ringWidths?.[input.profile]?.[band.instanceId] != null)) return rings;
+  const next = {...rings} as {-readonly [K in keyof WheelRingSet]: WheelRingSet[K]};
+  const bands = layout.bands.map(band => band.overlay && band.id.startsWith("outer")
+    ? resizeOpenWheelTrack(style, input, band, rings, next) : band);
+  const result = Object.freeze(next);
+  (COMPOSED_LAYOUTS.has(rings) ? COMPOSED_LAYOUTS : ORIGINAL_WIDTH_LAYOUTS).set(result, {...layout, rings: result, bands});
+  return result;
+}
+
 function resizeOriginalWheelBands(style: WheelRenderStyle, input: WheelGeometryInput,
-  legacy: Readonly<WheelRingSet>): Readonly<WheelRingSet> {
-  const source = resolveWheelBandLayout(style, input, legacy);
+  legacy: Readonly<WheelRingSet>,
+  preferredWidths: Readonly<Partial<Record<WheelBandId, number>>> = {}): Readonly<WheelRingSet> {
+  const fullSource = input.profile === "anglo" && preferredWidths.zodiac != null;
+  const sourceInput = fullSource ? {...input, showTerms: true, showDecans: true,
+    composition: input.composition && {...input.composition, rings: input.composition.rings.map(ring => ({...ring,
+      enabled: ring.archetypeId === "terms" || ring.archetypeId === "decans" ? true : ring.enabled}))}} : input;
+  const rawSource = resolveWheelBandLayout(style, sourceInput, legacy);
+  // Radius sampling can retain a layout before native instances were bound.
+  // Bind their visibility/hosted instruments before compiling the full source.
+  const sampled = fullSource && !rawSource.bands.some(band => band.instanceId)
+    ? originalAuthoringBands(style, sourceInput, rawSource) : rawSource;
+  const source = fullSource ? {...sampled, bands: sampled.bands.map(band => ({...band,
+    visible: band.id === "margin" || (Boolean(input.composition?.rings.find(ring => ring.archetypeId === band.id)?.enabled)
+      && (band.id !== "terms" || input.showTerms) && (band.id !== "decans" || input.showDecans))}))} : sampled;
   const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
   const widths = style.authoringOverrides.ringWidths?.[input.profile] ?? {};
   const stack = source.bands.filter(band => !band.overlay);
-  const solved = resizeWheelBandStack(style, input, stack);
+  const solved = resizeWheelBandStack(style, input, stack, {}, preferredWidths);
   const mapRadius = (value: number) => {
     const index = stack.findIndex(band => band.outer > band.inner && value <= band.outer + 1e-9 && value >= band.inner - 1e-9);
     if (index < 0) return value;
@@ -1875,6 +2208,34 @@ function resizeOriginalWheelBands(style: WheelRenderStyle, input: WheelGeometryI
       next[field] = Math.min(to.outer, Math.max(to.inner, fromOuter <= fromInner ? to.outer - fromOuter : to.inner + fromInner));
     }
   }
+  // A factory source with a hidden subdivision has coincident scalar aliases.
+  // When that row is enabled, allocate its preferred dimension by semantic
+  // edge identity; mapping the old equal coordinates cannot split the edges.
+  const introduced = stack.some(band => band.visible && band.outer - band.inner <= 1e-9
+    && (preferredWidths[band.id] ?? 0) > 0);
+  if (introduced) {
+    for (const band of solved) {
+      const field = wheelBandOuterField(input, band.id, false);
+      if (field) next[field] = band.outer;
+    }
+    next.rTerms = next.r0;
+    for (const id of ["terms", "decans"] as const) {
+      const sourceBand = stack.find(band => band.id === id), band = solved.find(item => item.id === id);
+      if (band?.visible && sourceBand && sourceBand.outer - sourceBand.inner <= 1e-9) {
+        next[id === "terms" ? "rTermsPlanet" : "rDecansPlanet"] = (band.outer + band.inner) / 2;
+      }
+    }
+  }
+  // The factory Anglo readout borrows clearance from the adjacent ruler.
+  // Once that ruler is removed, use the annotation band's own centre, as the
+  // ordered compositor already does. Never map its old edge-biased anchor
+  // onto the zodiac boundary. Keep factory placement while the ruler exists.
+  const labels = solved.find(band => band.id === "cuspLabels" && band.visible);
+  const ruler = solved.find(band => band.id === "cuspRuler" && band.visible
+    && band.outer > band.inner);
+  if (labels && !ruler) {
+    next.rCuspLabel = next.rPosHouses = (labels.outer + labels.inner) / 2;
+  }
   const bands = [...solved];
   for (const overlay of source.bands.filter(band => band.overlay)) {
     if (overlay.id.startsWith("outer")) {
@@ -1882,6 +2243,18 @@ function resizeOriginalWheelBands(style: WheelRenderStyle, input: WheelGeometryI
       continue;
     }
     const requested = overlay.instanceId ? widths[overlay.instanceId] : undefined;
+    if (overlay.id === "cuspRuler") {
+      const max = Math.max(0, next.r30 - next.r0) * (overlay.attachment?.maxDepthFraction ?? 1);
+      const min = Math.min(max, WHEEL_RING_ARCHETYPES.cuspRuler.minWidth * scale);
+      const depth = Math.min(max, Math.max(min, requested == null
+        ? overlay.outer - overlay.inner : requested * scale));
+      const outside = overlay.attachment?.edge === "outer";
+      bands.push({...overlay, inner: outside ? next.r30 - depth : next.r0, outer: outside ? next.r30 : next.r0 + depth,
+        ...(overlay.attachment ? {attachment: {...overlay.attachment,
+          preferredDepth: requested == null ? overlay.attachment.preferredDepth : requested * scale}} : {}),
+        widthBounds: {min, max}});
+      continue;
+    }
     let outer = mapRadius(overlay.outer), inner = mapRadius(overlay.inner);
     const attachedAnglo = overlay.id === "degree" && input.profile === "anglo"
       && wheelHasOuterDegreeRuler(input);
@@ -1907,8 +2280,12 @@ function resizeOriginalWheelBands(style: WheelRenderStyle, input: WheelGeometryI
         outer = next.r10; inner = next.r0;
       }
     }
-    bands.push({...overlay, outer, inner, widthBounds: {min, max: Math.max(min, max)}});
+    bands.push({...overlay, outer, inner,
+      ...(overlay.attachment ? {attachment: {...overlay.attachment,
+        preferredDepth: requested == null ? overlay.attachment.preferredDepth : requested * scale}} : {}),
+      widthBounds: {min, max: Math.max(min, max)}});
   }
+  remapBodyGlyphLane(input.profile, source.bands, bands, legacy, next);
   const result = Object.freeze(next);
   ORIGINAL_WIDTH_LAYOUTS.set(result, {...source, bands, rings: result});
   return result;
@@ -1920,14 +2297,16 @@ export function composeWheelBands(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
   legacy: Readonly<WheelRingSet>,
+  preferredWidths: Readonly<Partial<Record<WheelBandId, number>>> = {},
 ): Readonly<WheelRingSet> {
   const composition = input.composition;
   if (!composition) return legacy;
-  if (usesOriginalWheelTopology(input)) return resizeOriginalWheelBands(style, input, legacy);
+  if (usesOriginalWheelTopology(input)) return resizeOriginalWheelBands(style, input, legacy, preferredWidths);
   const source = resolveWheelBandLayout(style, input, legacy);
   const sourceById = new Map(source.bands.map(b => [b.id, b]));
   const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
-  const active = composition.rings.filter(ring => ring.enabled
+  const retainHiddenHouses = style.presentation === "traditional-morinus" && input.profile === "compact";
+  const active = composition.rings.filter(ring => (ring.enabled || (retainHiddenHouses && ring.archetypeId === "houses"))
     && (ring.chartRole !== "outer" || input.mode === "comparison"
       || (input.hasOuterRing && ring.archetypeId === "outerBodies"))
     && (ring.archetypeId !== "outerHouses" || (input.showOuterHouses ?? input.comparisonWithOuterHouses)));
@@ -1944,10 +2323,10 @@ export function composeWheelBands(
   const zodiacIndex = primary.findIndex(ring => ring.archetypeId === "zodiac");
   const degreeIndex = primary.findIndex(ring => ring.archetypeId === "degree");
   const cuspRulerIndex = primary.findIndex(ring => ring.archetypeId === "cuspRuler");
-  const hostedDegree = zodiacIndex >= 0 && Math.abs(degreeIndex - zodiacIndex) === 1
-    ? primary[degreeIndex] : undefined;
-  const hostedCuspRuler = zodiacIndex >= 0 && Math.abs(cuspRulerIndex - zodiacIndex) === 1
-    ? primary[cuspRulerIndex] : undefined;
+  const degreeAttachment = wheelRulerAttachmentEdge(composition, "degree");
+  const cuspAttachment = wheelRulerAttachmentEdge(composition, "cuspRuler");
+  const hostedDegree = degreeAttachment ? primary[degreeIndex] : undefined;
+  const hostedCuspRuler = cuspAttachment ? primary[cuspRulerIndex] : undefined;
   // When Degree moves to the outside of Signs, Cusp ruler can occupy the
   // inside of Signs. Keep its former space with the annotations so the chart
   // points do not jump outward and the combined cusp lane does not collapse.
@@ -1955,16 +2334,18 @@ export function composeWheelBands(
     - (sourceById.get("cuspRuler")?.inner ?? 0));
   const cuspWidthOverride = hostedCuspRuler
     ? style.authoringOverrides.ringWidths?.[input.profile]?.[hostedCuspRuler.instanceId] : undefined;
-  const cuspAnnotationCarry = hostedCuspRuler && degreeIndex >= 0 && degreeIndex < zodiacIndex
+  const sampledRecipe = style.authoringOverrides.recipeRadii?.[input.profile] !== undefined;
+  const cuspAnnotationCarry = !sampledRecipe && hostedCuspRuler && degreeIndex >= 0 && degreeIndex < zodiacIndex
     ? cuspWidthOverride == null ? originalCuspWidth
       : Math.max(Math.min(originalCuspWidth, WHEEL_RING_ARCHETYPES.cuspRuler.minWidth * scale),
         cuspWidthOverride * scale) : 0;
   const stacked = (openOuterTracks ? primary : active).filter(ring => ring !== floatingCusp
     && ring !== hostedDegree && ring !== hostedCuspRuler);
-  const minimum = (kind: WheelRingArchetypeId) => WHEEL_RING_ARCHETYPES[kind].minWidth * scale;
+  const minimum = (kind: WheelRingArchetypeId) => wheelBandMinimumWidth(style, input, {id: kind, visible: true});
   const entries = stacked.map(ring => {
     const old = sourceById.get(ring.archetypeId);
-    let priorWidth = old && old.outer - old.inner > 0 ? old.outer - old.inner : undefined;
+    let priorWidth = preferredWidths[ring.archetypeId]
+      ?? (old && old.outer - old.inner > 0 ? old.outer - old.inner : undefined);
     if (ring.archetypeId === "cuspLabels" && isCuspBandProfile(input.profile)) {
       priorWidth = legacy.r30 - legacy.rInner;
     }
@@ -1974,7 +2355,7 @@ export function composeWheelBands(
     // Sample the recipe's hosted ruler once. Its current visibility must not
     // change the sign band's preferred width (and then compress every band).
     if (ring.archetypeId === "zodiac" && priorWidth != null
-      && degreeIndex >= 0 && !hostedDegree) {
+      && !sampledRecipe && degreeIndex >= 0 && !hostedDegree) {
       priorWidth = Math.max(minimum("zodiac"), priorWidth - Math.abs(legacy.r10 - legacy.r0));
     }
     if (ring.archetypeId === "degree") priorWidth = Math.abs(legacy.r10 - legacy.r0) || undefined;
@@ -1993,7 +2374,7 @@ export function composeWheelBands(
     const used = min + (width - min) * compression;
     const inner = ring.archetypeId === "hub" ? 0 : Math.max(0, edge - used);
     bands.push({id: ring.archetypeId, instanceId: ring.instanceId,
-      outer: edge, inner, visible: true, contents: WHEEL_RING_ARCHETYPES[ring.archetypeId].paintClasses});
+      outer: edge, inner, visible: ring.enabled, contents: WHEEL_RING_ARCHETYPES[ring.archetypeId].paintClasses});
     edge = inner;
   }
   // Fit the new topology once, then use the same width budget as originals.
@@ -2014,11 +2395,13 @@ export function composeWheelBands(
         : WHEEL_RING_ARCHETYPES.cuspRuler.preferredWidth * scale;
     const requested = style.authoringOverrides.ringWidths?.[input.profile]?.[instrument.instanceId];
     const depth = Math.min(maximum, Math.max(minDepth, requested == null ? natural : requested * scale));
-    const index = kind === "degree" ? degreeIndex : cuspRulerIndex;
-    const outside = index < zodiacIndex;
+    const outside = (kind === "degree" ? degreeAttachment : cuspAttachment) === "outer";
     bands.push({id: kind, instanceId: instrument.instanceId, overlay: true,
       outer: outside ? zodiac.outer : zodiac.inner + depth,
       inner: outside ? zodiac.outer - depth : zodiac.inner,
+      attachment: {hostBandId: "zodiac", edge: outside ? "outer" : "inner",
+        preferredDepth: requested == null ? natural : requested * scale,
+        maxDepthFraction: WHEEL_RULER_DEPTH_RANGE.max},
       visible: true, contents: WHEEL_RING_ARCHETYPES[kind].paintClasses,
       widthBounds: {min: minDepth, max: maximum}});
   }
@@ -2057,7 +2440,7 @@ export function composeWheelBands(
   next.r30 = byId.has("zodiac") ? zodiac.outer : primaryOuter;
   next.r0 = byId.has("zodiac") ? zodiac.inner : primaryOuter;
   next.rSign = (zodiac.outer + zodiac.inner) / 2;
-  next.rASCMC = primaryOuter;
+  next.rASCMC = sampledRecipe ? primaryOuter + legacy.rASCMC - legacy.r30 : primaryOuter;
   next.rArrow = Math.min(input.maxRadius, primaryOuter + Math.max(0, legacy.rArrow - legacy.r30));
   next.rTerms = terms.outer; next.rTermsInner = terms.inner;
   next.rTermsPlanet = (terms.outer + terms.inner) / 2;
@@ -2075,7 +2458,8 @@ export function composeWheelBands(
     : byId.has("cuspLabels") ? labels.outer : band("bodies").outer;
   next.rCuspRulerInner = byId.has("cuspRuler") && !hostedCuspRuler ? cuspRuler.inner : next.rCuspOuter;
   next.rCuspLabelOuter = byId.has("cuspLabels") ? labels.outer : next.rCuspRulerInner;
-  if (byId.has("cuspLabels")) next.rCuspLabel = next.rPosHouses = (labels.outer + labels.inner) / 2;
+  if (byId.has("cuspLabels") && !(sampledRecipe && wheelCuspAnnotationsShareRuler(source.bands)
+    && wheelCuspAnnotationsShareRuler(bands))) next.rCuspLabel = next.rPosHouses = (labels.outer + labels.inner) / 2;
   const bodies = band("bodies"), houses = band("houses"), hub = band("hub");
   next.rInner = byId.has("bodies") ? bodies.outer : byId.has("houses") ? houses.outer : hub.outer;
   next.rHouse = byId.has("houses") ? houses.outer : hub.outer;
@@ -2119,6 +2503,7 @@ export function composeWheelBands(
     next.rAntis = next.rOuterPlanet ?? next.rOuterMax;
     next.rAntisLines = next.rOuterLine;
   }
+  remapBodyGlyphLane(input.profile, source.bands, bands, legacy, next);
   const result = Object.freeze(next);
   COMPOSED_LAYOUTS.set(result, {family: source.family, bands, rings: result, violations: []});
   return result;

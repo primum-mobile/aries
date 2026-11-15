@@ -150,7 +150,7 @@ test("aspect click and hide state override an overlay-only zero-dirty plan", asy
   );
   assert.match(
     chartCanvas,
-    /hitRegionsRef\.current = computeHitRegions\([\s\S]*?clickAspectState: \{\s*selectedBody: selectedAspectBody,\s*hideAll: hideAllAspects,\s*minorOnly: minorOnlyAspects,\s*\},\s*\}\);\s*paintedAspectInteractionKeyRef\.current = aspectInteractionPaintKey;/,
+    /hitRegionsRef\.current = computeHitRegions\([\s\S]*?clickAspectState: \{\s*selectedBody: selectedAspectBody,\s*hideAll: hideAllAspects,\s*minorOnly: minorOnlyAspects,\s*\},\s*includeStyleTargets: styleEditorActive,\s*outerLabelCollisionBounds,\s*\}\);\s*paintedAspectInteractionKeyRef\.current = aspectInteractionPaintKey;/,
   );
 });
 
@@ -175,14 +175,63 @@ test("the masking check is asked of the map the wheel is painted from", () => {
     /variantAuthoredOverrideIds: variantAuthoredOverrideIds\(([\s\S]*?)\n {12}\),/,
   );
   assert.ok(call, "chart-canvas must build the scene's variant-authored map");
-  assert.match(
-    call[1],
-    /\.\.\.effectiveWheelAuthoringOverrides/,
-    "the saved profile's authored values must be included, or masking cannot see them",
-  );
-  assert.match(
-    call[1],
-    /semanticOverrides/,
-    "the editor's working overrides must still be included",
-  );
+  assert.match(call[1], /effectiveWheelAuthoringOverrides/,
+    "scene masking must consume the same effective map as paint");
+  assert.match(chartCanvas, /const effectiveWheelAuthoringOverrides = useMemo\([\s\S]*?resolveWheelPresetAuthoringOverrides\(wheelPresetInput\)/);
+  // Presets come from the painted chart, keyed by content so a time step's
+  // equal presets object does not re-resolve the render style.
+  assert.match(chartCanvas, /const wheelGeometryPresetsKey = JSON\.stringify\(chart\.primaryChart\.options\.wheelGeometryPresets \?\? null\);/);
+  assert.match(chartCanvas, /presets: JSON\.parse\(wheelGeometryPresetsKey\)/);
+  assert.match(chartCanvas, /appearanceOverrides: \{[\s\S]*?effectiveTheme\?\.profileOverrides\?\.wheelAuthoring[\s\S]*?styleWorkingPreviewActive \? styleSemanticOverrides/,
+    "saved appearance and active editor appearance both reach the effective map");
+});
+
+
+test("visibility catalog revision alone does not redraw unchanged selected geometry", () => {
+  const before = snapshot();
+  before.primaryChart.options.wheelGeometryPresets = { anglo: { id: "factory", revision: 4, overrides: { radius: 123 } } };
+  const after = structuredClone(before);
+  after.primaryChart.options.wheelGeometryPresets.anglo.revision = 5;
+  assert.equal(sameCanvasRenderState(before, after), true);
+  after.primaryChart.options.wheelGeometryPresets.anglo.overrides.radius = 124;
+  assert.equal(sameCanvasRenderState(before, after), false);
+  after.primaryChart.options.wheelGeometryPresets.anglo.overrides.radius = 123;
+  after.primaryChart.options.wheelGeometryPresets.anglo.id = "other";
+  assert.equal(sameCanvasRenderState(before, after), false);
+});
+
+
+test("traditional center labels and planetary hours invalidate a reused settle canvas", () => {
+  const before = snapshot();
+  before.primaryChart.options.theme = 1;
+  before.primaryChart.options.showInformation = true;
+  before.primaryChart.options.wheelGeometryPresets = {compact: {id: "traditional", revision: 1,
+    overrides: {"wheel.presentation": "traditional-morinus"}}};
+  before.primaryChart.meta.centerLines = ["Full chart name", "Tropical"];
+  before.primaryChart.overlay.rows = [{group: "dayhour", label: "Hour", glyphs: [{char: "A"}]}];
+  const after = structuredClone(before);
+  assert.equal(sameCanvasRenderState(before, after), true);
+  after.primaryChart.meta.centerLines[1] = "Lahiri";
+  assert.equal(sameCanvasRenderState(before, after), false);
+  after.primaryChart.meta.centerLines[1] = "Tropical";
+  after.primaryChart.overlay.rows[0].glyphs[0].char = "B";
+  assert.equal(sameCanvasRenderState(before, after), false);
+  before.primaryChart.options.showInformation = after.primaryChart.options.showInformation = false;
+  assert.equal(sameCanvasRenderState(before, after), true);
+});
+
+test("time steps keep render-style and dashboard theme identity", () => {
+  // Each step publishes a new chart object. Anything keyed on that object
+  // re-resolves the wheel style and misses every style-keyed paint cache.
+  const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+  const chartCanvas = read("../src/components/workshell/chart-canvas.tsx");
+  const surface = read("../src/components/workshell/workspace-content.tsx");
+  assert.match(chartCanvas, /const chartPaletteKey = JSON\.stringify\(chart\.primaryChart\.palette \?\? null\);/);
+  assert.match(chartCanvas, /\[chartPaletteKey, effectiveTheme, inheritAppTheme\]/);
+  assert.match(surface, /const chartPaletteKey = JSON\.stringify\(primaryChart\.palette \?\? null\);/);
+  assert.match(surface, /\[chartPaletteKey, theme\]/);
+  // Module colours and rule widths resolve once per theme scope, not per step.
+  assert.match(chartCanvas, /const scopeKey = \[renderStyle, effectiveTheme\] as const;/);
+  assert.match(chartCanvas, /cssColorResolver\(wrap, scope\.colors\)/);
+  assert.doesNotMatch(chartCanvas, /paintDashboard\([\s\S]{0,600}cssPixels\(/);
 });

@@ -1,4 +1,8 @@
 pyinstaller>=6.0
+# Compile the Swiss Ephemeris and transit-kernel extensions (make build-ext);
+# the project venv does not borrow them from the system interpreter.
+setuptools>=61
+wheel
 
 # Packaging runs the localization and app regression gates in this interpreter.
 pytest>=8.0

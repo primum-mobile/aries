@@ -41,7 +41,7 @@ test("chart copy uses the retained PNG renderer rather than a second export path
     renderer,
     /width: EXPORT_LONG_EDGE \+ \(hasExteriorPaint \? PNG_EXPORT_SIDE_GUTTER \* 2 : 0\),[\s\S]*?height: EXPORT_LONG_EDGE/,
   );
-  assert.match(renderer, /exportDimensions\(outerEnvelope\.avoidTitlebar\)/);
+  assert.match(renderer, /exportFrame\([\s\S]*?outerEnvelope\.avoidTitlebar/);
   assert.match(renderer, /radixOverlayTopLeftLines\(corner, snapshot\.radixChart\)/);
   assert.match(workspaceContent, /radixOverlayTopLeftLines\(cornerChart, chart\.radixChart\)/);
   assert.match(registry, /const PNG_EXPORT_PIXEL_SIZE = 1200;/);
@@ -60,7 +60,7 @@ test("chart copy uses the retained PNG renderer rather than a second export path
   assert.doesNotMatch(copyControl, /createContext|onTransitionEnd|fadeFallback|pointerInside/);
   assert.match(
     workspaceContent,
-    /<ChartCopyControl[\s\S]*?<TitleText parts=\{parts\} \/>\s*<\/ChartCopyControl>/,
+    /<ChartCopyControl[\s\S]*?<TitleText parts=\{parts\}(?: [^>]*)? \/>\s*<\/ChartCopyControl>/,
   );
   assert.match(
     copyControl,

@@ -29,7 +29,7 @@ def signed_angular_delta(lon1, lon2):
 
 
 def _body_longitude(chrt, body_id):
-	body = common.get_chart_planet(chrt, body_id)
+	body = getattr(chrt, 'apogee', None) if body_id == astrology.SE_MEAN_APOG else common.get_chart_planet(chrt, body_id)
 	if body is None:
 		return None
 	try:

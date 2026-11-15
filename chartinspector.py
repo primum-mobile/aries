@@ -2,18 +2,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import math
+from functools import lru_cache
+from aries.astrology.ephemeris_context import EphemerisContext
+from engine.dignity_display import chart_dignity_color, dignity_color_role, minor_dignity_count
 import astrology
 import chart
 import common
 import dateformat
 import lunar
 import manazil
+import node_mirror
 import moonphasejump
 import planets
 import houses
 import radixsignals
 import util
-from engine import harmonic_chart, planetary_state, solar_proximity
+from engine import harmonic_chart, planetary_state, solar_proximity, void_of_course
 
 
 _PLANET_NAMES = (
@@ -120,6 +124,13 @@ _ANGLE_LABELS = {
 	'ic': 'Imum Coeli',
 }
 
+_ANGLE_SHORT_LABELS = {
+	'asc': 'Asc',
+	'desc': 'Dsc',
+	'mc': 'MC',
+	'ic': 'IC',
+}
+
 _ANGLE_OPPOSITES = {
 	'asc': 'Descendant',
 	'desc': 'Ascendant',
@@ -188,6 +199,8 @@ _BODY_COLOUR_ROLES = {
 	astrology.SE_MEAN_NODE: '--morinus-body-nodes',
 	astrology.SE_TRUE_NODE: '--morinus-body-nodes',
 	astrology.SE_CHIRON: '--morinus-body-chiron',
+	astrology.SE_MEAN_APOG: '--morinus-body-moon',
+	astrology.SE_OSCU_APOG: '--morinus-body-moon',
 }
 
 _ASPECT_COLOUR_ROLES = (
@@ -207,13 +220,6 @@ _ASPECT_COLOUR_ROLES = (
 	'--morinus-aspect-contraparallel',
 )
 
-_DIGNITY_COLOUR_ROLES = {
-	chart.Chart.DOMICIL: '--morinus-dignity-domicil',
-	chart.Chart.EXAL: '--morinus-dignity-exal',
-	chart.Chart.PEREGRIN: '--morinus-peregrin',
-	chart.Chart.CASUS: '--morinus-dignity-casus',
-	chart.Chart.EXIL: '--morinus-dignity-exil',
-}
 
 _ASPECT_EVENT_CACHE = {}
 _ASPECT_SEARCH_DAYS = 45.0
@@ -251,7 +257,7 @@ def _planet_glyph(planet_index):
 
 def _planet_name(planet_index, options=None):
 	planet_index = int(planet_index)
-	if planet_index == astrology.SE_CHIRON:
+	if planet_index in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
 		name = common.common.get_planet_name(planet_index)
 		return _safe_text(name, name)
 	if 0 <= planet_index < len(_PLANET_NAMES):
@@ -328,6 +334,14 @@ def _triplicity_lord_spans(item):
 	return spans
 
 
+def _append_point_trigon_flag_row(payload, chrt, options, lon):
+	if _is_varga_chart(chrt):
+		return
+	trigon_item = _point_trigon_lords_item(chrt, options, lon)
+	if trigon_item is not None:
+		payload['rows'].append((trigon_item['flag_label'], '', None, _triplicity_lord_spans(trigon_item)))
+
+
 def _sign_name(sign_index):
 	i = int(sign_index) % chart.Chart.SIGN_NUM
 	return _safe_text(_SIGN_NAME_KEYS[i], _SIGN_NAMES[i])
@@ -341,22 +355,27 @@ def _format_position(display_lon):
 	return sign_index, '%s %02d°%02d\'%02d"' % (_sign_name(sign_index), deg, minute, second)
 
 
-def _house_angle_title(house_index, chrt):
-	"""Return angle name for cardinal houses when cusp coincides with the angle."""
-	if chrt is None:
-		return '%s %d' % (_safe_text('House', 'House'), house_index)
-	ascmc = chrt.houses.ascmc
-	cusps = chrt.houses.cusps
-	_CUSP_ANGLE = {
-		1:  (ascmc[houses.Houses.ASC], 'Asc'),
-		10: (ascmc[houses.Houses.MC], 'MC'),
-		7:  (util.normalize(ascmc[houses.Houses.ASC] + 180.0), 'Dsc'),
-		4:  (util.normalize(ascmc[houses.Houses.MC] + 180.0), 'IC'),
+def _position_house_item(display_lon, house_text, options):
+	"""Summary line "<sign> 02°51'17\" · House 7"; the sign shows as its glyph.
+
+	Without the glyph tables (bare test fakes) the line stays plain text."""
+	sign_index, pos_text = _format_position(display_lon)
+	text = '%s · %s' % (pos_text, house_text)
+	degrees = pos_text[len(_sign_name(sign_index)):].strip()
+	from webapp.daemon.display_palette import sign_color_role
+	try:
+		glyph = _sign_glyph(sign_index, options)
+		colour = common.get_sign_color(options, sign_index)
+		colour_role = sign_color_role(options, sign_index, resolved_color=colour)
+	except AttributeError:
+		return {'text': text, 'spans': []}
+	return {
+		'text': text,
+		'spans': [
+			{'text': glyph, 'glyph': True, 'colour': colour, 'colourRole': colour_role},
+			{'text': '\u00a0%s · %s' % (degrees, house_text)},
+		],
 	}
-	entry = _CUSP_ANGLE.get(house_index)
-	if entry and cusps[house_index] == entry[0]:
-		return entry[1]
-	return '%s %d' % (_safe_text('House', 'House'), house_index)
 
 
 def _house_text(house_index):
@@ -535,6 +554,41 @@ def _tithi_end_clock(chrt):
 	return '%02d:%02d' % (h, mi)
 
 
+def _void_course_text(chrt, options):
+	"""'Void of course · since 01:00' / 'ends 1583-02-24 03:24', only while void.
+
+	Two lines in one value, so the flag stays narrow. Times are on the chart's
+	own clock, as the Tithi row's end; a date is added only when the time
+	falls on another day than the chart's.
+	"""
+	label = void_of_course.display_text(chrt, options)
+	if not label:
+		return None
+	try:
+		period = void_of_course.period_for_chart(chrt, options)
+	except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+		period = None
+	if period is None:
+		return label
+
+	def local(jd):
+		return moonphasejump._utc_jd_to_original_components(jd, chrt.time, chrt.place)
+
+	def clock(jd):
+		y, m, d, h, mi, _s = local(jd)
+		time_text = '%02d:%02d' % (h, mi)
+		return time_text if (y, m, d) == day else '%04d-%02d-%02d %s' % (y, m, d, time_text)
+
+	try:
+		day = local(float(chrt.time.jd))[:3]
+		start, end = clock(period.start_jd), clock(period.end_jd)
+	except Exception:
+		return label
+	return _safe_text(
+		'VoidCourseSinceEndsFmt', '{label} · since {start}\nends {end}',
+	).format(label=label, start=start, end=end)
+
+
 def _safe_text(key, fallback=None):
 	if fallback is None:
 		fallback = key
@@ -613,24 +667,6 @@ def _solar_condition_motion_text(motion):
 	return _safe_text('SolarConditionIndeterminate', 'direction indeterminate')
 
 
-def _solar_condition_profile_text(result):
-	profile_id = result.profile_id
-	if profile_id == solar_proximity.PROFILE_LATE_HELLENISTIC:
-		return _safe_text(
-			'settings.solarConditionLateHellenistic',
-			'Late Hellenistic synthesis',
-		)
-	if profile_id == solar_proximity.PROFILE_AL_QABISI:
-		return _safe_text('settings.solarConditionAlQabisi', 'al-Qabisi + Sahl')
-	if profile_id == solar_proximity.PROFILE_IBN_EZRA:
-		return _safe_text('settings.solarConditionIbnEzra', 'Abraham ibn Ezra')
-	if profile_id == solar_proximity.PROFILE_LILLY_1647:
-		return _safe_text('settings.solarConditionWilliamLilly', 'William Lilly (1647)')
-	if profile_id == solar_proximity.PROFILE_MORIN_1661:
-		return _safe_text('settings.solarConditionMorin', 'Morin (1661)')
-	return profile_id
-
-
 def _solar_condition_separation_text(result):
 	if result.lon_separation_deg is None:
 		return '—'
@@ -684,23 +720,22 @@ def _solar_condition_same_sign_relevant(result):
 def _solar_condition_detail_rows(result):
 	if not _solar_condition_is_active(result):
 		return []
-	rows = [
-		'%s: %s' % (
-			_safe_text('SolarConditionDoctrine', 'Doctrine'),
-			_solar_condition_profile_text(result),
-		),
-	]
+	rows = []
 	if _solar_condition_same_sign_relevant(result):
 		rows.append('%s: %s' % (
 			_safe_text('SolarConditionSameSign', 'Same sign'),
 			_safe_text('Yes', 'Yes') if result.same_sign else _safe_text('No', 'No'),
 		))
-	if solar_proximity.MITIGATION_MERCURY_SLIGHT_HARM in result.mitigations:
-		rows.append('%s: %s' % (
-			_safe_text('SolarConditionMitigation', 'Mitigation'),
-			_safe_text('SolarConditionSlightlyHarmed', 'Slightly harmed'),
-		))
 	return rows
+
+
+def _speculum_speed_text(planet_index, value, options, chrt):
+	"""Speed in the Speculum's selected mode (words, percent or daily motion)."""
+	from webapp.daemon.tables_service import _position_speed_cell
+	try:
+		return _position_speed_cell(planet_index, value, options, chrt).get('text') or _format_speed(value)
+	except Exception:
+		return _format_speed(value)
 
 
 def _format_speed(value):
@@ -709,7 +744,14 @@ def _format_speed(value):
 	return '%s%02d°%02d\'%02d"/d' % (sign, d, m, s)
 
 
-def _station_event_text(event, chrt, options):
+@lru_cache(maxsize=192)
+def _station_position(jd_ut, body_id, context):
+	with context.activate():
+		_error, position = astrology.swe_calc_ut(jd_ut, body_id, context.flags)
+	return float(position[planets.Planet.LONG])
+
+
+def _station_event_spans(event, chrt, options):
 	if event is None:
 		return None
 	try:
@@ -717,9 +759,44 @@ def _station_event_text(event, chrt, options):
 		year, month, day, _hour = astrology.swe_revjul(float(event.jd_ut), calflag)
 		date_text = dateformat.date_text(int(year), int(month), int(day), options, bc=int(year) <= 0)
 		motion = {'SR': 'R', 'SD': 'D'}.get(str(event.code).upper())
-		return '%s %s' % (date_text, motion) if date_text and motion else None
+		if not date_text or not motion:
+			return None
 	except (AttributeError, TypeError, ValueError, OverflowError):
 		return None
+	spans = [
+		{'text': date_text + ' ', 'wrapGroup': 1},
+		{'text': motion, 'bold': True, 'wrapGroup': 1},
+	]
+	try:
+		context = EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+		body_id = int(event.body_id)
+		physical_id = planetary_state._station_ephemeris_body_id(chrt, body_id)
+		lon = _station_position(float(event.jd_ut), physical_id, context)
+		if body_id == astrology.SE_TRUE_NODE:
+			lon += 180.0
+		lon = util.normalize(lon)
+		sign_index = int(lon // chart.Chart.SIGN_DEG)
+		deg, minute, _second = util.decToDeg(lon % chart.Chart.SIGN_DEG)
+		from webapp.daemon.display_palette import sign_color_role
+		colour = common.get_sign_color(options, sign_index)
+		spans.extend((
+			{'text': ' '},
+			{
+				'text': _sign_glyph(sign_index, options), 'glyph': True,
+				'colour': colour,
+				'colourRole': sign_color_role(options, sign_index, resolved_color=colour),
+				'wrapGroup': 2,
+			},
+			{'text': ' %02d°%02d\'' % (deg, minute), 'wrapGroup': 2},
+		))
+	except (AttributeError, IndexError, TypeError, ValueError, OverflowError):
+		pass
+	return spans
+
+
+def _station_event_text(event, chrt, options):
+	spans = _station_event_spans(event, chrt, options)
+	return ''.join(span['text'] for span in spans) if spans else None
 
 
 def _planet_station_bracket(chrt, planet_index):
@@ -732,7 +809,7 @@ def _planet_station_bracket(chrt, planet_index):
 	return bracket if bracket.supported else None
 
 
-def _planet_station_detail_rows(chrt, planet_index, options):
+def _planet_station_detail_items(chrt, planet_index, options):
 	bracket = _planet_station_bracket(chrt, planet_index)
 	if bracket is None:
 		return []
@@ -741,20 +818,25 @@ def _planet_station_detail_rows(chrt, planet_index, options):
 		(_safe_text('LastStation', 'Last station'), bracket.previous),
 		(_safe_text('NextStation', 'Next station'), bracket.next),
 	):
-		value = _station_event_text(event, chrt, options)
-		if value:
-			rows.append('%s: %s' % (label, value))
+		spans = _station_event_spans(event, chrt, options)
+		if spans:
+			value = ''.join(span['text'] for span in spans)
+			rows.append({'text': '%s: %s' % (label, value), 'spans': spans})
 	return rows
+
+
+def _planet_station_detail_rows(chrt, planet_index, options):
+	return [item['text'] for item in _planet_station_detail_items(chrt, planet_index, options)]
 
 
 def _planet_next_station_flag_row(chrt, planet_index, options):
 	bracket = _planet_station_bracket(chrt, planet_index)
 	if bracket is None:
 		return None
-	value = _station_event_text(bracket.next, chrt, options)
-	if not value:
+	spans = _station_event_spans(bracket.next, chrt, options)
+	if not spans:
 		return None
-	return (_safe_text('NextStation', 'Next station'), value)
+	return (_safe_text('NextStation', 'Next station'), '', None, spans)
 
 
 def _append_next_station_flag(payload, data, chrt, planet_index, options, defer_signals):
@@ -774,11 +856,8 @@ def _append_next_station_flag(payload, data, chrt, planet_index, options, defer_
 
 
 def _format_orb(value):
-	d, m, s = util.decToDeg(abs(float(value)))
-	if d == 0 and m == 0:
-		return '%02d"' % s
-	if d == 0:
-		return '%02d\'%02d"' % (m, s)
+	"""One orb format at every size, to the nearest minute: 0°03', 3°38'."""
+	d, m = divmod(int(round(abs(float(value)) * 60.0)), 60)
 	return '%d°%02d\'' % (d, m)
 
 
@@ -845,12 +924,49 @@ def _format_orb_decimal(value):
 	return '%.1f°' % abs(float(value))
 
 
+def _aspect_endpoint(glyph, text, ring_numeral=None):
+	"""One side of a glyph aspect row: a Morinus glyph, else a short text label."""
+	return {'glyph': glyph or '', 'text': '' if glyph else str(text or ''), 'ring': str(ring_numeral or '')}
+
+
+def _planet_aspect_endpoint(chrt, planet_index, options, ring_numeral=None):
+	"""A planet side of a glyph aspect row, in its dignity colour."""
+	endpoint = _aspect_endpoint(_planet_glyph(planet_index), _planet_name(planet_index, options), ring_numeral)
+	if endpoint['glyph']:
+		span = _planet_glyph_span(chrt, planet_index)
+		endpoint['colour'] = span['colour']
+		endpoint['colour_role'] = span['colourRole']
+	return endpoint
+
+
+def _glyph_aspect_fields(label_state, current, other, asp):
+	"""Actor-first glyph row fields: left, aspect glyph, right, app./sep., orb.
+
+	``exact`` (within the Exact orb setting) is shown by emphasising the orb."""
+	# The inspected object is on every row; it is drawn muted so the partner reads first.
+	current = {**current, 'own': True}
+	left, right = (other, current) if label_state.get('other_is_actor') else (current, other)
+	return {
+		'left': left,
+		'right': right,
+		'state_text': label_state['state_text'],
+		'orb_text': _format_orb(asp.aspdif),
+		'exact': bool(asp.exact),
+	}
+
+
 def _directed_aspect_labels(current_name, other_name, aspect_name, directed_state):
 	if directed_state is None:
 		return None
+	other_is_actor = bool(
+		(directed_state.get('is_applying') or directed_state.get('is_separating'))
+		and not directed_state.get('current_is_actor')
+	)
+	state_text = ''
 	app_abbr = _safe_text('AbbrApplying', 'app.')
 	sep_abbr = _safe_text('AbbrSeparating', 'sep.')
 	if directed_state.get('is_applying'):
+		state_text = app_abbr
 		if directed_state.get('current_is_actor'):
 			compact = '%s %s %s' % (aspect_name, other_name, app_abbr)
 			prefix = ''
@@ -865,6 +981,7 @@ def _directed_aspect_labels(current_name, other_name, aspect_name, directed_stat
 			aspect_name,
 		)
 	elif directed_state.get('is_separating'):
+		state_text = sep_abbr
 		if directed_state.get('current_is_actor'):
 			compact = '%s %s %s' % (aspect_name, other_name, sep_abbr)
 			prefix = ''
@@ -888,6 +1005,8 @@ def _directed_aspect_labels(current_name, other_name, aspect_name, directed_stat
 		'full_text': full,
 		'prefix_text': prefix,
 		'suffix_text': suffix,
+		'state_text': state_text,
+		'other_is_actor': other_is_actor,
 	}
 
 
@@ -1011,7 +1130,7 @@ def _body_colour_role(chrt, options, planet_index):
 		return '--morinus-peregrin'
 	if getattr(options, 'useplanetcolors', False):
 		return _BODY_COLOUR_ROLES.get(planet_index, '--morinus-peregrin')
-	if planet_index == astrology.SE_CHIRON:
+	if planet_index in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
 		return '--morinus-peregrin'
 	return _dignity_colour_role(chrt, planet_index)
 
@@ -1020,10 +1139,7 @@ def _dignity_colour_role(chrt, planet_index):
 	if chrt is None:
 		return '--morinus-peregrin'
 	try:
-		return _DIGNITY_COLOUR_ROLES.get(
-			chrt.dignity(int(planet_index)),
-			'--morinus-peregrin',
-		)
+		return dignity_color_role(chrt.dignity(int(planet_index)), minor_dignity_count(chrt, planet_index))
 	except Exception:
 		return '--morinus-peregrin'
 
@@ -1138,9 +1254,10 @@ def _varga_planet_payload(region, options, data, accent, accent_role, role='', d
 	motion_heading = _motion_heading(data)
 	if planet_index not in (astrology.SE_SUN, astrology.SE_MOON):
 		smart_rows.append(_motion_text(data))
-	station_rows = [] if defer_signals else _planet_station_detail_rows(
+	station_items = [] if defer_signals else _planet_station_detail_items(
 		_chart_ref(data), planet_index, options,
 	)
+	station_rows = [item['text'] for item in station_items]
 	return {
 		'glyph': _planet_glyph(planet_index),
 		'title': _planet_name(planet_index, options),
@@ -1155,6 +1272,7 @@ def _varga_planet_payload(region, options, data, accent, accent_role, role='', d
 		'dignity_items': [],
 		'detail_rows': station_rows,
 		'station_rows': station_rows,
+		'station_items': station_items,
 		'aspect_rows': [],
 		'aspect_items': [],
 		'manzil': None,
@@ -1166,7 +1284,7 @@ def _varga_planet_payload(region, options, data, accent, accent_role, role='', d
 
 
 def _dignity_text(chrt, planet_index):
-	if int(planet_index) == astrology.SE_CHIRON:
+	if not _is_classical_planet(planet_index):
 		return None
 	try:
 		return _DIGNITY_LABELS.get(chrt.dignity(int(planet_index)), 'Peregrine')
@@ -1178,14 +1296,7 @@ def _dignity_colour(chrt, options, planet_index):
 	if chrt is None or options is None:
 		return None
 	try:
-		palette = (
-			tuple(options.clrdomicil),
-			tuple(options.clrexal),
-			tuple(options.clrperegrin),
-			tuple(options.clrcasus),
-			tuple(options.clrexil),
-		)
-		return palette[chrt.dignity(int(planet_index))]
+		return chart_dignity_color(chrt, options, int(planet_index))
 	except Exception:
 		return None
 
@@ -1209,9 +1320,24 @@ def _essential_dignity_score_label(chrt, score_index):
 	return ' +%d' % int(score)
 
 
+def _is_classical_planet(planet_index):
+	try:
+		return astrology.SE_SUN <= int(planet_index) <= astrology.SE_SATURN
+	except (TypeError, ValueError):
+		return False
+
+
 def _essential_dignity_info(chrt, planet_index, lon=None):
 	try:
-		info = chrt.get_planet_essential_dignities(int(planet_index), lon=lon)
+		if _is_classical_planet(planet_index):
+			info = chrt.get_planet_essential_dignities(int(planet_index), lon=lon)
+		else:
+			# Outer planets, nodes and other bodies hold no essential dignity,
+			# but the degree they occupy still has domicile, exaltation,
+			# triplicity, term and face rulers.
+			if lon is None:
+				lon = chrt.get_planet_body(int(planet_index)).data[planets.Planet.LONG]
+			info = chrt.get_longitude_essential_rulers(lon)
 	except Exception:
 		return None
 	if info is None:
@@ -1235,6 +1361,8 @@ def _planetary_joy_info(chrt, planet_index, lon=None, house_index=None):
 
 
 def _essential_dignity_summary_text(chrt, planet_index, lon=None):
+	if not _is_classical_planet(planet_index):
+		return None
 	info = _essential_dignity_info(chrt, planet_index, lon=lon)
 	if info is None:
 		return None
@@ -1242,10 +1370,67 @@ def _essential_dignity_summary_text(chrt, planet_index, lon=None):
 
 
 def _essential_dignity_detail_rows(chrt, planet_index, lon=None):
+	return [item['text'] for item in _essential_dignity_detail_items(chrt, planet_index, lon=lon)]
+
+
+def _essential_dignity_detail_items(chrt, planet_index, lon=None):
 	info = _essential_dignity_info(chrt, planet_index, lon=lon)
 	if info is None:
 		return []
-	headline = _dignity_text(chrt, planet_index) if chrt is not None else None
+	return _essential_ruler_items(chrt, info)
+
+
+def _point_ruler_detail_rows(chrt, lon):
+	return [item['text'] for item in _point_ruler_detail_items(chrt, lon)]
+
+
+def _point_ruler_detail_items(chrt, lon):
+	"""Domicile/Exaltation/Term/Face ruler rows for a non-body chart point."""
+	if chrt is None or lon is None:
+		return []
+	try:
+		info = _essential_dignity_info(chrt, -1, lon=float(lon))
+	except (TypeError, ValueError):
+		return []
+	if info is None:
+		return []
+	return _essential_ruler_items(chrt, info)
+
+
+def _point_ruler_detail_fields(chrt, lon):
+	items = _point_ruler_detail_items(chrt, lon)
+	return {'detail_rows': [item['text'] for item in items], 'ruler_items': items}
+
+
+def _planet_glyph_span(chrt, planet_index):
+	"""A planet as its Morinus glyph in its dignity colour, like the Triplicity Rulers row."""
+	return {
+		'text': _planet_glyph(planet_index),
+		'colour': _dignity_colour(chrt, getattr(chrt, 'options', None), planet_index),
+		'colourRole': _dignity_colour_role(chrt, planet_index),
+		'glyph': True,
+	}
+
+
+def _point_trigon_lords_item(chrt, options, lon):
+	if chrt is None or lon is None:
+		return None
+	try:
+		sign_index = int(util.normalize(float(lon)) // chart.Chart.SIGN_DEG)
+	except (TypeError, ValueError):
+		return None
+	return _trigon_lords_item(chrt, options, sign_index)
+
+
+def _essential_ruler_rows(chrt, info, headline):
+	return [item['text'] for item in _essential_ruler_items(chrt, info)]
+
+
+def _essential_ruler_items(chrt, info):
+	"""Ruler rows naming another planet as ruler, each with a glyph value span.
+
+	Dignities the planet holds itself are listed once, in the Dignity block,
+	so they get no row here; almuten points are not shown in the Inspector."""
 	rows = []
 	for item in info.get('rows', []):
 		label = item.get('label') or 'Dignity'
@@ -1254,19 +1439,12 @@ def _essential_dignity_detail_rows(chrt, planet_index, lon=None):
 		# status remains in the dignity block via _dignity_display_items().
 		if label == 'Triplicity':
 			continue
-		display_label = label
-		if headline in ('Domicile', 'Exaltation') and label == headline:
-			continue
-		score_label = item.get('score_label') or ''
-		yes_text = _safe_text('Yes', 'Yes')
-		active_text = '%s%s' % (yes_text, score_label) if score_label else yes_text
 		ruler_id = item.get('ruler')
-		ruler_name = _planet_name(ruler_id, getattr(chrt, 'options', None)) if ruler_id is not None and ruler_id != -1 else '—'
-		if item.get('active'):
-			value = active_text
-		else:
-			value = ruler_name
-		rows.append('%s: %s' % (_safe_text(display_label, display_label), value))
+		if item.get('active') or not _is_classical_planet(ruler_id):
+			continue
+		ruler_name = _planet_name(ruler_id, getattr(chrt, 'options', None))
+		spans = [_planet_glyph_span(chrt, ruler_id), {'text': '\u00a0%s' % ruler_name}] if _planet_glyph(ruler_id) else None
+		rows.append({'text': '%s: %s' % (_safe_text(label, label), ruler_name), 'spans': spans})
 	return rows
 
 
@@ -1278,6 +1456,8 @@ def _other_essential_dignity_summary_text(chrt, planet_index, lon=None):
 
 
 def _other_essential_dignity_labels(chrt, planet_index, lon=None):
+	if not _is_classical_planet(planet_index):
+		return []
 	info = _essential_dignity_info(chrt, planet_index, lon=lon)
 	if info is None:
 		return []
@@ -1297,6 +1477,15 @@ def _other_essential_dignity_labels(chrt, planet_index, lon=None):
 
 
 def _dignity_display_items(chrt, options, planet_index, lon=None):
+	# Non-classical bodies have degree rulers, never personal dignity or joy.
+	if not _is_classical_planet(planet_index):
+		if lon is None:
+			try:
+				lon = chrt.get_planet_body(int(planet_index)).data[planets.Planet.LONG]
+			except (AttributeError, TypeError, ValueError):
+				return []
+		item = _point_trigon_lords_item(chrt, options, lon)
+		return [item] if item is not None else []
 	info = _essential_dignity_info(chrt, planet_index, lon=lon)
 	headline = _dignity_text(chrt, planet_index) if chrt is not None else None
 	minor_labels = _other_essential_dignity_labels(chrt, planet_index, lon=lon)
@@ -1310,13 +1499,7 @@ def _dignity_display_items(chrt, options, planet_index, lon=None):
 	# the traditional judgment "no essential dignity whatsoever".  Keep that
 	# stable renderer contract, but never promote its neutral fallback into a
 	# false inspector statement when triplicity, term, or face is present.
-	#
-	# The traditional essential-dignity tables belong to the seven classical
-	# planets.  Outer planets and other bodies may continue to use the neutral
-	# renderer colour, but receive no textual essential-dignity classification.
-	if int(planet_index) > astrology.SE_SATURN:
-		headline = None
-	elif headline == _DIGNITY_LABELS[chart.Chart.PEREGRIN] and minor_labels:
+	if headline == _DIGNITY_LABELS[chart.Chart.PEREGRIN] and minor_labels:
 		headline = None
 
 	sign_colour = _dignity_colour(chrt, options, planet_index)
@@ -1507,12 +1690,25 @@ def _is_aspect_enabled(chrt, options, aspect_type, lon1, lon2):
 		return False
 
 
+def _drop_mirrored_node_row(rows, items, node_hits):
+	"""Show one row for an aspect both lunar nodes share (``node_mirror``).
+
+	``node_hits`` maps node body id to ``(aspect type, index in rows/items)``."""
+	drop = node_mirror.redundant_keys(
+		(index, None, node, typ) for node, (typ, index) in node_hits.items()
+	)
+	for index in sorted(drop, reverse=True):
+		del rows[index]
+		del items[index]
+
+
 def _current_aspect_rows(
 	chrt, planet_index, options, partner_chart=None, current_role='primary',
 	current_ring_numeral=None, partner_ring_numeral=None,
 ):
 	rows = []
 	items = []
+	node_hits = {}
 	# Callers also use this builder for symbolic charts whose aspect matrices are
 	# intentionally absent (for example Parashari Vargas).  Respect the semantic
 	# aspect gate before touching any precomputed matrix.
@@ -1591,7 +1787,16 @@ def _current_aspect_rows(
 			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
 			'aspect_colour_role': _aspect_colour_role(asp.typ),
 			'full_text': label_state['full_text'],
+			**_glyph_aspect_fields(
+				label_state,
+				_planet_aspect_endpoint(chrt, planet_index, options, current_ring_numeral),
+				_planet_aspect_endpoint(partner_chart if cross_chart else chrt, other, options, partner_ring_numeral),
+				asp,
+			),
 		}))
+		if other in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE):
+			node_hits[other] = (asp.typ, len(items) - 1)
+	_drop_mirrored_node_row(rows, items, node_hits)
 	rows.sort(key=lambda item: (item[0], item[1]))
 	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
 	return [text for _, text in rows], [item for _, item in items]
@@ -1605,6 +1810,7 @@ def _current_ephemeris_body_aspect_rows(
 	"""Build ordinary configured aspects for a dynamic Swiss Ephemeris body."""
 	rows = []
 	items = []
+	node_hits = {}
 	if chrt is None or not bool(getattr(options, 'aspects', False)):
 		return rows, items
 	cross_chart = partner_chart is not None and partner_chart is not chrt
@@ -1681,7 +1887,16 @@ def _current_ephemeris_body_aspect_rows(
 			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
 			'aspect_colour_role': _aspect_colour_role(asp.typ),
 			'full_text': label_state['full_text'],
+			**_glyph_aspect_fields(
+				label_state,
+				_aspect_endpoint(_planet_glyph(body_id), body_name, current_ring_numeral),
+				_planet_aspect_endpoint(target_chart, other, options, partner_ring_numeral),
+				asp,
+			),
 		}))
+		if other in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE):
+			node_hits[other] = (asp.typ, len(items) - 1)
+	_drop_mirrored_node_row(rows, items, node_hits)
 	rows.sort(key=lambda item: (item[0], item[1]))
 	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
 	return [text for _, text in rows], [item for _, item in items]
@@ -1784,11 +1999,12 @@ def _directed_point_aspect(
 def _current_point_aspect_rows(
 	chrt, point_lon, point_label, options, partner_chart=None,
 	current_role='primary', current_ring_numeral=None,
-	partner_ring_numeral=None,
+	partner_ring_numeral=None, point_glyph='', point_short='',
 ):
 	"""Canonical aspect rows for Fortune, Vertex, Syzygy and Eclipse."""
 	rows = []
 	items = []
+	node_hits = {}
 	if not bool(getattr(options, 'aspects', False)):
 		return rows, items
 	target_chart = partner_chart if partner_chart is not None and partner_chart is not chrt else chrt
@@ -1845,7 +2061,16 @@ def _current_point_aspect_rows(
 				if asp.typ < len(getattr(options, 'clraspect', ())) else None,
 			'aspect_colour_role': _aspect_colour_role(asp.typ),
 			'full_text': label_state['full_text'],
+			**_glyph_aspect_fields(
+				label_state,
+				_aspect_endpoint(point_glyph, point_short or point_label, current_ring_numeral),
+				_planet_aspect_endpoint(target_chart, planet_index, options, partner_ring_numeral),
+				asp,
+			),
 		}))
+		if planet_index in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE):
+			node_hits[planet_index] = (asp.typ, len(items) - 1)
+	_drop_mirrored_node_row(rows, items, node_hits)
 	rows.sort(key=lambda item: (item[0], item[1]))
 	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
 	return [text for _, text in rows], [item for _, item in items]
@@ -1871,6 +2096,11 @@ def _flag_point_aspect_rows(
 		partner_ring_numeral=partner_ring_numeral,
 	)
 	return _flag_rows_from_aspect_items(aspect_items, limit=limit)
+
+
+def _angle_short_label(angle_key, fallback):
+	short = _ANGLE_SHORT_LABELS.get(_normalise_angle_key(angle_key))
+	return _safe_text(short, short) if short else fallback
 
 
 def _normalise_angle_key(angle_key):
@@ -1999,6 +2229,7 @@ def _current_angle_aspect_rows(
 ):
 	rows = []
 	items = []
+	node_hits = {}
 	if not bool(getattr(options, 'aspects', False)):
 		return rows, items
 	target_chart = partner_chart if partner_chart is not None and partner_chart is not chrt else chrt
@@ -2054,7 +2285,16 @@ def _current_angle_aspect_rows(
 			'aspect_colour': tuple(options.clraspect[asp.typ]) if asp.typ < len(getattr(options, 'clraspect', ())) else None,
 			'aspect_colour_role': _aspect_colour_role(asp.typ),
 			'full_text': label_state['full_text'],
+			**_glyph_aspect_fields(
+				label_state,
+				_aspect_endpoint('', _angle_short_label(angle_key, angle_name), current_ring_numeral),
+				_planet_aspect_endpoint(target_chart, planet_index, options, partner_ring_numeral),
+				asp,
+			),
 		}))
+		if planet_index in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE):
+			node_hits[planet_index] = (asp.typ, len(items) - 1)
+	_drop_mirrored_node_row(rows, items, node_hits)
 	rows.sort(key=lambda item: (item[0], item[1]))
 	items.sort(key=lambda item: (item[0], item[1].get('full_text', '')))
 	return [text for _, text in rows], [item for _, item in items]
@@ -2202,79 +2442,27 @@ def _aspect_option_signature(options):
 		return id(options)
 
 
-def _nearest_aspect_events(chrt, planet_index, options):
-	key = (_chart_signature(chrt), _aspect_option_signature(options), int(planet_index))
-	cached = _ASPECT_EVENT_CACHE.get(key)
-	if cached is not None:
-		return cached
-
-	next_hit = None
-	last_hit = None
-	planet_ids = []
+def _moon_course_events(chrt, options):
+	"""The Moon's Last/Next aspect rows: the dashboard Moon list's exact
+	perfections (chart_dashboard.moon_course), same bodies and aspect types."""
+	if not _planet_has_aspmatrix(chrt, astrology.SE_MOON) or not _planet_visible_in_inspector(options, astrology.SE_MOON):
+		return ('—', '—')
+	from webapp.daemon import chart_dashboard
 	try:
-		planet_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
+		body_ids = chrt.get_visible_aspect_planet_ids(include_chiron=True)
 	except Exception:
-		planet_ids = []
-	if not _planet_has_aspmatrix(chrt, planet_index):
-		result = ('—', '—')
-		_ASPECT_EVENT_CACHE[key] = result
-		return result
-	if not _planet_visible_in_inspector(options, planet_index):
-		result = ('—', '—')
-		_ASPECT_EVENT_CACHE[key] = result
-		return result
-	try:
-		planet_i = chrt.get_planet_body(planet_index)
-		lon_i = float(planet_i.data[0])
-		speed_i = float(planet_i.data[planets.Planet.SPLON])
-	except Exception:
-		result = ('—', '—')
-		_ASPECT_EVENT_CACHE[key] = result
-		return result
+		return ('—', '—')
+	last, upcoming, type_of = chart_dashboard.moon_course(
+		chrt, body_ids, bool(getattr(options, 'dashboard_moon_all_bodies', False)), options,
+	)
+	jd = float(chrt.time.jd)
 
-	for other in planet_ids:
-		if other == planet_index:
-			continue
-		if not _planet_visible_in_inspector(options, other):
-			continue
-		try:
-			planet_j = chrt.get_planet_body(other)
-			lon_j = float(planet_j.data[0])
-			speed_j = float(planet_j.data[planets.Planet.SPLON])
-		except Exception:
-			continue
-		rel_speed = speed_j - speed_i
-		if abs(rel_speed) < 1e-7:
-			continue
-		delta = util.normalize(lon_j - lon_i)
-		for aspect_idx, target_deg in enumerate(chart.Chart.Aspects):
-			if not _is_aspect_enabled(chrt, options, aspect_idx, lon_i, lon_j):
-				continue
-			targets = [float(target_deg)]
-			if target_deg not in (0.0, 180.0):
-				targets.append(360.0 - float(target_deg))
-			for target in targets:
-				for turn in (-1, 0, 1):
-					dt = (target - delta + (360.0 * turn)) / rel_speed
-					if 0.0 < dt <= _ASPECT_SEARCH_DAYS:
-						candidate = (dt, other, aspect_idx)
-						if next_hit is None or candidate[0] < next_hit[0]:
-							next_hit = candidate
-					elif -_ASPECT_SEARCH_DAYS <= dt < 0.0:
-						candidate = (abs(dt), other, aspect_idx)
-						if last_hit is None or candidate[0] < last_hit[0]:
-							last_hit = candidate
-
-	def _fmt(hit, future):
-		if hit is None:
+	def _fmt(contact):
+		if contact is None:
 			return '—'
-		days, other, aspect_idx = hit
-		direction = '+%.1fd' % days if future else '-%.1fd' % days
-		return '%s %s %s' % (_planet_name(other, options), _aspect_text(aspect_idx), direction)
+		return '%s %s %+.1fd' % (_planet_name(contact.body, options), _aspect_text(type_of[contact.angle]), contact.jd - jd)
 
-	result = (_fmt(last_hit, False), _fmt(next_hit, True))
-	_ASPECT_EVENT_CACHE[key] = result
-	return result
+	return (_fmt(last), _fmt(upcoming))
 
 
 def _nearest_angle_aspect_events(chrt, angle_key, options):
@@ -2340,133 +2528,87 @@ def _nearest_angle_aspect_events(chrt, angle_key, options):
 	return result
 
 
-def _pd_arc_text(value, signed=False):
-	try:
-		number = float(value)
-	except (TypeError, ValueError, OverflowError):
-		return '—'
-	text = ('%+.8f' if signed else '%.8f') % number
-	text = text.rstrip('0').rstrip('.')
-	return '%s°' % (text or '0')
-
-
-def _pd_phase_text(phase):
-	return {
-		'applying': _safe_text('AbbrApplying', 'app.'),
-		'exact': _safe_text('Exact', 'Exact'),
-		'separating': _safe_text('AbbrSeparating', 'sep.'),
-	}.get(str(phase or ''), '—')
-
-
-def _pd_event_datetime_text(data):
-	values = data.get('event_datetime')
-	if isinstance(values, (list, tuple)) and len(values) >= 6:
-		try:
-			return '%04d-%02d-%02d %02d:%02d:%02d' % tuple(int(v) for v in values[:6])
-		except (TypeError, ValueError, OverflowError):
-			pass
-	state = data.get('direction_state') or {}
-	try:
-		jd = float(state.get('eventJd'))
-		year, month, day, hour = astrology.swe_revjul(jd, 1)
-		hours, minutes, seconds = util.decToDeg(hour)
-		return '%04d-%02d-%02d %02d:%02d:%02d %s' % (
-			int(year), int(month), int(day), int(hours), int(minutes), int(seconds),
-			_safe_text('UT', 'UT'),
-		)
-	except (TypeError, ValueError, OverflowError):
-		return '—'
-
-
-def _pd_party_text(parts):
-	return ''.join(str(part.get('text') or '') for part in (parts or []) if isinstance(part, dict)) or '—'
-
-
-def _pd_party_flag_row(label, parts):
-	spans = []
-	for part in parts or []:
-		if not isinstance(part, dict) or not part.get('text'):
-			continue
-		span = {'text': str(part.get('text'))}
-		if part.get('color') is not None:
-			span['colour'] = part.get('color')
-		if part.get('colorRole') is not None:
-			span['colourRole'] = part.get('colorRole')
-		if part.get('glyph'):
-			span['glyph'] = True
-		spans.append(span)
-	return (label, _pd_party_text(parts), None, spans)
-
-
-def _pd_direction_payload(region, options, *, compact):
-	del options
+def _with_point_declination(payload, region, *, compact):
+	"""Keep point coordinates consistent across every hover/Inspector branch."""
+	if payload is None or not region:
+		return payload
 	data = region.get('data') or {}
-	state = data.get('direction_state') or {}
-	overlay = data.get('event_overlay') or {}
-	phase_text = _pd_phase_text(state.get('phase'))
-	direction_text = _safe_text(
-		'Direct' if state.get('direction') == 'direct' else 'Converse',
-		'Direct' if state.get('direction') == 'direct' else 'Converse',
-	)
-	event_label = str(state.get('eventLabel') or '').strip() or _safe_text('PrimaryDirections', 'Primary Directions')
-	prom_parts = data.get('prom_parts') or []
-	sig_parts = data.get('sig_parts') or []
-	date_text = _pd_event_datetime_text(data)
-	exact_arc = _pd_arc_text(state.get('exactArcDegrees'))
-	current_arc = _pd_arc_text(state.get('currentArcDegreesSigned'), signed=True)
-	pd_arc_to_go_text = _pd_arc_text(state.get('remainingArcDegrees'))
-	structured = dict(state)
-	structured.update({
-		'projectionMode': overlay.get('projectionMode'),
-		'displayFrame': overlay.get('displayFrame'),
-	})
+	decl = data.get('declination')
+	if decl is None or region.get('kind') not in (
+		'planet', 'fortune', 'syzygy', 'eclipse', 'angle', 'house', 'secondary_ring',
+	):
+		return payload
+	# Varga positions are symbolic; catalog stars and ephemeris asteroids
+	# retain their physical coordinates on those charts.
+	if _is_varga_chart(_chart_ref(data)) and not (
+		region.get('kind') == 'secondary_ring'
+		and data.get('family') in ('fixed_star', 'asteroid')
+	):
+		return payload
+	label = _safe_text('Declination', 'Declination')
+	value = _format_signed_angle(decl)
 	if compact:
-		return {
-			'glyph': '',
-			'title': '%s · %s' % (event_label, phase_text),
-			'motionGlyph': '',
-			'motionUsesSymbolFont': False,
-			'motionLabel': '',
-			'accent': None,
-			'accentRole': None,
-			'rows': [
-				_pd_party_flag_row(_safe_text('SZPromissor', 'Promissor'), prom_parts),
-				_pd_party_flag_row(_safe_text('SZSignificator', 'Significator'), sig_parts),
-				(_safe_text('Direction', 'Direction'), '%s · %s' % (direction_text, phase_text)),
-				(_safe_text('Arc', 'Arc'), 'Aₑ %s · |ΔA| %s' % (exact_arc, pd_arc_to_go_text)),
-				(_safe_text('Date', 'Date'), date_text),
-			],
-			'compact': True,
-			'directionEvent': structured,
-		}
-	smart_rows = [
-		'%s: %s' % (_safe_text('SZPromissor', 'Promissor'), _pd_party_text(prom_parts)),
-		'%s: %s' % (_safe_text('SZSignificator', 'Significator'), _pd_party_text(sig_parts)),
-		'%s: %s · %s' % (_safe_text('Direction', 'Direction'), direction_text, phase_text),
-		'%s: Aₑ %s · A %s · |ΔA| %s' % (
-			_safe_text('Arc', 'Arc'), exact_arc, current_arc, pd_arc_to_go_text,
-		),
-		'%s: %s' % (_safe_text('Date', 'Date'), date_text),
-	]
-	return {
-		'glyph': '',
-		'title': event_label,
-		'meta': '%s · %s' % (direction_text, phase_text),
-		'accent': None,
-		'accentRole': None,
-		'smart_rows': smart_rows,
-		'dignity_rows': [],
-		'dignity_items': [],
-		'detail_rows': [],
-		'aspect_rows': [],
-		'aspect_items': [],
-		'rows': smart_rows,
-		'footer': '',
-		'directionEvent': structured,
-	}
+		rows = payload.setdefault('rows', [])
+		if not any(row and row[0] == label for row in rows):
+			rows.insert(min(1, len(rows)), (label, value))
+	else:
+		text = '%s %s' % (label, value)
+		rows = payload.setdefault('smart_rows', [])
+		if text not in rows:
+			rows.insert(min(1, len(rows)), text)
+		compat_rows = payload.get('rows')
+		if compat_rows is not None and compat_rows is not rows and text not in compat_rows:
+			compat_rows.insert(min(1, len(compat_rows)), text)
+	return payload
 
 
 def build_payload(region, options, defer_signals=False):
+	return _without_empty_rows(_with_point_declination(
+		_build_payload(region, options, defer_signals), region, compact=False,
+	))
+
+
+_EMPTY_VALUES = frozenset(('', '—', '–', '--', '-', 'None', 'null'))
+
+
+def _is_empty_value(value):
+	return value is None or str(value).strip() in _EMPTY_VALUES
+
+
+def _is_empty_text_row(text):
+	"""A text row is empty when it is a placeholder or 'Label: —' / 'Label —'."""
+	if _is_empty_value(text):
+		return True
+	text = str(text).strip()
+	for separator in (': ', ' '):
+		head, sep, tail = text.rpartition(separator)
+		if sep and head and _is_empty_value(tail):
+			return True
+	return False
+
+
+def _without_empty_rows(payload):
+	"""Omit rows with no value: absent facts are not displayed as dashes."""
+	if not isinstance(payload, dict):
+		return payload
+	for key in ('rows', 'smart_rows', 'detail_rows'):
+		rows = payload.get(key)
+		if not isinstance(rows, list):
+			continue
+		kept = []
+		for row in rows:
+			if isinstance(row, (tuple, list)):
+				spans = row[3] if len(row) > 3 else None
+				if len(row) > 1 and _is_empty_value(row[1]) and not spans:
+					continue
+			elif isinstance(row, str) and _is_empty_text_row(row):
+				continue
+			kept.append(row)
+		payload[key] = kept
+	return payload
+
+
+def _build_payload(region, options, defer_signals=False):
 	if not region:
 		return None
 
@@ -2478,11 +2620,8 @@ def build_payload(region, options, defer_signals=False):
 	if len(accent) != 3:
 		accent = None
 	accent_role = _flag_accent_colour_role(region, options, accent)
-	if kind == 'pd_event':
-		return _pd_direction_payload(region, options, compact=False)
 
 	if kind == 'planet':
-		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		planet_index = int(region.get('object_id', 0))
 		chrt = _chart_ref(data)
 		if _is_varga_chart(chrt):
@@ -2499,7 +2638,7 @@ def build_payload(region, options, defer_signals=False):
 		lon = data.get('longitude', data.get('display_lon', 0.0))
 		house_index = data.get('house_index')
 		solar_condition = _solar_condition_result(chrt, planet_index, options)
-		solar_condition_text = _solar_condition_value_text(solar_condition)
+		solar_condition_text = _solar_condition_value_text(solar_condition, include_mitigation=True)
 		out_of_bounds = _out_of_bounds_result(chrt, planet_index)
 		out_of_bounds_text = _out_of_bounds_text(out_of_bounds)
 		dignity_items = _dignity_display_items(chrt, options, planet_index, lon=lon) if chrt is not None else []
@@ -2508,12 +2647,13 @@ def build_payload(region, options, defer_signals=False):
 			_append_before_triplicity_lords(dignity_items, mutual_item)
 		is_luminary = planet_index in (astrology.SE_SUN, astrology.SE_MOON)
 		mansion_info = None
-		smart_rows = [
-			pos_text,
+		# Motion needs no row: the title carries the retrograde/station marker.
+		position_item = _position_house_item(
+			data.get('display_lon', data.get('longitude', 0.0)),
 			_house_text(data.get('house_index')),
-		]
-		if not is_luminary:
-			smart_rows.append(_motion_text(data))
+			options,
+		)
+		smart_rows = [position_item['text']]
 		if solar_condition_text:
 			smart_rows.append(solar_condition_text)
 		if out_of_bounds_text:
@@ -2547,10 +2687,13 @@ def build_payload(region, options, defer_signals=False):
 			else:
 				dignity_rows.append(item.get('value'))
 		phasis_row = None
+		void_course_row = None
 		if not is_luminary and not defer_signals:
 			phase = _nearest_signal_text(chrt, planet_index) if chrt is not None else None
-			phasis_row = '%s: %s' % (_safe_text('Phasis', 'Phasis'), phase or '—')
-			smart_rows.append(phasis_row)
+			# No nearby phasis/station signal means no row, not an em-dash row.
+			if phase:
+				phasis_row = '%s: %s' % (_safe_text('Phasis', 'Phasis'), phase)
+				smart_rows.append(phasis_row)
 		if planet_index == astrology.SE_MOON and chrt is not None:
 			phase_row = _lunar_phase_text(chrt, options)
 			if phase_row:
@@ -2558,27 +2701,38 @@ def build_payload(region, options, defer_signals=False):
 			tithi_row = _lunar_tithi_text(chrt, options)
 			if tithi_row:
 				smart_rows.append(tithi_row)
+			if not defer_signals:
+				void_course_row = _void_course_text(chrt, options)
+				if void_course_row:
+					smart_rows.append(void_course_row)
 			if bool(getattr(options, 'show_manzil_in_inspector', True)):
 				mansion_info = _moon_mansion_info(chrt, options, lon)
 		pd_direction_context = bool(data.get('pd_direction_context'))
-		last_aspect, next_aspect = (
-			('—', '—')
-			if pd_direction_context
-			else (_nearest_aspect_events(chrt, planet_index, options) if chrt is not None else ('—', '—'))
+		# Last/Next is the Moon's course; other planets show their in-orb aspects only.
+		moon_course = (
+			planet_index == astrology.SE_MOON and chrt is not None and not pd_direction_context
 		)
+		last_aspect, next_aspect = _moon_course_events(chrt, options) if moon_course else (None, None)
 		detail_rows = []
 		speed_lon = data.get('speed_lon')
 		if speed_lon is not None:
-			detail_rows.append('%s: %s' % (_safe_text('Speed', 'Speed'), _format_speed(speed_lon)))
-		station_rows = [] if defer_signals else _planet_station_detail_rows(
+			detail_rows.append('%s: %s' % (
+				_safe_text('Speed', 'Speed'),
+				_speculum_speed_text(planet_index, speed_lon, options, chrt),
+			))
+		station_items = [] if defer_signals else _planet_station_detail_items(
 			chrt, planet_index, options,
 		)
-		detail_rows.extend(station_rows)
+		station_rows = [item['text'] for item in station_items]
 		detail_rows.extend(_solar_condition_detail_rows(solar_condition))
-		detail_rows.extend(_essential_dignity_detail_rows(chrt, planet_index, lon=lon) if chrt is not None else [])
-		if not pd_direction_context:
+		ruler_items = _essential_dignity_detail_items(chrt, planet_index, lon=lon) if chrt is not None else []
+		detail_rows.extend(item['text'] for item in ruler_items)
+		if moon_course:
 			detail_rows.append('%s: %s' % (_safe_text('Last aspect', 'Last aspect'), last_aspect))
 			detail_rows.append('%s: %s' % (_safe_text('Next aspect', 'Next aspect'), next_aspect))
+		# Last rows, so the step-time deferred slot (re-appended by the client)
+		# never moves them.
+		detail_rows.extend(station_rows)
 		if pd_direction_context or chrt is None:
 			aspect_rows, aspect_items = [], []
 		elif planet_index == common.CHART_OBJECT_VERTEX:
@@ -2591,6 +2745,7 @@ def build_payload(region, options, defer_signals=False):
 				current_role=current_role,
 				current_ring_numeral=data.get('multiwheel_ring_numeral'),
 				partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+				point_glyph=_planet_glyph(planet_index),
 			)
 		else:
 			aspect_rows, aspect_items = _current_aspect_rows(
@@ -2613,31 +2768,40 @@ def build_payload(region, options, defer_signals=False):
 			'accent': accent,
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
+			'summary_items': [position_item],
 			'dignity_rows': dignity_rows,
 			'dignity_items': dignity_items,
 			'detail_rows': detail_rows,
 			'station_rows': station_rows,
+			'station_items': station_items,
+			'ruler_items': ruler_items,
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'manzil': mansion_info,
 			'phasis_row': phasis_row,
-			'deferred_slots': ['phasis', 'stations'] if not is_luminary and defer_signals else [],
+			'void_course_row': void_course_row,
+			'deferred_slots': (
+				(['void-course'] if planet_index == astrology.SE_MOON else ['phasis', 'stations'] if not is_luminary else [])
+				if defer_signals else []
+			),
 			'rows': smart_rows,
 			'footer': '',
 		}
 
 	if kind == 'fortune':
 		point_lon = data.get('display_lon', data.get('longitude', 0.0))
-		_, pos_text = _format_position(point_lon)
 		chrt = _chart_ref(data)
 		point_label = _safe_text('Part of Fortune', 'Part of Fortune')
-		smart_rows = [
-			pos_text,
-			_varga_house_text(chrt, data.get('display_lon', data.get('longitude', 0.0)), data.get('house_index'))
+		position_item = _position_house_item(
+			point_lon,
+			_varga_house_text(chrt, point_lon, data.get('house_index'))
 				if _is_varga_chart(chrt) else _house_text(data.get('house_index')),
-		]
-		if not _is_varga_chart(chrt):
-			smart_rows.append(_safe_text('Direct', 'Direct'))
+			options,
+		)
+		smart_rows = [position_item['text']]
+		decl = data.get('declination')
+		if decl is not None:
+			smart_rows.append('%s %s' % (_safe_text('Declination', 'Declination'), _format_signed_angle(decl)))
 		aspect_rows, aspect_items = _current_point_aspect_rows(
 			chrt,
 			point_lon,
@@ -2647,11 +2811,14 @@ def build_payload(region, options, defer_signals=False):
 			current_role=region.get('chart_role') or 'primary',
 			current_ring_numeral=data.get('multiwheel_ring_numeral'),
 			partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+			point_glyph=common.common.fortune,
 		) if (
 			chrt is not None
 			and not _is_varga_chart(chrt)
 			and not bool(data.get('pd_direction_context'))
 		) else ([], [])
+		ruler_lon = None if _is_varga_chart(chrt) else point_lon
+		trigon_item = _point_trigon_lords_item(chrt, options, ruler_lon)
 		return {
 			'glyph': common.common.fortune,
 			'title': point_label,
@@ -2659,7 +2826,9 @@ def build_payload(region, options, defer_signals=False):
 			'accent': accent,
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
-			'detail_rows': [],
+			'summary_items': [position_item],
+			'dignity_items': [trigon_item] if trigon_item is not None else [],
+			**_point_ruler_detail_fields(chrt, ruler_lon),
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'rows': smart_rows,
@@ -2668,16 +2837,15 @@ def build_payload(region, options, defer_signals=False):
 
 	if kind == 'syzygy':
 		point_lon = data.get('display_lon', data.get('longitude', 0.0))
-		_, pos_text = _format_position(point_lon)
 		chrt = _chart_ref(data)
 		point_label = data.get('title') or _safe_text('Prenatal Syzygy', 'Prenatal Syzygy')
-		smart_rows = [
-			pos_text,
-			_varga_house_text(chrt, data.get('display_lon', data.get('longitude', 0.0)), data.get('house_index'))
+		position_item = _position_house_item(
+			point_lon,
+			_varga_house_text(chrt, point_lon, data.get('house_index'))
 				if _is_varga_chart(chrt) else _house_text(data.get('house_index')),
-		]
-		if not _is_varga_chart(chrt):
-			smart_rows.append(_safe_text('Direct', 'Direct'))
+			options,
+		)
+		smart_rows = [position_item['text']]
 		aspect_rows, aspect_items = _current_point_aspect_rows(
 			chrt,
 			point_lon,
@@ -2687,11 +2855,14 @@ def build_payload(region, options, defer_signals=False):
 			current_role=region.get('chart_role') or 'primary',
 			current_ring_numeral=data.get('multiwheel_ring_numeral'),
 			partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+			point_short=_safe_text('Sy', 'Sy'),
 		) if (
 			chrt is not None
 			and not _is_varga_chart(chrt)
 			and not bool(data.get('pd_direction_context'))
 		) else ([], [])
+		ruler_lon = None if _is_varga_chart(chrt) else point_lon
+		trigon_item = _point_trigon_lords_item(chrt, options, ruler_lon)
 		return {
 			'glyph': '',
 			'title': point_label,
@@ -2699,7 +2870,9 @@ def build_payload(region, options, defer_signals=False):
 			'accent': accent,
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
-			'detail_rows': [],
+			'summary_items': [position_item],
+			'dignity_items': [trigon_item] if trigon_item is not None else [],
+			**_point_ruler_detail_fields(chrt, ruler_lon),
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'rows': smart_rows,
@@ -2729,11 +2902,14 @@ def build_payload(region, options, defer_signals=False):
 			current_role=region.get('chart_role') or 'primary',
 			current_ring_numeral=data.get('multiwheel_ring_numeral'),
 			partner_ring_numeral=data.get('multiwheel_partner_numeral'),
+			point_short=_safe_text('EclipseAbbr', 'Ec'),
 		) if (
 			chrt is not None
 			and not _is_varga_chart(chrt)
 			and not bool(data.get('pd_direction_context'))
 		) else ([], [])
+		ruler_lon = None if _is_varga_chart(chrt) else point_lon
+		trigon_item = _point_trigon_lords_item(chrt, options, ruler_lon)
 		return {
 			'glyph': '',
 			'title': point_label,
@@ -2741,7 +2917,8 @@ def build_payload(region, options, defer_signals=False):
 			'accent': accent,
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
-			'detail_rows': [],
+			'dignity_items': [trigon_item] if trigon_item is not None else [],
+			**_point_ruler_detail_fields(chrt, ruler_lon),
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'rows': smart_rows,
@@ -2753,19 +2930,19 @@ def build_payload(region, options, defer_signals=False):
 		chrt = _chart_ref(data)
 		partner_chart = data.get('partner_chart')
 		current_role = region.get('chart_role') or 'primary'
-		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
+		sign_index, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		angle_name_en = _ANGLE_LABELS.get(angle_key, 'Angle')
-		opp_name_en = _ANGLE_OPPOSITES.get(angle_key, 'Opposite')
 		angle_name = _safe_text(angle_name_en, angle_name_en)
-		opp_name = _safe_text(opp_name_en, opp_name_en)
-		axis_row = '%s: %s / %s' % (_safe_text('Axis pair', 'Axis pair'), angle_name, opp_name)
+		quality_row = '%s: %s' % (_safe_text('Quality', 'Quality'), _safe_text('Angular', 'Angular'))
+		trigon_item = _trigon_lords_item(chrt, options, sign_index)
+		dignity_items = [trigon_item] if trigon_item is not None else []
 		smart_rows = [
 			pos_text,
 			_varga_house_text(chrt, data.get('display_lon', data.get('longitude', 0.0)), data.get('house_index'))
 				if _is_varga_chart(chrt) else _house_text(data.get('house_index')),
 		]
 		if _is_varga_chart(chrt):
-			smart_rows.append(axis_row)
+			smart_rows.append(quality_row)
 			return {
 				'glyph': '',
 				'title': angle_name,
@@ -2774,7 +2951,7 @@ def build_payload(region, options, defer_signals=False):
 				'accentRole': accent_role,
 				'smart_rows': smart_rows,
 				'dignity_rows': [],
-				'dignity_items': [],
+				'dignity_items': dignity_items,
 				'detail_rows': [],
 				'aspect_rows': [],
 				'aspect_items': [],
@@ -2787,10 +2964,12 @@ def build_payload(region, options, defer_signals=False):
 				_safe_text('Declination', 'Declination'),
 				_format_signed_angle(declination),
 			))
-		smart_rows.append(axis_row)
+		smart_rows.append(quality_row)
 		pd_direction_context = bool(data.get('pd_direction_context'))
+		ruler_items = _point_ruler_detail_items(chrt, data.get('display_lon', data.get('longitude')))
+		ruler_rows = [item['text'] for item in ruler_items]
 		if pd_direction_context:
-			detail_rows = []
+			detail_rows = list(ruler_rows)
 			aspect_rows, aspect_items = [], []
 		else:
 			last_aspect, next_aspect = (
@@ -2798,7 +2977,7 @@ def build_payload(region, options, defer_signals=False):
 				if chrt is not None
 				else ('—', '—')
 			)
-			detail_rows = [
+			detail_rows = list(ruler_rows) + [
 				'%s: %s' % (_safe_text('Last aspect', 'Last aspect'), last_aspect),
 				'%s: %s' % (_safe_text('Next aspect', 'Next aspect'), next_aspect),
 			]
@@ -2819,8 +2998,9 @@ def build_payload(region, options, defer_signals=False):
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'dignity_rows': [],
-			'dignity_items': [],
+			'dignity_items': dignity_items,
 			'detail_rows': detail_rows,
+			'ruler_items': ruler_items,
 			'aspect_rows': aspect_rows,
 			'aspect_items': aspect_items,
 			'rows': smart_rows,
@@ -2831,7 +3011,7 @@ def build_payload(region, options, defer_signals=False):
 		sign_index, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		quadrants = ('Angular', 'Succedent', 'Cadent', 'Angular', 'Succedent', 'Cadent', 'Angular', 'Succedent', 'Cadent', 'Angular', 'Succedent', 'Cadent')
 		house_index = max(1, int(region.get('object_id', 1)))
-		title = _house_angle_title(house_index, _chart_ref(data))
+		title = _house_text(house_index)
 		quadrant_en = quadrants[(house_index - 1) % len(quadrants)]
 		quality_row = '%s: %s' % (_safe_text('Quality', 'Quality'), _safe_text(quadrant_en, quadrant_en))
 		smart_rows = [pos_text, quality_row]
@@ -2844,7 +3024,10 @@ def build_payload(region, options, defer_signals=False):
 			'accentRole': accent_role,
 			'smart_rows': smart_rows,
 			'dignity_items': [trigon_item] if trigon_item is not None else [],
-			'detail_rows': [],
+			**_point_ruler_detail_fields(
+				None if _is_varga_chart(_chart_ref(data)) else _chart_ref(data),
+				data.get('display_lon', data.get('longitude')),
+			),
 			'aspect_rows': [],
 			'rows': list(smart_rows),
 			'footer': '',
@@ -2897,6 +3080,10 @@ def build_payload(region, options, defer_signals=False):
 			smart_rows.append('%s: %s (%s)' % (orb_label, orb_text, _safe_text('exact', 'exact')))
 		else:
 			smart_rows.append('%s: %s (%s)' % (orb_label, orb_text, _safe_text(state, state)))
+		if data.get('contact_complete') is True:
+			smart_rows.append(_safe_text('ContactComplete', "Mutual contact (each within the other's orb)"))
+		elif data.get('contact_complete') is False:
+			smart_rows.append(_safe_text('ContactIncomplete', "One-sided contact (one within the other's orb)"))
 		return {
 			'glyph': _aspect_glyph(aspect_type),
 			'title': _aspect_title(aspect_type),
@@ -2955,6 +3142,12 @@ def build_payload(region, options, defer_signals=False):
 
 def build_flag_payload(region, options, defer_signals=False):
 	"""Compact on-chart hover payload used by the chart flag overlay."""
+	return _without_empty_rows(_with_point_declination(
+		_build_flag_payload(region, options, defer_signals), region, compact=True,
+	))
+
+
+def _build_flag_payload(region, options, defer_signals=False):
 	if not region:
 		return None
 	data = region.get('data') or {}
@@ -2974,8 +3167,6 @@ def build_flag_payload(region, options, defer_signals=False):
 		'nextStationRow': None,
 		'deferredSlots': [],
 	}
-	if kind == 'pd_event':
-		return _pd_direction_payload(region, options, compact=True)
 	if kind == 'planet':
 		planet_index = int(region.get('object_id', 0))
 		chrt = _chart_ref(data)
@@ -3021,9 +3212,6 @@ def build_flag_payload(region, options, defer_signals=False):
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
 		]
-		_append_next_station_flag(
-			payload, data, chrt, planet_index, options, defer_signals,
-		)
 		if solar_condition_text:
 			payload['rows'].append(('', solar_condition_text))
 		if out_of_bounds_text:
@@ -3111,6 +3299,13 @@ def build_flag_payload(region, options, defer_signals=False):
 					item.get('colour_role'),
 				))
 		if planet_index == astrology.SE_MOON and chrt is not None:
+			if defer_signals:
+				payload['deferredSlots'].append('void-course')
+			else:
+				void_course_text = _void_course_text(chrt, options)
+				if void_course_text:
+					payload['voidCourseRow'] = ('', void_course_text)
+					payload['rows'].append(payload['voidCourseRow'])
 			try:
 				info = lunar.phase(chrt)
 				payload['rows'].append(('', '%s (%s)' % (
@@ -3119,6 +3314,11 @@ def build_flag_payload(region, options, defer_signals=False):
 				)))
 			except Exception:
 				pass
+		# Last row, so the step-time deferred slot (re-appended by the client)
+		# never moves it.
+		_append_next_station_flag(
+			payload, data, chrt, planet_index, options, defer_signals,
+		)
 		return payload
 	if kind == 'fortune':
 		point_lon = data.get('display_lon', data.get('longitude', 0.0))
@@ -3128,8 +3328,11 @@ def build_flag_payload(region, options, defer_signals=False):
 		payload['title'] = point_label
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
-			(_safe_text('Dign', 'Dign'), '—'),
 		]
+		decl = data.get('declination')
+		if decl is not None:
+			payload['rows'].append((_safe_text('Declination', 'Declination'), _format_signed_angle(decl)))
+		_append_point_trigon_flag_row(payload, _chart_ref(data), options, point_lon)
 		if not bool(data.get('pd_direction_context')):
 			payload['rows'].extend(_flag_point_aspect_rows(
 				_chart_ref(data), point_lon, point_label, options,
@@ -3146,8 +3349,8 @@ def build_flag_payload(region, options, defer_signals=False):
 		payload['title'] = point_label
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
-			(_safe_text('Dign', 'Dign'), '—'),
 		]
+		_append_point_trigon_flag_row(payload, _chart_ref(data), options, point_lon)
 		if not bool(data.get('pd_direction_context')):
 			payload['rows'].extend(_flag_point_aspect_rows(
 				_chart_ref(data), point_lon, point_label, options,
@@ -3167,6 +3370,7 @@ def build_flag_payload(region, options, defer_signals=False):
 			(_safe_text('House', 'House'), _house_text(data.get('house_index'))),
 			(_safe_text('Saros', 'Saros'), data.get('saros', '—')),
 		]
+		_append_point_trigon_flag_row(payload, _chart_ref(data), options, point_lon)
 		if not bool(data.get('pd_direction_context')):
 			payload['rows'].extend(_flag_point_aspect_rows(
 				_chart_ref(data), point_lon, point_label, options,
@@ -3181,12 +3385,16 @@ def build_flag_payload(region, options, defer_signals=False):
 		chrt = _chart_ref(data)
 		partner_chart = data.get('partner_chart')
 		current_role = region.get('chart_role') or 'primary'
-		_, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
+		sign_index, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		angle_name_en = _ANGLE_LABELS.get(angle_key, 'Angle')
 		payload['title'] = _safe_text(angle_name_en, angle_name_en)
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
+			(_safe_text('Quality', 'Quality'), _safe_text('Angular', 'Angular')),
 		]
+		trigon_item = _trigon_lords_item(chrt, options, sign_index)
+		if trigon_item is not None:
+			payload['rows'].append((trigon_item['flag_label'], '', None, _triplicity_lord_spans(trigon_item)))
 		if not bool(data.get('pd_direction_context')):
 			payload['rows'].extend(_flag_angle_aspect_rows(
 				chrt,
@@ -3202,10 +3410,9 @@ def build_flag_payload(region, options, defer_signals=False):
 		sign_index, pos_text = _format_position(data.get('display_lon', data.get('longitude', 0.0)))
 		house_index = max(1, int(region.get('object_id', 1)))
 		payload['glyph'] = ''
-		payload['title'] = _house_angle_title(house_index, _chart_ref(data))
+		payload['title'] = _house_text(house_index)
 		payload['rows'] = [
 			(_safe_text('Long', 'Long'), pos_text),
-			(_safe_text('Dign', 'Dign'), '—'),
 		]
 		trigon_item = _trigon_lords_item(_chart_ref(data), options, sign_index)
 		if trigon_item is not None:
@@ -3243,9 +3450,33 @@ def build_flag_payload(region, options, defer_signals=False):
 		actor = data.get('actor')
 		target = data.get('target')
 		rows = []
-		if bool(getattr(options, 'aspect_flag_show_parties', True)) and isinstance(actor, dict) and isinstance(target, dict):
+		if isinstance(actor, dict) and isinstance(target, dict):
 			rows.append((_safe_text('From', 'From'), _aspect_body_label(actor, options)))
 			rows.append((_safe_text('To', 'To'), _aspect_body_label(target, options)))
+		if data.get('contact_complete') is True:
+			rows.append((_safe_text('Contact', 'Contact'), _safe_text('ContactCompleteShort', 'Mutual')))
+		elif data.get('contact_complete') is False:
+			rows.append((_safe_text('Contact', 'Contact'), _safe_text('ContactIncompleteShort', 'One-sided')))
+		payload['rows'] = rows
+		payload['compact'] = True
+		return payload
+	if kind == 'declination':
+		# Chart dashboard: a body's parallels / contraparallels in orb.
+		planet_index = int(region.get('object_id', 0))
+		payload['glyph'] = _planet_glyph(planet_index)
+		payload['title'] = _planet_name(planet_index, options)
+		rows = []
+		declination = data.get('declination')
+		if declination is not None:
+			rows.append((_safe_text('Declination', 'Declination'), _format_signed_angle(declination)))
+		for contact in data.get('contacts') or []:
+			label = 'Contraparallel' if contact.get('kind') == 'contraparallel' else 'Parallel'
+			rows.append((
+				_safe_text(label, label),
+				'%s %s' % (_planet_name(int(contact['partner']), options), _format_orb(contact.get('orb', 0.0))),
+			))
+		if not data.get('contacts') and not data.get('pair'):
+			rows.append((_safe_text('Parallel', 'Parallel'), '—'))
 		payload['rows'] = rows
 		payload['compact'] = True
 		return payload
@@ -3266,8 +3497,7 @@ def build_flag_payload(region, options, defer_signals=False):
 	if kind == 'secondary_ring':
 		display_lon = data.get('display_lon', data.get('longitude'))
 		long_label = _safe_text('Long', 'Long')
-		dign_label = _safe_text('Dign', 'Dign')
-		rows = [(long_label, '—'), (dign_label, '—')]
+		rows = [(long_label, '—')]
 		if data.get('glyph_font') == 'morinus':
 			payload['glyph'] = data.get('glyph') or ''
 		if display_lon is not None:
@@ -3276,11 +3506,27 @@ def build_flag_payload(region, options, defer_signals=False):
 		if data.get('family') == 'fixed_star':
 			nature_info = data.get('fixstar_nature') or {}
 			nature = nature_info.get('nature') if isinstance(nature_info, dict) else None
-			payload['title'] = data.get('title') or _safe_text('Fixed star', 'Fixed star')
+			payload['title'] = data.get('fixstar_display_name') or data.get('fixstar_name') or _safe_text('Fixed star', 'Fixed star')
 			if nature:
-				rows[1] = (_safe_text('Nature', 'Nature'), nature)
+				rows.append((_safe_text('Nature', 'Nature'), nature))
 			elif isinstance(nature_info, dict) and nature_info.get('note'):
-				rows[1] = (_safe_text('Nature', 'Nature'), '—')
+				rows.append((_safe_text('Nature', 'Nature'), '—'))
+			facts = data.get('fixstar_conjunctions') or {}
+			contacts = facts.get('contacts') or []
+			if contacts:
+				spans = [{'text': payload['title']}]
+				for index, contact in enumerate(contacts):
+					name, glyph, short_label = _fixed_star_contact_identity(contact, options)
+					spans.append({'text': ' · ' if index else ' '})
+					spans.extend([
+						{'text': _aspect_glyph(chart.Chart.CONJUNCTIO), 'glyph': True, 'colourRole': _aspect_colour_role(chart.Chart.CONJUNCTIO), 'wrapGroup': index},
+						{'text': ' ', 'wrapGroup': index},
+						{'text': glyph or short_label or name, 'glyph': bool(glyph), 'wrapGroup': index},
+						{'text': ' ' + _format_orb(contact['separation']), 'wrapGroup': index},
+					])
+				payload['titleSpans'] = spans
+				contact_rows, _ = _fixed_star_conjunction_rows(data, options)
+				payload['titleLabel'] = ' · '.join([payload['title'], *contact_rows])
 			payload['rows'] = rows
 			return payload
 		if data.get('family') == 'asteroid':
@@ -3321,6 +3567,47 @@ def build_flag_payload(region, options, defer_signals=False):
 	return None
 
 
+def _fixed_star_contact_identity(contact, options):
+	"""Aspect List's body glyphs and compact structural-point labels."""
+	kind, object_id = contact['kind'], contact['object_id']
+	if kind == 'planet':
+		return _planet_name(object_id, options), _planet_glyph(object_id), ''
+	if kind == 'angle':
+		key = _ANGLE_LABELS[_normalise_angle_key(object_id)]
+		short_key = {'asc': 'Asc', 'dsc': 'Dsc', 'mc': 'MC', 'ic': 'IC'}[object_id]
+		return _safe_text(key, key), '', _safe_text(short_key, short_key)
+	if kind == 'house':
+		import mtexts
+		key = 'HC%d' % object_id
+		return '%s %s' % (_safe_text('House', 'House'), object_id), '', _safe_text(key, mtexts.txtseng[key])
+	if kind == 'vertex':
+		return _safe_text('Vertex', 'Vertex'), common.common.get_planet_glyph(common.CHART_OBJECT_VERTEX), ''
+	if kind == 'syzygy':
+		return _safe_text('PrenatalSyzygy', 'Syzygy'), '', 'Sy'
+	if kind == 'eclipse':
+		return _safe_text('PrenatalEclipse', 'Prenatal eclipse'), '', _safe_text('EclipseAbbr', 'Ec')
+	return _safe_text('LotOfFortune', 'Lot of Fortune'), common.common.fortune, ''
+
+
+def _fixed_star_conjunction_rows(data, options, *, header=False):
+	"""Format daemon-owned star contacts for both existing Inspector surfaces."""
+	rows, items = [], []
+	for contact in (data.get('fixstar_conjunctions') or {}).get('contacts', ()):
+		name, _, _ = _fixed_star_contact_identity(contact, options)
+		separation = _format_orb(contact['separation'])
+		suffix = '%s %s' % (name, separation) if header else separation
+		text = '%s %s %s' % (name, _aspect_title(chart.Chart.CONJUNCTIO), separation)
+		rows.append(text)
+		items.append({
+			'prefix_text': '' if header else name + ' ',
+			'aspect_glyph': _aspect_glyph(chart.Chart.CONJUNCTIO),
+			'suffix_text': suffix,
+			'aspect_colour_role': _aspect_colour_role(chart.Chart.CONJUNCTIO),
+			'full_text': text,
+		})
+	return rows, items
+
+
 def _build_secondary_ring_payload(region, options, role, accent):
 	data = region.get('data') or {}
 	family = data.get('family') or 'secondary_ring'
@@ -3333,7 +3620,14 @@ def _build_secondary_ring_payload(region, options, role, accent):
 		_, pos_text = _format_position(display_lon)
 		rows.append(pos_text)
 	if family == 'fixed_star':
-		rows.append(_safe_text('Fixed star', 'Fixed star'))
+		title = data.get('fixstar_name') or title
+		meta = ' • '.join([bit for bit in [role, _safe_text('Fixed star', 'Fixed star')] if bit])
+		constellation = data.get('fixstar_constellation') or {}
+		if constellation.get('name'):
+			name = constellation['name']
+			if constellation.get('english_name'):
+				name += ' (%s)' % constellation['english_name']
+			rows.append('%s: %s' % (_safe_text('Constellation', 'Constellation'), name))
 		nature_info = data.get('fixstar_nature') or {}
 		nature = nature_info.get('nature') if isinstance(nature_info, dict) else None
 		if nature:
@@ -3377,13 +3671,19 @@ def _build_secondary_ring_payload(region, options, role, accent):
 			variants = nature_info.get('variants') or []
 			note = nature_info.get('note') or ''
 			if sources:
-				detail_rows.append('%s: %s' % (_safe_text('Source', 'Source'), '; '.join(sources)))
+				detail_rows.append('%s: %s' % (_safe_text('NatureSource', 'Nature source'), '; '.join(sources)))
 			if variants:
 				detail_rows.append('%s: %s' % (_safe_text('Variant', 'Variant'), '; '.join(variants)))
 			if note and note not in rows:
 				detail_rows.append('%s: %s' % (_safe_text('Note', 'Note'), note))
 	aspect_rows = []
 	aspect_items = []
+	header_aspect_items = []
+	if family == 'fixed_star':
+		facts = data.get('fixstar_conjunctions') or {}
+		if facts.get('orb_limit') is not None:
+			rows.append('%s: %s' % (_safe_text('FixedStarConjunctionOrb', 'Orb'), _format_orb(facts['orb_limit'])))
+		_, header_aspect_items = _fixed_star_conjunction_rows(data, options, header=True)
 	if family == 'asteroid' and data.get('body_id') is not None:
 		aspect_rows, aspect_items = _current_ephemeris_body_aspect_rows(
 			_chart_ref(data),
@@ -3408,6 +3708,7 @@ def _build_secondary_ring_payload(region, options, role, accent):
 		'detail_rows': detail_rows,
 		'aspect_rows': aspect_rows,
 		'aspect_items': aspect_items,
+		'header_aspect_items': header_aspect_items,
 		'rows': rows,
 		'footer': '',
 	}

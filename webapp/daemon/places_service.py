@@ -125,7 +125,7 @@ class PlacesService:
         sort + write — placesdlg OnAdd + save (placesdlg.py:83,139). Dedup is
         the wx read-side rule: an existing name survives, the duplicate is
         dropped on the next read."""
-        name = str(candidate.get("name", "") or "").strip()[:20]
+        name = str(candidate.get("name", "") or "").strip()
         if not name:
             raise ValueError("place name is required")
         lontxt = self._format_lonlat(

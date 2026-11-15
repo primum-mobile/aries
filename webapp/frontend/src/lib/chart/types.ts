@@ -1,3 +1,4 @@
+import type { DrawingPoint } from "./chart-coordinates";
 import type { WheelComposition } from "./wheel-composition";
 import type { WheelGeometryPresetSelections } from "./wheel-geometry-preset";
 // Copyright (C) 2026 Max Lange
@@ -11,11 +12,13 @@ import type { WheelGeometryPresetSelections } from "./wheel-geometry-preset";
 
 export type PlanetId =
   | "sun" | "moon" | "mercury" | "venus" | "mars" | "jupiter" | "saturn"
-  | "uranus" | "neptune" | "pluto" | "nnode" | "snode" | "chiron";
+  | "uranus" | "neptune" | "pluto" | "nnode" | "snode" | "chiron" | "apogee";
+
+export type ZodiacElement = "fire" | "earth" | "air" | "water";
 
 export type DignityKind = "domicil" | "exil" | "exal" | "casus" | "peregrin";
 
-export interface ChartPlanet {
+export interface ChartPlanet extends DrawingPoint {
   id: PlanetId;
   seId: number; // SE_SUN..SE_CHIRON (matches common.py tables)
   longitude: number;
@@ -23,6 +26,12 @@ export interface ChartPlanet {
   speed: number; // negative = retrograde
   house?: number; // 1–12
   dignity?: DignityKind;
+  /** Daemon-owned triplicity/term/face count, independent of color visibility. */
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  /** First triplicity ruler for chart sect; element in the selected zodiac. */
+  primaryTriplicityElement?: ZodiacElement | null;
   // Daemon-resolved render values (export_chart_json.export_planets). The skin
   // prints these; it does not re-derive color/glyph/motion/deg-min.
   color?: string; // CSS rgb() from inspector_service._body_colour
@@ -38,10 +47,12 @@ export interface ChartPlanet {
 export type AspectPointKey = `point:${string}`;
 export type CuspAspectKey = `cusp${number}`;
 export type AngleAspectKey = "asc" | "mc" | "dc" | "dsc" | "ic";
-export type AspectBodyKey = PlanetId | AngleAspectKey | CuspAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse" | AspectPointKey;
-export type InterChartAspectKey = PlanetId | AngleAspectKey | CuspAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse";
+export type AspectBodyKey = PlanetId | AngleAspectKey | CuspAspectKey | "fortune" | "vertex" | "syzygy" | "eclipse" | AspectPointKey | `reference:${string}`;
+export type InterChartAspectKey = AspectBodyKey;
 
 export interface ChartAspect {
+  method?: string;
+  contactId?: string;
   p1: AspectBodyKey;
   p2: AspectBodyKey;
   type: number; // ASP_CONJUNCTION..ASP_OPPOSITION
@@ -55,6 +66,8 @@ export type DrishtiMethod = "parashari" | "jaimini";
 /** Native Varga relationship. Parāśari graha dṛṣṭi is directed from a graha
  * to a whole sign; Jaimini rāśi dṛṣṭi is a mutual sign-to-sign relation. */
 export interface ChartDrishti {
+  drawingActorAngle?: number | null;
+  drawingTargetAngle?: number | null;
   id: string;
   method: DrishtiMethod;
   actorKind: "planet" | "sign";
@@ -70,6 +83,8 @@ export interface ChartDrishti {
  * the render-time type/visibility filter (export_chart_json.export_body_aspects;
  * desktop force-show source graphchart.py:974-1018). */
 export interface BodyAspect {
+  method?: string;
+  contactId?: string;
   other: AspectBodyKey;
   type: number; // ASP_CONJUNCTION..ASP_OPPOSITION
   orb: number;
@@ -99,6 +114,7 @@ export interface DegMin {
 }
 
 export interface ChartAngles {
+  drawing?: Partial<Pick<ChartAngles, "asc" | "dsc" | "mc" | "ic" | "vertex">>;
   asc: number;
   mc: number;
   armc: number;
@@ -110,12 +126,13 @@ export interface ChartAngles {
 }
 
 export interface ChartHouses {
+  drawingCusps?: number[];
   system: "P" | "K" | "R" | "C" | "E" | "W" | "F" | "B" | "O" | "M" | "H" | "T";
   cusps: number[]; // 12 values, index 0 = cusp 1 (ASC)
   cuspDegMin?: DegMin[];
 }
 
-export interface ChartFortune {
+export interface ChartFortune extends DrawingPoint {
   longitude: number;
   glyph?: string;
   color?: string;
@@ -126,7 +143,7 @@ export interface ChartFortune {
 /** Vertex as a drawable body (export_chart_json.export_vertex). Present only
  * when options.showvertex is on. Glyph/color are daemon-resolved like planets;
  * the Vertex has no motion/speed (it's a chart point, graphchart.py:2905). */
-export interface ChartVertex {
+export interface ChartVertex extends DrawingPoint {
   longitude: number;
   house?: number;
   glyph?: string;
@@ -135,7 +152,7 @@ export interface ChartVertex {
   minText?: string;
 }
 
-export interface ChartSyzygy {
+export interface ChartSyzygy extends DrawingPoint {
   longitude: number;
   house?: number;
   label?: string;
@@ -159,7 +176,7 @@ export interface ArabicPart {
   longitude: number;
 }
 
-export interface FixedStar {
+export interface FixedStar extends DrawingPoint {
   id: string;
   name: string;
   longitude: number;
@@ -205,8 +222,10 @@ export interface ChartMeta {
   titleParts?: string[];
   statusFields?: string[];
   houseSystemLines?: string[];
+  centerLines?: string[];
   cornerLines?: {
     pairedParticipants?: boolean;
+    singleChart?: boolean;
     topLeft?: string[];
     bottomLeft?: string[];
   };
@@ -220,6 +239,7 @@ export interface OverlayInfoRow {
     | "term-lord"
     | "lord-of-year"
     | "signal"
+    | "void-of-course"
     | "station-signal";
   label: string;
   glyphs: Array<{
@@ -297,13 +317,21 @@ export interface RingLabelSegment {
   kind: "text" | "planet" | "glyph";
   seId?: number;
   color?: string;
+  /** Daemon-resolved dignity at a projected body's own longitude. */
+  dignity?: DignityKind;
+  minorDignityCount?: number;
 }
 
-export interface OuterRingItem {
+export interface OuterRingItem extends DrawingPoint {
+  aspectKey?: AspectBodyKey;
   degText?: string;
   minText?: string;
   /** Existing fixed-star labels already contain their position. */
   positionInLabel?: boolean;
+  /** Structured name and existing position suffix for fixed-star word labels. */
+  listLabel?: string;
+  /** Optional localized display alias; label remains the full semantic name. */
+  shortLabel?: string;
   id: string;
   family: string;
   longitude: number;
@@ -320,6 +348,8 @@ export interface OuterRingItem {
 }
 
 export interface InterChartAspect {
+  method?: string;
+  contactId?: string;
   outer: InterChartAspectKey;
   inner: InterChartAspectKey;
   type: number;
@@ -346,6 +376,16 @@ export interface MultiwheelConjunction {
 }
 
 export interface Chart {
+  bodyAspectRefs?: Partial<Record<AspectBodyKey, {aspectIndex: number; other: AspectBodyKey}[]>>;
+  coordinatePoints?: Record<string, number | null>;
+  coordinateFrame?: {
+    mode: "ascensional";
+    revision: number;
+    ramc: number;
+    showEquatorialSigns: boolean;
+    readout: ChartPresentation["readout"];
+    aspectGlyphs?: Record<number, string>;
+  };
   meta: ChartMeta;
   planets: ChartPlanet[];
   angles: ChartAngles;
@@ -367,10 +407,16 @@ export interface Chart {
   overlay?: OverlayInfo;
   palette?: Partial<ChartPalette>;
   options: {
+    viewDisplayOverrides?: ChartPresentation["displayOverrides"];
     uranus: boolean;
     pluto: number;
     signVariant: 1 | 2;
     useDignityColors?: boolean;
+    blendMinorDignities?: boolean;
+    showDignityGlyphs?: boolean;
+    showTermGlyphs?: boolean;
+    usePlanetColorsForSubdivisions?: boolean;
+    showFaceGlyphs?: boolean;
     useZodiacElementColors?: boolean;
     useZodiacElementFieldColors?: boolean;
     zodiacElementFieldOpacity?: number;
@@ -390,6 +436,8 @@ export interface Chart {
     showFixstarsToHcs?: boolean;
     showFixstarsToLoF?: boolean;
     showHouses?: boolean;
+    /** Daemon-owned house-line capability, including angles-only comparisons. */
+    houseLinesAvailable?: boolean;
     showOuterHouseLines?: boolean;
     showPositions?: boolean;
     showPositionMinutes?: boolean;
@@ -441,10 +489,74 @@ export interface SymbolicTimeReadout {
 
 // Live session metadata block the daemon attaches to a document snapshot
 // (workspace_service.document_snapshot -> snapshot['document']).
+export interface ChartPresentation {
+  schemaVersion: 1;
+  revision: number;
+  coordinateMode: "zodiacal" | "ascensional";
+  convention: "aries-mdo-asc0-ic90-dsc180-mc270";
+  showEquatorialSigns: boolean;
+  readout: "mdo-quadrant" | "absolute" | "equatorial-signs";
+  displayOverrides: Partial<Record<
+    "drawAspects" | "houses" | "positions" | "information" | "planetarydayhour" |
+    "housesystem" | "showlof" | "showvertex" | "showprenatalsyzygy" | "showprenataleclipse", boolean
+  >> & { showfixstars?: number };
+}
+
+export interface AscensionalScenePoint {
+  id: string;
+  semanticKey: string;
+  chartRole: string;
+  documentId: string;
+  revision: number;
+  kind: string;
+  /** Source longitude remains semantic data, never a drawing coordinate. */
+  longitude: number;
+  latitude?: number;
+  ra?: number;
+  declination?: number;
+  status: "available" | "undefined" | "unavailable";
+  reason?: string;
+  drawingAngle?: number;
+  mdo?: number;
+  quadrant?: number;
+  coordinateKind?: "structural" | "mdo";
+  metadata: Record<string, unknown>;
+  ringItem?: OuterRingItem;
+}
+
+export interface AscensionalScene {
+  contactMethod: "mdo" | "ascensional-transits" | "mundane-primary-direction";
+  schemaVersion: 1;
+  documentId: string;
+  revision: number;
+  convention: "aries-mdo-asc0-ic90-dsc180-mc270";
+  referenceFrame: {
+    identity: "equinoctial-zero-declination";
+    ownerDocumentId: string;
+    ownerRole: string;
+    ramc: number;
+    declination: 0;
+    sectors: Array<{ sign: number; absoluteStart: number; drawingStart: number; drawingCenter: number }>;
+  };
+  rings: Array<{
+    chartRole: string; documentId: string; revision: number;
+    ramc: number; geographicLatitude: number; sourceJd: number;
+    ayanamshaOffset: number; points?: AscensionalScenePoint[];
+  }>;
+}
+
 export interface SnapshotDocumentMeta {
+  chartPresentation?: ChartPresentation;
   documentId: string;
   featureKind?: string | null;
   launcherKind?: string | null;
+  ascensionalMethod?: {
+    purpose: string;
+    method: "ordinary" | "marr-estadella" | "experimental";
+    applyPrecession: boolean;
+    measure: "ecliptic" | "equatorial";
+    experimental: boolean;
+  };
   chartVisualMode?: "zodiac" | "mdo" | "mundane" | "ascensional_transits" | string | null;
   comparisonName?: string | null;
   compoundKind?: string | null;
@@ -452,6 +564,7 @@ export interface SnapshotDocumentMeta {
   viewMode: number;
   displayDatetime?: string | null;
   titleSuffix?: string | null;
+  viewTitle?: string | null;
   binding?: unknown;
   dirty: boolean;
   editDirty: boolean;
@@ -459,159 +572,7 @@ export interface SnapshotDocumentMeta {
   isActive: boolean;
   showRadixComparison?: boolean;
   symbolicTime?: SymbolicTimeReadout | null;
-  pdInChartFrame?: "fixed-radix" | "traditional-converse" | null;
-  pdInChartMovingRole?: "promissor" | "significator" | null;
-  pdInChartFixedRole?: "promissor" | "significator" | null;
 }
-
-export type PdEventDisplayFrame = "fixed-radix" | "traditional-converse";
-export type PdEventSourceRole = "primary" | "outer";
-export type PdEventTrack = "inner" | "outer";
-
-/**
- * Daemon-owned semantic state for the selected primary-direction event.
- * Canvas and React consumers display or route this snapshot; they never derive
- * phase from longitude, speed, time, or apparent glyph separation.
- */
-export interface PdDirectionState {
-  schemaVersion: 1;
-  eventId: string;
-  eventKind: string;
-  domain: "zodiacal" | "mundane";
-  system: number | null;
-  direction: "direct" | "converse";
-  eventJd: number | null;
-  eventLabel: string;
-  exactArcDegrees: number;
-  exactArcDegreesSigned: number;
-  currentArcDegreesSigned: number;
-  remainingArcDegreesSigned: number;
-  remainingArcDegrees: number;
-  exactNow: boolean;
-  phase: "applying" | "exact" | "separating";
-}
-
-export interface PdEventEquatorialPosition {
-  rightAscension: number;
-  declination: number;
-}
-
-export interface PdEventDirectionRayPrimitive {
-  kind: "direction-ray";
-  role: "promissor" | "significator";
-  motion: "fixed" | "moving";
-  ring: "inner" | "outer";
-  longitude: number;
-  latitude: number;
-  nativeCoordinate: number;
-  nativeCoordinateKind: string;
-  motionModel?: string | null;
-  equatorial?: PdEventEquatorialPosition | null;
-}
-
-export interface PdEventDirectedAnglePrimitive {
-  kind: "directed-angle";
-  role: "promissor" | "significator";
-  motion: "fixed" | "moving";
-  ring: "inner" | "outer";
-  angleId: number;
-  longitude: number;
-  latitude: number;
-  nativeCoordinate: number;
-  nativeCoordinateKind: string;
-  motionModel?: string | null;
-  equatorial?: PdEventEquatorialPosition | null;
-}
-
-export type PdEventPrimitive =
-  | PdEventDirectionRayPrimitive
-  | PdEventDirectedAnglePrimitive;
-
-export interface PdEventParty {
-  pointId: number;
-  dynamicKey?: string | null;
-  aspect: number;
-  glyph?: string | null;
-  color?: string | null;
-  colorRole?: string | null;
-}
-
-export interface PdEventPromissorParty extends PdEventParty {
-  aspectOffset: number;
-  bodyLongitude: number;
-  bodyLatitude: number;
-  rayLongitude: number;
-  rayLatitude: number;
-  aspectGlyph?: string | null;
-}
-
-export interface PdEventSignificatorParty extends PdEventParty {
-  longitude: number;
-}
-
-export interface PdEventAnglePromissorParty extends PdEventParty {
-  aspectOffset: number;
-  longitude: number;
-  rayLongitude: number;
-  rayLatitude: number;
-  aspectGlyph?: string | null;
-}
-
-export interface PdEventBodySignificatorParty extends PdEventParty {
-  aspectOffset: number;
-  bodyLongitude: number;
-  bodyLatitude: number;
-  rayLongitude: number;
-  rayLatitude: number;
-  aspectGlyph?: string | null;
-}
-
-interface PdEventOverlayBaseV1 {
-  schemaVersion: 1;
-  eventId: string;
-  supported: boolean;
-  unsupportedReason?: string | null;
-  domain?: "zodiacal";
-  system?: number;
-  projectionMode?: "ecliptic-feet" | "planets";
-  displayFrame?: PdEventDisplayFrame;
-  direction?: "direct" | "converse";
-  eventJd?: number | null;
-  exactArcDegrees: number;
-  exactArcDegreesSigned: number;
-  currentArcDegreesSigned: number;
-  remainingArcDegreesSigned: number;
-  remainingArcDegrees?: number;
-  exactNow: boolean;
-  residualDegrees?: number | null;
-  nativeCoordinateKind?: string;
-  literalLongitudeContact?: boolean;
-}
-
-/** Daemon-owned exact-event presentation contract for PDs in Chart. */
-export interface PdBodyAspectToAngleEventOverlayV1
-  extends PdEventOverlayBaseV1 {
-  eventKind: "body-aspect-to-angle";
-  parties?: {
-    promissor: PdEventPromissorParty;
-    significator: PdEventSignificatorParty;
-  } | null;
-  primitives: PdEventPrimitive[];
-}
-
-export interface PdAngleToBodyAspectEventOverlayV1
-  extends PdEventOverlayBaseV1 {
-  eventKind: "angle-to-body-aspect";
-  parties?: {
-    promissor: PdEventAnglePromissorParty;
-    significator: PdEventBodySignificatorParty;
-  } | null;
-  primitives: PdEventPrimitive[];
-}
-
-export type PdEventOverlayV1 =
-  | PdBodyAspectToAngleEventOverlayV1
-  | PdAngleToBodyAspectEventOverlayV1;
 
 export type SplitAspectSource = {
   id: string;
@@ -627,6 +588,8 @@ export type SplitAspectSelection = {
   sources: SplitAspectSource[];
   primarySourceId: string | null;
   outerSourceId: string | null;
+  /** Both sources sit in one pane whose view is ascensional. */
+  ascensional?: boolean;
 };
 
 export type SideBySideView = {
@@ -638,8 +601,97 @@ export type SideBySideView = {
   aspectList?: SplitAspectSelection;
 };
 
+/** Chart dashboard (Tab on singleton charts): daemon chart_dashboard.py. */
+export type ChartDashboardBody = {
+  id: string;
+  planet: number;
+  glyph?: string;
+  label?: string;
+  /** The wheel's motion marker: "R", "SR"/"SD" at a station, or "". */
+  motion?: string;
+  color?: string;
+  colorRole?: string;
+};
+
+export type ChartDashboardCell = {
+  orb?: string;
+  aspectType?: number;
+  /** Aspects table flag: applying (else separating). */
+  applying?: boolean;
+  glyph?: string;
+  color?: string;
+  colorRole?: string;
+  /** Engine in-orb declination flag (Aspects table cell `parallel`). */
+  parallel?: "parallel" | "contraparallel";
+  /** Print ink for the parallel mark (set by export print appearance). */
+  parallelColor?: string;
+};
+
+export type ChartDashboardMoonContact = {
+  planet: number;
+  aspectType: number;
+  glyph: string;
+  orb: number;
+  applying: boolean;
+  color?: string;
+  colorRole?: string;
+};
+
+export type ChartDashboardMoon = {
+  elongation: number;
+  increasingInLight: boolean;
+  increasingInLatitude: boolean;
+  swift: boolean;
+  longitudeSpeed: number;
+  /** Speed trend (the Inspector's arrow); null at the exact slowest/fastest moment. */
+  speedTrend?: "up" | "down" | null;
+  latitude: number;
+  lunarDay: { day: number; meanDay: number | null };
+  /** Null where the Inspector hides lunar mansions (show_manzil_in_inspector). */
+  mansion: { number: number; arabic: string; transliteration: string } | null;
+  voidOfCourse: { isVoid: boolean | null };
+  last: ChartDashboardMoonContact | null;
+  next: ChartDashboardMoonContact | null;
+};
+
+export type ChartDashboardModules = { aspectGrid: boolean; declination: boolean; moon: boolean };
+
+export interface ChartDashboard {
+  /** Singleton (radix-only) chart: Tab switches the dashboard. */
+  eligible: boolean;
+  enabled: boolean;
+  modules: ChartDashboardModules;
+  gridOrbs: boolean;
+  /** Enlarge the aspect triangle without changing the other modules. */
+  gridLarge?: boolean;
+  /** Heavy ∥ / # marks for declination parallels in orb (absent: shown). */
+  gridParallels?: boolean;
+  declinationMirrored: boolean;
+  /** Wide surfaces keep the horizontal declination bar (placement A2). */
+  declinationHorizontal?: boolean;
+  /** Moon Last/Next include every enabled body, not only Sun–Saturn. */
+  moonAllBodies?: boolean;
+  /** A time step taken while the dashboard view was hidden left the module
+   * data out; showing the dashboard refreshes the snapshot once. */
+  dataOmitted?: boolean;
+  /** Present only while the dashboard shows. */
+  bodies?: ChartDashboardBody[];
+  grid?: { cells: Record<string, ChartDashboardCell> };
+  declination?: {
+    obliquity: number;
+    points: Array<{ planet: number; declination: number }>;
+    /** Per body (SE id key): parallels / contraparallels in orb, engine flags. */
+    contacts?: Record<string, Array<{ partner: number; kind: "parallel" | "contraparallel"; orb: number }>>;
+  };
+  moon?: ChartDashboardMoon;
+}
+
 export interface ChartRenderSnapshot {
+  dashboard?: ChartDashboard | null;
+  ascensionalScene?: AscensionalScene;
   /** Both visible panes are exported from one committed daemon state. */
+  viewSide?: "left" | "right";
+  sideBySideSnapshotsBySide?: Partial<Record<"left" | "right", ChartRenderSnapshot>>;
   sideBySideSnapshots?: Record<string, ChartRenderSnapshot>;
   mundaneChart?: import("@/lib/daemon/client").MundaneChartData | null;
   sideBySide?: SideBySideView;
@@ -662,11 +714,15 @@ export interface ChartRenderSnapshot {
   displayDatetime: string;
   renderVariant: RenderVariant;
   overlayRenderMode: OverlayRenderMode;
+  /** Step snapshots only: payloads of the visible live surfaces, keyed by
+   * surface key (lib/live-surfaces.ts, daemon live_surface_service). */
+  liveSurfaces?: Record<string, import("@/lib/live-surfaces").LiveSurfaceResult>;
   // The post-burst snapshot updates semantic/store truth only. The immediately
   // preceding step frame already painted current wheel geometry and a validated
   // collision layout, so repainting canvas layers here would create a late snap.
   settleOverlayOnly?: boolean;
   renderInvalidation?: RenderInvalidation;
+  outerRingChartIndex?: number;
   outerRingMode: OuterRingMode;
   // Daemon-owned comparison grammar. Classic/Compact may use `with-houses` for
   // a second house annulus. Anglo keeps one coherent comparison layout and
@@ -675,6 +731,7 @@ export interface ChartRenderSnapshot {
   comparisonWholeSign?: boolean;
   interChartAspects?: InterChartAspect[];
   interChartBodyAspects?: InterChartBodyAspectsMap;
+  interChartBodyAspectIndices?: Partial<Record<InterChartAspectSelectionKey, number[]>>;
   /** Daemon-owned, current-orb cross-ring contacts used only to color feet. */
   multiwheelConjunctions?: MultiwheelConjunction[];
   outerRingItems?: Partial<Record<OuterRingMode, OuterRingItem[]>>;
@@ -683,8 +740,6 @@ export interface ChartRenderSnapshot {
   // aspect adjacency graph twice.
   clickAspectFlags?: ClickAspectFlags;
   bodyAspects?: BodyAspectsMap;
-  pdEventOverlay?: PdEventOverlayV1 | null;
-  pdDirectionState?: PdDirectionState | null;
   // Live session metadata (only on workspace document snapshots).
   document?: SnapshotDocumentMeta | null;
   debugTiming?: {
@@ -717,6 +772,8 @@ export interface ChartPalette {
   fortune: string;
   /** Fire, earth, air, water — the canonical zodiac-element palette. */
   elements?: readonly string[];
+  /** Global semantic palette for one, two, and three minor dignities. */
+  minorDignities?: readonly string[];
   planets: string[];   // 13-entry palette indexed by SE id
   aspects: string[];   // 14-entry palette indexed by aspect type
                        // (0=Conj, 1=Semisext, 2=Semisq, 3=Sext, 4=Quint,
@@ -729,7 +786,7 @@ export interface ChartPalette {
 
 // Global Surveil study mark: a captured zodiacal longitude rendered as a tick +
 // glyph/label outside the wheel (graphchart.drawSurveilMarks).
-export interface SurveilMark {
+export interface SurveilMark extends DrawingPoint {
   id: string;
   longitude: number;
   label: string;

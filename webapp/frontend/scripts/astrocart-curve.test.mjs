@@ -72,7 +72,7 @@ test('cancelled refinement cannot publish; caches retain live styles and replace
   assert.equal(publications[0].features[0].properties.color, 'updated-theme');
   api.cancel(); api.request(data, b);
   assert.equal(workers.length, 2);
-  assert.equal(publications.length, 2);
+  assert.equal(publications.length, 1, 'reusing the displayed mesh needs no second publication');
   data = { features: [ray()] };
   api.request(data, b);
   assert.equal(api.getData(data), data);
@@ -99,6 +99,109 @@ test('moving lines reuse unchanged static meshes without starting a new refineme
   assert.equal(api.getData(next).features[0].geometry, refinedStatic);
   assert.equal(api.getData(next).features[1].geometry, refinedSecond);
   assert.equal(api.getData(next).features[2], next.features[2]);
+});
+
+test('settings payloads retain exact Local Space meshes across cloned previews and interactive data', () => {
+  const workers = [], publications = [];
+  const api = refinement({ createWorker() {
+    const worker = { terminate() {}, postMessage(data) { this.data = data; } };
+    workers.push(worker); return worker;
+  }, publish() { publications.push(true); } });
+  const initial = { features: [ray(), ray({ bearing: 254 })] };
+  const view = viewport([13.4, 52.5], 18);
+  api.request(initial, view);
+  const meshes = initial.features.map(feature => curves.tessellate(feature, view).geometry);
+  workers[0].onmessage({ data: { geometries: meshes } });
+
+  for (let revision = 0; revision < 20; revision++) {
+    // The iframe receives new objects for every composed preview/interactive
+    // response, including unchanged Local Space lines and updated live style.
+    const next = { features: structuredClone(initial.features).reverse() };
+    next.features.forEach(feature => { feature.properties.color = `style-${revision}`; });
+    api.retainUnchanged(next);
+    assert.equal(api.getData(next).features[0].geometry, meshes[1]);
+    assert.equal(api.getData(next).features[1].geometry, meshes[0]);
+    assert.equal(api.getData(next).features[0].properties.color, `style-${revision}`);
+    api.request(next, view);
+  }
+  assert.equal(workers.length, 1, 'unchanged curves must not make another worker round trip');
+  assert.equal(publications.length, 1, 'unchanged curves must not repaint after the payload swap');
+});
+
+test('settings refine only new curves and never install a superseded bearing or viewport', () => {
+  const workers = [];
+  let publications = 0;
+  const api = refinement({ createWorker() {
+    const worker = { terminate() {}, postMessage(data) { this.data = data; } };
+    workers.push(worker); return worker;
+  }, publish() { publications++; } });
+  const view = viewport([13.4, 52.5], 18);
+  const initial = { features: [ray()] };
+  const retainedMesh = curves.tessellate(initial.features[0], view).geometry;
+  api.request(initial, view);
+  workers[0].onmessage({ data: { geometries: [retainedMesh] } });
+
+  const added = { features: [structuredClone(initial.features[0]), ray({ bearing: 90 })] };
+  api.retainUnchanged(added);
+  api.request(added, view);
+  assert.equal(workers[1].data.features.length, 1);
+  assert.equal(workers[1].data.features[0].properties.curve.bearing, 90);
+  assert.equal(api.getData(added).features[0].geometry, retainedMesh);
+
+  const changed = { features: [structuredClone(initial.features[0]), ray({ bearing: 100 })] };
+  api.retainUnchanged(changed);
+  api.request(changed, view);
+  workers[1].onmessage({ data: { geometries: [{ stale: true }] } });
+  assert.equal(publications, 1);
+  const changedMesh = curves.tessellate(changed.features[1], view).geometry;
+  workers[2].onmessage({ data: { geometries: [changedMesh] } });
+  assert.equal(api.getData(changed).features[0].geometry, retainedMesh);
+  assert.equal(api.getData(changed).features[1].geometry, changedMesh);
+
+  api.request(changed, viewport([14, 53], 20));
+  assert.equal(workers[3].data.features.length, 2, 'a new viewport still needs exact refinement');
+  api.cancel();
+  workers[3].onmessage({ data: { geometries: [{ stale: true }, { stale: true }] } });
+  assert.equal(publications, 2);
+});
+
+test('the map data bridge never paints an unchanged Local Space line at coarse precision again', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const html = await readFile(new URL('../../../Res/astrocart/map.html', import.meta.url), 'utf8');
+  const start = html.indexOf('    setData(geojson) {');
+  const end = html.indexOf('    setDynamicData(geojson) {', start);
+  assert.ok(start >= 0 && end > start);
+  const workers = [], painted = [];
+  const view = viewport([13.4, 52.5], 18);
+  const api = refinement({ createWorker() {
+    const worker = { terminate() {}, postMessage(data) { this.data = data; } };
+    workers.push(worker); return worker;
+  }, publish() {} });
+  const createBridge = new Function('curveRefinement', 'painted', 'view', `
+    const mapReady = true, ACTIVE_ASTROCART_STYLE = null;
+    let currentData, pendingData;
+    function runtimeOverlaySceneDeferred() { return false; }
+    function setStatus() {}
+    function postPerfSnapshot() {}
+    function pushData() {
+      painted.push(curveRefinement.getData(currentData));
+      curveRefinement.request(currentData, view);
+      return true;
+    }
+    return { ${html.slice(start, end)} };
+  `);
+  const bridge = createBridge(api, painted, view);
+  const data = { features: [ray()] };
+  bridge.setData(data);
+  const exact = curves.tessellate(data.features[0], view).geometry;
+  workers[0].onmessage({ data: { geometries: [exact] } });
+  painted.length = 0;
+  for (let revision = 0; revision < 20; revision++) {
+    bridge.setData(structuredClone(data));
+  }
+  assert.equal(painted.length, 20);
+  assert.ok(painted.every(payload => payload.features[0].geometry === exact));
+  assert.equal(workers.length, 1);
 });
 
 test('the actual worker loads the browser GeographicLib bundle without a DOM', async () => {

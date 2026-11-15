@@ -20,6 +20,7 @@ import time
 import numpy as np
 
 import astrology
+from aries.astrology.transit_fast.api import check_search_cancellation
 from aries.astrology.ephemeris_context import EphemerisContext
 import common
 import houses
@@ -40,6 +41,8 @@ KIND_CHIRON = 'chiron'
 KIND_ANGLE_ASC = 'angle_asc'
 KIND_ANGLE_MC = 'angle_mc'
 KIND_LOF = 'lof'
+KIND_VERTEX = 'vertex'             # Progressed Vertex (follows the progressed ARMC)
+KIND_ASTEROID = 'asteroid'         # Catalog asteroids (Swiss Ephemeris minor-planet files)
 # Mean-quotidian (Q2) Asc/MC: ARMC moves ~360.99°/native-year, so the angle is a
 # 360°-periodic function of age. Handled by an inverse-function table, not a
 # polynomial fit.
@@ -52,14 +55,17 @@ KIND_ANGLE_MC_QUOTIDIAN = 'angle_mc_quotidian'
 KIND_LOF_QUOTIDIAN = 'lof_quotidian'
 
 # Sampling cadence (samples per ephemeris day). Higher cadence captures faster motion.
+# The true node wobbles with a ~two-week period, so it samples like the Moon.
 _CADENCE = {
 	KIND_PLANET_FAST: 4.0,
 	KIND_PLANET_SLOW: 1.0,
-	KIND_NODE: 0.5,
+	KIND_NODE: 4.0,
 	KIND_CHIRON: 0.5,
 	KIND_ANGLE_ASC: 1.0,
 	KIND_ANGLE_MC: 1.0,
 	KIND_LOF: 4.0,
+	KIND_VERTEX: 1.0,
+	KIND_ASTEROID: 1.0,
 }
 
 # Maximum span (in symbolic days) per Chebyshev segment. Longer spans need more
@@ -68,27 +74,42 @@ _CADENCE = {
 _SEGMENT_DAYS = {
 	KIND_PLANET_FAST: 20.0,
 	KIND_PLANET_SLOW: 50.0,
-	KIND_NODE: 200.0,
+	KIND_NODE: 20.0,
 	KIND_CHIRON: 200.0,
 	KIND_ANGLE_ASC: 50.0,
 	KIND_ANGLE_MC: 50.0,
 	KIND_LOF: 20.0,
+	KIND_VERTEX: 50.0,
+	KIND_ASTEROID: 50.0,
 }
 
 # Polynomial degree per segment. Slightly oversized — Chebyshev cost is small.
 _SEGMENT_DEGREE = {
 	KIND_PLANET_FAST: 14,
 	KIND_PLANET_SLOW: 10,
-	KIND_NODE: 6,
+	KIND_NODE: 14,
 	KIND_CHIRON: 8,
 	KIND_ANGLE_ASC: 10,
 	KIND_ANGLE_MC: 10,
 	KIND_LOF: 14,
+	KIND_VERTEX: 10,
+	KIND_ASTEROID: 10,
 }
 
-# Body IDs the fast path supports today. Asc/MC/LoF are deliberately excluded
-# until we add the angle/state sampler — the search backend falls back to the
-# legacy step loop for those.
+# Every fitted segment is checked against the true sampler at the midpoints of
+# its sample grid. A segment whose error exceeds the tolerance is split in two
+# and resampled at twice the density, so a fast or irregular body tightens its
+# own fit instead of needing a hand-tuned cadence (or a slow fallback path).
+_FIT_TOLERANCE_DEG = 1e-5
+_MAX_REFINE_DEPTH = 6
+
+
+class EphemerisUnavailable(Exception):
+	"""A body's ephemeris file is missing for the fitted span."""
+
+
+# Planet kinds by Swiss Ephemeris index; nodes, Chiron, angles, Lots, the
+# Vertex and asteroids are resolved by id in `_body_kind`.
 _PLANET_KIND_BY_INDEX = {
 	astrology.SE_SUN: KIND_PLANET_SLOW,
 	astrology.SE_MOON: KIND_PLANET_FAST,
@@ -100,6 +121,8 @@ _PLANET_KIND_BY_INDEX = {
 	astrology.SE_URANUS: KIND_PLANET_SLOW,
 	astrology.SE_NEPTUNE: KIND_PLANET_SLOW,
 	astrology.SE_PLUTO: KIND_PLANET_SLOW,
+	astrology.SE_MEAN_APOG: KIND_PLANET_FAST,
+	astrology.SE_OSCU_APOG: KIND_PLANET_FAST,
 }
 
 
@@ -117,6 +140,15 @@ def supported_body_id(catalog, options, body_id):
 		# go through the cheby fit; MEAN_QUOTIDIAN_Q2 takes the inverse-function
 		# table path (see _build_quotidian_angle_table).
 		return True
+	if body_id == 'point:vertex':
+		# The Vertex follows the progressed ARMC. Mean-quotidian ARMC turns a
+		# full circle per progressed day; the list keeps the Vertex as a
+		# receiving point there (secondary_vertex_acting_supported).
+		return posfordate.progression_angle_method(
+			getattr(options, 'progressed_angle_method', posfordate.TRUE_SOLAR_ARC_LON)
+		) != posfordate.MEAN_QUOTIDIAN_Q2
+	if body_id.startswith('asteroid:'):
+		return obj.planet_index is not None and not getattr(obj, 'ephemeris_unavailable', False)
 	if body_id == 'point:lof':
 		# LoF rides on Asc + slow (Sun, Moon) terms. For the four slow angle
 		# methods we fit it as a single polynomial. For MEAN_QUOTIDIAN_Q2 the Asc
@@ -145,6 +177,10 @@ def _body_kind(body_id, planet_index, options=None):
 		return KIND_ANGLE_MC_QUOTIDIAN if angle_method == posfordate.MEAN_QUOTIDIAN_Q2 else KIND_ANGLE_MC
 	if body_id == 'point:lof':
 		return KIND_LOF_QUOTIDIAN if angle_method == posfordate.MEAN_QUOTIDIAN_Q2 else KIND_LOF
+	if body_id == 'point:vertex':
+		return KIND_VERTEX
+	if body_id.startswith('asteroid:'):
+		return KIND_ASTEROID
 	return _PLANET_KIND_BY_INDEX.get(planet_index, KIND_PLANET_SLOW)
 
 
@@ -171,6 +207,7 @@ def _sample_planet_states(jd_array, planet_index, flags, context=None):
 			out[i, :] = tuple(float(value) for value in data[:6])
 		return out
 	for chunk_start in range(0, len(jd_array), 64):
+		check_search_cancellation()
 		with context.activate():
 			for i in range(chunk_start, min(chunk_start + 64, len(jd_array))):
 				jd = jd_array[i]
@@ -199,11 +236,36 @@ def _sample_node_longitudes(jd_array, radix, flags, *, descending, context=None)
 			out[i] = util.normalize(float(data[planets.Planet.LONG]) + offset)
 		return out
 	for chunk_start in range(0, len(jd_array), 64):
+		check_search_cancellation()
 		with context.activate():
 			for i in range(chunk_start, min(chunk_start + 64, len(jd_array))):
 				jd = jd_array[i]
 				_serr, data = astrology.swe_calc_ut(float(jd), int(node_id), int(flags))
 				out[i] = util.normalize(float(data[planets.Planet.LONG]) + offset)
+	return out
+
+
+def _sample_asteroid_longitudes(jd_array, planet_index, flags, context):
+	out = np.empty(len(jd_array), dtype=np.float64)
+	for chunk_start in range(0, len(jd_array), 64):
+		check_search_cancellation()
+		with context.activate():
+			for i in range(chunk_start, min(chunk_start + 64, len(jd_array))):
+				ret, data, _serr = astrology.swe_calc_ut_ex(float(jd_array[i]), int(planet_index), int(flags))
+				if int(ret) & 0xFFFFFFFF == 0xFFFFFFFF or len(data) < 1:
+					raise EphemerisUnavailable(planet_index)
+				out[i] = util.normalize(float(data[0]))
+	return out
+
+
+def _sample_vertex_longitudes(symbolic_age_array, radix, options, method):
+	"""Canonical progressed Vertex: the same house state the snapshot path reads."""
+	out = np.empty(len(symbolic_age_array), dtype=np.float64)
+	for i, age in enumerate(symbolic_age_array):
+		state = posfordate.progressed_angle_state_for_symbolic_age(
+			radix, options, float(age), method=method,
+		)
+		out[i] = util.normalize(float(state['houses'].ascmc[houses.Houses.VERTEX]))
 	return out
 
 
@@ -228,6 +290,7 @@ def _sample_angle_longitudes(
 		)
 		state_for_age = sampler.sample
 	for chunk_start in range(0, len(jd_array), 64):
+		check_search_cancellation()
 		chunk_end = min(chunk_start + 64, len(jd_array))
 		with context.activate():
 			for i in range(chunk_start, chunk_end):
@@ -325,47 +388,78 @@ def _segment_breakpoints(span_start_age, span_end_age, kind):
 	return out
 
 
+def _fit_segment(seg_ages, seg_vals, degree, seg_lo, seg_hi):
+	if len(seg_ages) < degree + 2:
+		# Not enough samples in this segment; collapse to a single linear fit
+		deg = max(1, len(seg_ages) - 1)
+	else:
+		deg = degree
+	cheb = np.polynomial.chebyshev.Chebyshev.fit(seg_ages, seg_vals, deg, domain=[seg_lo, seg_hi])
+	cheb_deriv = cheb.deriv()
+	# Dense grid: enough resolution that adjacent samples bracket every
+	# sign change against any horizontal target. Built once per segment at
+	# fit cost (single vectorized polynomial eval) and reused for every
+	# target_lon × winding-number-shift combination in find_aspect_hits —
+	# replacing per-target Chebyshev.roots() (O(d^3) eigenvalue) with
+	# O(grid) sign-scan + handful of Newton iterations per hit.
+	dense_n = max(_DENSE_POINTS_FLOOR, deg * _DENSE_POINTS_PER_DEGREE)
+	dense_ages = np.linspace(seg_lo, seg_hi, dense_n)
+	dense_lons = cheb(dense_ages)
+	extrema_ages = []
+	for derivative_root in cheb_deriv.roots():
+		if math.fabs(float(getattr(derivative_root, 'imag', 0.0))) > 1e-9:
+			continue
+		extremum_age = float(getattr(derivative_root, 'real', derivative_root))
+		if seg_lo - 1e-9 <= extremum_age <= seg_hi + 1e-9:
+			extrema_ages.append(extremum_age)
+	extrema_ages = np.asarray(extrema_ages, dtype=np.float64)
+	extrema_lons = cheb(extrema_ages)
+	return _Segment(
+		seg_lo, seg_hi, cheb,
+		float(np.min(dense_lons)), float(np.max(dense_lons)),
+		dense_ages, dense_lons, cheb_deriv,
+		extrema_ages, extrema_lons,
+	)
+
+
 def _fit_segments(age_samples, lon_samples_unwrapped, kind, span_start_age, span_end_age):
 	"""Cut the global sample set into segments and fit Chebyshev to each."""
 	segments = []
 	degree = _SEGMENT_DEGREE[kind]
 	for seg_lo, seg_hi in _segment_breakpoints(span_start_age, span_end_age, kind):
 		mask = (age_samples >= seg_lo - 1e-9) & (age_samples <= seg_hi + 1e-9)
-		# Need enough samples for the degree we want
-		seg_ages = age_samples[mask]
-		seg_vals = lon_samples_unwrapped[mask]
-		if len(seg_ages) < degree + 2:
-			# Not enough samples in this segment; collapse to a single linear fit
-			deg = max(1, len(seg_ages) - 1)
-		else:
-			deg = degree
-		cheb = np.polynomial.chebyshev.Chebyshev.fit(seg_ages, seg_vals, deg, domain=[seg_lo, seg_hi])
-		cheb_deriv = cheb.deriv()
-		# Dense grid: enough resolution that adjacent samples bracket every
-		# sign change against any horizontal target. Built once per segment at
-		# fit cost (single vectorized polynomial eval) and reused for every
-		# target_lon × winding-number-shift combination in find_aspect_hits —
-		# replacing per-target Chebyshev.roots() (O(d^3) eigenvalue) with
-		# O(grid) sign-scan + handful of Newton iterations per hit.
-		dense_n = max(_DENSE_POINTS_FLOOR, deg * _DENSE_POINTS_PER_DEGREE)
-		dense_ages = np.linspace(seg_lo, seg_hi, dense_n)
-		dense_lons = cheb(dense_ages)
-		extrema_ages = []
-		for derivative_root in cheb_deriv.roots():
-			if math.fabs(float(getattr(derivative_root, 'imag', 0.0))) > 1e-9:
-				continue
-			extremum_age = float(getattr(derivative_root, 'real', derivative_root))
-			if seg_lo - 1e-9 <= extremum_age <= seg_hi + 1e-9:
-				extrema_ages.append(extremum_age)
-		extrema_ages = np.asarray(extrema_ages, dtype=np.float64)
-		extrema_lons = cheb(extrema_ages)
-		segments.append(_Segment(
-			seg_lo, seg_hi, cheb,
-			float(np.min(dense_lons)), float(np.max(dense_lons)),
-			dense_ages, dense_lons, cheb_deriv,
-			extrema_ages, extrema_lons,
-		))
+		segments.append(_fit_segment(age_samples[mask], lon_samples_unwrapped[mask], degree, seg_lo, seg_hi))
 	return segments
+
+
+def _segment_error_deg(segment, sample_fn, sample_count):
+	"""Largest fit error at the midpoints of the segment's sample grid."""
+	count = max(2, int(sample_count))
+	edges = np.linspace(segment.age_lo, segment.age_hi, count)
+	mids = 0.5 * (edges[:-1] + edges[1:])
+	true_lons = sample_fn(mids)
+	fit_lons = np.mod(segment.cheb(mids), 360.0)
+	diff = np.abs(np.mod(fit_lons - true_lons + 180.0, 360.0) - 180.0)
+	return float(np.max(diff)) if len(diff) else 0.0
+
+
+def _verified_segments(segments, sample_fn, kind, sample_count, depth=0):
+	"""Split and resample any segment the true sampler disagrees with."""
+	out = []
+	degree = _SEGMENT_DEGREE[kind]
+	for seg in segments:
+		check_search_cancellation()
+		if depth >= _MAX_REFINE_DEPTH or _segment_error_deg(seg, sample_fn, sample_count) <= _FIT_TOLERANCE_DEG:
+			out.append(seg)
+			continue
+		mid = 0.5 * (seg.age_lo + seg.age_hi)
+		halves = []
+		for lo, hi in ((seg.age_lo, mid), (mid, seg.age_hi)):
+			ages = np.linspace(lo, hi, max(degree + 4, int(sample_count)))
+			lons = _unwrap_longitude(sample_fn(ages))
+			halves.append(_fit_segment(ages, lons, degree, lo, hi))
+		out.extend(_verified_segments(halves, sample_fn, kind, max(degree + 4, int(sample_count)), depth + 1))
+	return out
 
 
 # ---------------------------------------------------------------------------
@@ -775,6 +869,7 @@ def _eval_segments_at_age(segments, age):
 	if not segments:
 		return 0.0
 	for seg in segments:
+		check_search_cancellation()
 		if seg.age_lo - 1e-9 <= age <= seg.age_hi + 1e-9:
 			return float(seg.cheb(age))
 	seg = segments[0] if age < segments[0].age_lo else segments[-1]
@@ -1061,71 +1156,58 @@ class ProgressionFit(object):
 		# At least degree+4 samples per segment, plus a small global floor.
 		min_total = max(8, int(math.ceil(span * cadence)) + 4)
 		ages = np.linspace(self.span_start_age, self.span_end_age, min_total)
-		jds = self.birth_jd + ages
-
-		if kind in (KIND_PLANET_FAST, KIND_PLANET_SLOW):
-			states = self._planet_states(
-				jds,
-				planet_index,
-				self.flags,
-			)
-			lons = np.mod(states[:, planets.Planet.LONG], 360.0)
-		elif kind == KIND_NODE:
-			descending = (body_id == 'planet:desc_node')
-			lons = _sample_node_longitudes(
-				jds,
-				self.radix,
-				self.flags,
-				descending=descending,
-				context=self.ephemeris_context,
-			)
-		elif kind == KIND_CHIRON:
-			states = self._planet_states(
-				jds,
-				astrology.SE_CHIRON,
-				self.flags,
-			)
-			lons = np.mod(states[:, planets.Planet.LONG], 360.0)
-		elif kind in (KIND_ANGLE_ASC, KIND_ANGLE_MC):
-			lons = _sample_angle_longitudes(
-				jds,
-				ages,
-				self.radix,
-				self.options,
-				kind,
-				method=self.method,
-				context=self.ephemeris_context,
-				state_for_age=self._angle_state_for_age,
-			)
-		elif kind == KIND_LOF:
+		if kind == KIND_LOF:
 			# LoF derives from Sun, Moon, and Asc; ensure those fits exist first.
 			self.fit('planet:sun', KIND_PLANET_SLOW, planet_index=astrology.SE_SUN)
 			self.fit('planet:moon', KIND_PLANET_FAST, planet_index=astrology.SE_MOON)
 			self.fit('angle:asc', KIND_ANGLE_ASC)
-			lons = _sample_lof_longitudes(
-				jds,
-				ages,
-				self.radix,
-				self.options,
-				self.flags,
-				method=self.method,
-				context=self.ephemeris_context,
-				state_for_age=self._angle_state_for_age,
-				moon_ecliptic_states=self._planet_states(
-					jds,
-					astrology.SE_MOON,
-					self.flags,
-				),
-			)
-		else:
-			raise ValueError('unknown body kind: %r' % (kind,))
-
-		unwrapped = _unwrap_longitude(lons)
-		self._segments[body_id] = _fit_segments(ages, unwrapped, kind, self.span_start_age, self.span_end_age)
+		sample_fn = self._longitude_sampler(body_id, kind, planet_index)
+		segments = _fit_segments(ages, _unwrap_longitude(sample_fn(ages)), kind, self.span_start_age, self.span_end_age)
+		per_segment = max(_SEGMENT_DEGREE[kind] + 4, int(math.ceil(min_total / max(1, len(segments)))))
+		self._segments[body_id] = _verified_segments(segments, sample_fn, kind, per_segment)
 		self._kinds[body_id] = kind
 		if prog_log.enabled():
 			self.fit_timings_ms[body_id] = (time.perf_counter() - t0) * 1000.0
 			self.sample_counts[body_id] = int(min_total)
+
+	def _longitude_sampler(self, body_id, kind, planet_index):
+		"""Return ages (ephemeris days from birth) -> true longitudes for one body."""
+		if kind in (KIND_PLANET_FAST, KIND_PLANET_SLOW, KIND_CHIRON):
+			index = astrology.SE_CHIRON if kind == KIND_CHIRON else planet_index
+
+			def sample(ages):
+				states = self._planet_states(self.birth_jd + ages, index, self.flags)
+				return np.mod(states[:, planets.Planet.LONG], 360.0)
+			return sample
+		if kind == KIND_NODE:
+			descending = (body_id == 'planet:desc_node')
+			return lambda ages: _sample_node_longitudes(
+				self.birth_jd + ages, self.radix, self.flags,
+				descending=descending, context=self.ephemeris_context,
+			)
+		if kind == KIND_ASTEROID:
+			return lambda ages: _sample_asteroid_longitudes(
+				self.birth_jd + ages, planet_index, self.flags, self.ephemeris_context,
+			)
+		if kind == KIND_VERTEX:
+			return lambda ages: _sample_vertex_longitudes(ages, self.radix, self.options, self.method)
+		if kind in (KIND_ANGLE_ASC, KIND_ANGLE_MC):
+			return lambda ages: _sample_angle_longitudes(
+				self.birth_jd + ages, ages, self.radix, self.options, kind,
+				method=self.method, context=self.ephemeris_context,
+				state_for_age=self._angle_state_for_age,
+			)
+		if kind == KIND_LOF:
+			def sample(ages):
+				jds = self.birth_jd + ages
+				return _sample_lof_longitudes(
+					jds, ages, self.radix, self.options, self.flags,
+					method=self.method, context=self.ephemeris_context,
+					state_for_age=self._angle_state_for_age,
+					moon_ecliptic_states=self._planet_states(jds, astrology.SE_MOON, self.flags),
+				)
+			return sample
+		raise ValueError('unknown body kind: %r' % (kind,))
 
 	def _angle_state_for_age(self, symbolic_age):
 		key = round(float(symbolic_age), 12)
@@ -1154,6 +1236,7 @@ class ProgressionFit(object):
 			return None
 		age = float(symbolic_age)
 		for seg in segments:
+			check_search_cancellation()
 			if seg.age_lo - 1e-9 <= age <= seg.age_hi + 1e-9:
 				return util.normalize(float(seg.cheb(age)))
 		# Outside fitted span — clamp to nearest segment for robustness.
@@ -1180,10 +1263,11 @@ class ProgressionFit(object):
 			return None
 		age = float(symbolic_age)
 		for seg in segments:
+			check_search_cancellation()
 			if seg.age_lo - 1e-9 <= age <= seg.age_hi + 1e-9:
-				return float(seg.cheb.deriv()(age))
+				return float(seg.cheb_deriv(age))
 		seg = segments[0] if age < segments[0].age_lo else segments[-1]
-		return float(seg.cheb.deriv()(age))
+		return float(seg.cheb_deriv(age))
 
 	def find_aspect_hits(self, body_id, target_lon, with_candidate_kinds=False):
 		"""Return a sorted list of symbolic ages where body crosses target_lon (mod 360).
@@ -1197,80 +1281,85 @@ class ProgressionFit(object):
 		Near-horizontal extrema are candidates rather than accepted hits; the
 		search backend certifies them against the canonical progression engine.
 		"""
+		return self.find_aspect_hits_many(body_id, (target_lon,), with_candidate_kinds)[0]
+
+	def find_aspect_hits_many(self, body_id, target_lons, with_candidate_kinds=False):
+		"""`find_aspect_hits` for many targets of one body, one list per target.
+
+		Each segment's dense grid is scanned against every target at once (one
+		residual matrix per winding shift), so a body's whole target set costs a
+		few vectorized passes instead of one Python round per target.
+		"""
 		lof_table = self._quotidian_lof.get(body_id)
-		if lof_table is not None:
-			hits = _quotidian_lof_find_aspect_hits(self, lof_table, target_lon)
-			return [(age, False) for age in hits] if with_candidate_kinds else hits
 		quot = self._quotidian.get(body_id)
-		if quot is not None:
-			hits = _quotidian_find_aspect_hits(quot, target_lon)
-			return [(age, False) for age in hits] if with_candidate_kinds else hits
-		segments = self._segments.get(body_id)
-		if not segments:
-			return []
-		hits = []
-		target = float(target_lon)
-		for seg in segments:
+		if lof_table is not None or quot is not None:
+			out = []
+			for target_lon in target_lons:
+				check_search_cancellation()
+				if lof_table is not None:
+					hits = _quotidian_lof_find_aspect_hits(self, lof_table, target_lon)
+				else:
+					hits = _quotidian_find_aspect_hits(quot, target_lon)
+				out.append([(age, False) for age in hits] if with_candidate_kinds else hits)
+			return out
+		targets = np.asarray([float(value) for value in target_lons], dtype=np.float64)
+		hits = [[] for _ in range(len(targets))]
+		for seg in self._segments.get(body_id) or ():
+			check_search_cancellation()
 			# Inflate bracket to be safe against flat polynomial extrema.
 			lo = seg.lon_lo - 1.0
 			hi = seg.lon_hi + 1.0
-			# Smallest k such that target + 360 k >= lo
-			k_min = int(math.floor((lo - target) / 360.0))
-			k_max = int(math.ceil((hi - target) / 360.0))
-			dense_ages = seg.dense_ages
-			dense_lons = seg.dense_lons
+			k_min = int(np.floor(np.min((lo - targets) / 360.0))) if len(targets) else 0
+			k_max = int(np.ceil(np.max((hi - targets) / 360.0))) if len(targets) else -1
 			for k in range(k_min, k_max + 1):
-				shifted_target = target + 360.0 * k
-				if shifted_target < seg.lon_lo - 1.0 or shifted_target > seg.lon_hi + 1.0:
+				shifted = targets + 360.0 * k
+				active = np.nonzero((shifted >= lo) & (shifted <= hi))[0]
+				if len(active) == 0:
 					continue
-				# Sign-change scan on the cached dense grid — O(n) and vectorized.
-				residual = dense_lons - shifted_target
-				# Adjacent pair brackets a root when signs differ, including the
-				# case where one sample landed exactly on the target (sign 0).
-				# np.sign returns {-1, 0, +1}; pairs (0,0) correctly resolve to
-				# equal (not a bracket) because they share no root information.
-				sign_lo = np.sign(residual[:-1])
-				sign_hi = np.sign(residual[1:])
-				bracket_mask = sign_lo != sign_hi
-				bracket_idx = np.where(bracket_mask)[0]
-				for idx in bracket_idx:
-					a_lo = float(dense_ages[idx])
-					a_hi = float(dense_ages[idx + 1])
-					r_lo = float(residual[idx])
-					r_hi = float(residual[idx + 1])
+				active_shifted = shifted[active]
+				# Sign-change scan on the cached dense grid. np.sign returns
+				# {-1, 0, +1}, so a sample landing exactly on the target still
+				# brackets, and (0, 0) pairs share no root information.
+				residual = seg.dense_lons[:, None] - active_shifted[None, :]
+				signs = np.sign(residual)
+				rows, cols = np.nonzero(signs[:-1] != signs[1:])
+				for idx, col in zip(rows.tolist(), cols.tolist()):
 					root_age = _refine_root_safe_newton(
-						seg.cheb, seg.cheb_deriv, shifted_target,
-						a_lo, a_hi, r_lo, r_hi,
+						seg.cheb, seg.cheb_deriv, float(active_shifted[col]),
+						float(seg.dense_ages[idx]), float(seg.dense_ages[idx + 1]),
+						float(residual[idx, col]), float(residual[idx + 1, col]),
 					)
 					if root_age is None:
 						continue
 					if root_age < seg.age_lo - 1e-9 or root_age > seg.age_hi + 1e-9:
 						continue
-					hits.append((root_age, False))
+					hits[int(active[col])].append((root_age, False))
 				# A tangent contact has no sign change. Derivative roots provide a
 				# bounded candidate set; canonical finalization below this layer
 				# decides whether the true curve touches the target or merely comes
 				# close to it.
-				if with_candidate_kinds:
-					for extremum_age, extremum_lon in zip(
-						seg.extrema_ages,
-						seg.extrema_lons,
-					):
-						extremum_error = float(extremum_lon) - shifted_target
-						if math.fabs(extremum_error) <= _TANGENT_CANDIDATE_TOLERANCE_DEG:
-							hits.append((float(extremum_age), True))
-		# Sort + dedupe near-coincident roots (segment boundaries can produce both sides).
-		hits.sort(key=lambda item: item[0])
-		deduped = []
-		for age, is_tangent in hits:
-			if deduped and abs(age - deduped[-1][0]) < 1e-6:
-				if deduped[-1][1] and not is_tangent:
-					deduped[-1] = (age, False)
-				continue
-			deduped.append((age, is_tangent))
-		if with_candidate_kinds:
-			return deduped
-		return [age for age, _is_tangent in deduped]
+				if with_candidate_kinds and len(seg.extrema_ages):
+					errors = np.abs(seg.extrema_lons[:, None] - active_shifted[None, :])
+					for ext, col in zip(*np.nonzero(errors <= _TANGENT_CANDIDATE_TOLERANCE_DEG)):
+						hits[int(active[col])].append((float(seg.extrema_ages[ext]), True))
+		return [_dedupe_hits(target_hits, with_candidate_kinds) for target_hits in hits]
+
+
+def _dedupe_hits(hits, with_candidate_kinds):
+	"""Sort + dedupe near-coincident roots (segment boundaries can produce both sides)."""
+	if not hits:
+		return []
+	hits.sort(key=lambda item: item[0])
+	deduped = []
+	for age, is_tangent in hits:
+		if deduped and abs(age - deduped[-1][0]) < 1e-6:
+			if deduped[-1][1] and not is_tangent:
+				deduped[-1] = (age, False)
+			continue
+		deduped.append((age, is_tangent))
+	if with_candidate_kinds:
+		return deduped
+	return [age for age, _is_tangent in deduped]
 
 
 # ---------------------------------------------------------------------------
@@ -1309,6 +1398,7 @@ def _sample_lof_longitudes(
 		)
 		state_for_age = sampler.sample
 	for chunk_start in range(0, len(jd_array), 64):
+		check_search_cancellation()
 		chunk_end = min(chunk_start + 64, len(jd_array))
 		with context.activate():
 			for i in range(chunk_start, chunk_end):

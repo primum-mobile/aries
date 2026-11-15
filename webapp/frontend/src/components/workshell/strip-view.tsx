@@ -5,6 +5,8 @@
 
 "use client";
 
+import { useTablePrecision } from "./table-precision-menu";
+import { formatTableDegrees } from "@/lib/table/angle-precision";
 import * as React from "react";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
@@ -55,6 +57,7 @@ const EMPTY_STRIP_PROFILE_OVERRIDES: Readonly<Record<string, string>> = Object.f
 
 export function StripView({ payload }: Props) {
   const t = useT();
+  const precision = useTablePrecision();
   const styleRevision = useStyleRevision();
   const chartProfileOverrides = useThemeStore(
     (state) => state.theme?.profileOverrides.chartPalette ?? EMPTY_STRIP_PROFILE_OVERRIDES,
@@ -78,6 +81,7 @@ export function StripView({ payload }: Props) {
     return (
       <div
         ref={hostRef}
+        data-aries-true-color=""
         className="font-morinus-text flex h-full min-h-0 items-center justify-center p-6"
         style={{
           backgroundColor: renderStyle.palette.background,
@@ -107,6 +111,7 @@ export function StripView({ payload }: Props) {
   return (
     <div
       ref={hostRef}
+      data-aries-true-color=""
       className="min-h-0 flex-1 overflow-auto"
       style={{
         backgroundColor: palette.background,
@@ -210,7 +215,7 @@ export function StripView({ payload }: Props) {
                   fontSize: typography.fontSize,
                 }}
               >
-                <title>{`${b.body.label} ${b.body.signGlyph} ${b.body.minuteLabel}`}</title>
+                <title>{`${b.body.label} ${b.body.signGlyph} ${formatTableDegrees(Math.min(b.body.degree, 30 - 1 / 3600), precision)}`}</title>
                 {b.body.glyph}
               </text>
             </g>

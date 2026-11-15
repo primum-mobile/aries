@@ -107,7 +107,7 @@ _GEODETIC_MERIDIANS = {
 _POINT_CLR_INDEX: dict[str, int] = {
     "sun": 0, "moon": 1, "mercury": 2, "venus": 3, "mars": 4,
     "jupiter": 5, "saturn": 6, "uranus": 7, "neptune": 8, "pluto": 9,
-    "chiron": 12, "node_asc": 10, "node_desc": 10,
+    "chiron": 12, "apogee": 1, "node_asc": 10, "node_desc": 10,
 }
 
 _SEMANTIC_POINT_TO_LEGACY_ID: dict[str, str] = {
@@ -129,6 +129,9 @@ _SEMANTIC_POINT_TO_LEGACY_ID: dict[str, str] = {
         )
     },
     "ephemeris-body:15": "chiron",
+    "point:apogee": "apogee",
+    "ephemeris-body:12": "apogee",
+    "ephemeris-body:13": "apogee",
     "logical-node:north": "node_asc",
     "logical-node:south": "node_desc",
 }
@@ -139,7 +142,7 @@ _SEMANTIC_POINT_TO_LEGACY_ID: dict[str, str] = {
 _LEGACY_POINT_CLR_INDEX: dict[str, int] = {
     "sun": 0, "moon": 1, "mercury": 2, "venus": 3, "mars": 4,
     "jupiter": 5, "saturn": 6, "uranus": 7, "neptune": 8, "pluto": 9,
-    "chiron": 10, "node_asc": 11, "node_desc": 12,
+    "chiron": 10, "apogee": 1, "node_asc": 11, "node_desc": 12,
 }
 
 _MORINUS_PLANETS_DEFAULT = ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
@@ -569,7 +572,7 @@ def _astrocart_renderer_style(is_dark: bool) -> dict:
         "fallbackUnknownColor": "#888888",
         "eclipseShadowColor": "rgba(5, 6, 7, 0.34)" if is_dark else "rgba(38, 42, 46, 0.18)",
         "eclipseOutlineColor": "#c8c2b5" if is_dark else "#5e6872",
-        "eclipseCenterColor": "#d9b760" if is_dark else "#8a6418",
+        "eclipseCenterColor": "#00bfff" if is_dark else "#112bcd",
         "eclipseHaloColor": "rgba(8, 11, 15, 0.92)" if is_dark else "rgba(255, 255, 255, 0.92)",
         "asterismHighlightColor": "#c9a7ff" if is_dark else "#6d3fb2",
         "asterismShadowColor": "#4f8cff" if is_dark else "#376ec7",
@@ -739,6 +742,7 @@ _UNICODE_GLYPHS: dict[str, str] = {
     "uranus": "♅",    # ♅
     "neptune": "♆",   # ♆
     "pluto": "♇",     # ♇
+    "apogee": "⚸",
     "chiron": "⚷",    # ⚷
     "node_asc": "☊",  # ☊
     "node_desc": "☋", # ☋
@@ -842,6 +846,8 @@ def _morinus_glyph_for(point_id: str, options) -> str:
         return "L"
     if point_id == "chiron":
         return "}"
+    if point_id == "apogee":
+        return "⚸"
     clr_idx = _POINT_CLR_INDEX.get(point_id)
     if clr_idx is None or clr_idx > 9:
         return ""
@@ -1576,13 +1582,15 @@ def normalized_astrocart_line_weight(value: Any) -> str:
 
 
 # Map line labels (ACG Appearance): planet names, or Morinus planet glyphs with
-# only the angle/aspect/bearing text ("<Venus glyph> ASC").
-ASTROCART_LINE_LABELS_NAMES = "names"
+# only the angle/aspect/bearing text ("<Venus glyph> ASC"). Glyphs are the
+# default: a stored preference without a choice (saved before the switch
+# existed) gets glyphs, while an explicit "names" choice is kept.
+ASTROCART_LINE_LABELS_GLYPHS = "glyphs"
 ASTROCART_LINE_LABELS = ("names", "glyphs")
 
 
 def normalized_astrocart_line_labels(value: Any) -> str:
-    return value if value in ASTROCART_LINE_LABELS else ASTROCART_LINE_LABELS_NAMES
+    return value if value in ASTROCART_LINE_LABELS else ASTROCART_LINE_LABELS_GLYPHS
 
 
 # Local Space line labels show the bearing ("Sun 45°") only when turned on in
@@ -1739,13 +1747,15 @@ class AstrocartService:
 
     def _display_style_for_points(self, points: Sequence[astrocart.ACGPoint]) -> dict:
         opts = chart_snapshot_service.options
+        signal_color = None
         try:
             # Runtime import avoids the options-service/chart-service module
             # cycle. The non-mutating adapter applies a chart-scoped profile
             # base plus scalar chart colors without touching live options.
-            from webapp.daemon.options_service import options_service
+            from webapp.daemon.options_service import options_service, _style_signal_color
 
             active_profile, effective_opts = options_service.get_style_chart_render_context(opts)
+            signal_color = _style_signal_color(opts, active_profile)
         except Exception:
             active_profile = None
             effective_opts = opts
@@ -1776,6 +1786,10 @@ class AstrocartService:
         )
         renderer_style["referenceAscColor"] = angle_color
         renderer_style["referenceMcColor"] = angle_color
+        renderer_style["eclipseCenterColor"] = (
+            _profile_color((active_profile or {}).get("overrides", {}).get("app.color.signal"))
+            or _hex_bg(signal_color, renderer_style["eclipseCenterColor"])
+        )
         renderer_style["referenceHouseGridColor"] = _hex_bg(
             getattr(effective_opts, "clrhouses", None),
             renderer_style["referenceHouseGridColor"],

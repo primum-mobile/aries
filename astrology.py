@@ -12,6 +12,8 @@ from threading import local, RLock
 from sweastrology import *  # legacy: provides lots of names/constants used elsewhere
 import sweastrology as _swe
 
+import platform_compat
+
 
 _RAW_SWE_FUNCTIONS = getattr(_swe, "_aries_raw_swe_functions", None)
 if _RAW_SWE_FUNCTIONS is None:
@@ -41,7 +43,7 @@ def swe_set_ephe_path(path):
 		_SWISS_THREAD_CONTEXT.ephe_path = normalized
 		if normalized == _SWISS_EPHE_PATH:
 			return
-		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](normalized)
+		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](platform_compat.native_library_path(normalized))
 		_SWISS_EPHE_PATH = normalized
 		# swe_set_ephe_path closes Swiss's cached files and calculation state.
 		_SWISS_SIDEREAL = None
@@ -105,7 +107,7 @@ def _restore_thread_context_locked():
 	sidereal = getattr(_SWISS_THREAD_CONTEXT, "sidereal", None)
 	topocentric = getattr(_SWISS_THREAD_CONTEXT, "topocentric", None)
 	if ephe_path is not None and ephe_path != _SWISS_EPHE_PATH:
-		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](ephe_path)
+		_RAW_SWE_FUNCTIONS["swe_set_ephe_path"](platform_compat.native_library_path(ephe_path))
 		_SWISS_EPHE_PATH = ephe_path
 		_SWISS_SIDEREAL = None
 		_SWISS_TOPO = None
@@ -117,10 +119,34 @@ def _restore_thread_context_locked():
 		_SWISS_TOPO = topocentric
 
 
+# Swiss calls these with their own geographic position (swecl.c, swehel.c):
+# each runs swe_set_topo internally, so the observer is no longer the one the
+# cache above records and the next topocentric calculation must re-set it.
+_TOPO_CLOBBERING_NAMES = frozenset({
+	"swe_gauquelin_sector",
+	"swe_heliacal_ut",
+	"swe_lun_eclipse_how",
+	"swe_lun_eclipse_when",
+	"swe_lun_occult_when_glob",
+	"swe_lun_occult_when_loc",
+	"swe_lun_occult_where",
+	"swe_rise_trans",
+	"swe_sol_eclipse_how",
+	"swe_sol_eclipse_when_glob",
+	"swe_sol_eclipse_when_loc",
+	"swe_sol_eclipse_where",
+})
+
+
 def _raw_swe_call(name, *args, **kwargs):
+	global _SWISS_TOPO
 	with _SWISS_CONTEXT_LOCK:
 		_restore_thread_context_locked()
-		return _RAW_SWE_FUNCTIONS[name](*args, **kwargs)
+		try:
+			return _RAW_SWE_FUNCTIONS[name](*args, **kwargs)
+		finally:
+			if name in _TOPO_CLOBBERING_NAMES:
+				_SWISS_TOPO = None
 
 
 def _unwrap_1tuple(v):
@@ -180,11 +206,66 @@ def swe_houses(tjd_ut, geolat, geolon, hsys):
 	return 0, (), ()
 
 
+def _signed_fixstar_ret(ret):
+	"""The extension returns ERR (-1) as an unsigned 32-bit value."""
+	if isinstance(ret, int) and ret >= 2 ** 31:
+		return ret - 2 ** 32
+	return ret
+
+
+@lru_cache(maxsize=4)
+def _fixstar_numbers_by_spaced_code(path, _mtime):
+	"""Swiss star numbers (1-based data rows) for codes containing blanks."""
+	numbers = {}
+	number = 0
+	with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+		for line in handle:
+			if line.startswith("#"):
+				continue
+			number += 1
+			fields = line.split(",")
+			code = fields[1].strip() if len(fields) > 1 else ""
+			if " " in code and code not in numbers:
+				numbers[code] = number
+	return numbers
+
+
+def _fixstar_number_query(star):
+	"""Swiss strips blanks from a ``,code`` search but not from the catalogue
+	record, so codes such as ``V645 Cen`` (Proxima) never match by code. Map
+	them to their catalogue row number instead; ``None`` when not applicable."""
+	if not isinstance(star, str) or not star.startswith(","):
+		return None
+	code = star[1:].strip()
+	if " " not in code:
+		return None
+	ephe_path = getattr(_SWISS_THREAD_CONTEXT, "ephe_path", None) or _SWISS_EPHE_PATH
+	if not ephe_path:
+		return None
+	# Swiss searches the path list in order and reads the first star file found.
+	for directory in ephe_path.split(os.pathsep):
+		path = os.path.join(directory, SE_STARFILE)
+		if directory and os.path.isfile(path):
+			number = _fixstar_numbers_by_spaced_code(path, os.path.getmtime(path)).get(code)
+			return None if number is None else str(number)
+	return None
+
+
+def _fixstar_call(name, star, *args):
+	r = _raw_swe_call(name, star, *args)
+	ret = _signed_fixstar_ret(_unwrap_1tuple(r[0])) if isinstance(r, tuple) and r else 0
+	if isinstance(ret, int) and ret < 0:
+		number = _fixstar_number_query(star)
+		if number is not None:
+			r = _raw_swe_call(name, number, *args)
+	return r
+
+
 def swe_fixstar(star, tjd, iflag):
 	"""Return (ret, xx[0..5], serr) with `ret` and `serr` unwrapped."""
-	r = _raw_swe_call("swe_fixstar", star, tjd, iflag)
+	r = _fixstar_call("swe_fixstar", star, tjd, iflag)
 	if isinstance(r, tuple) and len(r) >= 3:
-		return _unwrap_1tuple(r[0]), r[1], _unwrap_1tuple(r[2])
+		return _signed_fixstar_ret(_unwrap_1tuple(r[0])), r[1], _unwrap_1tuple(r[2])
 	return 0, (), ""
 
 
@@ -193,9 +274,9 @@ def swe_fixstar_ut(star, tjd_ut, iflag):
 	Return (ret, name_tuple, xx[0..5], serr).
 	Keep `name` as a 1-tuple to preserve legacy callers that use `name[0]`.
 	"""
-	r = _raw_swe_call("swe_fixstar_ut", star, tjd_ut, iflag)
+	r = _fixstar_call("swe_fixstar_ut", star, tjd_ut, iflag)
 	if isinstance(r, tuple) and len(r) >= 4:
-		ret = _unwrap_1tuple(r[0])
+		ret = _signed_fixstar_ret(_unwrap_1tuple(r[0]))
 		name = r[1]
 		xx = r[2]
 		serr = _unwrap_1tuple(r[3])
@@ -208,9 +289,9 @@ def swe_fixstar_mag(star):
 	Return (ret, name_tuple, mag_tuple_or_float, serr).
 	Keep `name` as a 1-tuple for compatibility.
 	"""
-	r = _raw_swe_call("swe_fixstar_mag", star)
+	r = _fixstar_call("swe_fixstar_mag", star)
 	if isinstance(r, tuple) and len(r) >= 4:
-		ret = _unwrap_1tuple(r[0])
+		ret = _signed_fixstar_ret(_unwrap_1tuple(r[0]))
 		name = r[1]
 		mag = r[2]
 		serr = _unwrap_1tuple(r[3])
@@ -694,7 +775,7 @@ def ensure_fixstar_alias_loaded(options):
             options.fixstarAliasMap = {}
         alias_json = os.path.join(ephepath or os.getcwd(), 'fixstar_aliases.json')
         if os.path.isfile(alias_json):
-            with open(alias_json, 'r') as _f:
+            with open(alias_json, 'r', encoding='utf-8') as _f:
                 data = json.load(_f)
             if isinstance(data, dict):
                 options.fixstarAliasMap.update({k: v for k, v in data.items() if isinstance(k, str)})

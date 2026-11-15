@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 from webapp.daemon.wheel_factory import PROFILES, factory_wheel_composition
 
-ARCHETYPES = json.loads((Path(__file__).parents[1] / 'frontend' / 'src' / 'lib' / 'chart' / 'wheel-ring-archetypes.json').read_text())
+ARCHETYPES = json.loads((Path(__file__).parents[1] / 'frontend' / 'src' / 'lib' / 'chart' / 'wheel-ring-archetypes.json').read_text(encoding='utf-8'))
 _ID = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
 
 

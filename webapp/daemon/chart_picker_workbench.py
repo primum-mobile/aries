@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlacementState(BaseModel):
@@ -41,7 +41,6 @@ class SortState(BaseModel):
 class WorkbenchState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     view: Literal["list", "search"] = "list"
-    filter: str = ""
     listSort: SortState = Field(default_factory=lambda: SortState(column="lastOpened", ascending=False))
     collectionPaths: list[str] | None = None
     collectionDrawerOpen: bool = False
@@ -64,8 +63,11 @@ class ChartPickerWorkbenchStore:
         with self._lock:
             if self._state is None:
                 try:
-                    self._state = WorkbenchState.model_validate_json(Path(self._path_provider()).read_text())
-                except (OSError, ValidationError):
+                    saved = json.loads(Path(self._path_provider()).read_text(encoding="utf-8"))
+                    if isinstance(saved, dict):
+                        saved.pop("filter", None)
+                    self._state = WorkbenchState.model_validate(saved)
+                except (OSError, ValueError):
                     self._state = WorkbenchState()
             state = self._state.model_dump(exclude_none=True)
             state.setdefault("collectionPaths", None)
@@ -74,6 +76,8 @@ class ChartPickerWorkbenchStore:
 
     def update(self, patch):
         with self._lock:
+            # Older clients may still send the former persistent name filter.
+            patch = {key: value for key, value in patch.items() if key != "filter"}
             next_state = WorkbenchState.model_validate(self.get() | patch)
             path = Path(self._path_provider())
             path.parent.mkdir(parents=True, exist_ok=True)

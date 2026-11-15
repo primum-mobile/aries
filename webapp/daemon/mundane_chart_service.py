@@ -3,24 +3,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Modified for Aries in 2026 by Max Lange.
 
-"""Daemon-side Mundane Chart (planets by mundane position) data.
+"""Existing MDO, mundane-PD and AT frame preparation and compatibility API.
 
-Canonical brain: ``mundanechart.MundaneChart`` (the wx-fused renderer the
-desktop ``MundaneWnd`` draws with, mundanechart.py:92-983). This service does
-NOT import that wx-fused module and does NOT reimplement astrology: it lifts the
-planet *mundane position* read (the Placidian mundane longitude ``PMP``,
-mundanechart.py:702-715, planets.py:37), the visible-body gating
-(mundanechart.py:697), the dignity / per-planet colour branch
-(mundanechart.py:719-731), retrograde markers (mundanechart.py:752-761), the
-12-spoke house frame + names (mundanechart.py:471-515) and the ASC/MC/Desc/IC
-axes (mundanechart.py:518-543), then ships a STRUCTURED payload in MUNDANE
-DEGREES (0 = ASC, increasing clockwise as wx draws -PMP from math.pi). The React
-skin (mundane-chart-view.tsx) owns only Canvas2D replay of the wx fixed radii
-(mundanechart.py:150-242) and the pixel-overlap ``arrange`` de-clutter
-(mundanechart.py:837-983).
-
-The mundane chart places each body at its mundane position, NOT its zodiacal
-longitude — this is why it cannot be a draw-chart.ts snapshot variant.
+Chart-bearing workspace views use ascensional_scene and the shared wheel
+renderer. This service supplies existing prepared AT and mundane-PD values;
+source zodiacal longitudes remain separate semantic values. No renderer owns
+astrology calculations. The separate view-only Mundane Chart launcher retains
+its structured API and mundane-chart-view.tsx replay.
 
 Output shape (all angles in degrees of mundane longitude, 0 at the ASC)::
 
@@ -66,6 +55,7 @@ import util
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import ascensional_service as ascensional_payload
 from webapp.daemon.display_palette import (
+    minor_dignity_display_facts,
     aspect_color_role,
     chart_body_color_role,
     effective_display_options,
@@ -74,8 +64,7 @@ from webapp.daemon.inspector_service import _fortune_region, _planet_region
 from webapp.daemon.mundane_points import additional_bodies, outer_ring
 from webapp.frontend.scripts import export_chart_json
 
-_DIGNITY_KEYS = ("clrdomicil", "clrexal", "clrperegrin", "clrcasus", "clrexil")
-_LOF_BODY_ID = planets.Planets.PLANETS_NUM
+_LOF_BODY_ID = common.CHART_OBJECT_FORTUNE
 _MDO_VISUAL_MODES = {"mdo", "mundane", "ascensional_transits"}
 _PROGRESSION_METHOD_BY_FEATURE = {
     "secondary": posfordate.SECONDARY,
@@ -108,8 +97,6 @@ def _at_aspect_chart_index(aspect_name: str) -> Optional[int]:
     return {
         at_engine.CONJUNCTION: chart_mod.Chart.CONJUNCTIO,
         at_engine.OPPOSITION: chart_mod.Chart.OPPOSITIO,
-        at_engine.PARALLEL: chart_mod.Chart.PARALLEL,
-        at_engine.CONTRAPARALLEL: chart_mod.Chart.CONTRAPARALLEL,
     }.get(aspect_name)
 
 
@@ -126,10 +113,8 @@ def _at_aspect_color(opts, aspect_name: str) -> str:
 
 
 def _at_aspect_max_orb_arcmin(aspect_name: str) -> float:
-    if aspect_name == at_engine.ANTISCIA:
+    if aspect_name in (at_engine.ANTISCIA, at_engine.CONTRA_ANTISCIA):
         return float(at_engine.ORB_ANTISCIA_ARCMIN)
-    if aspect_name in (at_engine.PARALLEL, at_engine.CONTRAPARALLEL):
-        return float(at_engine.ORB_PARALLEL_ARCMIN)
     return float(at_engine.ORB_CONJ_OPP_ARCMIN)
 
 
@@ -210,6 +195,8 @@ def _mundane_position(chrt, opts, idx):
 def _is_visible(opts, i):
     """Body-visibility gate, verbatim from MundaneChart.drawPlanets
     (mundanechart.py:697): transcendentals/nodes/LoF follow their option flags."""
+    if i in (astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG) and not getattr(opts, "showapogee", True):
+        return False
     if i == astrology.SE_CHIRON and not getattr(opts, "showchiron", True):
         return False
     if i == astrology.SE_URANUS and not opts.transcendental[chart_mod.Chart.TRANSURANUS]:
@@ -229,6 +216,9 @@ def _mundane_body_ids(chrt, opts, *, force_lof: bool = False) -> list[int]:
     ids = list(range(planets.Planets.PLANETS_NUM))
     if getattr(chrt, "chiron", None) is not None and _is_visible(opts, astrology.SE_CHIRON):
         ids.append(astrology.SE_CHIRON)
+    apogee = getattr(chrt, "apogee", None)
+    if apogee is not None and _is_visible(opts, apogee.pId):
+        ids.append(apogee.pId)
     if force_lof or _is_visible(opts, _LOF_BODY_ID):
         ids.append(_LOF_BODY_ID)
     return ids
@@ -244,7 +234,11 @@ def _planet_color_rgb(chrt, opts, i):
     >=PLANETS_NUM-1 index shift), else dignity palette; LoF → clrperegrin."""
     if getattr(opts, "useplanetcolors", False):
         objidx = i
-        if i == astrology.SE_CHIRON:
+        if i == _LOF_BODY_ID:
+            objidx = astrology.SE_MEAN_NODE + 1
+        elif i in (astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
+            objidx = astrology.SE_MOON
+        elif i == astrology.SE_CHIRON:
             try:
                 objidx = common.common.get_planet_color_index(i)
             except Exception:
@@ -256,9 +250,10 @@ def _planet_color_rgb(chrt, opts, i):
         except Exception:
             return getattr(opts, "clrperegrin", (205, 205, 209))
     if i < planets.Planets.PLANETS_NUM:
-        pal = tuple(getattr(opts, k) for k in _DIGNITY_KEYS)
         try:
-            return pal[chrt.dignity(i)]
+            from .display_palette import chart_dignity_color
+
+            return chart_dignity_color(chrt, opts, i)
         except Exception:
             return getattr(opts, "clrperegrin", (205, 205, 209))
     return getattr(opts, "clrperegrin", (205, 205, 209))
@@ -393,9 +388,8 @@ def _at_aspect_title(aspect_name: str) -> str:
     return {
         at_engine.CONJUNCTION: "Conjunction",
         at_engine.OPPOSITION: "Opposition",
-        at_engine.ANTISCIA: "Antiscia",
-        at_engine.PARALLEL: "Parallel",
-        at_engine.CONTRAPARALLEL: "Contraparallel",
+        at_engine.ANTISCIA: str(mtexts.txts["Antiscia"]),
+        at_engine.CONTRA_ANTISCIA: str(mtexts.txts["ContraAntiscia"]),
     }.get(aspect_name, "Aspect")
 
 
@@ -422,12 +416,10 @@ def _at_aspect_hover_flag(pair, opts, aspect_glyph: str, aspect_font: str) -> di
         if payload:
             return payload
 
-    rows = []
-    if bool(getattr(opts, "aspect_flag_show_parties", True)):
-        rows.extend([
-            ("From", str(actor.get("label") or "—")),
-            ("To", str(target.get("label") or "—")),
-        ])
+    rows = [
+        ("From", str(actor.get("label") or "—")),
+        ("To", str(target.get("label") or "—")),
+    ]
     return {
         "glyph": aspect_glyph if aspect_font == "morinus" else "",
         "title": f"{_at_aspect_title(pair.aspect)} ({abs(float(pair.orb_arcmin)) / 60.0:.1f}°)",
@@ -533,7 +525,7 @@ class MundaneChartService:
             return self._build(chrt, opts)
         return None
 
-    def _build_visual_mode(self, session: dict, opts, *, visual_mode: str) -> Optional[dict]:
+    def _build_visual_mode(self, session: dict, opts, *, visual_mode: str, prepared_frames=None) -> Optional[dict]:
         cs = session.get("chart_session")
         if cs is None:
             return None
@@ -544,7 +536,8 @@ class MundaneChartService:
         # cursor moves. A changed live chart is not an implicit biwheel request.
         compound = getattr(cs, "view_mode", None) == chart_session.ChartSession.COMPOUND
         if visual_mode == "ascensional_transits":
-            payload = self._build_ascensional_transits(session, opts)
+            # The shared scene draws the AT technique's own contacts from this frame.
+            payload = self._build_ascensional_transits(session, opts, prepared_frames=prepared_frames)
             if payload is not None:
                 payload["visualMode"] = "ascensional_transits"
             return payload
@@ -568,6 +561,12 @@ class MundaneChartService:
                 )
             payload["visualMode"] = "mundane"
             return payload
+        if compound and session.get("compound_kind") == "synastry":
+            primary, comparison = ascensional_payload._session_chart_pair(session)
+            if primary is not None and comparison is not None:
+                payload = self._build_mdo_comparison(primary, comparison, opts)
+                payload["visualMode"] = "mdo"
+                return payload
         top_left_override = _progression_overlay_top_left(session)
         radix = getattr(cs, "radix", None) or session.get("chart")
         if compound and radix is not None and live is not radix:
@@ -678,11 +677,14 @@ class MundaneChartService:
             outer_position_mode="mundane",
         )
 
-    def _build_ascensional_transits(self, session: dict, opts) -> Optional[dict]:
+    def _build_ascensional_transits(self, session: dict, opts, *, prepared_frames=None) -> Optional[dict]:
+        from webapp.daemon.ascensional_method import apply_precession, comparison_purpose, precession_measure
         cs = session.get("chart_session")
         if cs is None:
             return None
         radix, transit = ascensional_payload._session_chart_pair(session)
+        if comparison_purpose(session) == "natal-synastry":
+            return self._build_mdo_comparison(radix, transit, opts)
         if radix is None:
             return None
         compound = (
@@ -697,7 +699,6 @@ class MundaneChartService:
             live_chart_b_place
             or session.get("ascensional_chart_b_place")
             or session.get("ascensional_event_place")
-            or getattr(radix, "place", None)
         )
         if event_jd is None or event_place is None:
             return None
@@ -706,8 +707,11 @@ class MundaneChartService:
             radix,
             float(event_jd),
             event_place,
-            apply_precession=True,
+            apply_precession=apply_precession(session),
+            precession_measure=precession_measure(opts),
         )
+        if prepared_frames is not None:
+            prepared_frames["at"] = snapshot
         # AT contacts compare event-time transit MDOs with the fixed radix MDO
         # table. The wheel flattens those MDO+quadrant pairs to PMP so the list
         # and drawing use the same geometry without re-housing the birth chart.
@@ -931,6 +935,7 @@ class MundaneChartService:
             color = _planet_color_hex(chrt, opts, i)
             bodies.append({
                 "id": int(i),
+                **minor_dignity_display_facts(chrt, i),
                 "glyph": glyph,
                 "color": color,
                 "colorRole": _planet_color_role(chrt, opts, i, color),
@@ -1152,18 +1157,6 @@ class MundaneChartService:
             )
             if aspect is not None:
                 pairs.append(at_engine.ATPair(point_a, point_b, aspect, orb_arcmin))
-            if (
-                point_a.kind in ("planet", "lof", "node")
-                and point_b.kind in ("planet", "lof", "node")
-                and point_a.decl is not None
-                and point_b.decl is not None
-            ):
-                par = abs(point_a.decl - point_b.decl) * 60.0
-                contrapar = abs(point_a.decl + point_b.decl) * 60.0
-                if par <= at_engine.ORB_PARALLEL_ARCMIN:
-                    pairs.append(at_engine.ATPair(point_a, point_b, at_engine.PARALLEL, par))
-                elif contrapar <= at_engine.ORB_PARALLEL_ARCMIN:
-                    pairs.append(at_engine.ATPair(point_a, point_b, at_engine.CONTRAPARALLEL, contrapar))
 
         if within:
             points = list(from_points)
@@ -1235,7 +1228,7 @@ class MundaneChartService:
     @staticmethod
     def _motion_for_body(chrt, body_id: int) -> str:
         try:
-            if body_id == planets.Planets.PLANETS_NUM:
+            if body_id == _LOF_BODY_ID:
                 return ""
             body = common.common.get_chart_planet(chrt, body_id)
             if body is None:

@@ -60,7 +60,7 @@ const expectedIds = [
   ...["ray", "arrowhead", "label"].map((component) => `angles.outer.${component}`),
   ...["leader", "glyph", "motion", "lane", "positionLane"].map((component) => `bodies.inner.${component}`),
   ...["degree", "sign", "minute"].map((component) => `bodies.inner.position.${component}`),
-  ...["leader", "glyph", "motion", "position", "lane"].map((component) => `bodies.outer.${component}`),
+  ...["leader", "glyph", "motion", "position", "position.minute", "lane"].map((component) => `bodies.outer.${component}`),
   "aspects.lane",
   ...["line", "glyph"].map((component) => `aspects.primary.${component}`),
   ...["endpointMarker", "line", "glyph"].map((component) => `aspects.interchart.${component}`),
@@ -90,7 +90,7 @@ const expectedIds = [
 
 test("wheel-v2 exposes the exact complete semantic class tree", () => {
   assert.equal(manifest.WHEEL_SEMANTIC_CLASS_MANIFEST_VERSION, "wheel-v2");
-  assert.equal(expectedIds.length, 122);
+  assert.equal(expectedIds.length, 123);
   assert.deepEqual(
     [...manifest.WHEEL_SEMANTIC_CLASS_IDS].sort(),
     [...expectedIds].sort(),

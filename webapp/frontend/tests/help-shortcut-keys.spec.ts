@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 import {
   collectShortcutRows,
   formatShortcutKeys,
+  groupShortcutRows,
   isAppleShortcutPlatform,
 } from "../src/components/workshell/help-dialog";
 import { FALLBACK_WORKSPACE_MANIFEST } from "../src/lib/daemon/fallback-workspace-manifest";
@@ -44,25 +45,38 @@ test("Help detects Apple platforms without assuming navigator fields", () => {
   })).toBe(true);
 });
 
-test("Help lists Spotlight and time navigation first without the deleted question-mark row", () => {
+test("Help puts everyday chart controls first, then groups the full reference by task", () => {
   const rows = collectShortcutRows(
     FALLBACK_WORKSPACE_MANIFEST,
     (_key, fallback) => fallback,
   );
 
-  expect(rows.slice(0, 8).map((row) => row.keys)).toEqual([
-    "⇧ ⇧",
-    "0–9",
-    "← / →",
-    "⇧ + ← / →",
-    "⌥ + ← / →",
-    "↑ / ↓",
-    "⇧ + ↑ / ↓",
-    "Space",
+  const sections = groupShortcutRows(rows);
+  expect(sections.map((section) => section.titleKey)).toEqual([
+    "help.shortcuts.chartNavigation", "help.shortcuts.transitSteps",
+    "help.shortcuts.find", "help.shortcuts.chartTools", "help.shortcuts.workspace",
   ]);
+  expect(sections[0].rows.map((row) => row.keys)).toEqual(["Tab", "Space", "← / →", "↑ / ↓"]);
+  expect(sections[1].rows.map((row) => row.keys)).toEqual([
+    "⇧ + ← / →", "⌥ + ← / →", "⇧ + ⌥ + ← / →", "⇧ + ↑ / ↓",
+  ]);
+  expect(sections[2].rows.map((row) => row.keys)).toEqual(["⇧ ⇧", "0–9", "⌘ F"]);
+  expect(sections[3].rows.map((row) => row.keys)).toContain("⌥ A");
+  expect(sections[4].rows.map((row) => row.keys)).toContain("⌘ S");
+  expect(sections.flatMap((section) => section.rows.map((row) => row.keys)).sort())
+    .toEqual(rows.map((row) => row.keys).sort());
   expect(rows.some((row) => row.keys === "?")).toBe(false);
   expect(rows.find((row) => row.keys === "A")?.action).toBe("Aspects");
   expect(rows.find((row) => row.keys === "M")?.action).toBe("Minor aspects");
   expect(rows.find((row) => row.keys === "Q")?.action).toBe("Synodic Cycles");
   expect(rows.find((row) => row.keys === "H")?.action).toBe("Toggle Houses");
+});
+
+test("Help groups chart controls by their action and uses its own Ascensional copy", () => {
+  const manifest = structuredClone(FALLBACK_WORKSPACE_MANIFEST);
+  const tab = manifest.shortcuts.find((row) => row.keys === "Tab")!;
+  tab.keys = "F4";
+  const rows = collectShortcutRows(manifest, (key) => key);
+  expect(groupShortcutRows(rows)[0].rows.map((row) => row.keys)).toEqual(["F4", "Space", "← / →", "↑ / ↓"]);
+  expect(rows.find((row) => row.keys === "⌥ A")?.action).toBe("help.shortcut.ascensionalChart");
 });

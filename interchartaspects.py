@@ -7,6 +7,7 @@ import chartalerts
 import common
 import planets
 import util
+from engine import orb_policy
 
 
 TRADITIONAL_SIGN_DIFFS = {
@@ -69,6 +70,7 @@ def calc_planetary_interchart_aspects(inner_chart, outer_chart, opts, enabled_as
 			inner_orb_idx = inner_chart.get_planet_orb_index(inner_idx)
 			best_asp = None
 			best_delta = None
+			orbis, combine = orb_policy.contributions(opts), orb_policy.combiner(opts)
 			best_distance = None
 			for aspect_type in range(chart.Chart.ASPECT_NUM):
 				aspect_enabled = enabled_aspects[aspect_type] if enabled_aspects is not None else getattr(opts, 'aspect', ())[aspect_type]
@@ -77,7 +79,7 @@ def calc_planetary_interchart_aspects(inner_chart, outer_chart, opts, enabled_as
 				if not _passes_traditional_filter(aspect_type, inner_lon, outer_lon, inner_chart, outer_chart, opts, enabled=traditional_filter):
 					continue
 
-				orb = opts.orbis[outer_orb_idx][aspect_type] + opts.orbis[inner_orb_idx][aspect_type]
+				orb = combine(orbis[outer_orb_idx][aspect_type], orbis[inner_orb_idx][aspect_type])
 				delta, distance = _aspect_delta(inner_lon, outer_lon, aspect_type)
 				if delta > orb:
 					continue

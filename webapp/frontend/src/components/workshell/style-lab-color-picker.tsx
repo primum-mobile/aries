@@ -232,7 +232,7 @@ export function StyleLabColorPicker({
           className,
         )}
       >
-        <span className="absolute inset-0" style={{ background: value }} />
+        <span data-aries-true-color="" className="absolute inset-0" style={{ background: value }} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
@@ -247,6 +247,7 @@ export function StyleLabColorPicker({
           >
             <div
               ref={fieldRef}
+              data-aries-true-color=""
               role="slider"
               tabIndex={0}
               aria-label={`${t("styleLab.control.saturation")} / ${t("styleLab.control.brightness")}`}
@@ -298,6 +299,7 @@ export function StyleLabColorPicker({
                 step={1}
                 value={Math.round(hsv.h)}
                 aria-label={t("styleLab.control.hue")}
+                data-aries-true-color=""
                 onPointerDown={begin}
                 onPointerUp={end}
                 onPointerCancel={end}
@@ -330,6 +332,7 @@ export function StyleLabColorPicker({
                       onChange(recent);
                       rememberRecentColor(recent);
                     }}
+                    data-aries-true-color=""
                     style={{ backgroundColor: recent }}
                     className={cn(
                       "size-5 shrink-0 rounded-[var(--aries-radius-control-compact)] border transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--aries-inspector-interactive-color)]",
@@ -379,6 +382,7 @@ export function StyleLabColorPicker({
                                 if (onSelectRole) onSelectRole(role);
                                 else onChange(role.value);
                               }}
+                              data-aries-true-color=""
                               style={{ backgroundColor: role.value }}
                               className={cn(
                                 "size-5 shrink-0 rounded-[var(--aries-radius-control-compact)] border transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--aries-inspector-interactive-color)]",
@@ -398,6 +402,7 @@ export function StyleLabColorPicker({
             <div className="mt-3 flex items-center gap-2">
               <span
                 aria-hidden="true"
+                data-aries-true-color=""
                 className="size-6 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)]"
                 style={{ background: value }}
               />

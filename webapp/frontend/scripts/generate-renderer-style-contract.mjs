@@ -131,10 +131,11 @@ function cssUnit(renderer, key, styleModule) {
     return styleModule.WHEEL_RENDER_TOKEN_UNIT_OVERRIDES[key];
   }
   if (key === "innerFramePixelAdjustment") return "px";
+  if (/Ms$/.test(key)) return "ms";
   if (/Pattern$/.test(key)) return "";
   if (/HueRotate/.test(key)) return "deg";
   if (
-    /(Scale|Divisor|Opacity|Fill|Iterations|Threshold|Range|Factor|Ratio|Weight|Adjustment|Spacing)/.test(key) ||
+    /(Scale|Divisor|Opacity|Fill|Iterations|Threshold|Range|Factor|Ratio|Weight|Adjustment|Spacing|Share|Steps|Degrees)/.test(key) ||
     /LineHeight/.test(key)
   ) return "";
   return "px";

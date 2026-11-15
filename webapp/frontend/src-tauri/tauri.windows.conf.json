@@ -1,10 +1,51 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "version": "1.0.0-beta.1",
   "build": {
     "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File ../../scripts/build_windows_tauri_inputs.ps1"
   },
   "bundle": {
-    "targets": ["nsis"]
+    "targets": ["nsis"],
+    "publisher": "Max Lange",
+    "copyright": "Copyright (C) 2026 Max Lange",
+    "homepage": "https://aries.sh",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "minimumWebview2Version": "125.0.2535.41",
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "startMenuFolder": "Aries",
+        "installerHooks": "windows/installer-hooks.nsh",
+        "languages": [
+          "English",
+          "German",
+          "Spanish",
+          "French",
+          "Hungarian",
+          "Italian",
+          "Japanese",
+          "Korean",
+          "Russian",
+          "Turkish",
+          "SimpChinese",
+          "TradChinese"
+        ],
+        "customLanguageFiles": {
+          "Hungarian": "windows/nsis-languages/Hungarian.nsh"
+        },
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

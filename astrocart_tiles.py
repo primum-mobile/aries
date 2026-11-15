@@ -43,6 +43,9 @@ DEFAULT_WORLD_FILENAME = DEFAULT_WORLD_SLUG + ".pmtiles"
 DEFAULT_WORLD_SIZE_BYTES = 60 * 1024 * 1024
 DEFAULT_PLANET_SOURCE_URL = "https://build.protomaps.com/20260430.pmtiles"
 PMTILES_RELEASE_VERSION = "1.30.2"
+# CreateProcess appends ".exe" to an extensionless program path, so the
+# Windows helper must keep its real name or it can never be started.
+PMTILES_HELPER_NAME = "pmtiles.exe" if sys.platform.startswith("win") else "pmtiles"
 _BASEMAP_URL_ENV = "ARIES_ASTROCART_BASEMAP_URL"
 _LEGACY_BASEMAP_URL_ENV = "MORINUS_ASTROCART_BASEMAP_URL"
 _BASEMAP_URL_FILE = os.path.join("Res", "astrocart", "basemap_url.txt")
@@ -101,7 +104,7 @@ def user_tile_dir() -> str:
 
 def user_tile_dir_path() -> str:
     """Directory path for user-installed pmtiles, without creating it."""
-    current = os.path.join(app_paths.app_support_dir(), "astrocart_tiles")
+    current = app_paths.relocated_cache_dir("astrocart_tiles")
     legacy = os.path.join(app_paths.legacy_app_support_dir(), "astrocart_tiles")
     app_paths.migrate_directory_contents(legacy, current)
     return current
@@ -109,7 +112,7 @@ def user_tile_dir_path() -> str:
 
 def user_tool_dir_path() -> str:
     """Directory path for downloaded helper tools, without creating it."""
-    current = os.path.join(app_paths.app_support_dir(), "astrocart_tools")
+    current = app_paths.relocated_cache_dir("astrocart_tools")
     legacy = os.path.join(app_paths.legacy_app_support_dir(), "astrocart_tools")
     app_paths.migrate_directory_contents(legacy, current)
     return current
@@ -119,7 +122,7 @@ def install_log_path() -> str:
     if sys.platform == "darwin":
         base = os.path.join(os.path.expanduser("~"), "Library", "Logs", app_paths.APP_NAME)
     else:
-        base = os.path.join(app_paths.app_support_dir(), "logs")
+        base = os.path.join(app_paths.app_cache_dir(), "logs")
     return os.path.join(base, "astrocart_install.log")
 
 
@@ -296,7 +299,7 @@ def download_region(region: TileRegion, on_progress: Callable[[float], None] | N
                         on_progress(min(1.0, done / float(total_bytes)))
         if not is_valid_pmtiles(tmp_path):
             raise RuntimeError("Downloaded basemap is not a valid PMTiles archive")
-        shutil.move(tmp_path, region.local_path)
+        os.replace(tmp_path, region.local_path)
         if on_progress is not None:
             on_progress(1.0)
         return region.local_path
@@ -334,7 +337,11 @@ def extract_region(region: TileRegion, on_progress: Callable[[float], None] | No
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
+            # pmtiles is a console program; the daemon must not open a window.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         assert proc.stdout is not None
         last_progress = 0.0
@@ -348,7 +355,7 @@ def extract_region(region: TileRegion, on_progress: Callable[[float], None] | No
             raise RuntimeError("pmtiles extract failed with exit code %d" % rc)
         if not is_valid_pmtiles(tmp_path):
             raise RuntimeError("Extracted basemap is not a valid PMTiles archive")
-        shutil.move(tmp_path, region.local_path)
+        os.replace(tmp_path, region.local_path)
         if remove_helper_after_success:
             _remove_local_helper(pmtiles)
         if on_progress is not None:
@@ -430,10 +437,10 @@ def default_install_state() -> tuple[str | None, bool]:
 
 def pmtiles_executable() -> str | None:
     """Return an available pmtiles helper executable."""
-    bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "pmtiles")
+    bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", PMTILES_HELPER_NAME)
     if os.path.exists(bundled):
         return bundled
-    local = os.path.join(user_tool_dir_path(), "pmtiles")
+    local = os.path.join(user_tool_dir_path(), PMTILES_HELPER_NAME)
     if os.path.exists(local):
         return local
     return shutil.which("pmtiles")
@@ -497,7 +504,7 @@ def _download_file(url: str, path: str) -> None:
 
 
 def _extract_pmtiles_helper(archive_path: str) -> str:
-    out_path = os.path.join(user_tool_dir_path(), "pmtiles")
+    out_path = os.path.join(user_tool_dir_path(), PMTILES_HELPER_NAME)
     if archive_path.endswith(".zip"):
         with zipfile.ZipFile(archive_path) as zf:
             member = _find_helper_member(zf.namelist())

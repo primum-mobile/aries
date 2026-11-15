@@ -12,7 +12,7 @@ export function formatDateTriple(
   convention: DateConvention = "current",
 ): string {
   const [year, month, day] = values;
-  const yy = String(year).padStart(4, "0");
+  const yy = year < 0 ? `-${String(-year).padStart(3, "0")}` : String(year).padStart(4, "0");
   const mm = String(month).padStart(2, "0");
   const dd = String(day).padStart(2, "0");
   return convention === "dmy" ? `${dd}.${mm}.${yy}` : `${yy}-${mm}-${dd}`;
@@ -20,12 +20,36 @@ export function formatDateTriple(
 
 export function formatIsoDateDisplay(value: string, convention: DateConvention = "current"): string {
   const [date] = value.split("T");
-  const parts = date.split("-");
-  const year = Number.parseInt(parts[0] ?? "", 10);
-  const month = Number.parseInt(parts[1] ?? "", 10);
-  const day = Number.parseInt(parts[2] ?? "", 10);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return value;
-  return formatDateTriple([year, month, day], convention);
+  const fields = parseIsoDateTriple(date);
+  return fields ? formatDateTriple(fields, convention) : value;
+}
+
+/** The chart UI writes a negative civil BC year; the engine includes year zero. */
+export function astronomicalToCivilYear(year: number): number {
+  return year <= 0 ? year - 1 : year;
+}
+
+export function civilToAstronomicalYear(year: number): number {
+  return year < 0 ? year + 1 : year;
+}
+
+export function formatAstronomicalDateTriple(
+  [year, month, day]: [number, number, number],
+  convention: DateConvention = "current",
+): string {
+  return year <= 0
+    ? `-${formatDateTriple([1 - year, month, day], convention)}`
+    : formatDateTriple([year, month, day], convention);
+}
+
+/** Daemon dates use astronomical years: zero is 1 BC. */
+export function parseIsoDateTriple(value: string | null): [number, number, number] | null {
+  const match = value?.match(/^([+-]?\d+)-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const fields = match.slice(1).map(Number);
+  const [year, month, day] = fields;
+  if (!fields.every(Number.isSafeInteger) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return [year, month, day];
 }
 
 export function formatIsoDateTimeDisplay(value: string, convention: DateConvention = "current"): string {
@@ -35,9 +59,26 @@ export function formatIsoDateTimeDisplay(value: string, convention: DateConventi
   return timeLabel ? `${dateLabel} ${timeLabel}` : dateLabel;
 }
 
-export function parseDateDisplayInput(value: string, convention: DateConvention = "current"): string | null {
+export function parseDateDisplayInput(
+  value: string,
+  convention: DateConvention = "current",
+  options: { partial?: boolean } = {},
+): string | null {
   const text = value.trim();
   if (!text) return null;
+
+  // Fast range jumps: a bare year ("1991") or year and month ("1991-05",
+  // "05.1991" under dmy) resolves to the first day of that period.
+  if (options.partial) {
+    const year = text.match(/^(\d{4})$/);
+    if (year) return validDateToIso(Number(year[1]), 1, 1);
+    const ym = text.match(/^(\d{4})[-/.](\d{1,2})$/);
+    if (ym) return validDateToIso(Number(ym[1]), Number(ym[2]), 1);
+    if (convention === "dmy") {
+      const my = text.match(/^(\d{1,2})[-/.](\d{4})$/);
+      if (my) return validDateToIso(Number(my[2]), Number(my[1]), 1);
+    }
+  }
 
   const ymd = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (ymd) {

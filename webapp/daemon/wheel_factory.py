@@ -11,7 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 
-_SOURCE = Path(__file__).parents[1] / 'frontend' / 'src' / 'lib' / 'chart' / 'wheel-factory-v1.json'
+_SOURCE = Path(__file__).parents[1] / 'frontend' / 'src' / 'lib' / 'chart' / 'wheel-factory-v2.json'
 _DOCUMENT = json.loads(_SOURCE.read_text(encoding='utf-8'))
 FACTORY_VERSION = _DOCUMENT['factoryVersion']
 FACTORY_SOURCE_COMMIT = _DOCUMENT['sourceCommit']
@@ -37,7 +37,15 @@ _COMPOSITIONS = MappingProxyType({
     profile: json.dumps(_DOCUMENT['layouts'][profile]['composition'])
     for profile in PROFILES
 })
+_PRESENTATIONS = MappingProxyType({
+    name: json.dumps(value) for name, value in _DOCUMENT.get('presentations', {}).items()
+})
 del _DOCUMENT
+
+
+def factory_wheel_presentation(name: str) -> dict:
+    """Fresh named presentation data, shared with the production renderer."""
+    return json.loads(_PRESENTATIONS[name])
 
 
 def factory_wheel_layout(profile: str) -> dict:

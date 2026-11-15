@@ -38,7 +38,7 @@ test("tri and quad layouts are solved from available radius and content", () => 
 
 test("the prototype paints the requested visual grammar", () => {
   assert.match(source, /drawChartBand/);
-  assert.match(source, /chart\.houses\.cusps/);
+  assert.match(source, /drawingCusps\(chart\)/);
   assert.match(source, /drawZodiac/);
   assert.match(source, /drawTermStrip/);
   assert.match(source, /drawDecanStrip/);
@@ -67,7 +67,7 @@ test("angle axes remain visible without house cusps and use the selected wheel p
   assert.match(source, /if \(!label\) return/);
   assert.doesNotMatch(source, /label: "DC"|label: "IC"/);
   assert.doesNotMatch(source, /ANGLE_GLYPHS/);
-  assert.match(source, /\[chart\.angles\.asc, chart\.angles\.mc\]/);
+  assert.match(source, /\[drawingAngles\(chart\)\.asc, drawingAngles\(chart\)\.mc\]/);
   assert.match(source, /showAngleArrowheads !== false/);
   assert.match(canvasSource, /projectWheelAuthoringStyle\(wheelRenderStyle, layout\.maxRadius, profile\)/);
   assert.match(source, /resolveWheelTypographyPaint\(\s*style,\s*style\.authoringTargetProfile,/);
@@ -78,7 +78,7 @@ test("body and position lanes use one measured stack at every wheel count", () =
   assert.match(source, /preferredBodyGap = 3/);
   assert.match(source, /preferredPositionGap = 1/);
   assert.match(source, /Math\.min\(1, gapBudget \/ preferredGapTotal\)/);
-  assert.match(source, /Math\.max\(depths\.glyph, body\.glyphMeasure\[1\]\)/);
+  assert.match(source, /Math\.max\(depths\.glyph, body\.glyphFootprint\[1\]\)/);
   assert.match(source, /widest: Math\.max\(/);
   assert.match(source, /resolveMultiwheelBodyStackLanes\(band, rowDepths, layout\.houseSize\)/);
   assert.doesNotMatch(source, /glyphRadius = band\.inner \+ bandThickness/);

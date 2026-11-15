@@ -45,6 +45,14 @@ test("legacy cached ThemeState receives compatible style identity", () => {
   });
 });
 
+test("inspector text preference survives cache normalization with a legacy default", () => {
+  assert.equal(normalizeThemeState(legacyTheme).inspectorTextSize, "normal");
+  for (const inspectorTextSize of ["normal", "larger", "extra-large"]) {
+    assert.equal(normalizeThemeState({ ...legacyTheme, inspectorTextSize }).inspectorTextSize, inspectorTextSize);
+  }
+  assert.equal(normalizeThemeState({ ...legacyTheme, inspectorTextSize: "huge" }).inspectorTextSize, "normal");
+});
+
 test("current ThemeState preserves explicit style identity", () => {
   const normalized = normalizeThemeState({
     ...legacyTheme,
@@ -244,5 +252,6 @@ test("the programmatic chart focus anchor never paints a native WKWebView outlin
   const tagEnd = source.indexOf(">", anchorIndex);
   const anchorTag = source.slice(tagStart, tagEnd);
   assert.match(anchorTag, /className="[^"]*\boutline-none\b[^"]*"/);
-  assert.match(source, /chartPaneElement\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(source, /const focusTarget = keyboardFocusTarget \?\? chartPaneElement/);
+  assert.match(source, /focusTarget\??\.focus\(\{ preventScroll: true \}\)/);
 });

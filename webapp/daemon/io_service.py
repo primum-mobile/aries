@@ -6,12 +6,12 @@ from __future__ import annotations
 import base64
 import binascii
 import datetime
+import json
 import os
-import pickle
-import subprocess
 import sys
 import tempfile
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import chart
 import aaf_import
+import zet_zeus_import
 import chartfile
 import horfileio
 import note_storage
@@ -27,6 +28,13 @@ import sfcht_import
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon import notes_service
 from webapp.frontend.scripts import export_chart_json
+
+# Pasted-text import kinds: error label, best-effort parser, schema-v1 converter.
+_PASTE_IMPORTERS = {
+    "aaf": ("AAF paste", aaf_import.parse_aaf_text_best_effort, aaf_import.record_to_v1_dict),
+    "zet": ("Zet paste", zet_zeus_import.parse_zet_text_best_effort, zet_zeus_import.record_to_v1),
+    "zeus": ("Zeus paste", zet_zeus_import.parse_zeus_text_best_effort, zet_zeus_import.record_to_v1),
+}
 
 
 class IoService:
@@ -37,11 +45,13 @@ class IoService:
     duplicate checks, and writes happen here through the existing Python import
     helpers.
 
-    Export source oracle: morin.py:15534-15576, exportutil.py, pdfexport.py.
-    The daemon resolves the active live chart session and owns the destination
-    path; chart/PDF rendering runs in an isolated helper subprocess so daemon
-    startup and request handling remain wx-free.
+    Chart export: the frontend paints the PNG with the production web
+    renderer; the daemon owns the destination path and wraps the pixels in a
+    ReportLab PDF in-process when requested.
     """
+
+    # Chart PDF margin per edge, as a fraction of that edge (A4: ~12.6 x 17.8 mm).
+    PDF_PAGE_MARGIN_FRACTION = 0.06
 
     @property
     def _opts(self) -> Any:
@@ -57,8 +67,8 @@ class IoService:
         files: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         selected = [str(Path(path).expanduser()) for path in paths if str(path or "").strip()]
-        if kind == "aaf" and str(text or "").strip():
-            return self._import_aaf_text(str(text or ""), collection=collection)
+        if kind in _PASTE_IMPORTERS and str(text or "").strip():
+            return self._import_pasted_text(kind, str(text or ""), collection=collection)
         if files:
             return self._import_uploaded_files(kind, files, collection=collection)
         if not selected:
@@ -71,139 +81,15 @@ class IoService:
             if len(selected) != 1:
                 raise ValueError("JSONL import expects exactly one file")
             return self._import_jsonl(Path(selected[0]))
+        if kind == "library":
+            if len(selected) != 1:
+                raise ValueError("chart library import expects exactly one archive")
+            return self._import_library(Path(selected[0]))
         if kind == "sfcht":
             return self._import_sfcht_files([Path(path) for path in selected])
         if kind == "aaf":
             return self._import_aaf_files([Path(path) for path in selected], collection=collection)
         raise ValueError(f"unsupported import kind: {kind}")
-
-    def export_chart(
-        self,
-        *,
-        kind: str,
-        path: str,
-        workspace: Any,
-        document_id: str | None = None,
-    ) -> dict[str, Any]:
-        raw_path = str(path or "").strip()
-        if not raw_path:
-            raise ValueError("no export path selected")
-        destination = Path(raw_path).expanduser()
-        resolved_kind = self._export_kind(kind, destination)
-        if destination.suffix.lower() != f".{resolved_kind}":
-            destination = destination.with_suffix(f".{resolved_kind}")
-        if not destination.parent.exists():
-            raise ValueError(f"export directory does not exist: {destination.parent}")
-
-        active_id = document_id or workspace.state().get("activeDocumentId")
-        if not active_id:
-            raise ValueError("no active chart to export")
-        opts, primary, comparison = workspace.inspector_charts(active_id)
-        if primary is None:
-            raise ValueError("no active chart to export")
-        # Export is a separate helper process, so carry the already-validated
-        # semantic profile explicitly instead of asking it to rediscover CSS or
-        # daemon state. The helper adapts chart roles before the final PDF print
-        # transform; app-only roles remain irrelevant to chart output.
-        from webapp.daemon.options_service import options_service
-        active_style_profile, effective_export_options = (
-            options_service.get_style_chart_render_context(opts)
-        )
-
-        payload = {
-            "kind": resolved_kind,
-            "path": str(destination),
-            "title": self._export_title(primary),
-            "options": effective_export_options,
-            "primary": primary,
-            "comparison": comparison,
-            "styleProfile": active_style_profile,
-        }
-        with tempfile.NamedTemporaryFile(prefix="aries-export-", suffix=".pickle", delete=False) as fh:
-            pickle.dump(payload, fh, protocol=pickle.HIGHEST_PROTOCOL)
-            payload_path = Path(fh.name)
-        try:
-            self._run_chart_export(payload_path)
-        except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout or str(exc)).strip()
-            raise RuntimeError(detail or "chart export failed") from exc
-        finally:
-            try:
-                payload_path.unlink()
-            except OSError:
-                pass
-
-        try:
-            size = destination.stat().st_size
-        except OSError as exc:
-            raise RuntimeError("chart export did not create an output file") from exc
-        if size <= 0:
-            raise RuntimeError("chart export created an empty output file")
-        return {
-            "ok": True,
-            "kind": resolved_kind,
-            "path": str(destination),
-            "bytes": size,
-            "documentId": active_id,
-        }
-
-    @staticmethod
-    def _run_chart_export(payload_path: Path) -> None:
-        if getattr(sys, "frozen", False):
-            command = [sys.executable, "--export-chart-image", str(payload_path)]
-        else:
-            helper = REPO_ROOT / "webapp" / "frontend" / "scripts" / "export_chart_image.py"
-            if not helper.exists():
-                raise RuntimeError(f"missing export helper: {helper}")
-            command = [sys.executable, str(helper), str(payload_path)]
-        subprocess.run(
-            command,
-            cwd=str(REPO_ROOT),
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-
-    def export_chart_bytes(
-        self,
-        *,
-        kind: str,
-        workspace: Any,
-        document_id: str | None = None,
-        filename: str | None = None,
-    ) -> dict[str, Any]:
-        """Render a chart export to bytes for browser downloads.
-
-        The semantic export path is still `export_chart`: this method only
-        swaps the shell-owned destination path for a daemon temporary file.
-        """
-        requested_kind = str(kind or "pdf").lower().strip()
-        if requested_kind == "auto":
-            requested_kind = "pdf"
-        if requested_kind not in ("pdf", "png"):
-            raise ValueError(f"unsupported export kind: {kind}")
-
-        with tempfile.TemporaryDirectory(prefix="aries-chart-export-") as dirname:
-            temp_path = Path(dirname) / f"chart.{requested_kind}"
-            summary = self.export_chart(
-                kind=requested_kind,
-                path=str(temp_path),
-                workspace=workspace,
-                document_id=document_id,
-            )
-            output_path = Path(str(summary["path"]))
-            data = output_path.read_bytes()
-
-        return {
-            "ok": True,
-            "kind": requested_kind,
-            "filename": self._download_filename(filename, requested_kind),
-            "mimeType": self._mime_type(requested_kind),
-            "bytes": len(data),
-            "data": data,
-            "documentId": summary.get("documentId"),
-        }
 
     def export_rendered_chart(
         self,
@@ -215,6 +101,7 @@ class IoService:
         height: int,
         title: str | None = None,
         document_id: str | None = None,
+        page_format: str | None = None,
     ) -> dict[str, Any]:
         """Write a chart painted by the production web renderer.
 
@@ -245,6 +132,7 @@ class IoService:
                 actual_width,
                 actual_height,
                 title=title,
+                page_format=page_format,
             )
         size = destination.stat().st_size
         if size <= 0:
@@ -267,6 +155,7 @@ class IoService:
         title: str | None = None,
         document_id: str | None = None,
         filename: str | None = None,
+        page_format: str | None = None,
     ) -> dict[str, Any]:
         requested_kind = str(kind or "pdf").lower().strip()
         if requested_kind not in ("pdf", "png"):
@@ -281,6 +170,7 @@ class IoService:
                 height=height,
                 title=title,
                 document_id=document_id,
+                page_format=page_format,
             )
             data = Path(str(summary["path"])).read_bytes()
         return {
@@ -323,6 +213,7 @@ class IoService:
         height: int,
         *,
         title: str | None = None,
+        page_format: str | None = None,
     ) -> None:
         try:
             from io import BytesIO
@@ -332,16 +223,20 @@ class IoService:
         except Exception as exc:
             raise RuntimeError("PDF export requires ReportLab") from exc
 
-        margin = 36.0
-        page = pagesizes.letter
+        # Portrait ISO page. Margins are the same fraction of each edge, so the
+        # printable area keeps the page's 1:sqrt(2) shape that the renderer
+        # paints (`chart-export-renderer.ts` PDF size) and A3 is A4 enlarged.
+        page = pagesizes.A3 if str(page_format or "").upper() == "A3" else pagesizes.A4
+        margin_x = page[0] * IoService.PDF_PAGE_MARGIN_FRACTION
+        margin_y = page[1] * IoService.PDF_PAGE_MARGIN_FRACTION
 
-        area_width = page[0] - 2 * margin
-        area_height = page[1] - 2 * margin
+        area_width = page[0] - 2 * margin_x
+        area_height = page[1] - 2 * margin_y
         scale = min(area_width / width, area_height / height)
         image_width = width * scale
         image_height = height * scale
-        left = margin + (area_width - image_width) / 2
-        bottom = margin + (area_height - image_height) / 2
+        left = margin_x + (area_width - image_width) / 2
+        bottom = margin_y + (area_height - image_height) / 2
         doc = canvas.Canvas(str(destination), pagesize=page)
         chart_title = str(title or "Aries Chart Export")
         doc.setTitle(chart_title)
@@ -408,11 +303,6 @@ class IoService:
         if suffix == ".pdf" or suffix == "":
             return "pdf"
         raise ValueError("export path must end in .pdf or .png")
-
-    @staticmethod
-    def _export_title(chrt: Any) -> str:
-        name = str(getattr(chrt, "name", "") or "").strip()
-        return name or "Aries Chart"
 
     @staticmethod
     def _download_filename(filename: str | None, kind: str) -> str:
@@ -494,6 +384,10 @@ class IoService:
                 if len(paths) != 1:
                     raise ValueError("JSONL import expects exactly one file")
                 return self._import_jsonl(paths[0])
+            if kind == "library":
+                if len(paths) != 1:
+                    raise ValueError("chart library import expects exactly one archive")
+                return self._import_library(paths[0])
             if kind == "sfcht":
                 return self._import_sfcht_files(paths)
             if kind == "aaf":
@@ -743,19 +637,20 @@ class IoService:
             files_considered=len(paths),
         )
 
-    def _import_aaf_text(self, text: str, *, collection: str | None = None) -> dict[str, Any]:
+    def _import_pasted_text(self, kind: str, text: str, *, collection: str | None = None) -> dict[str, Any]:
+        label, parse, convert = _PASTE_IMPORTERS[kind]
         records: list[dict[str, Any]] = []
         duplicates: list[str] = []
         errors: list[dict[str, str]] = []
         existing_charts = self._existing_charts_for_duplicate_check()
-        parsed = aaf_import.parse_aaf_text_best_effort(text, source_name="AAF paste")
+        parsed = parse(text, source_name=label)
         errors.extend(
-            {"path": "AAF paste", "message": str(issue["message"])}
+            {"path": label, "message": str(issue["message"])}
             for issue in parsed["errors"]
         )
         for record in parsed["records"]:
             try:
-                chart_record = aaf_import.record_to_v1_dict(record)
+                chart_record = convert(record)
                 key = self._record_duplicate_key(chart_record)
                 if key is not None and key in existing_charts:
                     duplicates.append(
@@ -764,7 +659,7 @@ class IoService:
                     continue
                 records.append(self._lift_import_record(chart_record))
             except Exception as exc:
-                errors.append({"path": "AAF paste", "message": str(exc)})
+                errors.append({"path": label, "message": str(exc)})
 
         collection_path: Path | None = None
         added = 0
@@ -772,7 +667,7 @@ class IoService:
             collection_path = self._resolve_collection_path(collection)
             added = chartfile.merge_into_jsonl(records, str(collection_path))
         return self._summary(
-            kind="aaf",
+            kind=kind,
             selected_paths=[],
             collection_path=collection_path,
             imported_count=added,
@@ -780,6 +675,154 @@ class IoService:
             errors=errors,
             files_considered=1,
         )
+
+    # -- chart library archive -------------------------------------------
+    # A portable backup of the whole chart library: every collection in the
+    # charts directory plus its Notes tree. The browser build keeps the library
+    # in IndexedDB, so this archive is what survives cleared site data; desktop
+    # users get the same backup/restore path.
+
+    LIBRARY_FORMAT = "aries-chart-library"
+    LIBRARY_VERSION = 1
+    LIBRARY_MANIFEST = "aries-library.json"
+    LIBRARY_ROOT = "Charts"
+
+    def export_library_bytes(self) -> dict[str, Any]:
+        """Zip the chart collections and notes for a download."""
+        root = self._hors_dir()
+        collections: list[str] = []
+        note_files = 0
+        buffer = tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024)
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(root.glob("*.jsonl")):
+                if path.is_file():
+                    archive.write(path, f"{self.LIBRARY_ROOT}/{path.name}")
+                    collections.append(path.name)
+            notes_root = root / "Notes"
+            if notes_root.is_dir():
+                for path in sorted(notes_root.rglob("*")):
+                    if not path.is_file() or path.name.endswith(".lock"):
+                        continue
+                    rel = path.relative_to(root).as_posix()
+                    archive.write(path, f"{self.LIBRARY_ROOT}/{rel}")
+                    note_files += 1
+            manifest = {
+                "format": self.LIBRARY_FORMAT,
+                "version": self.LIBRARY_VERSION,
+                "exported": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                "collections": collections,
+                "noteFiles": note_files,
+            }
+            archive.writestr(self.LIBRARY_MANIFEST, json.dumps(manifest, indent=2))
+        buffer.seek(0)
+        data = buffer.read()
+        buffer.close()
+        stamp = datetime.date.today().isoformat()
+        return {
+            "ok": True,
+            "filename": f"Aries-library-{stamp}.zip",
+            "mimeType": "application/zip",
+            "bytes": len(data),
+            "collections": collections,
+            "noteFiles": note_files,
+            "data": data,
+        }
+
+    def _library_member_path(self, name: str) -> PurePosixPath | None:
+        """Archive member → path relative to the charts dir, or None if unsafe."""
+        member = PurePosixPath(name.replace("\\", "/"))
+        if member.is_absolute() or ".." in member.parts:
+            return None
+        parts = member.parts
+        if len(parts) < 2 or parts[0] != self.LIBRARY_ROOT:
+            return None
+        return PurePosixPath(*parts[1:])
+
+    def _import_library(self, source: Path) -> dict[str, Any]:
+        """Merge a library archive into the charts dir without losing local work.
+
+        Records merge by id (then by name/date/time for id-less records); a
+        local record always wins over the archived copy. Note files are only
+        restored where no local note file exists."""
+        if not zipfile.is_zipfile(source):
+            raise ValueError("selected file is not an Aries chart library archive")
+        root = self._hors_dir()
+        imported = 0
+        duplicates: list[str] = []
+        errors: list[dict[str, str]] = []
+        collections: list[Path] = []
+        notes_restored = 0
+        with zipfile.ZipFile(source) as archive:
+            try:
+                manifest = json.loads(archive.read(self.LIBRARY_MANIFEST).decode("utf-8"))
+            except (KeyError, ValueError) as exc:
+                raise ValueError("selected file is not an Aries chart library archive") from exc
+            if manifest.get("format") != self.LIBRARY_FORMAT:
+                raise ValueError("selected file is not an Aries chart library archive")
+            if int(manifest.get("version") or 0) > self.LIBRARY_VERSION:
+                raise ValueError("chart library archive was written by a newer Aries")
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                rel = self._library_member_path(info.filename)
+                if rel is None:
+                    continue
+                target = root.joinpath(*rel.parts)
+                if len(rel.parts) == 1 and rel.suffix.lower() == ".jsonl":
+                    try:
+                        added, skipped = self._merge_library_collection(archive.read(info), target)
+                    except Exception as exc:  # one bad collection must not drop the rest
+                        errors.append(self._error(Path(info.filename), exc))
+                        continue
+                    imported += added
+                    duplicates.extend(skipped)
+                    collections.append(target)
+                elif rel.parts[0] == "Notes" and len(rel.parts) > 1:
+                    if target.exists():
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(archive.read(info))
+                    notes_restored += 1
+        summary = self._summary(
+            kind="library",
+            selected_paths=[source],
+            collection_path=collections[0] if len(collections) == 1 else None,
+            imported_count=imported,
+            skipped_duplicates=duplicates,
+            errors=errors,
+            files_considered=len(collections),
+        )
+        summary["collections"] = [path.name for path in collections]
+        summary["notesRestored"] = notes_restored
+        return summary
+
+    def _merge_library_collection(self, payload: bytes, target: Path) -> tuple[int, list[str]]:
+        with tempfile.TemporaryDirectory(prefix="aries-library-") as dirname:
+            staged = Path(dirname) / target.name
+            staged.write_bytes(payload)
+            incoming = [self._lift_import_record(dict(record)) for record in chartfile.read_jsonl(str(staged))]
+        existing = chartfile.read_jsonl(str(target)) if target.is_file() else []
+        ids = {str(record.get("id") or "") for record in existing} - {""}
+        keys = {key for key in (self._record_duplicate_key(record) for record in existing) if key}
+        merged = list(existing)
+        skipped: list[str] = []
+        for record in incoming:
+            record_id = str(record.get("id") or "")
+            key = self._record_duplicate_key(record)
+            if (record_id and record_id in ids) or (not record_id and key in keys):
+                if key:
+                    skipped.append(self._duplicate_label_from_key(*key))
+                continue
+            merged.append(record)
+            if record_id:
+                ids.add(record_id)
+            if key:
+                keys.add(key)
+        added = len(merged) - len(existing)
+        if added or not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            chartfile.write_jsonl(merged, str(target))
+        return added, skipped
 
 
 io_service = IoService()

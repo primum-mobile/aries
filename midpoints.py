@@ -20,7 +20,7 @@ class Mid:
 class MidPoints:
 	"""Computes Midpoints"""
 
-	def __init__(self, pls, chiron=None):
+	def __init__(self, pls, chiron=None, apogee=None):
 		self.pls = pls
 		self.chiron = chiron
 		self.mids = []
@@ -28,9 +28,33 @@ class MidPoints:
 
 		self.countMidPoints()
 		self.countMidPointsWithLatitude()
+		if apogee is not None:
+			self._append_apogee(apogee)
 	
 #		self.printMidPoints(self.midslat)
 
+
+	def _append_apogee(self, apogee):
+		bodies = list(enumerate(self.pls.planets))
+		if self.chiron is not None:
+			bodies.append((astrology.SE_CHIRON, self.chiron))
+		lon2, lat2 = apogee.data[:2]
+		r2, b2 = math.radians(lon2), math.radians(lat2)
+		for body_id, body in bodies:
+			lon1, lat1 = body.data[:2]
+			delta = (lon2 - lon1 + 180.0) % 360.0 - 180.0
+			longitude = util.normalize(lon1 + delta / 2.0)
+			self.mids.append(Mid(body_id, apogee.pId, longitude, 0.0))
+			r1, b1 = math.radians(lon1), math.radians(lat1)
+			x = math.cos(b1)*math.cos(r1) + math.cos(b2)*math.cos(r2)
+			y = math.cos(b1)*math.sin(r1) + math.cos(b2)*math.sin(r2)
+			z = math.sin(b1) + math.sin(b2)
+			if math.sqrt(x*x+y*y+z*z) < 1e-12:
+				mid_lon, mid_lat = longitude, (lat1+lat2)/2.0
+			else:
+				mid_lon = util.normalize(math.degrees(math.atan2(y, x)))
+				mid_lat = math.degrees(math.atan2(z, math.hypot(x, y)))
+			self.midslat.append(Mid(body_id, apogee.pId, mid_lon, mid_lat))
 
 	def countMidPoints(self):
 		for i in range(planets.Planets.PLANETS_NUM-2):#Nodes are excluded

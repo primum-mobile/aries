@@ -33,12 +33,15 @@ SYNODIC_MODE_ALL = 1
 _FLAGS = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
 _ROOT_TOLERANCE_DAYS = 1.0 / 86400.0
 
+_CONJUNCTION_CODES = {
+    "inferior": "inferior_conjunction",
+    "superior": "superior_conjunction",
+    "conjunction": "solar_conjunction",
+}
 _STATION_CAZIMI_CODES = frozenset((
     "station_retrograde",
     "station_direct",
-    "inferior_conjunction",
-    "superior_conjunction",
-    "solar_conjunction",
+    *_CONJUNCTION_CODES.values(),
 ))
 
 _SEARCH_DAYS = {
@@ -316,6 +319,12 @@ def _station_events(planet_type: int, pid: int, start_jd: float, end_jd: float) 
     return events
 
 
+def conjunction_phase(planet_id: int, longitude_speed: float) -> str:
+    if planet_id not in INNER_PLANETS:
+        return "conjunction"
+    return "inferior" if longitude_speed < 0.0 else "superior"
+
+
 def _conjunction_events(planet_type: int, pid: int, start_jd: float, end_jd: float) -> list[SynodicEvent]:
     events = []
     prev_jd = None
@@ -333,13 +342,8 @@ def _conjunction_events(planet_type: int, pid: int, start_jd: float, end_jd: flo
         ):
             root = _bisect_root(lambda jd: _signed_elongation(jd, pid), prev_jd, right)
             if root is not None:
-                speed = _speed(root, pid)
-                if pid in INNER_PLANETS:
-                    code = "inferior_conjunction" if speed < 0.0 else "superior_conjunction"
-                    solar_phase = "inferior" if speed < 0.0 else "superior"
-                else:
-                    code = "solar_conjunction"
-                    solar_phase = "conjunction"
+                solar_phase = conjunction_phase(pid, _speed(root, pid))
+                code = _CONJUNCTION_CODES[solar_phase]
                 events.append(_event(planet_type, pid, code, root, solar_phase=solar_phase))
         if pid not in INNER_PLANETS:
             opp_root = _opposition_root(prev_jd, right, pid, prev_delta, cur_delta)

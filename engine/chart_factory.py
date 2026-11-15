@@ -24,6 +24,7 @@ Derivers compute the Moment + context and call these; they do not construct.
 import chart
 import chartfile
 import astrology
+import dateformat
 
 
 def build_time(y, m, d, h, mi, s, *, place,
@@ -33,14 +34,18 @@ def build_time(y, m, d, h, mi, s, *, place,
                plus=True, zh=0, zm=0,
                daylight=False,
                full=True,
-               tzid='', tzauto=False, exact_jd=None):
+               tzid='', tzauto=False, exact_jd=None, astronomical=False):
     """Local civil digits + zone context -> ``chart.Time``.
 
     The digits are LOCAL (as-entered) civil time; ``chart.Time`` performs the
     zone subtraction to UT/jd internally (chart.py:308 "To GMT"). Callers
     holding a UT instant must convert through ``engine.moment`` first — never
     feed UT digits to a zone-typed Time (the display-rule bug class).
+    Set ``astronomical`` for ephemeris fields: year zero is 1 BC. The native
+    Time and workspace cursor then retain the canonical positive BC year.
     """
+    if astronomical:
+        y, bc = dateformat.civil_year_and_era(y)
     time_obj = chart.Time(
         int(y), int(m), int(d), int(h), int(mi), int(s),
         bool(bc), cal, zt, bool(plus), int(zh), int(zm), bool(daylight),

@@ -7,9 +7,14 @@
 import os
 import sys
 import shutil
-import wx
+import logging
 import pickle
 import copy
+import hashlib
+import io
+import json
+import tempfile
+import threading
 import astrology
 import asteroids as asteroid_model
 import chart
@@ -17,9 +22,22 @@ import fontprofiles
 import primdirs
 import mtexts
 import app_paths
+from engine import fixed_star_orbs
 from aries.ui import tokens as _tokens
 
 USER_PANEL_CUSTOM_NAME = 'My Panel'
+# Secondary/minor/tertiary progression lists start with the five major aspects
+# (conjunction, sextile, square, trine, opposition) in the secondary aspect order.
+SECONDARY_PROGRESSION_DEFAULT_ASPECT_IDS = (0, 3, 5, 6, 10)
+
+# Midnight's individual palette, indexed by the shared body color slots.
+MIDNIGHT_BODY_COLORS = (
+	(255, 215, 0), (0, 191, 255), (138, 43, 226), (0, 128, 0),
+	(178, 34, 34), (110, 168, 255), (180, 190, 195), (130, 145, 205),
+	(130, 145, 205), (130, 145, 205), (139, 54, 38), (205, 96, 144),
+	(128, 0, 128),
+)
+SETTINGS_COLOR_OVERRIDES_KEY = '_settings_color_overrides'
 
 
 class SafeColorList(list):
@@ -50,8 +68,186 @@ class SafeColorList(list):
 		return super().__setitem__(index, value)
 
 
+SETTINGS_JSON_NAME = 'settings.json'
+SETTINGS_SCHEMA_VERSION = 1
+
+
+def _encode_setting(value):
+	"""JSON form of an option value that decodes back to the same Python types."""
+	if isinstance(value, SafeColorList):
+		return {'$colors': [_encode_setting(item) for item in value]}
+	if isinstance(value, tuple):
+		return {'$tuple': [_encode_setting(item) for item in value]}
+	if isinstance(value, list):
+		return [_encode_setting(item) for item in value]
+	if isinstance(value, dict):
+		if all(isinstance(key, str) and not key.startswith('$') for key in value):
+			return {key: _encode_setting(item) for key, item in value.items()}
+		return {'$dict': [[_encode_setting(key), _encode_setting(item)] for key, item in value.items()]}
+	if value is None or isinstance(value, (bool, int, float, str)):
+		return value
+	raise TypeError('unsupported option value %r' % type(value).__name__)
+
+
+def _decode_setting(value):
+	if isinstance(value, list):
+		return [_decode_setting(item) for item in value]
+	if isinstance(value, dict):
+		if len(value) == 1:
+			(tag, items), = value.items()
+			if tag == '$tuple':
+				return tuple(_decode_setting(item) for item in items)
+			if tag == '$colors':
+				return SafeColorList(_decode_setting(item) for item in items)
+			if tag == '$dict':
+				return {_decode_setting(key): _decode_setting(item) for key, item in items}
+		return {key: _decode_setting(item) for key, item in value.items()}
+	return value
+
+
+def _setting_kind(value):
+	if value is None:
+		return 'none'
+	if isinstance(value, bool):
+		return 'bool'
+	if isinstance(value, (int, float)):
+		return 'number'
+	if isinstance(value, (list, tuple)):
+		return 'sequence'
+	if isinstance(value, dict):
+		return 'dict'
+	if isinstance(value, str):
+		return 'str'
+	return type(value).__name__
+
+
+# Settings whose stored value may legitimately differ in kind from the default.
+_SETTING_ALTERNATE_KINDS = {
+	'startupchart': {'str', 'dict'},
+}
+
+# Arrays sized by the code (one entry per planet, aspect, house, sign, ...).
+# Saved before an entry was added, they are completed from the default. Every
+# other array (Lots, asteroids, fixed-star flags, selections) follows the
+# user's data and is never padded.
+_CODE_SIZED_SETTINGS = {
+	'aspect', 'pdaspects', 'promplanets', 'sigplanets', 'sigangles', 'sigascmc',
+	'stepalerts_sigangles', 'stepalerts_promplanets', 'stepalerts_sigplanets',
+	'pdlof', 'pdparallels', 'speculumdodecat', 'zodpromsigasps', 'transcendental',
+	'orbis', 'orbisH', 'orbisAscMC', 'orbisparH', 'orbisparAscMC', 'orbisplanetspar',
+	'housescores', 'dignityscores', 'sunphases', 'dayhourscores',
+	'dignities', 'terms', 'decans', 'trips', 'speculums',
+	'clraspect', 'clrindividual',
+	'pdcustomerlat', 'pdcustomerlon', 'pdcustomer2lat', 'pdcustomer2lon',
+}
+
+_REJECT = object()
+
+
+def _conform_setting(name, value, default):
+	"""Return value shaped like its setting's default, or _REJECT.
+
+	Scalars must keep their kind; null is only valid where the default is null.
+	Arrays of booleans or numbers keep their element kinds; a code-sized array
+	shorter than the default (saved before a planet or aspect was added) is
+	completed from the default. Nested arrays are checked element by element.
+	"""
+	if default is None:
+		return value
+	kind = _setting_kind(value)
+	if kind != _setting_kind(default):
+		return value if kind in _SETTING_ALTERNATE_KINDS.get(name, ()) else _REJECT
+	if kind != 'sequence' or not default:
+		return value
+	if isinstance(default, SafeColorList) and not isinstance(value, SafeColorList):
+		value = SafeColorList(value)
+	template_kinds = {_setting_kind(item) for item in default}
+	if len(template_kinds) != 1 or template_kinds & {'dict', 'str', 'none'}:
+		return value
+	conformed = []
+	for index, item in enumerate(value):
+		template = default[min(index, len(default) - 1)]
+		item = _conform_setting(name, item, template)
+		if item is _REJECT:
+			return _REJECT
+		conformed.append(item)
+	if name in _CODE_SIZED_SETTINGS or isinstance(default, tuple):
+		conformed.extend(copy.deepcopy(default[len(conformed):]))
+	if isinstance(value, SafeColorList):
+		return SafeColorList(conformed)
+	return tuple(conformed) if isinstance(default, tuple) else conformed
+
+
+def _write_file_atomically(path, data):
+	"""Replace path with data via a unique sibling temporary file.
+
+	A crash, a full disk or a concurrent writer can never leave a cut-off or
+	interleaved file: readers see the old content or the complete new one.
+	"""
+	directory = os.path.dirname(path) or '.'
+	handle, tmp_path = tempfile.mkstemp(
+		prefix='.%s.' % os.path.basename(path), suffix='.tmp', dir=directory,
+	)
+	try:
+		with os.fdopen(handle, 'wb') as stream:
+			stream.write(data)
+			stream.flush()
+			os.fsync(stream.fileno())
+		os.replace(tmp_path, path)
+	except BaseException:
+		try:
+			os.remove(tmp_path)
+		except OSError:
+			pass
+		raise
+
+
+class _CapturedOptFile:
+	"""Collects one legacy .opt pickle stream in memory.
+
+	close() hands the bytes to the owner, which persists them together with
+	settings.json; a save that raises before close() writes nothing.
+	"""
+
+	def __init__(self, path, on_close):
+		self._path = path
+		self._buffer = io.BytesIO()
+		self._on_close = on_close
+
+	def write(self, data):
+		return self._buffer.write(data)
+
+	def close(self):
+		if self._buffer is None:
+			return
+		data = self._buffer.getvalue()
+		self._buffer = None
+		self._on_close(self._path, data)
+
+
+# Every method that writes one legacy .opt stream (tests keep this complete).
+_LEGACY_SAVE_METHODS = (
+	'saveAppearance1', 'saveAppearance2', 'saveSymbols', 'saveDignities',
+	'saveTriplicities', 'saveTerms', 'saveDecans', 'saveChartAlmuten',
+	'saveTopicalandParts', 'saveAyanamsa', 'saveColors', 'saveUserPanelPresets',
+	'saveHouseSystem', 'saveNodes', 'saveOrbs', 'savePrimaryDirs',
+	'savePrimaryKeys', 'saveStepAlerts', 'saveFortune', 'saveSyzygy',
+	'saveFixstars', 'saveAsteroids', 'saveProfections', 'saveFirdaria',
+	'saveDefLocation', 'savePDsInChart', 'saveLanguages', 'saveAutoSave',
+	'saveRevolutions', 'saveQuickCharts', 'saveSearch', 'saveStartupChart',
+	'saveRecentCharts', 'saveRestoreOpenCharts', 'saveWorkspaceSidebarOrder',
+	'saveWorkspaceSidebarCollapsed', 'saveAstrocartographyPreferences',
+	'saveAstrolabePreferences', 'saveSidebarListPreferences', 'saveLastHorDir',
+	'saveComposite',
+)
+
+# One lock for every Options instance: settings.json and the legacy files are
+# written as one unit even when daemon threads save at the same time.
+_PERSIST_LOCK = threading.RLock()
+
+
 class Options:
-	APP_COLOR_TRAILER_SCHEMA_VERSION = 3
+	APP_COLOR_TRAILER_SCHEMA_VERSION = 4
 	SPECULUM_SPEED_WORDS = 'words'
 	SPECULUM_SPEED_PERCENT = 'percent'
 	SPECULUM_SPEED_DAILY = 'daily'
@@ -187,6 +383,7 @@ class Options:
 		self.def_bw = self.bw = False
 		self.def_theme = self.theme = 0
 		self.wheel_compositions = {}
+		self.def_wheel_compositions = {}
 		self.def_anglo_dense_label_layout = self.anglo_dense_label_layout = self.ANGLO_DENSE_LABEL_LAYOUT_ROUTED_CUSPS
 		self.def_ascmcsize = self.ascmcsize = 5
 		self.def_tablesize = self.tablesize = 0.75
@@ -220,6 +417,10 @@ class Options:
 		self.transcendental = [True, True, True]
 		self.def_transcendental = self.transcendental[:]
 		self.def_showchiron = self.showchiron = True
+		self.def_showapogee = self.showapogee = True
+		self.def_meanapogee = self.meanapogee = True
+		self.def_pdpromapogee = self.pdpromapogee = True
+		self.def_pdsigapogee = self.pdsigapogee = True
 		self.def_extendedradixstations = self.extendedradixstations = False
 		self.def_showvertex = self.showvertex = False
 		self.def_showaspectstovertex = self.showaspectstovertex = False
@@ -228,7 +429,6 @@ class Options:
 		self.def_exclusive_aspects_on_click = self.exclusive_aspects_on_click = False
 		self.def_exclusive_aspects_on_click_show_minor = self.exclusive_aspects_on_click_show_minor = True
 		self.def_exclusive_aspects_on_click_traditional = self.exclusive_aspects_on_click_traditional = False
-		self.def_aspect_flag_show_parties = self.aspect_flag_show_parties = True
 		self.def_showlof = self.showlof = True
 		self.def_showaspectstolof = self.showaspectstolof = False
 		self.def_showlofouterring = self.showlofouterring = False
@@ -236,9 +436,11 @@ class Options:
 		self.def_showprenataleclipse = self.showprenataleclipse = False
 		self.def_pdf_chart_color_mode = self.pdf_chart_color_mode = 'monochrome'
 		self.def_pdf_chart_raster_preset = self.pdf_chart_raster_preset = 'clean'
+		self.def_pdf_page_format = self.pdf_page_format = 'A4'
 		self.def_pdf_include_overlays = self.pdf_include_overlays = True
 		self.def_png_chart_appearance = self.png_chart_appearance = 'screen'
 		self.def_png_include_overlays = self.png_include_overlays = True
+		self.def_png_page_format = self.png_page_format = 'viewport'
 		self.def_png_watermark_style = self.png_watermark_style = 'kosugi'
 		self.def_png_watermark_text = self.png_watermark_text = ''
 		self.def_list_export_aspect_symbols = self.list_export_aspect_symbols = False
@@ -254,6 +456,17 @@ class Options:
 		self.def_multiwheel_show_minutes = self.multiwheel_show_minutes = True
 		self.def_multiwheel_sign_colors = self.multiwheel_sign_colors = False
 		self.def_multiwheel_show_angle_labels = self.multiwheel_show_angle_labels = True
+		self.def_inspector_text_size = self.inspector_text_size = 'normal'
+		self.def_inspector_speculum_precision = self.inspector_speculum_precision = 'minutes'
+		self.def_ascensional_readout = self.ascensional_readout = 'mdo-quadrant'
+		self.def_ascensional_equatorial_signs = self.ascensional_equatorial_signs = False
+		# Annual precession rate for the optional ascensional precession
+		# correction: 'ecliptic' (Marr/Estadella) or 'equatorial' (Millard).
+		self.def_ascensional_precession_measure = self.ascensional_precession_measure = 'ecliptic'
+		# Remember inspector choices by comparison intent; event correction
+		# must not implicitly enable experimental correction in other views.
+		self.def_ascensional_precession_defaults = {}
+		self.ascensional_precession_defaults = {}
 		self.def_dignitylabelcolors = self.dignitylabelcolors = False
 		self.def_showfixstars = self.showfixstars = 0
 		# Swiss Ephemeris's Schaefer visibility model is the best-supported
@@ -264,6 +477,21 @@ class Options:
 		self.def_synodicmode = self.synodicmode = self.SYNODIC_MODE_ALL
 		self.def_solarconditionmode = self.solarconditionmode = self.SOLAR_CONDITION_MODE_MORIN
 		self.def_showeclipseoverlay = self.showeclipseoverlay = True
+		self.def_showvoidcourse = self.showvoidcourse = True
+		self.def_voidcoursepolicy = self.voidcoursepolicy = 0
+		# Chart dashboard (Tab on singleton charts): modules yield space around
+		# the wheel. Display-only.
+		self.def_chart_dashboard = self.chart_dashboard = True
+		self.def_dashboard_aspect_grid = self.dashboard_aspect_grid = True
+		self.def_dashboard_declination = self.dashboard_declination = True
+		self.def_dashboard_moon = self.dashboard_moon = True
+		self.def_dashboard_grid_orbs = self.dashboard_grid_orbs = True
+		self.def_dashboard_grid_large = self.dashboard_grid_large = False
+		# Aspect grid turned 90 degrees into the top-left corner; chart data bottom left.
+		self.def_dashboard_grid_parallels = self.dashboard_grid_parallels = True
+		self.def_dashboard_declination_mirrored = self.dashboard_declination_mirrored = False
+		self.def_dashboard_moon_all_bodies = self.dashboard_moon_all_bodies = False
+		self.def_dashboard_declination_horizontal = self.dashboard_declination_horizontal = False
 		self.def_astrocart_localspace_additive = self.astrocart_localspace_additive = False
 		self.def_astrocart_show_ecliptic = self.astrocart_show_ecliptic = False
 		self.def_astrocart_show_equator = self.astrocart_show_equator = True
@@ -463,11 +691,16 @@ class Options:
 		self.clraspect = [(246,0,206), (40,232,232), (246,0,206), (34,255,154), (255,242,0), (246,0,206), (34,255,154), (246,0,206), (255,122,0), (0,0,251), (246,0,206), (138,43,226)]
 		self.def_clraspect = self.clraspect[:]
 
-		self.clrindividual = SafeColorList([(255,215,0), (0,191,255), (138,43,226), (0,128,0), (178,34,34), (0,0,255), (0,0,0), (0,0,128), (0,0,128), (0,0,128), (139,54,38), (205,96,144), (128,0,128)])
+		self.clrindividual = SafeColorList(MIDNIGHT_BODY_COLORS)
 		self.def_clrindividual = SafeColorList(self.clrindividual[:])
 		self._default_clrindividual = SafeColorList(self.clrindividual[:])
 
 		self.def_useplanetcolors = self.useplanetcolors = False
+		self.def_blendminordignities = self.blendminordignities = False
+		self.def_showdignityglyphs = self.showdignityglyphs = False
+		self.def_showtermglyphs = self.showtermglyphs = False
+		self.def_useplanetcolorsforsubdivisions = self.useplanetcolorsforsubdivisions = True
+		self.def_showfaceglyphs = self.showfaceglyphs = False
 
 #		self.def_clrbackground = self.clrbackground = (wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWFRAME)).Get(False)
 		self.def_clrbackground = self.clrbackground = (35, 36, 40)
@@ -482,6 +715,7 @@ class Options:
 		self.def_clrappbackground = self.clrappbackground = self.def_clrbackground
 		self.def_clrapptexts = self.clrapptexts = self.def_clrtexts
 		self.custom_color_preset = self._current_color_preset()
+		self.def_custom_color_preset = copy.deepcopy(self.custom_color_preset)
 
 		# False by default: vanilla Aries opens in pinned Midnight.
 		self.def_follow_os_theme = self.follow_os_theme = False
@@ -497,15 +731,22 @@ class Options:
 		# conj, semisext, semisq, sext, quintile, sq, trine, sesquisq, biquintile, quinqunx, opp, septile
 		self.orbis = [[5.0, 1.75, 1.75, 3.0, 1.75, 4.0, 4.0, 1.75, 1.75, 1.75, 5.0, 1.75], [5.0, 1.75, 1.75, 3.0, 1.75, 4.0, 4.0, 1.75, 1.75, 1.75, 5.0, 1.75], [3.5, 1.5, 1.5, 2.5, 1.5, 3.0, 3.0, 1.5, 1.5, 1.5, 3.5, 1.5], [3.5, 1.5, 1.5, 2.5, 1.5, 3.0, 3.0, 1.5, 1.5, 1.5, 3.5, 1.5], [3.5, 1.5, 1.5, 2.5, 1.5, 3.0, 3.0, 1.5, 1.5, 1.5, 3.5, 1.5], [4.0, 1.5, 1.5, 3.0, 1.5, 3.5, 3.5, 1.5, 1.5, 1.5, 4.0, 1.5], [4.0, 1.5, 1.5, 3.0, 1.5, 3.5, 3.5, 1.5, 1.5, 1.5, 4.0, 1.5], [3.0, 1.0, 1.0, 2.0, 1.0, 2.5, 2.5, 1.0, 1.0, 1.0, 3.0, 1.0], [3.0, 1.0, 1.0, 2.0, 1.0, 2.5, 2.5, 1.0, 1.0, 1.0, 3.0, 1.0], [3.0, 1.0, 1.0, 2.0, 1.0, 2.5, 2.5, 1.0, 1.0, 1.0, 3.0, 1.0], [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]]
 		self.def_orbis = copy.deepcopy(self.orbis)
+		# engine.orb_policy: "custom" contributions or "lilly" moieties.
+		self.orb_policy = 'custom'
+		self.def_orb_policy = self.orb_policy
+		# Per-preset cell edits {base: {row: {aspect: value}}}; see engine.orb_policy.
+		self.orb_overrides = {}
+		self.def_orb_overrides = {}
 
-		self.orbisplanetspar = [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
+		# Parallel and contraparallel contributions add to a 1.2° pair orb.
+		self.orbisplanetspar = [[0.6, 0.6] for _ in range(11)]
 		self.def_orbisplanetspar = copy.deepcopy(self.orbisplanetspar)
 
 			# Houses
 		self.orbisH = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
 		self.def_orbisH = self.orbisH[:]
 
-		self.orbisparH = [0.25, 0.25] #parallel/contraparallel
+		self.orbisparH = [0.6, 0.6]
 		self.def_orbisparH = self.orbisparH[:]
 
 		self.def_orbiscuspH = self.orbiscuspH = 3.0
@@ -514,7 +755,7 @@ class Options:
 		self.orbisAscMC = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
 		self.def_orbisAscMC = self.orbisAscMC[:]
 
-		self.orbisparAscMC = [0.5, 0.5]
+		self.orbisparAscMC = [0.6, 0.6]
 		self.def_orbisparAscMC = self.orbisparAscMC[:]
 
 		self.def_orbiscuspAscMC = self.orbiscuspAscMC = 5.0
@@ -628,6 +869,11 @@ class Options:
 		self.def_pdpromarabicpartname = self.pdpromarabicpartname = ''
 		self.def_pdsigarabicparts = self.pdsigarabicparts = False
 		self.def_pdsigarabicpartname = self.pdsigarabicpartname = ''
+		# None preserves single-part selections from older option files.
+		for role in ('prom', 'sig'):
+			for suffix, default in (('arabicpartnames', None), ('asteroids', False), ('asteroidnumbers', [])):
+				setattr(self, 'pd%s%s' % (role, suffix), copy.deepcopy(default))
+				setattr(self, 'def_pd%s%s' % (role, suffix), copy.deepcopy(default))
 
 		#PD-keys
 		self.pdkeydyn = False
@@ -645,9 +891,15 @@ class Options:
 
 		self.useregressive = False
 		self.def_useregressive = self.useregressive
+		# Which converse PrimDirs calculates: MODERNCONVERSE (sphere turned
+		# back, the historical Morinus 'C'), TRADITIONALCONVERSE (significator
+		# carried forward to the promissor, under the promissor's pole) or
+		# BOTHCONVERSES.  Default modern keeps existing PD output unchanged.
+		self.pdconverse = 0
+		self.def_pdconverse = self.pdconverse
 
 		#Lot of Fortune
-		self.lotoffortune = chart.Chart.LFMOONSUN
+		self.lotoffortune = chart.Chart.LFDMOONSUN  # reversed by night, the usual rule
 		self.def_lotoffortune = self.lotoffortune
 
 		#Zodiacal Releasing
@@ -663,6 +915,10 @@ class Options:
 		self.def_useIndianFixstarNames = self.useIndianFixstarNames = False
 
 		self.def_fixstars = self.fixstars.copy()
+		self.def_fixstar_orb_mode = self.fixstar_orb_mode = 'individual'
+		self.def_fixstar_orb_uniform = self.fixstar_orb_uniform = 1.5
+		self.def_fixstar_orb_individual = self.fixstars.copy()
+		self.fixstar_orb_individual = self.def_fixstar_orb_individual.copy()
 
 		# Swiss-Ephemeris asteroid selection. Numbers are MPC catalogue numbers;
 		# the six bodies in the standard Swiss bundle remain the default set.
@@ -710,7 +966,7 @@ class Options:
 # ########################################
 
 		#PDsInChart
-		self.def_pdincharttyp = self.pdincharttyp = 0
+		self.def_pdincharttyp = self.pdincharttyp = 1
 		self.def_pdinchartsecmotion = self.pdinchartsecmotion = False
 
 		# The no-secondary-motion terrestrial chart is the exact graphical
@@ -732,6 +988,8 @@ class Options:
 		self.def_autosave = self.autosave
 		self.quickcharts_prompt = True
 		self.def_quickcharts_prompt = self.quickcharts_prompt
+		self.supplementary_location = 'radix'
+		self.def_supplementary_location = self.supplementary_location
 		self.quickcharts_anchor_to_radix = self.QUICKCHARTS_ANCHOR_AUTO
 		self.def_quickcharts_anchor_to_radix = self.quickcharts_anchor_to_radix
 		self.timed_chart_show_radix_default = False
@@ -822,8 +1080,16 @@ class Options:
 		self.def_chart_picker_sort_ascending = self.chart_picker_sort_ascending
 		self.workspace_sidebar_action_order = {}
 		self.def_workspace_sidebar_action_order = copy.deepcopy(self.workspace_sidebar_action_order)
+		# Sidebar launchers the user hid, per section title (canonical action ids).
+		# Display-only; settings.json only (no legacy .opt slot).
+		self.workspace_sidebar_hidden_actions = {}
+		self.def_workspace_sidebar_hidden_actions = copy.deepcopy(self.workspace_sidebar_hidden_actions)
 		self.workspace_sidebar_collapsed_sections = []
 		self.def_workspace_sidebar_collapsed_sections = self.workspace_sidebar_collapsed_sections[:]
+		# Graphic Ephemeris view preferences shared by every chart (modulus,
+		# colours, layers, planets). Display-only; settings.json only.
+		self.graphic_ephemeris_view = {}
+		self.def_graphic_ephemeris_view = {}
 		self.astrocartography_preferences = {
 			'schemaVersion': 1,
 			'spec': {
@@ -844,8 +1110,12 @@ class Options:
 		self.def_astrocartography_preferences = copy.deepcopy(
 			self.astrocartography_preferences
 		)
+		# Astrolabe display preferences (projection + layer toggles) shared by
+		# every chart; the rete arc stays per radix in the workspace.
+		self.astrolabe_preferences = {}
+		self.def_astrolabe_preferences = {}
 		self.sidebar_list_preferences = {
-			'schemaVersion': 2,
+			'schemaVersion': 3,
 			'aspectList': {
 				'mode': None,
 				'maxOrb': 10,
@@ -856,6 +1126,9 @@ class Options:
 				'focusMatchMode': 'or',
 				'rxFocusEnabled': False,
 				'includeHouseCusps': True,
+				'includeMinorAspects': False,
+				'includeDeclination': False,
+				'ascensionalMaxOrbArcmin': 25,
 				'secondaryRingEnabledByMode': {},
 				'filterDrawerOpen': False,
 			},
@@ -866,9 +1139,12 @@ class Options:
 				'direction': 'direct',
 			},
 			'synodicList': {
-				'ingressPlanetIds': list(range(11)) + [astrology.SE_CHIRON],
-				'synodicPlanetIds': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON],
-				'lunarCycleIds': ['draconic', 'anomalistic'],
+				'planetIds': list(range(11)) + [astrology.SE_CHIRON, astrology.SE_MEAN_APOG],
+				'ingressesEnabled': True,
+				'synodicsEnabled': True,
+				'ingressPlanetIds': list(range(11)) + [astrology.SE_CHIRON, astrology.SE_MEAN_APOG],
+				'synodicPlanetIds': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON, astrology.SE_MEAN_APOG],
+				'lunarCycleIds': ['draconic', 'anomalistic', 'void-course'],
 				'ingressDrawerOpen': False,
 				'synodicDrawerOpen': False,
 				'lunarDrawerOpen': False,
@@ -915,6 +1191,7 @@ class Options:
 		self.factoryoptsdirtxt = self._resolve_factory_opts_dir()
 		self.optsdirtxt = self._resolve_user_opts_dir()
 		self.arabicpartsjson = 'arabic_parts.json'
+		self._seed_dev_opts_from_installed()
 		self._migrate_legacy_user_opts_dir()
 		self._ensure_user_opts_dir()
 		self._seed_user_opts_from_factory()
@@ -968,16 +1245,36 @@ class Options:
 			self.optsdirtxt,
 			'astrocartography.opt',
 		)
+		self.astrolabepreferencesopt = os.path.join(
+			self.optsdirtxt,
+			'astrolabe.opt',
+		)
 		self.sidebarlistpreferencesopt = os.path.join(
 			self.optsdirtxt,
 			'sidebar_lists.opt',
 		)
+		self.settingsjson = os.path.join(self.optsdirtxt, SETTINGS_JSON_NAME)
+		self._adopt_factory_defaults()
 		self.load()
 # ########################################
 
 	def _ensure_user_opts_dir(self):
 		try:
 			os.makedirs(self.optsdirtxt, exist_ok=True)
+		except Exception:
+			pass
+
+	def _seed_dev_opts_from_installed(self):
+		"""First dev-profile launch starts from a copy of the installed settings."""
+		if not app_paths.dev_profile_active():
+			return
+		try:
+			app_paths.migrate_directory_contents(
+				app_paths.installed_user_opts_dir(),
+				self.optsdirtxt,
+				marker_name=app_paths.DEV_SEED_MARKER,
+				marker_text="Dev settings copied from the installed Aries folder; the two now evolve separately.\n",
+			)
 		except Exception:
 			pass
 
@@ -997,11 +1294,26 @@ class Options:
 
 	def _open_opt_for_load(self, optfile):
 		filename = os.path.basename(optfile)
-		candidates = [optfile, self._factory_opt_path(filename)]
+		overrides = getattr(self, '_legacy_overrides', None)
+		if overrides is not None and filename in overrides:
+			return io.BytesIO(overrides[filename])
+		if getattr(self, '_loading_factory_defaults', False):
+			candidates = [self._factory_opt_path(filename)]
+		else:
+			candidates = [optfile, self._factory_opt_path(filename)]
 		for path in candidates:
 			if path and os.path.exists(path):
 				return open(path, 'rb')
 		raise IOError
+
+	def _open_opt_for_save(self, optfile):
+		# A save method's stream is collected in memory. On close every
+		# changed legacy file and settings.json are written together; an
+		# OSError there surfaces in the save method's own error handling.
+		rendering = getattr(self, '_rendering_legacy', None)
+		if rendering is not None:
+			return _CapturedOptFile(optfile, rendering.__setitem__)
+		return _CapturedOptFile(optfile, lambda _path, _data: self._persist_settings())
 
 	def _seed_user_opts_from_factory(self):
 		if not os.path.isdir(self.factoryoptsdirtxt):
@@ -1035,6 +1347,29 @@ class Options:
 					shutil.copy2(src, dst)
 				except Exception:
 					pass
+
+	def _adopt_factory_defaults(self):
+		"""Make every def_* baseline equal what a fresh install ships.
+
+		Res/Opts is the shipped option state (the curated defaults). The
+		literals in __init__ only cover settings the factory files do not hold,
+		so a user file written before a setting existed, a value that fails
+		validation, and Restore defaults all land on the shipped value.
+		"""
+		if not os.path.isdir(self.factoryoptsdirtxt):
+			return
+		self._loading_factory_defaults = True
+		try:
+			self.load()
+		finally:
+			del self._loading_factory_defaults
+		# Shipped defaults take the canonical form every save writes, so a
+		# save and reload never turns an untouched setting into a change.
+		self._normalize_preference_stores()
+		for name in [key for key in vars(self) if key.startswith('def_')]:
+			attr = name[4:]
+			if hasattr(self, attr):
+				setattr(self, name, copy.deepcopy(getattr(self, attr)))
 
 	def _sync_factory_color_defaults(self):
 		optfile = self._factory_opt_path('colors.opt')
@@ -1114,6 +1449,19 @@ class Options:
 			self.clrapptexts = self.def_clrapptexts
 			self.usezodiacelementfieldcolors = self.def_usezodiacelementfieldcolors
 			self.zodiacelementfieldopacity = self.def_zodiacelementfieldopacity
+			self.def_blendminordignities = self.blendminordignities = (
+				isinstance(app_color_trailer, dict)
+				and app_color_trailer.get('blendminordignities') is True
+			)
+			self.def_useplanetcolorsforsubdivisions = self.useplanetcolorsforsubdivisions = (
+				not isinstance(app_color_trailer, dict) or bool(app_color_trailer.get('useplanetcolorsforsubdivisions', True)))
+			self.def_showdignityglyphs = self.showdignityglyphs = (
+				isinstance(app_color_trailer, dict) and bool(app_color_trailer.get(
+					'showdignityglyphs', app_color_trailer.get('blendminordignities', False))))
+			for name in ('term', 'face'):
+				value = isinstance(app_color_trailer, dict) and bool(app_color_trailer.get('show%sglyphs' % name, False))
+				setattr(self, 'def_show%sglyphs' % name, value)
+				setattr(self, 'show%sglyphs' % name, value)
 			f.close()
 			try:
 				import chart
@@ -1198,6 +1546,11 @@ class Options:
 			'clrappbackground': tuple(self.clrappbackground),
 			'clrapptexts': tuple(self.clrapptexts),
 			'usezodiacelementfieldcolors': bool(self.usezodiacelementfieldcolors),
+			'blendminordignities': bool(self.blendminordignities),
+			'showdignityglyphs': bool(self.showdignityglyphs),
+			'showfaceglyphs': bool(self.showfaceglyphs),
+			'showtermglyphs': bool(self.showtermglyphs),
+			'useplanetcolorsforsubdivisions': bool(self.useplanetcolorsforsubdivisions),
 			'zodiacelementfieldopacity': min(
 				1.0, max(0.0, float(self.zodiacelementfieldopacity))
 			),
@@ -1233,6 +1586,11 @@ class Options:
 			'clrindividual': self.clrindividual[:],
 			'clraspect': self.clraspect[:],
 			'useplanetcolors': bool(self.useplanetcolors),
+			'blendminordignities': bool(self.blendminordignities),
+			'showdignityglyphs': bool(self.showdignityglyphs),
+			'showfaceglyphs': bool(self.showfaceglyphs),
+			'showtermglyphs': bool(self.showtermglyphs),
+			'useplanetcolorsforsubdivisions': bool(self.useplanetcolorsforsubdivisions),
 		})
 
 	def _normalize_color_preset(self, preset):
@@ -1265,6 +1623,11 @@ class Options:
 			'clrindividual': self.clrindividual[:],
 			'clraspect': self.clraspect[:],
 			'useplanetcolors': bool(self.useplanetcolors),
+			'blendminordignities': bool(self.blendminordignities),
+			'showdignityglyphs': bool(self.showdignityglyphs),
+			'showfaceglyphs': bool(self.showfaceglyphs),
+			'showtermglyphs': bool(self.showtermglyphs),
+			'useplanetcolorsforsubdivisions': bool(self.useplanetcolorsforsubdivisions),
 		}
 		if isinstance(preset, dict):
 			state.update(preset)
@@ -1286,6 +1649,11 @@ class Options:
 			i = len(state['clraspect'])
 			state['clraspect'].append(defaults[i] if i < len(defaults) else defaults[-1])
 		state['useplanetcolors'] = bool(state.get('useplanetcolors', False))
+		state['blendminordignities'] = bool(state.get('blendminordignities', False))
+		state['showdignityglyphs'] = bool(state.get('showdignityglyphs', False))
+		state['showfaceglyphs'] = bool(state.get('showfaceglyphs', False))
+		state['showtermglyphs'] = bool(state.get('showtermglyphs', False))
+		state['useplanetcolorsforsubdivisions'] = bool(state.get('useplanetcolorsforsubdivisions', True))
 		state['usezodiacelementcolors'] = bool(state.get('usezodiacelementcolors', False))
 		state['usezodiacelementfieldcolors'] = bool(
 			state.get('usezodiacelementfieldcolors', False)
@@ -1325,6 +1693,16 @@ class Options:
 		}
 
 	@staticmethod
+	def _normalize_astrolabe_preferences(preferences):
+		if not isinstance(preferences, dict):
+			return {}
+		return {
+			str(key): value
+			for key, value in preferences.items()
+			if isinstance(value, bool) or (key == 'projection' and isinstance(value, str))
+		}
+
+	@staticmethod
 	def _normalize_sidebar_list_preferences(preferences):
 		if not isinstance(preferences, dict):
 			preferences = {}
@@ -1359,6 +1737,10 @@ class Options:
 			max_orb = 10
 		if max_orb.is_integer():
 			max_orb = int(max_orb)
+		ascensional_max_orb = aspect.get('ascensionalMaxOrbArcmin', 25)
+		if isinstance(ascensional_max_orb, bool) or ascensional_max_orb not in (5, 10, 15, 25, 40, 60, 90):
+			ascensional_max_orb = 25
+		ascensional_max_orb = int(ascensional_max_orb)
 		sort_by = aspect.get('sortBy')
 		if sort_by not in ('body', 'orb', 'exact'):
 			sort_by = 'orb'
@@ -1452,13 +1834,13 @@ class Options:
 
 		ingress_planet_ids = selected_ids(synodic,
 			'ingressPlanetIds',
-			tuple(range(11)) + (astrology.SE_CHIRON,),
-			list(range(11)) + [astrology.SE_CHIRON],
+			tuple(range(11)) + (astrology.SE_CHIRON, astrology.SE_MEAN_APOG),
+			list(range(11)) + [astrology.SE_CHIRON, astrology.SE_MEAN_APOG],
 		)
 		synodic_planet_ids = selected_ids(synodic,
 			'synodicPlanetIds',
-			tuple(range(1, 11)) + (astrology.SE_CHIRON,),
-			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON],
+			tuple(range(1, 11)) + (astrology.SE_CHIRON, astrology.SE_MEAN_APOG),
+			[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, astrology.SE_CHIRON, astrology.SE_MEAN_APOG],
 		)
 		# Chiron did not exist in schema 1, so every saved selection omitted it
 		# regardless of user intent. Enable the newly available source once;
@@ -1468,18 +1850,32 @@ class Options:
 				ingress_planet_ids.append(astrology.SE_CHIRON)
 			if astrology.SE_CHIRON not in synodic_planet_ids:
 				synodic_planet_ids.append(astrology.SE_CHIRON)
+		# Shared planets are independent of event-family switches. Retain them even
+		# when both families are off, and migrate old choices by their union.
+		planet_ids = selected_ids(synodic, 'planetIds',
+			tuple(range(11)) + (astrology.SE_CHIRON, astrology.SE_MEAN_APOG),
+			list(dict.fromkeys(ingress_planet_ids + synodic_planet_ids)),
+		)
+		ingresses_enabled = bool(synodic.get('ingressesEnabled', bool(ingress_planet_ids)))
+		synodics_enabled = bool(synodic.get('synodicsEnabled', bool(synodic_planet_ids)))
+		ingress_planet_ids = list(planet_ids) if ingresses_enabled else []
+		synodic_planet_ids = [planet_id for planet_id in planet_ids if planet_id != 0] if synodics_enabled else []
 		lunar_cycle_ids = selected_ids(synodic,
 			'lunarCycleIds',
-			('draconic', 'anomalistic'),
-			['draconic', 'anomalistic'],
+			('draconic', 'anomalistic', 'void-course'),
+			['draconic', 'anomalistic', 'void-course'],
 		)
+		# The void of course Moon joined the lunar family in schema 3. Enable
+		# it once for saved selections; later deselection is preserved.
+		if schema_version < 3 and 'void-course' not in lunar_cycle_ids:
+			lunar_cycle_ids.append('void-course')
 		secondary_planet_ids = None
 		if secondary.get('planetIds') is not None:
 			secondary_planet_ids = selected_ids(
 				secondary, 'planetIds', tuple(range(256)), [],
 			)
 		secondary_aspect_ids = selected_ids(
-			secondary, 'aspectIds', tuple(range(12)), list(range(12)),
+			secondary, 'aspectIds', tuple(range(12)), list(SECONDARY_PROGRESSION_DEFAULT_ASPECT_IDS),
 		)
 		secondary_angle_ids = None
 		if secondary.get('angleIds') is not None:
@@ -1515,7 +1911,7 @@ class Options:
 				vimshottari_ayanamsha = 'follow_chart'
 
 		return {
-			'schemaVersion': 2,
+			'schemaVersion': 3,
 			'aspectList': {
 				'mode': mode,
 				'maxOrb': max_orb,
@@ -1526,6 +1922,9 @@ class Options:
 				'focusMatchMode': focus_match_mode,
 				'rxFocusEnabled': bool(aspect.get('rxFocusEnabled', False)),
 				'includeHouseCusps': bool(aspect.get('includeHouseCusps', True)),
+				'includeMinorAspects': bool(aspect.get('includeMinorAspects', False)),
+				'includeDeclination': bool(aspect.get('includeDeclination', False)),
+				'ascensionalMaxOrbArcmin': ascensional_max_orb,
 				'secondaryRingEnabledByMode': secondary_ring_enabled_by_mode,
 				'filterDrawerOpen': bool(aspect.get('filterDrawerOpen', False)),
 			},
@@ -1538,6 +1937,9 @@ class Options:
 				'direction': direction,
 			},
 			'synodicList': {
+				'planetIds': planet_ids,
+				'ingressesEnabled': ingresses_enabled,
+				'synodicsEnabled': synodics_enabled,
 				'ingressPlanetIds': ingress_planet_ids,
 				'synodicPlanetIds': synodic_planet_ids,
 				'lunarCycleIds': lunar_cycle_ids,
@@ -1548,7 +1950,6 @@ class Options:
 			'secondaryProgressions': {
 				'planetIds': secondary_planet_ids,
 				'pointRoles': point_roles(secondary),
-				'pointFilterSide': 'to' if secondary.get('pointFilterSide') == 'to' else 'from',
 				'angleIds': secondary_angle_ids,
 				'aspectIds': secondary_aspect_ids,
 				'filterDrawerOpen': bool(
@@ -1690,6 +2091,10 @@ class Options:
 		self.dateconvention = self.def_dateconvention
 		self.transcendental = self.def_transcendental[:]
 		self.showchiron = self.def_showchiron
+		self.showapogee = self.def_showapogee
+		self.meanapogee = self.def_meanapogee
+		self.pdpromapogee = self.def_pdpromapogee
+		self.pdsigapogee = self.def_pdsigapogee
 		self.extendedradixstations = self.def_extendedradixstations
 		self.showvertex = self.def_showvertex
 		self.showaspectstovertex = self.def_showaspectstovertex
@@ -1698,7 +2103,6 @@ class Options:
 		self.exclusive_aspects_on_click = self.def_exclusive_aspects_on_click
 		self.exclusive_aspects_on_click_show_minor = self.def_exclusive_aspects_on_click_show_minor
 		self.exclusive_aspects_on_click_traditional = self.def_exclusive_aspects_on_click_traditional
-		self.aspect_flag_show_parties = self.def_aspect_flag_show_parties
 		self.showlof = self.def_showlof
 		self.showaspectstolof = self.def_showaspectstolof
 		self.showlofouterring = self.def_showlofouterring
@@ -1706,9 +2110,11 @@ class Options:
 		self.showprenataleclipse = self.def_showprenataleclipse
 		self.pdf_chart_color_mode = self.def_pdf_chart_color_mode
 		self.pdf_chart_raster_preset = self.def_pdf_chart_raster_preset
+		self.pdf_page_format = self.def_pdf_page_format
 		self.pdf_include_overlays = self.def_pdf_include_overlays
 		self.png_chart_appearance = self.def_png_chart_appearance
 		self.png_include_overlays = self.def_png_include_overlays
+		self.png_page_format = self.def_png_page_format
 		self.png_watermark_style = self.def_png_watermark_style
 		self.png_watermark_text = self.def_png_watermark_text
 		self.list_export_aspect_symbols = self.def_list_export_aspect_symbols
@@ -1722,6 +2128,12 @@ class Options:
 		self.multiwheel_show_minutes = self.def_multiwheel_show_minutes
 		self.multiwheel_sign_colors = self.def_multiwheel_sign_colors
 		self.multiwheel_show_angle_labels = self.def_multiwheel_show_angle_labels
+		self.inspector_text_size = self.def_inspector_text_size
+		self.inspector_speculum_precision = self.def_inspector_speculum_precision
+		self.ascensional_readout = self.def_ascensional_readout
+		self.ascensional_equatorial_signs = self.def_ascensional_equatorial_signs
+		self.ascensional_precession_measure = self.def_ascensional_precession_measure
+		self.ascensional_precession_defaults = self.def_ascensional_precession_defaults.copy()
 		self.dignitylabelcolors = self.def_dignitylabelcolors
 		self.showfixstars = self.def_showfixstars
 		self.phasismode = self.def_phasismode
@@ -1730,6 +2142,18 @@ class Options:
 		self.synodicmode = self.def_synodicmode
 		self.solarconditionmode = self.def_solarconditionmode
 		self.showeclipseoverlay = self.def_showeclipseoverlay
+		self.showvoidcourse = self.def_showvoidcourse
+		self.voidcoursepolicy = self.def_voidcoursepolicy
+		self.chart_dashboard = self.def_chart_dashboard
+		self.dashboard_aspect_grid = self.def_dashboard_aspect_grid
+		self.dashboard_declination = self.def_dashboard_declination
+		self.dashboard_moon = self.def_dashboard_moon
+		self.dashboard_grid_orbs = self.def_dashboard_grid_orbs
+		self.dashboard_grid_large = self.def_dashboard_grid_large
+		self.dashboard_grid_parallels = self.def_dashboard_grid_parallels
+		self.dashboard_declination_mirrored = self.def_dashboard_declination_mirrored
+		self.dashboard_moon_all_bodies = self.def_dashboard_moon_all_bodies
+		self.dashboard_declination_horizontal = self.def_dashboard_declination_horizontal
 		self.astrocart_localspace_additive = self.def_astrocart_localspace_additive
 		self.astrocart_show_ecliptic = self.def_astrocart_show_ecliptic
 		self.astrocart_show_equator = self.def_astrocart_show_equator
@@ -1826,6 +2250,11 @@ class Options:
 		self.clrindividual = self.def_clrindividual[:]
 
 		self.useplanetcolors = self.def_useplanetcolors
+		self.blendminordignities = self.def_blendminordignities
+		self.showdignityglyphs = self.def_showdignityglyphs
+		self.showfaceglyphs = self.def_showfaceglyphs
+		self.showtermglyphs = self.def_showtermglyphs
+		self.useplanetcolorsforsubdivisions = self.def_useplanetcolorsforsubdivisions
 
 		self.clrbackground = self.def_clrbackground
 		self.clrsidebar = self.def_clrsidebar
@@ -1844,6 +2273,8 @@ class Options:
 
 		#Orbis
 		self.orbis = copy.deepcopy(self.def_orbis)
+		self.orb_policy = self.def_orb_policy
+		self.orb_overrides = copy.deepcopy(self.def_orb_overrides)
 		self.orbisplanetspar = copy.deepcopy(self.def_orbisplanetspar)
 
 		# Houses
@@ -1937,6 +2368,10 @@ class Options:
 		self.pdpromarabicpartname = self.def_pdpromarabicpartname
 		self.pdsigarabicparts = self.def_pdsigarabicparts
 		self.pdsigarabicpartname = self.def_pdsigarabicpartname
+		for role in ('prom', 'sig'):
+			setattr(self, 'pd%sarabicpartnames' % role, None)
+			setattr(self, 'pd%sasteroids' % role, False)
+			setattr(self, 'pd%sasteroidnumbers' % role, [])
 
 		#PD-Keys
 		self.pdkeydyn = self.def_pdkeydyn
@@ -1947,6 +2382,7 @@ class Options:
 		self.pdkeysec = self.def_pdkeysec
 
 		self.useregressive = self.def_useregressive
+		self.pdconverse = self.def_pdconverse
 
 		#Fortune
 		self.lotoffortune = self.def_lotoffortune
@@ -1958,6 +2394,9 @@ class Options:
 		self.fixstars.clear()
 		self.fixstars = self.def_fixstars.copy()
 		self.useIndianFixstarNames = self.def_useIndianFixstarNames
+		self.fixstar_orb_mode = self.def_fixstar_orb_mode
+		self.fixstar_orb_uniform = self.def_fixstar_orb_uniform
+		self.fixstar_orb_individual = self.def_fixstar_orb_individual.copy()
 
 		#Asteroids
 		self.asteroids = self.def_asteroids[:]
@@ -2010,6 +2449,7 @@ class Options:
 		#Autosave
 		self.autosave = self.def_autosave
 		self.quickcharts_prompt = self.def_quickcharts_prompt
+		self.supplementary_location = self.def_supplementary_location
 		self.timed_chart_show_radix_default = self.def_timed_chart_show_radix_default
 		self.event_table_time_basis = self.def_event_table_time_basis
 		self.subcharts_open_compound_default = self.def_subcharts_open_compound_default
@@ -2050,6 +2490,7 @@ class Options:
 		self.astrocartography_preferences = copy.deepcopy(
 			self.def_astrocartography_preferences
 		)
+		self.astrolabe_preferences = copy.deepcopy(self.def_astrolabe_preferences)
 		self.last_hor_dir = self.def_last_hor_dir
 		self.revolutions_solaryearmode = self.def_revolutions_solaryearmode
 		self.revolutions_solarlocationmode = self.def_revolutions_solarlocationmode
@@ -2065,6 +2506,181 @@ class Options:
 
 
 	def load(self):
+		"""Load the user's settings: settings.json, else the legacy .opt files.
+
+		settings.json holds only values that differ from the shipped defaults,
+		keyed by setting name, plus a hash of each legacy file as Aries last
+		wrote it. A legacy file whose hash no longer matches was written by an
+		older build since then; only those files are imported again, on top of
+		the stored settings. Afterwards the legacy files are rewritten from the
+		result so an older build reads current values.
+		"""
+		if getattr(self, '_loading_factory_defaults', False):
+			return self._load_legacy()
+		document = self._read_settings_document()
+		on_disk = self._legacy_disk_hashes()
+		if document is None:
+			res = self._load_legacy()
+		else:
+			res = True
+			self._apply_stored_settings(document['settings'])
+			recorded = document.get('legacyFiles')
+			if isinstance(recorded, dict):
+				changed = {name for name, digest in on_disk.items() if recorded.get(name) != digest}
+			else:
+				# A settings.json from before file hashes were recorded was
+				# always written after its .opt files: it is the newer state.
+				changed = set()
+			if changed:
+				self._reimport_legacy_files(changed)
+		self._legacy_hashes = on_disk
+		self._upgrade_midnight_body_colors()
+		self._normalize_fortune_formula()
+		fixed_star_orbs.sync(self)
+		try:
+			self._persist_settings()
+		except OSError:
+			logging.getLogger(__name__).exception('could not write settings')
+		return res
+
+	def _upgrade_midnight_body_colors(self):
+		"""Replace the old stock Midnight body palette on existing installs."""
+		if self.clrbackground != (35, 36, 40):
+			return
+		edited_colors = self.custom_color_preset.get(SETTINGS_COLOR_OVERRIDES_KEY)
+		if isinstance(edited_colors, (list, tuple, set)) and 'clrindividual' in edited_colors:
+			return
+		legacy_jupiter = (*MIDNIGHT_BODY_COLORS[:5], (0, 0, 255))
+		legacy_palettes = (
+			(*legacy_jupiter, (0, 0, 0), (0, 0, 128), (0, 0, 128), (0, 0, 128),
+			 *MIDNIGHT_BODY_COLORS[10:]),
+			(*legacy_jupiter, *MIDNIGHT_BODY_COLORS[6:]),
+		)
+		if tuple(self.clrindividual) in legacy_palettes:
+			self.clrindividual[:] = MIDNIGHT_BODY_COLORS
+
+	def _normalize_fortune_formula(self):
+		"""Fortune is Asc + Moon − Sun, reversed by night or not (Ptolemy).
+
+		The old Asc + Sun − Moon by-day choice was the Lot of Spirit under
+		Fortune's name; a stored one becomes the usual reversed rule."""
+		if self.lotoffortune not in (chart.Chart.LFMOONSUN, chart.Chart.LFDMOONSUN):
+			self.lotoffortune = chart.Chart.LFDMOONSUN
+
+	def _setting_names(self):
+		"""Every persisted setting: each attribute with a def_ baseline."""
+		return sorted(
+			name[4:] for name in list(vars(self))
+			if name.startswith('def_') and hasattr(self, name[4:])
+		)
+
+	def _read_settings_document(self):
+		try:
+			with open(self.settingsjson, 'r', encoding='utf-8') as handle:
+				document = json.load(handle)
+		except (OSError, ValueError):
+			return None
+		if not isinstance(document, dict) or document.get('schemaVersion') != SETTINGS_SCHEMA_VERSION:
+			return None
+		if not isinstance(document.get('settings'), dict):
+			return None
+		return document
+
+	def _render_legacy_files(self):
+		"""The legacy .opt streams for the current settings, without writing them."""
+		rendered = {}
+		self._rendering_legacy = rendered
+		try:
+			for method in _LEGACY_SAVE_METHODS:
+				try:
+					getattr(self, method)()
+				except Exception:
+					logging.getLogger(__name__).exception('could not render %s', method)
+		finally:
+			del self._rendering_legacy
+		return rendered
+
+	def _legacy_disk_hashes(self):
+		hashes = {}
+		for path in self._render_legacy_files():
+			try:
+				with open(path, 'rb') as handle:
+					hashes[os.path.basename(path)] = hashlib.sha256(handle.read()).hexdigest()
+			except OSError:
+				continue
+		return hashes
+
+	def _reimport_legacy_files(self, changed):
+		# Unchanged files are read from the current settings, so only what an
+		# older build wrote can differ from them.
+		overrides = {
+			os.path.basename(path): data
+			for path, data in self._render_legacy_files().items()
+			if os.path.basename(path) not in changed
+		}
+		self._legacy_overrides = overrides
+		try:
+			self._load_legacy()
+		finally:
+			del self._legacy_overrides
+
+	def _apply_stored_settings(self, stored):
+		for name in self._setting_names():
+			default = getattr(self, 'def_' + name)
+			value = copy.deepcopy(default)
+			if name in stored:
+				try:
+					decoded = _conform_setting(name, _decode_setting(stored[name]), default)
+				except (TypeError, ValueError, AttributeError):
+					decoded = _REJECT
+				if decoded is not _REJECT:
+					value = decoded
+			setattr(self, name, value)
+		self._normalize_preference_stores()
+
+	def _normalize_preference_stores(self):
+		if type(self.voidcoursepolicy) is not int or self.voidcoursepolicy not in (0, 1, 2):
+			self.voidcoursepolicy = self.def_voidcoursepolicy
+		self.astrocartography_preferences = self._normalize_astrocartography_preferences(self.astrocartography_preferences)
+		self.astrolabe_preferences = self._normalize_astrolabe_preferences(self.astrolabe_preferences)
+		self.sidebar_list_preferences = self._normalize_sidebar_list_preferences(self.sidebar_list_preferences)
+		self.user_panel_presets = self._normalize_user_panel_presets(self.user_panel_presets)
+
+	def _persist_settings(self):
+		"""Write changed legacy files, then settings.json. Raises OSError."""
+		if getattr(self, '_loading_factory_defaults', False) or getattr(self, '_rendering_legacy', None) is not None:
+			return
+		with _PERSIST_LOCK:
+			hashes = dict(getattr(self, '_legacy_hashes', None) or {})
+			for path, data in self._render_legacy_files().items():
+				name = os.path.basename(path)
+				digest = hashlib.sha256(data).hexdigest()
+				if hashes.get(name) == digest and os.path.exists(path):
+					continue
+				_write_file_atomically(path, data)
+				hashes[name] = digest
+			self._legacy_hashes = hashes
+			changed = {}
+			for name in self._setting_names():
+				value = getattr(self, name)
+				if value == getattr(self, 'def_' + name):
+					continue
+				try:
+					changed[name] = _encode_setting(value)
+				except TypeError:
+					logging.getLogger(__name__).warning('setting %s is not storable', name)
+			document = {
+				'schemaVersion': SETTINGS_SCHEMA_VERSION,
+				'about': 'Settings that differ from the shipped defaults. Anything not listed follows the defaults of the installed Aries version.',
+				'settings': changed,
+				'legacyFiles': hashes,
+			}
+			_write_file_atomically(
+				self.settingsjson,
+				(json.dumps(document, indent=1, sort_keys=True, ensure_ascii=False) + '\n').encode('utf-8'),
+			)
+
+	def _load_legacy(self):
 		res = True
 
 		try:
@@ -2407,6 +3023,38 @@ class Options:
 				self.positionsminutes = bool(pickle.load(f))
 			except EOFError:
 				self.positionsminutes = self.def_positionsminutes
+			for attr in ('showapogee', 'meanapogee', 'pdpromapogee', 'pdsigapogee'):
+				try:
+					setattr(self, attr, bool(pickle.load(f)))
+				except EOFError:
+					setattr(self, attr, getattr(self, 'def_' + attr))
+			try:
+				value = pickle.load(f)
+				self.ascensional_readout = value if value in ('mdo-quadrant', 'absolute', 'equatorial-signs') else self.def_ascensional_readout
+			except (EOFError, ValueError, TypeError):
+				self.ascensional_readout = self.def_ascensional_readout
+			try:
+				self.ascensional_equatorial_signs = bool(pickle.load(f))
+			except EOFError:
+				self.ascensional_equatorial_signs = self.def_ascensional_equatorial_signs
+			try:
+				value = pickle.load(f)
+				self.inspector_text_size = value if value in ('normal', 'larger', 'extra-large') else self.def_inspector_text_size
+			except (EOFError, ValueError, TypeError):
+				self.inspector_text_size = self.def_inspector_text_size
+			try:
+				value = pickle.load(f)
+				self.ascensional_precession_measure = value if value in ('ecliptic', 'equatorial') else self.def_ascensional_precession_measure
+			except (EOFError, ValueError, TypeError):
+				self.ascensional_precession_measure = self.def_ascensional_precession_measure
+			try:
+				value = pickle.load(f)
+				self.ascensional_precession_defaults = {
+					key: choice for key, choice in value.items()
+					if key in ('event', 'natal-synastry', 'derived', 'chart') and isinstance(choice, bool)
+				} if isinstance(value, dict) else {}
+			except (EOFError, ValueError, TypeError):
+				self.ascensional_precession_defaults = {}
 			if (
 				isinstance(self.ringorb_asteroids, bool) and
 				isinstance(self.ringorb_hybrid, bool) and
@@ -2452,7 +3100,9 @@ class Options:
 				self.showchiron = bool(legacy_showchiron)
 
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
+			# Missing or damaged file: values read so far stay, the rest keep
+			# their shipped defaults.
 			res = False
 
 		try:
@@ -2473,7 +3123,7 @@ class Options:
 			self._normalize_speculum_speed_mode()
 			self._normalize_speculum_options()
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2483,7 +3133,7 @@ class Options:
 			self.pluto = pickle.load(f)
 			self.signs = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2491,7 +3141,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.dignities = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2500,7 +3150,7 @@ class Options:
 			self.seltrip = pickle.load(f)
 			self.trips = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2509,7 +3159,7 @@ class Options:
 			self.selterm = pickle.load(f)
 			self.terms = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2518,7 +3168,7 @@ class Options:
 			self.seldecan = pickle.load(f)
 			self.decans = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2533,7 +3183,7 @@ class Options:
 			self.dayhourscores = pickle.load(f)
 			self.useexaltationmercury = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2545,7 +3195,7 @@ class Options:
 			self.daynightorbdeg = pickle.load(f)
 			self.daynightorbmin = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2565,7 +3215,7 @@ class Options:
 			except Exception:
 				self.show_manzil_in_inspector = self.def_show_manzil_in_inspector
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2634,10 +3284,20 @@ class Options:
 				self.def_zodiacelementfieldopacity,
 			)
 			self.def_clrindividual = self._normalize_clrindividual(self.def_clrindividual, fallback=self.clrindividual)
+			self.blendminordignities = (
+				isinstance(app_color_trailer, dict)
+				and app_color_trailer.get('blendminordignities') is True
+			)
+			self.showdignityglyphs = (isinstance(app_color_trailer, dict) and bool(
+				app_color_trailer.get('showdignityglyphs', app_color_trailer.get('blendminordignities', False))))
+			self.useplanetcolorsforsubdivisions = (not isinstance(app_color_trailer, dict)
+				or bool(app_color_trailer.get('useplanetcolorsforsubdivisions', True)))
+			for name in ('term', 'face'):
+				setattr(self, 'show%sglyphs' % name, isinstance(app_color_trailer, dict) and bool(app_color_trailer.get('show%sglyphs' % name, False)))
 			self.clrindividual = self._normalize_clrindividual(self.clrindividual, fallback=self.def_clrindividual)
 			self.custom_color_preset = self._normalize_color_preset(self.custom_color_preset)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2645,7 +3305,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.hsys = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2653,7 +3313,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.meannode = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2669,7 +3329,7 @@ class Options:
 			self.orbiscuspAscMC = pickle.load(f)
 			self.exact = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2835,7 +3495,13 @@ class Options:
 					raise IndexError()
 			except Exception:
 				self.pdcircumprommode = self.def_pdcircumprommode
-		except IOError:
+			selection_trailer = primarydir_value(i, {})
+			if isinstance(selection_trailer, dict):
+				for role in ('prom', 'sig'):
+					for suffix, default in (('arabicpartnames', None), ('asteroids', False), ('asteroidnumbers', [])):
+						attr = 'pd%s%s' % (role, suffix)
+						setattr(self, attr, selection_trailer.get(attr, default))
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2849,7 +3515,7 @@ class Options:
 			self.pdkeysec = pickle.load(f)
 			self.useregressive = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2857,7 +3523,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.lotoffortune = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2865,7 +3531,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.syzmoon = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2878,7 +3544,7 @@ class Options:
 				self.useIndianFixstarNames = self.def_useIndianFixstarNames
 			self.pdfixstarssel = self._normalized_pdfixstarssel(self.pdfixstarssel)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2917,7 +3583,7 @@ class Options:
 			except EOFError:
 				self.profwholesign = self.def_profwholesign
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 # ########################################
@@ -2927,7 +3593,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.isfirbonatti = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 # ########################################
 
@@ -2961,7 +3627,7 @@ class Options:
 				self.defloclon = self.def_defloclon
 				self.defloclat = self.def_defloclat
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 # ########################################
 
@@ -2977,7 +3643,7 @@ class Options:
 				self.pdinchartreverse = self.def_pdinchartreverse
 			self._normalize_pds_in_chart_options()
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2989,7 +3655,7 @@ class Options:
 			except Exception:
 				self.fontfamily = self.def_fontfamily
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -2997,7 +3663,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.autosave = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3009,7 +3675,7 @@ class Options:
 			self.stepalerts_promplanets = pickle.load(f)
 			f.close()
 			self._normalize_stepalerts()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3050,7 +3716,7 @@ class Options:
 			except Exception:
 				self.revolutions_lunarreturnmode = self.def_revolutions_lunarreturnmode
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3202,7 +3868,7 @@ class Options:
 				# Append-only migration: retain the previous shared calculation choice.
 				self.solar_arc_angle_method = self.progressed_angle_method
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3267,7 +3933,7 @@ class Options:
 			except Exception:
 				self.search_lifetime_years = self.def_search_lifetime_years
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3275,7 +3941,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.startupchart = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3293,7 +3959,7 @@ class Options:
 					self.restore_open_charts_active_ref = active_ref
 			else:
 				self.restore_open_charts = bool(data)
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3314,7 +3980,7 @@ class Options:
 				self.chart_picker_sort_ascending = bool(sort_ascending)
 			elif isinstance(data, (list, tuple)):
 				self.recent_chart_refs = [ref for ref in data if isinstance(ref, dict)]
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3324,7 +3990,7 @@ class Options:
 			f.close()
 			if isinstance(data, dict):
 				self.workspace_sidebar_action_order = data
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3334,7 +4000,7 @@ class Options:
 			f.close()
 			if isinstance(data, (list, tuple)):
 				self.workspace_sidebar_collapsed_sections = [section for section in data if isinstance(section, str)]
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3350,6 +4016,16 @@ class Options:
 			self.astrocartography_preferences = copy.deepcopy(
 				self.def_astrocartography_preferences
 			)
+
+		try:
+			optfile = self.astrolabepreferencesopt
+			f = self._open_opt_for_load(optfile)
+			self.astrolabe_preferences = self._normalize_astrolabe_preferences(pickle.load(f))
+			f.close()
+		except (IOError, EOFError, pickle.PickleError, TypeError, ValueError):
+			# Tauri-only preference store without a factory pickle: a missing
+			# file is a valid fresh-install state.
+			self.astrolabe_preferences = copy.deepcopy(self.def_astrolabe_preferences)
 
 		try:
 			optfile = self.sidebarlistpreferencesopt
@@ -3368,7 +4044,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.last_hor_dir = pickle.load(f)
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3381,7 +4057,7 @@ class Options:
 			except EOFError:
 				self.synastry_opens_composite_first = self.def_synastry_opens_composite_first
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		try:
@@ -3389,7 +4065,7 @@ class Options:
 			f = self._open_opt_for_load(optfile)
 			self.user_panel_presets = self._normalize_user_panel_presets(pickle.load(f))
 			f.close()
-		except IOError:
+		except (IOError, EOFError, pickle.UnpicklingError):
 			res = False
 
 		self._migrate_aspect_arrays()
@@ -3421,10 +4097,25 @@ class Options:
 					_pad(row, self.def_orbis[-1])
 
 
+	def _report_save_error(self, optfile, *, composite=False):
+		"""Report a failed write without loading a GUI toolkit in the daemon."""
+		message = mtexts.txts['OptFileError'] + ' (' + optfile + ')'
+		logging.getLogger(__name__).error('%s', message)
+		# Preserve modal reporting only for an already-running legacy host.
+		legacy_wx = sys.modules.get('wx')
+		if legacy_wx is not None and legacy_wx.GetApp() is not None:
+			style = legacy_wx.OK | (legacy_wx.ICON_ERROR if composite else legacy_wx.ICON_EXCLAMATION)
+			dlg = legacy_wx.MessageDialog(None, message, mtexts.txts['Error'], style)
+			try:
+				dlg.ShowModal()
+			finally:
+				dlg.Destroy()
+
+
 	def saveAppearance1(self):
 		try:
 			optfile = self.appearance1opt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.aspects, f)
 			pickle.dump(self.aspect, f)
 			pickle.dump(self.symbols, f)
@@ -3519,18 +4210,24 @@ class Options:
 			pickle.dump(str(self.png_watermark_style), f)
 			pickle.dump(str(self.png_watermark_text), f)
 			pickle.dump(bool(self.positionsminutes), f)
+			for attr in ('showapogee', 'meanapogee', 'pdpromapogee', 'pdsigapogee'):
+				pickle.dump(bool(getattr(self, attr)), f)
+			pickle.dump(str(self.ascensional_readout), f)
+			pickle.dump(bool(self.ascensional_equatorial_signs), f)
+			pickle.dump(str(self.inspector_text_size), f)
+			pickle.dump(str(self.ascensional_precession_measure), f)
+			pickle.dump(self.ascensional_precession_defaults, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveAppearance2(self):
 		try:
 			optfile = self.appearance2opt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.speculums, f)
 			pickle.dump(self.intime, f)
 			pickle.dump(self.speculumdodecat, f)
@@ -3538,85 +4235,79 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveSymbols(self):
 		try:
 			optfile = self.symbolsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.uranus, f)
 			pickle.dump(self.pluto, f)
 			pickle.dump(self.signs, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveDignities(self):
 		try:
 			optfile = self.dignitiesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.dignities, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveTriplicities(self):
 		try:
 			optfile = self.triplicitiesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.seltrip, f)
 			pickle.dump(self.trips, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveTerms(self):
 		try:
 			optfile = self.termsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.selterm, f)
 			pickle.dump(self.terms, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveDecans(self):
 		try:
 			optfile = self.decansopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.seldecan, f)
 			pickle.dump(self.decans, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveChartAlmuten(self):
 		try:
 			optfile = self.chartalmutenopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.oneruler, f)
 			pickle.dump(self.usedaynightorb, f)
 			pickle.dump(self.dignityscores, f)
@@ -3628,15 +4319,14 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveTopicalandParts(self):
 		try:
 			optfile = self.topicalandpartsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.topicals, f)
 			pickle.dump(self.arabicparts, f)
 			pickle.dump(self.arabicpartsref, f)
@@ -3645,15 +4335,14 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveAyanamsa(self):
 		try:
 			optfile = self.ayanamsaopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.ayanamsha, f)
 			pickle.dump(self.manazil_zodiac, f)
 			pickle.dump(self.lunar_day_anchor, f)
@@ -3661,15 +4350,14 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveColors(self):
 		try:
 			optfile = self.colorsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.clrframe, f)
 			pickle.dump(self.clrsigns, f)
 			pickle.dump(self.clrAscMC, f)
@@ -3702,20 +4390,18 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveUserPanelPresets(self):
 		try:
 			optfile = self.userpanelopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.user_panel_presets, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def loadUserPanelPresets(self):
@@ -3732,33 +4418,31 @@ class Options:
 	def saveHouseSystem(self):
 		try:
 			optfile = self.housesystemopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.hsys, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveNodes(self):
 		try:
 			optfile = self.nodesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.meannode, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveOrbs(self):
 		try:
 			optfile = self.orbsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.orbis, f)
 			pickle.dump(self.orbisplanetspar, f)
 			pickle.dump(self.orbisH, f)
@@ -3771,15 +4455,14 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def savePrimaryDirs(self):
 		try:
 			optfile = self.primarydirsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.primarydir, f)
 			pickle.dump(self.subprimarydir, f)
 			pickle.dump(self.subzodiacal, f)
@@ -3829,18 +4512,22 @@ class Options:
 			pickle.dump(self.pdrevshownatalpromissors, f)
 			pickle.dump(self.pdmorinpromittorset, f)
 			pickle.dump(self.pdcircumprommode, f)
+			pickle.dump({
+				'pd%s%s' % (role, suffix): getattr(self, 'pd%s%s' % (role, suffix))
+				for role in ('prom', 'sig')
+				for suffix in ('arabicpartnames', 'asteroids', 'asteroidnumbers')
+			}, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def savePrimaryKeys(self):
 		try:
 			optfile = self.primarykeysopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.pdkeydyn, f)
 			pickle.dump(self.pdkeyd, f)
 			pickle.dump(self.pdkeys, f)
@@ -3851,14 +4538,13 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveStepAlerts(self):
 		try:
 			optfile = self.stepalertsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.stepalerts_enabled, f)
 			pickle.dump(self.stepalerts_sigangles, f)
 			pickle.dump(self.stepalerts_sigplanets, f)
@@ -3866,8 +4552,7 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def _normalize_stepalerts(self):
@@ -3886,33 +4571,32 @@ class Options:
 	def saveFortune(self):
 		try:
 			optfile = self.fortuneopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.lotoffortune, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveSyzygy(self):
 		try:
 			optfile = self.syzygyopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.syzmoon, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 # ###########################################
 # Elias -  V 8.0.0 fixstarsorbdlg change fs=[]
 # ###########################################
 	def _normalized_fixstars(self, fixstars_map=None):
-		if isinstance(fixstars_map, dict) and len(fixstars_map) != 0:
+		# An empty dict is a deliberate "no fixed stars" selection.
+		if isinstance(fixstars_map, dict):
 			return fixstars_map.copy()
 		return self.def_fixstars.copy()
 
@@ -3934,7 +4618,7 @@ class Options:
 		values = list(selections) if selections is not None else []
 		if length is None:
 			fixstars_map = getattr(self, 'fixstars', None)
-			length = len(fixstars_map) if fixstars_map else len(values)
+			length = len(fixstars_map) if isinstance(fixstars_map, dict) else len(values)
 		try:
 			length = max(0, int(length))
 		except (TypeError, ValueError):
@@ -3948,7 +4632,7 @@ class Options:
 	def saveFixstars(self, fs=None):
 		try:
 			optfile = self.fixstarsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			if fs is not None:
 				self.fixstars = self._normalized_fixstars(fs)
 			else:
@@ -3959,14 +4643,13 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveAsteroids(self):
 		try:
 			optfile = self.asteroidsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			self.asteroids = self._normalized_asteroids(self.asteroids)
 			pickle.dump(self.asteroids, f)
 			pickle.dump(self._normalized_asteroid_orb(
@@ -3981,13 +4664,14 @@ class Options:
 			f.close()
 			return True
 		except IOError:
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveProfections(self):
 		try:
 			optfile = self.profectionsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.zodprof, f)
 			pickle.dump(self.usezodprojsprof, f)
 			pickle.dump(self.profections_solar_return_snap, f)
@@ -3995,8 +4679,7 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 # ########################################
@@ -4004,13 +4687,12 @@ class Options:
 	def saveFirdaria(self):
 		try:
 			optfile = self.firdariaopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.isfirbonatti, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txtsfiles['OptFileError']+' ('+optfile+')', mtexts.txtsfiles['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 # ########################################
 
@@ -4019,7 +4701,7 @@ class Options:
 	def saveDefLocation(self):
 		try:
 			optfile = self.deflocationopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.deflocname, f)
 			pickle.dump(self.deflocplus, f)
 			pickle.dump(self.defloczhour, f)
@@ -4039,8 +4721,7 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 # ########################################
 
@@ -4049,7 +4730,7 @@ class Options:
 		try:
 			optfile = self.pdsinchartopt
 			self._normalize_pds_in_chart_options()
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.pdincharttyp, f)
 			pickle.dump(self.pdinchartsecmotion, f)
 			pickle.dump(self.pdinchartterrsecmotion, f)
@@ -4057,35 +4738,32 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveLanguages(self):
 		try:
 			optfile = self.languagesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.langid, f)
 			pickle.dump(fontprofiles.coerce_profile(self.fontfamily), f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 
 	def saveAutoSave(self):
 		try:
 			optfile = self.autosaveopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.autosave, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 		return res
@@ -4093,7 +4771,7 @@ class Options:
 	def saveRevolutions(self):
 		try:
 			optfile = self.revolutionsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.revolutions_solaryearmode, f)
 			pickle.dump(self.revolutions_solarlocationmode, f)
 			pickle.dump(self.revolutions_planetslocationmode, f)
@@ -4107,14 +4785,13 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveQuickCharts(self):
 		try:
 			optfile = self.quickchartsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.quickcharts_prompt, f)
 			pickle.dump(self.quickcharts_anchor_to_radix, f)
 			pickle.dump(self.progression_day_type, f)
@@ -4138,14 +4815,13 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveSearch(self):
 		try:
 			optfile = self.searchopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.search_techniques, f)
 			pickle.dump(self.search_aspects, f)
 			pickle.dump(self.search_promittor_ids, f)
@@ -4165,26 +4841,24 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveStartupChart(self):
 		try:
 			optfile = self.startupchartopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.startupchart, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveRecentCharts(self):
 		try:
 			optfile = self.recentchartsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump({
 				'refs': self.recent_chart_refs,
 				'sort_column': self.chart_picker_sort_column,
@@ -4193,14 +4867,13 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveRestoreOpenCharts(self):
 		try:
 			optfile = self.restoreopenchartsopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump({
 				'enabled': self.restore_open_charts,
 				'refs': self.restore_open_chart_refs,
@@ -4209,38 +4882,35 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveWorkspaceSidebarOrder(self):
 		try:
 			optfile = self.workspacesidebarorderopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.workspace_sidebar_action_order, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveWorkspaceSidebarCollapsed(self):
 		try:
 			optfile = self.workspacesidebarcollapsedopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.workspace_sidebar_collapsed_sections, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveAstrocartographyPreferences(self):
 		try:
 			optfile = self.astrocartographypreferencesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(
 				self._normalize_astrocartography_preferences(
 					self.astrocartography_preferences
@@ -4250,14 +4920,33 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
+			return False
+
+	def saveGraphicEphemerisView(self):
+		"""Persist the settings.json-only Graphic Ephemeris view preferences."""
+		try:
+			self._persist_settings()
+			return True
+		except OSError:
+			self._report_save_error(self.settingsjson)
+			return False
+
+	def saveAstrolabePreferences(self):
+		try:
+			optfile = self.astrolabepreferencesopt
+			f = self._open_opt_for_save(optfile)
+			pickle.dump(self._normalize_astrolabe_preferences(self.astrolabe_preferences), f)
+			f.close()
+			return True
+		except IOError:
+			self._report_save_error(optfile)
 			return False
 
 	def saveSidebarListPreferences(self):
 		try:
 			optfile = self.sidebarlistpreferencesopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(
 				self._normalize_sidebar_list_preferences(
 					self.sidebar_list_preferences
@@ -4267,33 +4956,30 @@ class Options:
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveLastHorDir(self):
 		try:
 			optfile = self.lasthordiropt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.last_hor_dir, f)
 			f.close()
 			return True
 		except IOError:
-			dlg = wx.MessageDialog(None, mtexts.txts['OptFileError']+' ('+optfile+')', mtexts.txts['Error'], wx.OK|wx.ICON_EXCLAMATION)
-			dlg.ShowModal()
+			self._report_save_error(optfile)
 			return False
 
 	def saveComposite(self):
 		try:
 			optfile = self.compositeopt
-			f = open(optfile, 'wb')
+			f = self._open_opt_for_save(optfile)
 			pickle.dump(self.composite_method, f)
 			pickle.dump(self.synastry_opens_composite_first, f)
 			f.close()
 			return True
 		except Exception:
-			dlg = wx.MessageDialog(self, mtexts.txts['OptSaveError'], mtexts.txts['Error'], wx.OK | wx.ICON_ERROR)
-			dlg.ShowModal()
+			self._report_save_error(optfile, composite=True)
 			return False
 
 	def save(self):
@@ -4335,6 +5021,7 @@ class Options:
 		self.saveWorkspaceSidebarOrder()
 		self.saveWorkspaceSidebarCollapsed()
 		self.saveAstrocartographyPreferences()
+		self.saveAstrolabePreferences()
 		self.saveSidebarListPreferences()
 		self.saveLastHorDir()
 		self.saveUserPanelPresets()
@@ -4357,6 +5044,8 @@ class Options:
 
 
 	def removeOptsFiles(self):
+		if os.path.exists(self.settingsjson):
+			os.remove(self.settingsjson)
 		numfiles = len(self.optionsfilestxt)
 		for i in range(numfiles):
 			f = os.path.join(self.optsdirtxt, self.optionsfilestxt[i])
@@ -4364,5 +5053,7 @@ class Options:
 				os.remove(f)
 		if os.path.exists(self.astrocartographypreferencesopt):
 			os.remove(self.astrocartographypreferencesopt)
+		if os.path.exists(self.astrolabepreferencesopt):
+			os.remove(self.astrolabepreferencesopt)
 		if os.path.exists(self.sidebarlistpreferencesopt):
 			os.remove(self.sidebarlistpreferencesopt)

@@ -10,6 +10,7 @@ PROFILE_KOSUGI_ARIES = 'kosugi_aries'
 PROFILE_ARIES_UI = 'aries_ui'
 PROFILE_DOT_GOTHIC = 'dot_gothic16'
 PROFILE_SYSTEM = 'system'
+PROFILE_MPLUS_CODE = 'mplus1_code'
 
 PROFILE_CHOICES = (
 	(PROFILE_DEFAULT, 'FreeSans (default)'),
@@ -19,12 +20,14 @@ PROFILE_CHOICES = (
 	(PROFILE_DOT_GOTHIC, 'DotGothic16'),
 )
 
-# The Tauri app can persist the platform's native system-ui stack even though
-# the legacy wx picker cannot represent a CSS generic family. Keep persistence
-# broader than the legacy picker without adding a misleading wx-only choice.
+# The Tauri app can persist the platform's native system-ui stack and the
+# web-only M PLUS 1 Code face even though the legacy wx picker cannot show
+# them. Keep persistence broader than the legacy picker without adding
+# misleading wx-only choices.
 _PERSISTED_PROFILE_KEYS = {
 	*(key for key, _label in PROFILE_CHOICES),
 	PROFILE_SYSTEM,
+	PROFILE_MPLUS_CODE,
 }
 
 # 'kosugi' keeps meaning upstream Kosugi so no saved setting is silently

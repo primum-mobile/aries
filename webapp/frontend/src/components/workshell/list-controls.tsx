@@ -18,6 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatIsoDateDisplay, parseDateDisplayInput, type DateConvention } from "@/lib/date-display";
 import { LIST_BUTTON_PROPS, LIST_PANE_CLASSES } from "@/lib/list-tokens";
 import { cn } from "@/lib/utils";
 
@@ -202,28 +203,103 @@ export function ListSegmentedControl<T extends number | string>({
   );
 }
 
+// Press-and-hold repeat for the calendar chevrons: one step on press, then a
+// steady repeat until release. Pointer steps pass `deferLoad` so the list only
+// moves its label/cursor during the burst; `onJumpSettle` fires once on release
+// to load the landed month (one fetch per burst, not per step).
+const CALENDAR_BURST_DELAY_MS = 320;
+const CALENDAR_BURST_INTERVAL_MS = 70;
+
+export type ListCalendarJumpOptions = { deferLoad?: boolean };
+
+function useCalendarBurst(
+  onJump: (months: number, options?: ListCalendarJumpOptions) => void,
+  onJumpSettle: (() => void) | undefined,
+  onRelease?: () => void,
+) {
+  const onJumpRef = React.useRef(onJump);
+  const onJumpSettleRef = React.useRef(onJumpSettle);
+  const onReleaseRef = React.useRef(onRelease);
+  React.useEffect(() => {
+    onJumpRef.current = onJump;
+    onJumpSettleRef.current = onJumpSettle;
+    onReleaseRef.current = onRelease;
+  }, [onJump, onJumpSettle, onRelease]);
+  const timerRef = React.useRef<number | null>(null);
+  const activeRef = React.useRef(false);
+
+  const clearTimer = React.useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+  const stop = React.useCallback(() => {
+    clearTimer();
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    if (onJumpSettleRef.current) onJumpSettleRef.current();
+    onReleaseRef.current?.();
+  }, [clearTimer]);
+  React.useEffect(() => stop, [stop]);
+
+  return React.useCallback(
+    (months: number) => {
+      const deferLoad = Boolean(onJumpSettle);
+      return {
+        onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          clearTimer();
+          activeRef.current = true;
+          onJumpRef.current(months, { deferLoad });
+          const repeat = () => {
+            onJumpRef.current(months, { deferLoad });
+            timerRef.current = window.setTimeout(repeat, CALENDAR_BURST_INTERVAL_MS);
+          };
+          timerRef.current = window.setTimeout(repeat, CALENDAR_BURST_DELAY_MS);
+        },
+        onPointerUp: stop,
+        onPointerCancel: stop,
+        onLostPointerCapture: stop,
+        onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+          // Pointer presses already stepped on pointerdown; this is keyboard.
+          if (event.detail === 0) {
+            onJumpRef.current(months);
+            onReleaseRef.current?.();
+          }
+        },
+      };
+    },
+    [clearTimer, onJumpSettle, stop],
+  );
+}
+
 export function ListCalendarStepper({
   label,
   onJump,
+  onJumpSettle,
   previousYearLabel,
   previousMonthLabel,
   nextMonthLabel,
   nextYearLabel,
 }: {
   label: string;
-  onJump: (months: number) => void;
+  onJump: (months: number, options?: ListCalendarJumpOptions) => void;
+  onJumpSettle?: () => void;
   previousYearLabel: string;
   previousMonthLabel: string;
   nextMonthLabel: string;
   nextYearLabel: string;
 }) {
+  const burst = useCalendarBurst(onJump, onJumpSettle);
   return (
     <div className={LIST_PANE_CLASSES.calendarStepper}>
       <Button
         type="button"
         {...LIST_BUTTON_PROPS.icon}
         className="[&_svg]:size-[var(--aries-control-icon-size)]"
-        onClick={() => onJump(-12)}
+        {...burst(-12)}
         aria-label={previousYearLabel}
       >
         <ChevronsLeft />
@@ -232,7 +308,7 @@ export function ListCalendarStepper({
         type="button"
         {...LIST_BUTTON_PROPS.icon}
         className="[&_svg]:size-[var(--aries-control-icon-size)]"
-        onClick={() => onJump(-1)}
+        {...burst(-1)}
         aria-label={previousMonthLabel}
       >
         <ChevronLeft />
@@ -245,7 +321,7 @@ export function ListCalendarStepper({
         type="button"
         {...LIST_BUTTON_PROPS.icon}
         className="[&_svg]:size-[var(--aries-control-icon-size)]"
-        onClick={() => onJump(1)}
+        {...burst(1)}
         aria-label={nextMonthLabel}
       >
         <ChevronRight />
@@ -254,11 +330,156 @@ export function ListCalendarStepper({
         type="button"
         {...LIST_BUTTON_PROPS.icon}
         className="[&_svg]:size-[var(--aries-control-icon-size)]"
-        onClick={() => onJump(12)}
+        {...burst(12)}
         aria-label={nextYearLabel}
       >
         <ChevronsRight />
       </Button>
+    </div>
+  );
+}
+
+export type ListMomentUnit = "day" | "month" | "year";
+
+/** The date field's segment under the caret, in display order. */
+function momentUnitAtCaret(text: string, caret: number, convention: DateConvention): ListMomentUnit {
+  const order: ListMomentUnit[] = convention === "dmy" ? ["day", "month", "year"] : ["year", "month", "day"];
+  const spans = [...text.matchAll(/\d+/g)].map((match) => [match.index ?? 0, (match.index ?? 0) + match[0].length]);
+  const index = spans.findIndex(([, end]) => caret <= end);
+  return order[Math.min(index < 0 ? spans.length - 1 : index, order.length - 1)] ?? "day";
+}
+
+/**
+ * A moment control: the date a state-at-one-time table is read at (the
+ * directed speculum), unlike ListCalendarStepper, which only scrolls a list.
+ * Chevrons step a month (‹ ›) or a year (« »), held to repeat; the date is a
+ * typed field, and ↑/↓ step the day, month or year under the caret. Every
+ * step is delivered at once (no batching); `onStepEnd` closes a burst, as a
+ * released arrow key does.
+ */
+export function ListMomentStepper({
+  value,
+  convention,
+  onStep,
+  onStepEnd,
+  onCommitDate,
+  dateLabel,
+  previousYearLabel,
+  previousMonthLabel,
+  nextMonthLabel,
+  nextYearLabel,
+}: {
+  /** ISO day (YYYY-MM-DD), or null while unknown. */
+  value: string | null;
+  convention: DateConvention;
+  onStep: (unit: ListMomentUnit, delta: number) => void;
+  onStepEnd?: () => void;
+  onCommitDate: (iso: string) => void;
+  dateLabel: string;
+  previousYearLabel: string;
+  previousMonthLabel: string;
+  nextMonthLabel: string;
+  nextYearLabel: string;
+}) {
+  const jumpMonths = React.useCallback(
+    (months: number) => (Math.abs(months) === 12 ? onStep("year", Math.sign(months)) : onStep("month", months)),
+    [onStep],
+  );
+  const burst = useCalendarBurst(jumpMonths, undefined, onStepEnd);
+  const formatted = value ? formatIsoDateDisplay(value, convention) : "";
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const editingRef = React.useRef(false);
+  const caretRef = React.useRef<number | null>(null);
+  const [draft, setDraft] = React.useState(formatted);
+  const [invalid, setInvalid] = React.useState(false);
+
+  React.useEffect(() => {
+    if (editingRef.current) return;
+    setDraft(formatted);
+    setInvalid(false);
+    const caret = caretRef.current;
+    const input = inputRef.current;
+    if (caret === null || !input || document.activeElement !== input) return;
+    // Arrow steps keep the caret in the segment being stepped.
+    requestAnimationFrame(() => input.setSelectionRange(caret, caret));
+  }, [formatted]);
+
+  const revert = React.useCallback(() => {
+    editingRef.current = false;
+    setDraft(formatted);
+    setInvalid(false);
+  }, [formatted]);
+  const commit = React.useCallback(() => {
+    if (!editingRef.current) return;
+    const iso = parseDateDisplayInput(draft, convention, { partial: true });
+    if (!iso) {
+      revert();
+      return;
+    }
+    editingRef.current = false;
+    setDraft(formatIsoDateDisplay(iso, convention));
+    setInvalid(false);
+    if (iso !== value) onCommitDate(iso);
+  }, [convention, draft, onCommitDate, revert, value]);
+
+  const chevron = (months: number, label: string, icon: React.ReactNode) => (
+    <Button
+      type="button"
+      {...LIST_BUTTON_PROPS.icon}
+      className="[&_svg]:size-[var(--aries-control-icon-size)]"
+      {...burst(months)}
+      aria-label={label}
+    >
+      {icon}
+    </Button>
+  );
+  return (
+    <div className={LIST_PANE_CLASSES.calendarStepper}>
+      {chevron(-12, previousYearLabel, <ChevronsLeft />)}
+      {chevron(-1, previousMonthLabel, <ChevronLeft />)}
+      <label className={LIST_PANE_CLASSES.calendarLabel}>
+        <CalendarDays className="size-[var(--aries-control-icon-size)] text-muted-foreground" />
+        <input
+          data-aries-surface="control"
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          size={10}
+          value={draft}
+          aria-label={dateLabel}
+          aria-invalid={invalid || undefined}
+          placeholder={convention === "dmy" ? "DD.MM.YYYY" : "YYYY-MM-DD"}
+          className={cn(
+            "aries-desktop-focus min-w-0 rounded-sm bg-transparent text-center tabular-nums outline-none",
+            invalid && "text-destructive",
+          )}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            editingRef.current = true;
+            caretRef.current = null;
+            setDraft(next);
+            setInvalid(!parseDateDisplayInput(next, convention, { partial: true }));
+          }}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              revert();
+            } else if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !editingRef.current && value) {
+              event.preventDefault();
+              const caret = event.currentTarget.selectionStart ?? draft.length;
+              caretRef.current = caret;
+              onStep(momentUnitAtCaret(draft, caret, convention), event.key === "ArrowUp" ? 1 : -1);
+              onStepEnd?.();
+            }
+          }}
+        />
+      </label>
+      {chevron(1, nextMonthLabel, <ChevronRight />)}
+      {chevron(12, nextYearLabel, <ChevronsRight />)}
     </div>
   );
 }
@@ -288,6 +509,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   onDeselectAll,
   onSelectAll,
   actions = [],
+  embedded = false,
 }: {
   label: string;
   items: readonly T[];
@@ -298,6 +520,7 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
   onDeselectAll?: () => void;
   onSelectAll?: () => void;
   actions?: readonly ListToggleDrawerAction[];
+  embedded?: boolean;
 }) {
   const activeCount = items.reduce(
     (count, item) => count + (isActive(item) ? 1 : 0),
@@ -310,7 +533,9 @@ export function ListToggleDrawer<T extends ListToggleDrawerItem>({
     onSelectAll,
   );
   return (
-    <div className="max-h-[var(--aries-pane-drawer-list-max-height)] w-full overflow-auto border-t border-border/70 pt-[var(--aries-pane-header-padding-y)]">
+    <div className={embedded
+      ? "w-full pb-[var(--aries-pane-header-padding-y)]"
+      : "max-h-[var(--aries-pane-drawer-list-max-height)] w-full overflow-auto border-t border-border/70 pt-[var(--aries-pane-header-padding-y)]"}>
       <div className="mb-[var(--aries-control-gap)] flex min-w-0 items-center justify-between gap-[var(--aries-control-gap)]">
         <span className="min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">{label}</span>
         {showBulkActions ? (

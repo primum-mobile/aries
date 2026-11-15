@@ -4,7 +4,7 @@
 /**
  * The chart's colour roles, as a named palette an editor can offer.
  *
- * Stage 3 of `doc/ui-specs/style-editor-swatches-and-roles.md`. Every painted
+ * Every painted
  * thing in the wheel already resolves its colour through one of the
  * `chart.color.*` tokens — `elementColorsFromPalette` and the scene's
  * `colorBinding` calls are that mapping, written as code. What was missing is

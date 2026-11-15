@@ -157,7 +157,7 @@
     "hitRegions": [
       "cusp"
     ],
-    "minWidth": 20,
+    "minWidth": 18,
     "preferredWidth": 40,
     "multiplicity": 1,
     "projections": [
@@ -274,7 +274,8 @@
     "paintClasses": [
       "bodies.outer.glyph",
       "bodies.outer.motion",
-      "bodies.outer.position"
+      "bodies.outer.position",
+      "bodies.outer.position.minute"
     ],
     "hitRegions": [
       "body"

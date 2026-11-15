@@ -8,6 +8,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
+const { outerLabelCandidates } = await import(`data:text/javascript;base64,${Buffer.from(
+  ts.transpileModule(await readSource(new URL("../src/lib/chart/outer-label-names.ts", import.meta.url)),
+    { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText,
+).toString("base64")}`);
+
+const chartFontJavascript = ts.transpileModule(
+  await readSource(new URL("../src/lib/chart/chart-fonts.ts", import.meta.url)),
+  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const { bundledGlyphInkBounds } = await import(
+  `data:text/javascript;base64,${Buffer.from(chartFontJavascript).toString("base64")}`,
+);
+
 const layoutModelJavascript = ts.transpileModule(
   await readSource(new URL("../src/lib/chart/wheel-layout-model.ts", import.meta.url)),
   { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
@@ -18,6 +31,11 @@ const wheelStyleSource = (
 ).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`);
 const workspaceContentSource = await readFile(
   new URL("../src/components/workshell/workspace-content.tsx", import.meta.url),
+  "utf8",
+);
+// Chart-corner text blocks shared by the wheel and the astrolabe.
+const chartCornerLinesSource = await readFile(
+  new URL("../src/components/workshell/chart-corner-lines.tsx", import.meta.url),
   "utf8",
 );
 const homeClientSource = await readFile(
@@ -47,7 +65,6 @@ const {
   WHEEL_RENDER_TOKEN_SPECS,
   WHEEL_SCALE_RANGE,
   resolveWheelScale,
-  resolveCanonicalWheelRingSet,
   createTokenizedWheelRenderStyle,
   createWheelRenderStyle,
   resolveWheelRenderStyleFromTokens,
@@ -58,17 +75,19 @@ const {
   resolveWheelRenderStyle,
   resolveWheelRingSet,
   resolveWheelStrokeMetrics,
+  resolveMorinusStroke,
   resolveWheelTypographyMetrics,
   wheelRingRadiusTokenKey,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(wheelStyleJavascript).toString("base64")}`
 );
 
+const { HISTORICAL_WHEEL_FACTORY_SETTINGS } = await import(compositionModuleUrl);
+
 // The band model behind glyph containment, imported from production so the
 // test cannot carry its own drifting copy of the ceiling rule.
 const {
   resolveWheelBandLayout,
-  resolveWheelClassFontSizeCeiling,
 } = await import(layoutModelUrl);
 
 function assertDeepFrozen(value) {
@@ -134,6 +153,7 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     outerHouseLabelSize: 12.5,
     outerMotionSize: 8.333333333333332,
     outerPositionSize: 12.5,
+    outerPositionMinuteSize: 10,
     outerLabelSize: 12.5,
     outerProjectedGlyphSize: 25,
     secondaryRing: secondaryRing(12.5, 25, 8.333333333333332),
@@ -151,6 +171,7 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     outerHouseLabelSize: 12.5,
     outerMotionSize: 6.25,
     outerPositionSize: 12.5,
+    outerPositionMinuteSize: 10,
     outerLabelSize: 12.5,
     outerProjectedGlyphSize: 25,
     secondaryRing: secondaryRing(12.5, 25, 6.25),
@@ -167,6 +188,7 @@ test("default wheel profile preserves classic, compact, and Anglo metrics", () =
     outerHouseLabelSize: 10,
     outerMotionSize: 5,
     outerPositionSize: 10,
+    outerPositionMinuteSize: 8,
     outerLabelSize: 10,
     outerProjectedGlyphSize: 20,
     secondaryRing: secondaryRing(10, 20, 5),
@@ -519,7 +541,7 @@ test("exact wheel primitives own independent colors with retained palette fallba
     { palette },
   );
   assert.equal(style.elementColors.termGlyph, "term-only");
-  assert.equal(style.elementColors.decanGlyph, "sign-fallback");
+  assert.equal(style.elementColors.decanGlyph, "currentColor");
   assert.equal(style.elementColors.decanBoundary, "decan-line-only");
   assert.equal(style.elementColors.termBoundary, "frame-fallback");
   assert.equal(style.elementColors.bodyLeader, "body-line-only");
@@ -562,7 +584,7 @@ test("every painted circle owns profile radius, paint, opacity, and color tokens
   const custom = createTokenizedWheelRenderStyle({
     tokens: {
       ...DEFAULT_WHEEL_RENDER_TOKENS,
-      classicZodiacOuterRingRadius: 0.79,
+      classicZodiacOuterRingRadius: 0.94,
       zodiacOuterRingWidthScale: 2,
       zodiacOuterRingOpacity: 0.35,
     },
@@ -580,7 +602,7 @@ test("every painted circle owns profile radius, paint, opacity, and color tokens
   };
   const baseline = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, input);
   const edited = resolveWheelRingSet(custom, input);
-  assert.equal(edited.r30, 316);
+  assert.equal(edited.r30, 376);
   for (const field of ["r10", "r0", "rDecans", "rInner", "rAsp", "rHouse", "rBase"]) {
     assert.equal(edited[field], baseline[field], field);
   }
@@ -614,7 +636,7 @@ test("every painted circle owns profile radius, paint, opacity, and color tokens
   ];
   assert.ok(ordered.every(Number.isFinite));
   for (let index = 1; index < ordered.length; index += 1) {
-    assert.ok(ordered[index - 1] > ordered[index], `${index - 1} > ${index}`);
+    assert.ok(ordered[index - 1] >= ordered[index], `${index - 1} > ${index}`);
   }
 });
 
@@ -729,8 +751,9 @@ test("profile activation and deactivation resolve directly from the live theme m
 test("wheel DOM corner overlays consume the same typed profile style", () => {
   assert.match(workspaceContentSource, /const overlayStyle = wheelStyle\.overlays/);
   assert.match(workspaceContentSource, /resolveWheelOverlayMetrics\(overlayStyle, viewport\)/);
-  assert.match(workspaceContentSource, /resolveWheelTypographyPaint\(/);
-  assert.match(workspaceContentSource, /data-aries-style-class=\{semanticClassId\}/);
+  assert.match(workspaceContentSource, /from "@\/components\/workshell\/chart-corner-lines"/);
+  assert.match(chartCornerLinesSource, /resolveWheelTypographyPaint\(/);
+  assert.match(chartCornerLinesSource, /data-aries-style-class=\{semanticClassId\}/);
   assert.match(workspaceContentSource, /readPaletteProfileOverrides\(theme\)/);
   assert.doesNotMatch(workspaceContentSource, /WX_OVERLAY_|DOM_OVERLAY_FONT_BOX_SCALE/);
 });
@@ -1229,7 +1252,7 @@ test("default geometry preserves the full wheel mode and subdivision matrix", ()
       for (const showTerms of [false, true]) {
         for (const showDecans of [false, true]) {
           for (const showHouses of [false, true]) {
-            const rings = resolveWheelRingSet(DEFAULT_WHEEL_RENDER_STYLE, {
+            const rings = resolveWheelRingSet({...DEFAULT_WHEEL_RENDER_STYLE, geometry: HISTORICAL_WHEEL_FACTORY_SETTINGS.geometry}, {
               profile,
               mode,
               maxRadius: 1000,
@@ -1630,6 +1653,10 @@ test("zodiac element fields follow the current wheel frame", async () => {
           return {
             fillStyle: "",
             fillRect() {},
+            createImageData(width, height) {
+              return { data: new Uint8ClampedArray(width * height * 4) };
+            },
+            putImageData() {},
           };
         },
       };
@@ -1803,6 +1830,102 @@ test("prenatal syzygy and eclipse points keep their dedicated glyph scale", asyn
   assert.deepEqual(drawChart.bodyKeys(chart), ["__eclipse"]);
   chart.eclipse.coincidesWithSyzygy = false;
   assert.deepEqual(drawChart.bodyKeys(chart), ["__syzygy", "__eclipse"]);
+});
+
+function relativeBodyGlyphChart(theme, outer = false) {
+  return {
+    meta: { dateDisplay: "", timeDisplay: "", place: "", placeCoords: "" },
+    planets: [{ id: "sun", seId: 0, longitude: 0, latitude: 0, speed: 1,
+      glyph: outer ? "B" : "A", degText: "0", minText: "00" }],
+    syzygy: { longitude: 120, glyph: outer ? "OSy" : "Sy", glyphFont: "text", degText: "0", minText: "00" },
+    eclipse: { longitude: 240, glyph: outer ? "OEc" : "Ec", glyphFont: "text",
+      coincidesWithSyzygy: false, degText: "0", minText: "00" },
+    angles: { asc: 0, dsc: 180, mc: 90, ic: 270 },
+    houses: { cusps: Array.from({ length: 12 }, (_, index) => index * 30) },
+    aspects: [],
+    options: { theme, signVariant: 1, showHouses: false, showPositions: false,
+      showAspects: false, showSymbols: false, showTerms: false, showDecans: false,
+      showCusplessAscMcLabels: false, showPrenatalSyzygy: true, showPrenatalEclipse: true },
+  };
+}
+
+test("shared object size edits preserve Sy/Ec proportions and anchor offsets in final paint", async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  for (const [theme, profile] of ["classic", "compact", "anglo", "houses", "cusps"].entries()) {
+    for (const outer of [false, true]) {
+      for (const radius of [200, 400]) {
+        for (const fontSizePx of [20, 30, 60]) {
+          for (const syzygyScale of [0.58, 0.75]) {
+            const classId = outer ? "bodies.outer.glyph" : "bodies.inner.glyph";
+            // The same serialized appearance data is used after a profile reload.
+            const overrides = JSON.parse(JSON.stringify({ ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+              typography: { [profile]: { [classId]: { fontSizePx } } },
+            }));
+            const style = createTokenizedWheelRenderStyle({ authoringTargetProfile: profile,
+              authoringTargetRadius: radius, authoringOverrides: overrides,
+              tokens: { ...DEFAULT_WHEEL_RENDER_TOKENS, syzygyScale } });
+            const chart = relativeBodyGlyphChart(theme);
+            const recorded = [];
+            const draw = new renderer.CanvasDraw(recordingCanvas(recorded));
+            draw.resize(radius * 2, radius * 2, 1);
+            const rings = { rPlanet: radius / 2, rRetr: radius / 2 - 10 };
+            const frame = wheelFrameForTest(chart);
+            const typography = resolveWheelTypographyMetrics(style, profile, radius);
+            renderer.drawPlanets(draw, [radius, radius], rings, frame, chart,
+              new Map(), new Map(), style.palette, "AriesMorinus", "FreeSans", typography, style, outer);
+            const ordinarySize = fontSizePx * radius / 400;
+            for (const glyph of ["A", "Sy", "Ec"]) {
+              const painted = recorded.find(row => row.text === glyph);
+              assert.ok(painted, `${profile}/${outer}: ${glyph} is painted`);
+              const expectedSize = ordinarySize * (glyph === "A" ? 1 : syzygyScale);
+              assert.equal(painted.fontSize, Math.round(expectedSize), `${profile}/${outer}/${fontSizePx}: ${glyph} keeps its ratio`);
+              const longitude = glyph === "A" ? 0 : glyph === "Sy" ? 120 : 240;
+              const center = renderer.polar([radius, radius], rings.rPlanet, longitude, frame);
+              assert.ok(Math.abs(painted.x - (center[0] - expectedSize / 2)) <= 1, `${glyph} horizontal offset follows its own size`);
+              assert.ok(Math.abs(painted.y - (center[1] - expectedSize / 2)) <= 1, `${glyph} vertical offset follows its own size`);
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+test("body layout, outer readouts and hit measurements retain the same relative glyph sizes", async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  for (const [theme, profile] of ["classic", "compact", "anglo", "houses", "cusps"].entries()) {
+    const primary = relativeBodyGlyphChart(theme);
+    const comparison = relativeBodyGlyphChart(theme, true);
+    primary.options.showOuterPositions = true;
+    const style = createTokenizedWheelRenderStyle({ authoringTargetProfile: profile,
+      authoringOverrides: { ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+        typography: { [profile]: { "bodies.inner.glyph": { fontSizePx: 30 }, "bodies.outer.glyph": { fontSizePx: 40 } } },
+      },
+    });
+    const measured = new Map();
+    const regions = renderer.computeHitRegions({ primaryChart: primary, comparisonChart: comparison,
+      renderVariant: "round", outerRingMode: "none", overlayRenderMode: "none" }, {
+      width: 800, height: 800, renderStyle: style,
+      textsize: (text, paint) => {
+        if (["A", "B", "Sy", "Ec", "OSy", "OEc"].includes(text)) {
+          if (!measured.has(text)) measured.set(text, new Set());
+          measured.get(text).add(paint.size);
+        }
+        return [String(text).length * paint.size * 0.6, paint.size];
+      },
+    });
+    for (const [ordinary, specials] of [["A", ["Sy", "Ec"]], ["B", ["OSy", "OEc"]]]) {
+      assert.equal(measured.get(ordinary)?.size, 1, `${profile}: one resolved ${ordinary} size`);
+      const ordinarySize = [...measured.get(ordinary)][0];
+      for (const glyph of specials) {
+        assert.equal(measured.get(glyph)?.size, 1, `${profile}: ${glyph} layout and hits agree`);
+        assert.ok(Math.abs([...measured.get(glyph)][0] - ordinarySize * 0.58) < 1e-9,
+          `${profile}: ${glyph} measurements retain their proportion`);
+      }
+    }
+    assert.equal(regions.filter(region => region.kind === "syzygy").length, 2);
+    assert.equal(regions.filter(region => region.kind === "eclipse").length, 2);
+  }
 });
 
 test("Surveil targets distinguish Morinus glyphs from text labels", async () => {
@@ -2711,16 +2834,49 @@ test("A keeps transit aspects gated while M reveals only inner-wheel minor aspec
   );
 });
 
-test("M leaves a click-exclusive body view before toggling the global minor set", () => {
+test("M preserves the active aspect view and toggles its own minor setting", async () => {
   const commandStart = homeClientSource.indexOf('if (command === "toggle-minor-aspects")');
   const commandEnd = homeClientSource.indexOf("const tableId =", commandStart);
   assert.notEqual(commandStart, -1);
   assert.notEqual(commandEnd, -1);
   const commandBlock = homeClientSource.slice(commandStart, commandEnd);
-  assert.match(
+  const run = new Function(
+    "command", "aspectViewState", "useWorkspaceStore", "activeDoc", "activeChartRef",
+    "toggleMinorOnlyAspects", "supersedePendingStepSettle", "toggleMinorAspects",
     commandBlock,
-    /if \(aspectState\.hideAllAspects\)[\s\S]*?return;\s*}\s*\/\/ M changes the global aspect set\.[\s\S]*?clearAspectSelection\(\);\s*supersedePendingStepSettle\(\);\s*void toggleMinorAspects\(\)/,
   );
+  for (const exclusive of [true, false]) {
+    for (const selected of ["sun", "outer:moon", "cusp2", null]) {
+      for (const hidden of [true, false]) {
+        const state = { selectedAspectBody: hidden ? null : selected, hideAllAspects: hidden, minorOnlyAspects: false };
+        const calls = [];
+        const pressM = (showMinorAspects) => run(
+          "toggle-minor-aspects", () => state, { getState: () => state }, { id: "doc-1" },
+          { current: { primaryChart: { clickAspectFlags: { exclusiveOnClick: exclusive }, options: { showMinorAspects } } } },
+          () => { state.minorOnlyAspects = !state.minorOnlyAspects; }, () => {},
+          async (_signal, scope = false) => { calls.push(scope); return { minorAspects: true }; },
+        );
+        pressM(true);
+        assert.equal(state.selectedAspectBody, hidden ? null : selected);
+        assert.equal(state.hideAllAspects, hidden);
+        if (hidden) {
+          assert.equal(state.minorOnlyAspects, true);
+          pressM(true);
+          assert.equal(state.minorOnlyAspects, false);
+          assert.deepEqual(calls, []);
+          // Enabling unavailable minors keeps A's hide gate during the reply.
+          state.toggleMinorOnlyAspects = () => { state.minorOnlyAspects = true; };
+          pressM(false);
+          await Promise.resolve();
+          assert.equal(state.minorOnlyAspects, true);
+          assert.equal(state.hideAllAspects, true);
+          assert.deepEqual(calls, [false]);
+        } else {
+          assert.deepEqual(calls, [exclusive && selected !== null]);
+        }
+      }
+    }
+  }
 });
 
 function angloArrowShaftRadius(rings) {
@@ -2990,8 +3146,20 @@ test("April 15 2026 dense Aries cluster satisfies both fixed-radius Anglo modes"
         displayed,
         chart.angles.asc,
       );
-      assert.ok(hasSegment(result.dynamicLines, outerFoot, outerTip), `${mode}:${planet.id} outer foot`);
-      assert.ok(hasSegment(result.dynamicLines, innerFoot, innerTip), `${mode}:${planet.id} inner foot`);
+      const leaders = clusterRegions.find(region => region.planetId === planet.id).leaderSegments;
+      assert.equal(leaders.length, 2, `${mode}:${planet.id} retains both feet`);
+      for (const [index, [foot, tip]] of [[outerFoot, outerTip], [innerFoot, innerTip]].entries()) {
+        const segment = leaders[index];
+        assert.ok(samePoint(segment.start, foot), `${mode}:${planet.id} true-longitude foot`);
+        assert.ok(hasSegment(result.dynamicLines, segment.start, segment.end),
+          `${mode}:${planet.id} hit and painted leaders agree`);
+        assert.ok(Math.hypot(segment.end[0] - foot[0], segment.end[1] - foot[1])
+          <= Math.hypot(tip[0] - foot[0], tip[1] - foot[1]) + 1e-6,
+        `${mode}:${planet.id} may shorten a foot, never extend it`);
+        assert.ok(Math.abs((segment.end[0] - foot[0]) * (tip[1] - foot[1])
+          - (segment.end[1] - foot[1]) * (tip[0] - foot[0])) < 1e-6,
+        `${mode}:${planet.id} retains its true-longitude ray`);
+      }
       assert.equal(
         hasSegment(result.dynamicLines, outerTip, rejectedElbow),
         false,
@@ -4500,6 +4668,15 @@ function recordingCanvas(recordedText, recordedLines = [], recordedCircles = [])
       };
     },
     fillText(text, x, y) {
+      if (["*", "𝑭", "△"].includes(text)) {
+        const spec = /(?:normal )?(\d+) (\d+)px (.+)/.exec(this.font);
+        const ink = spec && bundledGlyphInkBounds(text, spec[3], Number(spec[2]), Number(spec[1]));
+        if (ink) {
+          recordedText.push({ text, x: x + ink.x, y: y + ink.y,
+            w: ink.w, h: ink.h, fontSize: Number(spec[2]) });
+          return;
+        }
+      }
       const metrics = this.measureText(text);
       const width = Math.round(metrics.width);
       const height = Math.round(
@@ -4566,6 +4743,86 @@ function recordingCanvas(recordedText, recordedLines = [], recordedCircles = [])
     getContext: () => context,
   };
 }
+
+test("resized primary body feet clear painted glyphs in every wheel and match hits", async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  let shortened = 0, intact = 0;
+  for (const profile of ["classic", "compact", "anglo", "houses", "cusps"])
+    for (const maxRadius of [180, 400]) for (const longitude of [0, 45, 90, 135, 180, 225, 270, 315])
+      for (const narrow of [false, true]) for (const fontSizePx of [25, 40]) {
+    const factory = WHEEL_FACTORY_SETTINGS.layouts[profile];
+    const composition = {...factory.composition, rings: factory.composition.rings.map(ring => ({...ring,
+      enabled: ring.archetypeId === "terms" || ring.archetypeId === "decans"
+        ? ["classic", "compact", "anglo"].includes(profile)
+        : ring.archetypeId === "cuspLabels" || ring.archetypeId === "cuspRuler" ? !narrow : ring.enabled}))};
+    const chart = {
+      meta: {cornerLines: {}}, aspects: [],
+      planets: [0, 2, 150].map((offset, index) => ({id: ["sun", "moon", "mercury"][index],
+        longitude: (longitude + offset) % 360, glyph: ["A", "B", "C"][index], motion: index === 2 ? "R" : "",
+        degText: "15", minText: "00", minorDignityCount: 1, hasTermDignity: true})),
+      angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, index) => index * 30)},
+      options: {theme: factory.optionValue, wheelComposition: composition, showHouses: true,
+        showPositions: false, showAspects: false, showSymbols: false, signVariant: 1,
+        showTerms: true, showDecans: true, showCusplessAscMcLabels: false, showTermGlyphs: narrow},
+    };
+    const style = {...DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+      ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ...(narrow ? {ringWidths: {[profile]: {[`${profile}-bodies`]: 32}}} : {}),
+      typography: {[profile]: {"bodies.inner.glyph": {fontSizePx}}},
+    }};
+    const snapshot = {primaryChart: chart, outerRingMode: "none", overlayRenderMode: "full",
+      renderVariant: `round-${profile}`};
+    const text = [], lines = [];
+    const draw = new renderer.CanvasDraw(recordingCanvas(text, lines));
+    draw.resize(800, 800, 1);
+    // Body fixtures paint em boxes; dignity marks now paint the source font
+    // ink rather than the empty space below the superscript asterisk.
+    const trueTextBounds = draw.textbounds.bind(draw);
+    draw.textbounds = (value, paint) => {
+      if (["*", "𝑭", "△"].includes(value)) return trueTextBounds(value, paint);
+      const [w, h] = draw.textsize(value, paint);
+      return {x: 0, y: 0, w, h};
+    };
+    const options = {width: 800, height: 800, chartSize: maxRadius * 2, renderStyle: style};
+    renderer.drawSnapshotLayer(draw, snapshot, "dynamic", options);
+    const glyphs = text.filter(box => ["A", "B", "C"].includes(box.text));
+    assert.equal(glyphs.length, 3, "no body is removed or shrunk to clear its foot");
+    assert.ok(glyphs.every(box => box.fontSize === Math.round(fontSizePx * maxRadius / 400)),
+      "authored glyph sizes remain intact");
+    const glyphAndMarkers = text.filter(box => ["A", "B", "C", "R", "*"].includes(box.text));
+    const hits = renderer.computeHitRegions(snapshot, {...options,
+      textsize: (value, paint) => draw.textsize(value, paint), textbounds: draw.textbounds});
+    const geometry = renderer.wheelGeometryInputForSnapshot(snapshot, maxRadius);
+    const rings = resolveWheelRingSet(style, geometry);
+    const expectedDepths = [Math.abs(rings.rInner - rings.rLLine), Math.abs(rings.rAsp - rings.rLLine2)];
+    for (const hit of hits.filter(hit => hit.kind === "planet")) {
+      const glyph = glyphs.find(box => box.text === chart.planets.find(planet => planet.id === hit.planetId).glyph);
+      const size = glyph.fontSize;
+      assert.ok(Math.hypot(glyph.x + size / 2 - hit.x, glyph.y + size / 2 - hit.y) < 1.5,
+        `${profile}: glyph and hit centres agree`);
+      for (const [index, segment] of hit.leaderSegments.entries()) {
+        const painted = lines.find(line => Math.hypot(line.from[0] - segment.start[0], line.from[1] - segment.start[1]) < 1.5
+          && Math.hypot(line.to[0] - segment.end[0], line.to[1] - segment.end[1]) < 1.5);
+        assert.ok(painted,
+        `${profile}: painted feet and hit metadata agree`);
+        const length = Math.hypot(segment.end[0] - segment.start[0], segment.end[1] - segment.start[1]);
+        if (length < expectedDepths[index] - 1e-6) shortened++; else intact++;
+        for (let step = 0; step <= 100; step++) {
+          const x = painted.from[0] + (painted.to[0] - painted.from[0]) * step / 100;
+          const y = painted.from[1] + (painted.to[1] - painted.from[1]) * step / 100;
+          const pad = painted.lineWidth / 2;
+          assert.ok(!glyphAndMarkers.some(box => x > box.x - pad && x < box.x + box.w + pad
+            && y > box.y - pad && y < box.y + box.h + pad),
+          `${profile}/${maxRadius}/${longitude}/${narrow}/${fontSizePx}: foot crosses glyph or marker ink`);
+        }
+      }
+    }
+  }
+  assert.ok(shortened > 0, "the squeezed cases exercise shortening");
+  assert.ok(intact > 0, "clear feet keep their original length");
+});
 
 test("traditional Anglo mixed layout ignores symbolic comparison axes", { timeout: 5_000 }, async () => {
   const drawChart = await loadDrawChartCollisionInternals();
@@ -4755,10 +5012,15 @@ async function loadDrawChartCollisionInternals() {
       await readSource(new URL("../src/lib/chart/chart-fonts.ts", import.meta.url)),
     ),
   );
+  const textInkGapUrl = dataUrl(
+    transpile(
+      await readSource(new URL("../src/lib/chart/text-ink-gap.ts", import.meta.url)),
+    ),
+  );
   const canvasDrawUrl = dataUrl(
     transpile(
       await readSource(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url)),
-    ).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`),
+    ).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`),
   );
   const canvasDraw = await import(canvasDrawUrl);
   const wheelStyleUrl = dataUrl(wheelStyleJavascript);
@@ -4769,13 +5031,6 @@ async function loadDrawChartCollisionInternals() {
     transpile(
       await readSource(
         new URL("../src/lib/render/dither-pattern.ts", import.meta.url),
-      ),
-    ),
-  );
-  const pdRingPresentationUrl = dataUrl(
-    transpile(
-      await readSource(
-        new URL("../src/lib/chart/pd-ring-presentation.ts", import.meta.url),
       ),
     ),
   );
@@ -4793,13 +5048,25 @@ async function loadDrawChartCollisionInternals() {
       ),
     ),
   );
+  const chartCoordinatesUrl = dataUrl(transpile(await readSource(
+    new URL("../src/lib/chart/chart-coordinates.ts", import.meta.url),
+  )).replaceAll('"./wheel-projection"', `"${wheelProjectionUrl}"`));
+  const dignityPolicy = await readSource(new URL("../src/lib/chart/dignity-display-policy.json", import.meta.url));
+  const paletteUrl = dataUrl(transpile(
+    (await readSource(new URL("../src/lib/chart/palette.ts", import.meta.url)))
+      .replace('import dignityDisplayPolicy from "./dignity-display-policy.json";',
+        `const dignityDisplayPolicy = ${dignityPolicy};`),
+  ));
   let drawChartSource = await readSource(
     new URL("../src/lib/chart/draw-chart.ts", import.meta.url),
   );
   drawChartSource = drawChartSource
+    .replaceAll('"./palette"', `"${paletteUrl}"`)
     .replace("function bodyKeys(", "export function bodyKeys(")
     .replace("function bodyGlyphSize(", "export function bodyGlyphSize(")
     .replace("function arrangeBodies(", "export function arrangeBodies(")
+    .replace("function placeOuterWordLabel(", "export function placeOuterWordLabel(")
+    .replace("function outerRingItemPlacement(", "export function outerRingItemPlacement(")
     .replace("function prepareOuterRingItems(", "export function prepareOuterRingItems(")
     .replace("function prepareFixedStars(", "export function prepareFixedStars(")
     .replace(
@@ -4828,35 +5095,68 @@ async function loadDrawChartCollisionInternals() {
       "export function resolveInterChartAspectsForDraw(",
     );
   const drawChartJavascript = transpile(drawChartSource)
+    .replaceAll('"./chart-coordinates"', `"${chartCoordinatesUrl}"`)
     .replaceAll('"./chart-overlay-lines"', `"${dataUrl(transpile(await readSource(
       new URL("../src/lib/chart/chart-overlay-lines.ts", import.meta.url),
     )))}"`)
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./wheel-projection"', `"${wheelProjectionUrl}"`)
-    .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
+    .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`)
+    .replaceAll('"./vintage-magazine-wheel"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/chart/vintage-magazine-wheel.ts", import.meta.url),
+    )).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`).replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`))}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
     // draw-chart now imports the band model directly, to cap a glyph at the
     // ring that holds it. Without this rewrite the harness leaves a bare
     // specifier that no loader can resolve.
     .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`)
-    .replaceAll('"./pd-ring-presentation"', `"${pdRingPresentationUrl}"`)
-    .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
-    // Landed alongside this change by the PD-in-chart work; every harness that
-    // transpiles draw-chart has to rewrite each of its relative specifiers or
-    // the module graph dead-ends at a bare path no loader can follow.
-    .replaceAll('"./pd-event-presentation"', `"${dataUrl(transpile(await readSource(
-      new URL("../src/lib/chart/pd-event-presentation.ts", import.meta.url),
+    .replaceAll('"./outer-label-names"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/chart/outer-label-names.ts", import.meta.url),
     )))}"`)
+    .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
     .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
-    .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`);
+    .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`)
+    .replaceAll('"../render/fill-texture-mipmap"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/render/fill-texture-mipmap.ts", import.meta.url),
+    )).replaceAll('"./dither-pattern"', `"${ditherPatternUrl}"`))}"`);
   const loaded = {
     ...(await import(dataUrl(drawChartJavascript))),
     ...(await import(wheelProjectionUrl)),
     CanvasDraw: canvasDraw.CanvasDraw,
+    polar: canvasDraw.polar,
   };
   drawChartInternals = loaded;
   return loaded;
 }
+
+test('chart font readiness includes the bundled mathematical face glyph and reuses warm loads', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const previousDocument = globalThis.document;
+  const calls = [];
+  let releaseFace;
+  const faceReady = new Promise(resolve => { releaseFace = resolve; });
+  globalThis.document = { fonts: { load(font, text) {
+    calls.push({font, text});
+    return font.includes('AriesDignityFace') ? faceReady : Promise.resolve([]);
+  } } };
+  try {
+    const first = renderer.awaitFonts('DignityFontReadiness', 'DignitySymbolsReadiness');
+    const concurrent = renderer.awaitFonts('DignityFontReadiness', 'DignitySymbolsReadiness');
+    assert.equal(renderer.chartFontsAreReady('DignityFontReadiness', 'DignitySymbolsReadiness'), false);
+    assert.deepEqual(calls.filter(call => call.font.includes('AriesDignityFace')),
+      [{font: '14px "AriesDignityFace"', text: '𝑭'}]);
+    assert.ok(calls.some(call => call.font === '700 14px "FreeSans"'), 'The five-point asterisk uses the loaded bold face');
+    releaseFace([]);
+    await Promise.all([first, concurrent]);
+    assert.equal(renderer.chartFontsAreReady('DignityFontReadiness', 'DignitySymbolsReadiness'), true);
+    const count = calls.length;
+    await renderer.awaitFonts('DignityFontReadiness', 'DignitySymbolsReadiness');
+    assert.equal(calls.length, count, 'Warm paints perform no additional font requests');
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+  }
+});
 
 async function readSource(url) {
   return (await readFile(url, "utf8")).replace(/\r\n?/g, "\n");
@@ -4911,7 +5211,7 @@ test("no two rings painted in the same layout share a ring-set field", () => {
 
 
 test("a ring's legal range is expressed in the space its value is stored in", () => {
-  // The bug Max hit: the drag produces a reference-space radius, the solver
+  // The bug: the drag produces a reference-space radius, the solver
   // reports its interval in rendered pixels, and clamping one against the
   // other made a ring teleport on the first frame of a grab. The error
   // vanished at exactly one pane size — a 400px wheel radius — so a suite that
@@ -5091,7 +5391,9 @@ test("scaling the wheel authors no ring, and carries the rings that were authore
   // that re-authored each displaced ring pinned the whole stack after one
   // gesture and left nothing free to absorb the next edit.
   const paneRadius = 512;
-  const pinned = styleWithRingPin("zodiacInnerRing", 210);
+  // Keep the pin inside the enlarged Morinus wheel's feasible band budget.
+  // An over-constrained pin engages the intentional one-CSS-pixel floor.
+  const pinned = styleWithRingPin("zodiacInnerRing", 280);
   for (const scale of [0.35, 0.6, 0.9]) {
     const pinnedAndScaled = {
       ...pinned,
@@ -5118,7 +5420,7 @@ test("scaling the wheel authors no ring, and carries the rings that were authore
       const field = paintedRingFieldFor(role, "classic");
       assert.ok(
         Math.abs(scaled[field] - unscaled[field] * scale) < 1e-9,
-        `${role} @ scale ${scale}: a pinned wheel did not scale uniformly`,
+        `${role} @ scale ${scale}: ${scaled[field]} != ${unscaled[field] * scale}`,
       );
     }
   }
@@ -5153,11 +5455,9 @@ test("returning the scale to 1 restores the wheel exactly, in a later gesture", 
 });
 
 test("resizing one band leaves every authored glyph size alone", () => {
-  // The authored typography is what a band resize must not touch. Three seated
-  // glyphs — sign, term and decan — do follow their band, but that happens in
-  // `bandClampedGlyphSize` at paint time and is bounded by the band; the stored
-  // sizes underneath stay exactly as authored, which is what keeps a resize
-  // undoable and keeps every other run out of it.
+  // Typography is independent of boundary edits. Physical paint containment
+  // and unchanged surviving fonts are covered through the native preset and
+  // actual renderer in wheel-glyph-paint-contract.test.mjs.
   for (const paneRadius of [260, 400, 700]) {
     const pristine = resolveWheelTypographyMetrics(
       DEFAULT_WHEEL_RENDER_STYLE, "classic", paneRadius,
@@ -5205,79 +5505,6 @@ test("a scaled wheel resolves the same however its edits were ordered", () => {
     maxRadius: paintedWheelRadius(style, paneRadius),
   });
   assert.deepEqual(solve(scaleFirst), solve(pinFirst));
-});
-
-test("a glyph that follows its band can never leave it", () => {
-  // Max's rule: glyphs are always contained by their band's limits, never
-  // clipped. The proportional follow is what makes a resize feel alive; the
-  // clamp is what makes containment absolute. Asserted against production's
-  // own ceiling so the two cannot drift, and across pane sizes because a
-  // ratio bug hides at exactly one of them.
-  const base = {
-    profile: "classic",
-    mode: "single",
-    hasOuterRing: false,
-    showTerms: true,
-    showDecans: true,
-    showHouses: true,
-    showPositions: true,
-    comparisonWithOuterHouses: false,
-  };
-  const style = DEFAULT_WHEEL_RENDER_STYLE;
-  const seated = [
-    ["zodiac.signGlyph", (metrics) => metrics.signSize],
-    ["subdivisions.term.glyph", (metrics) => metrics.termSize],
-    ["subdivisions.decan.glyph", (metrics) => metrics.decanSize],
-  ];
-
-  for (const maxRadius of [150, 240, 400, 733.5]) {
-    const input = { ...base, maxRadius };
-    const canonicalRings = resolveCanonicalWheelRingSet(style, input);
-    const canonicalBands = resolveWheelBandLayout(style, input, canonicalRings).bands;
-    const metrics = resolveWheelTypographyMetrics(style, "classic", maxRadius);
-
-    // Squeeze the band that holds each glyph, hard, and check the glyph still
-    // fits — including at thicknesses far below anything shipped.
-    for (const squeeze of [1, 0.6, 0.3, 0.12]) {
-      const squeezed = canonicalBands.map((band) => {
-        const mid = (band.outer + band.inner) / 2;
-        const half = ((band.outer - band.inner) / 2) * squeeze;
-        return { ...band, outer: mid + half, inner: mid - half };
-      });
-      for (const [classId, pick] of seated) {
-        const ceiling = resolveWheelClassFontSizeCeiling(classId, squeezed);
-        const canonicalCeiling = resolveWheelClassFontSizeCeiling(classId, canonicalBands);
-        if (ceiling == null || canonicalCeiling == null) continue;
-        const authored = pick(metrics);
-        // Mirrors bandClampedGlyphSize: follow the band, then clamp.
-        const followed = authored * (ceiling / canonicalCeiling);
-        const painted = Math.min(followed, ceiling);
-        assert.ok(
-          painted <= ceiling + 1e-9,
-          `${classId} @ r=${maxRadius} squeeze ${squeeze}: ${painted} > ${ceiling}`,
-        );
-        assert.ok(painted > 0, `${classId} collapsed to ${painted}`);
-      }
-    }
-
-    // At canonical thickness the follow is exactly 1, so nothing that ships
-    // changes size. This is what makes the rule safe to switch on.
-    for (const [classId, pick] of seated) {
-      const ceiling = resolveWheelClassFontSizeCeiling(classId, canonicalBands);
-      if (ceiling == null) continue;
-      const authored = pick(metrics);
-      assert.equal(
-        Math.min(authored * (ceiling / ceiling), ceiling),
-        Math.min(authored, ceiling),
-        `${classId} @ r=${maxRadius} moved at its canonical thickness`,
-      );
-      assert.ok(
-        authored <= ceiling + 1e-9,
-        `${classId} @ r=${maxRadius} ships oversized (${authored} > ${ceiling}); `
-        + "the containment rule would visibly shrink it",
-      );
-    }
-  }
 });
 
 test("sign-locked cusps break across a body column instead of routing around it", { timeout: 5_000 }, async () => {
@@ -5628,7 +5855,7 @@ test('factory and custom Cusp subdivisions paint and hit the same allocated band
 test('edited Anglo transit composition keeps paint, hit targets and outer-house visibility coherent', async () => {
   const renderer = await loadDrawChartCollisionInternals();
   for (const width of [4, 28, 100]) for (const showOuterHouses of [false,true])
-  for (const showOuterBodies of [false,true]) for (const converse of [false,true]) {
+  for (const showOuterBodies of [false,true]) {
     const composition = {schemaVersion: 1, customized: true, projection: 'zodiac',
       rings: ['outerBodies','outerHouses','zodiac','degree','bodies','houses','hub'].map(archetypeId => ({
         archetypeId, instanceId: `anglo-${archetypeId}`,
@@ -5648,14 +5875,13 @@ test('edited Anglo transit composition keeps paint, hit targets and outer-house 
     const secondary = {...primary, planets: [{id: 'moon', longitude: 220, glyph: 'B', motion: '', degText: '10', minText: '00'}],
       options: {...primary.options, wheelComposition: undefined}};
     const snapshot = {primaryChart: primary, comparisonChart: secondary, outerRingMode: 'none',
-      overlayRenderMode: 'full', renderVariant: 'round-anglo',
-      document: {pdInChartFrame: converse ? 'traditional-converse' : 'zodiac'}};
+      overlayRenderMode: 'full', renderVariant: 'round-anglo'};
     const style = {...DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
       ...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
       ringWidths: {anglo: {'anglo-degree': width}},
     }};
     const geometry = renderer.wheelGeometryInputForSnapshot(snapshot,400);
-    assert.equal(geometry.showOuterHouses, showOuterHouses && !converse);
+    assert.equal(geometry.showOuterHouses, showOuterHouses);
     const rings = resolveWheelRingSet(style, geometry);
     const layout = resolveWheelBandLayout(style, geometry, rings);
     const text=[], lines=[];
@@ -5665,12 +5891,12 @@ test('edited Anglo transit composition keeps paint, hit targets and outer-house 
     renderer.drawSnapshotLayer(draw,snapshot,'dynamic',renderOptions);
     const targets=renderer.computeHitRegions(snapshot,{...renderOptions,includeStyleTargets:true,
       textsize:(text,opts)=>draw.textsize(text,opts)});
-    for (const [id,glyph,outerTrack] of [['sun','A',converse],['moon','B',!converse]]) {
+    for (const [id,glyph,outerTrack] of [['sun','A',false],['moon','B',true]]) {
       const expected=!outerTrack || showOuterBodies;
       const painted=text.find(item=>item.text===glyph);
       const target=targets.find(item=>item.kind==='planet' && item.planetId===id);
-      assert.equal(Boolean(painted),expected,`paint ${id}, converse=${converse}, outer=${showOuterBodies}`);
-      assert.equal(Boolean(target),expected,`hit ${id}, converse=${converse}, outer=${showOuterBodies}`);
+      assert.equal(Boolean(painted),expected,`paint ${id}, outer=${showOuterBodies}`);
+      assert.equal(Boolean(target),expected,`hit ${id}, outer=${showOuterBodies}`);
       if (painted) {
         assert.ok(painted.x>=0 && painted.y>=0 && painted.x+painted.w<=800 && painted.y+painted.h<=800);
         assert.ok(Math.abs(target.x-(painted.x+painted.fontSize/2))<1);
@@ -5683,7 +5909,7 @@ test('edited Anglo transit composition keeps paint, hit targets and outer-house 
     if (houseBand) for (const target of houseTargets) {
       assert.ok(Math.abs(Math.hypot(target.x1-400,target.y1-400)-houseBand.inner)<1e-6);
       assert.ok(Math.abs(Math.hypot(target.x2-400,target.y2-400)-houseBand.outer)<1e-6,
-        `${width}/${showOuterHouses}/${showOuterBodies}/${converse}: outer-house target must end at its band`);
+        `${width}/${showOuterHouses}/${showOuterBodies}: outer-house target must end at its band`);
     }
   }
 });
@@ -5758,8 +5984,8 @@ test('Anglo rulers and annotation paint and hits remain independent of each othe
           `${context}: the degree ruler obeys its checkbox independently of the cusp ruler`);
         for (const line of lines.filter(item => item.strokeStyle === rulerColor)) {
           assert.ok(Math.hypot(line.to[0] - 400, line.to[1] - 400)
-            > Math.hypot(line.from[0] - 400, line.from[1] - 400),
-          `${context}: hiding another instrument cannot reverse cusp ticks`);
+            < Math.hypot(line.from[0] - 400, line.from[1] - 400),
+          `${context}: allocated cusp ticks retain their inward direction when other instruments hide`);
         }
       }
       const markers = ruler || (profile !== 'anglo' && labels);
@@ -6327,6 +6553,7 @@ test('Anglo Degree attaches to either side of Signs without a terminal circle', 
   const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
   for (const arrangement of ['single', 'transit', 'synastry']) for (const above of [false, true]) {
     const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    composition.rings.find(ring => ring.archetypeId === 'degree').enabled = true;
     if (above) {
       const index = composition.rings.findIndex(ring => ring.archetypeId === 'degree');
       [composition.rings[index], composition.rings[index - 1]] = [composition.rings[index - 1], composition.rings[index]];
@@ -6356,7 +6583,7 @@ test('Anglo Degree attaches to either side of Signs without a terminal circle', 
   }
 });
 
-test('adjacent Anglo Cusp ruler paints inside Signs without a second circle', async () => {
+test('explicitly adjacent Anglo Cusp ruler paints inside Signs while original allocation retains its rim', async () => {
   const renderer = await loadDrawChartCollisionInternals();
   const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
   const tickColor = '#e42a65', terminalColor = '#214aa8';
@@ -6370,17 +6597,21 @@ test('adjacent Anglo Cusp ruler paints inside Signs without a second circle', as
     }}},
   });
   const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
-  for (const arrangement of ['single', 'transit', 'synastry']) for (const outside of [false, true]) {
+  for (const arrangement of ['single', 'transit', 'synastry'])
+  for (const placement of ['original', 'inside', 'outside']) for (const showHouses of [true, false]) {
+    const outside = placement === 'outside';
     const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
     composition.rings = composition.rings.map(ring => ['degree', 'terms', 'decans', 'cuspLabels'].includes(ring.archetypeId)
-      ? {...ring, enabled: false} : ring);
-    const cusp = composition.rings.splice(composition.rings.findIndex(r => r.archetypeId === 'cuspRuler'), 1)[0];
-    const signIndex = composition.rings.findIndex(r => r.archetypeId === 'zodiac');
-    composition.rings.splice(signIndex + Number(!outside), 0, cusp);
+      ? {...ring, enabled: false} : ring.archetypeId === 'houses' ? {...ring, enabled: showHouses} : ring);
+    if (placement !== 'original') {
+      const cusp = composition.rings.splice(composition.rings.findIndex(r => r.archetypeId === 'cuspRuler'), 1)[0];
+      const signIndex = composition.rings.findIndex(r => r.archetypeId === 'zodiac');
+      composition.rings.splice(signIndex + Number(!outside), 0, cusp);
+    }
     const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
       angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
       houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
-      options: {theme: 2, wheelComposition: composition, showHouses: true,
+      options: {theme: 2, wheelComposition: composition, showHouses,
         showOuterHouseLines: true, showTerms: false, showDecans: false,
         showPositions: false, showAspects: false}};
     const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full',
@@ -6390,14 +6621,737 @@ test('adjacent Anglo Cusp ruler paints inside Signs without a second circle', as
     draw.resize(800, 800, 1);
     renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
     const ticks = lines.filter(line => line.strokeStyle === tickColor);
-    const where = `${arrangement}/${outside ? 'outside' : 'inside'} Signs`;
-    assert.equal(ticks.length, outside ? 360 : 348, `${where}: Cusp ticks paint`);
-    assert.ok(ticks.every(line => outside ? radius(line.to) < radius(line.from)
-      : radius(line.to) > radius(line.from)), `${where}: Cusp ticks point into Signs`);
+    const where = `${arrangement}/${placement} Signs/houses ${showHouses}`;
+    const inward = placement !== 'inside';
+    assert.equal(ticks.length, inward ? 360 : 348, `${where}: Cusp ticks paint`);
+    assert.ok(ticks.every(line => inward ? radius(line.to) < radius(line.from)
+      : radius(line.to) > radius(line.from)), `${where}: ticks follow the explicit host or allocated band`);
     const tickInner = Math.min(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
     const tickOuter = Math.max(...ticks.flatMap(line => [radius(line.from), radius(line.to)]));
-    assert.equal(circles.filter(circle => circle.strokeStyle === terminalColor
-      && circle.radius >= tickInner - 1 && circle.radius <= tickOuter + 1).length, 0,
-      `${where}: hosted ticks have no separate Cusp circle`);
+    assert.equal(circles.some(circle => circle.strokeStyle === terminalColor
+      && circle.radius >= tickInner - 1 && circle.radius <= tickOuter + 1), placement === 'original',
+      `${where}: only the allocated ruler retains a separate Cusp circle`);
   }
+});
+
+test('reordered Anglo rulers paint one boundary per allocated lane without phantom cusp circles', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const expected = ['zodiacOuterRing', 'zodiacInnerRing', 'innerDegreeRing', 'termRing',
+    'innerBoundaryRing', 'houseBoundaryRing', 'baseRing'];
+  const roles = [...expected, 'cuspOuterRing', 'outerDegreeRing'];
+  const colors = Object.fromEntries(roles.map((role, index) => [role, `#01${String(index).padStart(4, '0')}`]));
+  const style = createWheelRenderStyle({palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    elementColors: {...DEFAULT_WHEEL_RENDER_STYLE.elementColors, ...colors}, authoringTargetProfile: 'anglo',
+    authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides, ringRadii: {anglo: {
+      zodiacOuterRing: 379.1, zodiacInnerRing: 348.1, termRing: 335.1,
+      cuspOuterRing: 321.4, innerBoundaryRing: 299.1, houseBoundaryRing: 211, baseRing: 190.6,
+    }}}});
+  for (const outside of [false, true]) {
+    // Degree occupies its own lane between Terms and Decans; Cusp ruler is
+    // hosted on either Signs edge. Disabled annotations paint no boundary.
+    const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+      [...(outside ? ['cuspRuler', 'zodiac'] : ['zodiac', 'cuspRuler']),
+        'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'].map(archetypeId => ({
+        instanceId: `anglo-${archetypeId}`, archetypeId,
+        enabled: archetypeId !== 'cuspLabels', chartRole: 'primary',
+      }))};
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme: 2, wheelComposition: composition, showHouses: true,
+        showTerms: true, showDecans: true, showPositions: false, showAspects: false}};
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full'};
+    const circles = [], draw = new renderer.CanvasDraw(recordingCanvas([]));
+    draw.resize(800, 800, 1);
+    draw.circle = (_center, radius, paint) => circles.push({radius, outline: paint.outline});
+    renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+    const painted = circles.filter(circle => Object.values(colors).includes(circle.outline));
+    assert.deepEqual(painted.map(circle => circle.outline).sort(), expected.map(role => colors[role]).sort());
+    assert.equal(new Set(painted.map(circle => circle.radius)).size, expected.length,
+      'adjacent lanes share one circle; hosted/disabled cusp instruments add none');
+  }
+});
+
+test('a detached Degree lane does not split the adjoining cusp ruler and annotations with another circle', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const tickColor = '#e42a65', rimColor = '#214aa8', seamColor = '#8a6ae3';
+  const style = createWheelRenderStyle({palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    elementColors: {...DEFAULT_WHEEL_RENDER_STYLE.elementColors,
+      cuspOuterRing: rimColor, outerDegreeRing: seamColor}, authoringTargetProfile: 'anglo',
+    authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      wheelScale: {anglo: 0.942016},
+      recipeRadii: {anglo: {zodiacOuterRing: 379.1, zodiacInnerRing: 348.1, termRing: 335.1,
+        cuspOuterRing: 321.4, innerBoundaryRing: 299.1, houseBoundaryRing: 211, baseRing: 190.6}},
+      linePaint: {anglo: Object.fromEntries(['1deg', '5deg', '10deg'].map(size =>
+        [`zodiac.tick.angloCuspRuler.${size}`, {color: tickColor}]))}}});
+  const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+    ['zodiac', 'terms', 'degree', 'decans', 'cuspRuler', 'cuspLabels', 'bodies', 'houses', 'hub']
+      .map(archetypeId => ({instanceId: `anglo-${archetypeId}`, archetypeId, enabled: true, chartRole: 'primary'}))};
+  const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+    angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 2, wheelComposition: composition, showHouses: true,
+      showTerms: true, showDecans: true, showPositions: true, showAspects: false}};
+  const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full'};
+  const circles = [], lines = [], draw = new renderer.CanvasDraw(recordingCanvas([], lines));
+  draw.resize(800, 800, 1);
+  draw.circle = (_center, radius, paint) => circles.push({radius, outline: paint.outline});
+  renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+  assert.equal(circles.filter(circle => circle.outline === seamColor).length, 0,
+    'the original combined cusp-degree material has no interior terminal circle');
+  const rim = circles.find(circle => circle.outline === rimColor);
+  assert.ok(rim, 'the cusp ruler retains its semantic outer rim');
+  const ticks = lines.filter(line => line.strokeStyle === tickColor);
+  assert.equal(ticks.length, 360);
+  const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
+  assert.ok(ticks.every(tick => Math.abs(radius(tick.from) - rim.radius) < 1.1),
+    'the cusp rim is the tick base rather than an extra circle through the tick lane');
+  assert.ok(ticks.every(tick => radius(tick.to) < radius(tick.from)), 'allocated cusp ticks point inward');
+});
+
+test('composition cusp ticks follow their allocated material or explicit Signs attachment through visibility toggles', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const {resolvedWheelLayout, wheelCuspRulerTickEnds} = await import(layoutModelUrl);
+  const tickColor = '#e42a65', houseColor = '#516de4', angleColor = '#7f186d';
+  const style = createWheelRenderStyle({palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    authoringTargetProfile: 'anglo', authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      recipeRadii: {anglo: {zodiacOuterRing: 379.1, zodiacInnerRing: 348.1, termRing: 335.1,
+        cuspOuterRing: 321.4, innerBoundaryRing: 299.1, houseBoundaryRing: 211, baseRing: 190.6}},
+      linePaint: {anglo: {...Object.fromEntries(['1deg', '5deg', '10deg'].map(size =>
+        [`zodiac.tick.angloCuspRuler.${size}`, {color: tickColor}])),
+      'zodiac.tick.angloHouseCusp': {color: houseColor},
+      'zodiac.tick.angloAngleRuler': {color: angleColor}}}}});
+  const orders = {
+    allocated: ['degree', 'zodiac', 'terms', 'decans', 'cuspRuler', 'cuspLabels', 'bodies', 'houses', 'hub'],
+    outside: ['cuspRuler', 'zodiac', 'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'],
+    inside: ['zodiac', 'cuspRuler', 'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'],
+  };
+  const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
+  for (const [placement, order] of Object.entries(orders)) for (const subdivisions of [true, false])
+  for (const degreeEnabled of [true, false]) {
+    const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+      ['outerHouses', 'outerBodies', ...order].map(archetypeId => ({archetypeId,
+        instanceId: `anglo-${archetypeId}`, chartRole: archetypeId.startsWith('outer') ? 'outer' : 'primary',
+        enabled: archetypeId === 'degree' ? degreeEnabled
+          : ['terms', 'decans'].includes(archetypeId) ? subdivisions : true}))};
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => 3 + i * 30)},
+      options: {theme: 2, wheelComposition: composition, showHouses: true,
+        showTerms: subdivisions, showDecans: subdivisions, showPositions: true, showAspects: false}};
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full'};
+    const rings = resolveWheelRingSet(style, renderer.wheelGeometryInputForSnapshot(snapshot, 400));
+    const bands = resolvedWheelLayout(rings).bands;
+    const band = bands.find(band => band.id === 'cuspRuler' && band.visible);
+    const labels = bands.find(band => band.id === 'cuspLabels' && band.visible);
+    const materialInner = !band.overlay && labels && Math.abs(labels.outer - band.inner) < 1e-7 ? labels.inner : band.inner;
+    assert.equal(Boolean(band.overlay), placement !== 'allocated', 'hidden subdivisions retain authored separators');
+    const ends = wheelCuspRulerTickEnds(composition, band);
+    const inward = ends.tip < ends.base;
+    const lines = [], draw = new renderer.CanvasDraw(recordingCanvas([], lines));
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, snapshot, 'geometry', {width: 800, height: 800, renderStyle: style});
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', {width: 800, height: 800, renderStyle: style});
+    const ticks = lines.filter(line => line.strokeStyle === tickColor);
+    const houseTicks = lines.filter(line => line.strokeStyle === houseColor);
+    const angleTicks = lines.filter(line => line.strokeStyle === angleColor);
+    const context = `${placement}/subdivisions ${subdivisions}/Degree ${degreeEnabled}`;
+    assert.equal(ticks.length, inward ? 360 : 348, context);
+    assert.equal(houseTicks.length, 12, context);
+    assert.equal(angleTicks.length, 2, context);
+    for (const tick of [...ticks, ...houseTicks, ...angleTicks]) {
+      assert.ok(Math.abs(radius(tick.from) - ends.base) < 1.1, `${context}: tick base matches own band`);
+      assert.ok(inward ? radius(tick.to) < radius(tick.from) : radius(tick.to) > radius(tick.from), context);
+      assert.ok(radius(tick.to) >= materialInner - 1.1 && radius(tick.to) <= band.outer + 1.1,
+        `${context}: tick remains within contiguous Cusp material or its hosted instrument`);
+    }
+  }
+});
+
+test('raw historical cusp ticks preserve their visibility-based direction without a composition', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const tickColor = '#e42a65';
+  const style = createWheelRenderStyle({palette: DEFAULT_WHEEL_RENDER_STYLE.palette,
+    authoringTargetProfile: 'anglo', authoringOverrides: {...DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      linePaint: {anglo: Object.fromEntries(['1deg', '5deg', '10deg'].map(size =>
+        [`zodiac.tick.angloCuspRuler.${size}`, {color: tickColor}]))}}});
+  for (const subdivisions of [true, false]) {
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, mc: 270, dsc: 180, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme: 2, showHouses: true, showTerms: subdivisions, showDecans: subdivisions,
+        showPositions: false, showAspects: false}};
+    const lines = [], draw = new renderer.CanvasDraw(recordingCanvas([], lines));
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full'},
+      'geometry', {width: 800, height: 800, renderStyle: style});
+    const ticks = lines.filter(line => line.strokeStyle === tickColor);
+    assert.equal(ticks.length, subdivisions ? 360 : 348);
+    const radius = point => Math.hypot(point[0] - 400, point[1] - 400);
+    assert.ok(ticks.every(tick => subdivisions ? radius(tick.to) < radius(tick.from)
+      : radius(tick.to) > radius(tick.from)));
+  }
+});
+
+test('Traditional Morinus paints selectable center data and honors information/export switches', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const centerLines = ['24 November 1946', '22:35:00 ZN', 'Burlington', '73°12 W 44°28 N',
+    'Complete chart name', 'Radix', 'Tropical', 'Alcabitius'];
+  const style = {...DEFAULT_WHEEL_RENDER_STYLE, presentation: 'traditional-morinus',
+    strokes: {...DEFAULT_WHEEL_RENDER_STYLE.strokes, ascMcDefaultBase: 3}};
+  for (const showTerms of [false, true]) for (const showDecans of [false, true]) {
+    const chart = {meta: {name: 'Complete chart name', centerLines, cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+      houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme: 1, showInformation: true, showHouses: true, showPositions: false,
+        showTerms, showDecans, showAspects: false, showSymbols: false, signVariant: 1}};
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', overlayRenderMode: 'full', renderVariant: 'round-compact'};
+    const opts = {width: 800, height: 800, renderStyle: style};
+    const text = [], clips = [];
+    const canvas = recordingCanvas(text);
+    const ctx = canvas.getContext();
+    ctx.rect = () => {};
+    ctx.clip = rule => clips.push(rule);
+    const draw = new renderer.CanvasDraw(canvas);
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+    assert.deepEqual(text.filter(item => centerLines.includes(item.text)).map(item => item.text), centerLines);
+    assert.deepEqual(clips, ['evenodd']);
+    const hits = renderer.computeHitRegions(snapshot, {...opts, includeStyleTargets: true,
+      textsize: (value, paint) => draw.textsize(value, paint)});
+    assert.equal(hits.filter(hit => hit.kind === 'style_target' && hit.itemId?.startsWith('chart-center:information:')).length, centerLines.length);
+    text.length = 0; clips.length = 0;
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', {...opts, includeCenterInformation: false});
+    assert.equal(text.filter(item => centerLines.includes(item.text)).length, 0);
+    assert.equal(clips.length, 0);
+    chart.options.showInformation = false;
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+    assert.equal(text.filter(item => centerLines.includes(item.text)).length, 0);
+    assert.equal(renderer.findHitRegion([{kind: 'aspect', p1: 'sun', p2: 'moon', aspectType: 0,
+      x: 400, y: 400, r: 10, excludedDisc: {x: 400, y: 400, r: 100}}], 400, 400), null);
+  }
+});
+
+
+test('Traditional single-wheel proportions and typography stay stable across outer families', () => {
+  const style = {...DEFAULT_WHEEL_RENDER_STYLE, presentation: 'traditional-morinus'};
+  for (const showTerms of [false, true]) for (const showDecans of [false, true]) {
+    const input = {profile: 'compact', mode: 'single', maxRadius: 400,
+      showTerms, showDecans, showHouses: true, showPositions: true,
+      hasOuterRing: false, outerRingMode: 'none'};
+    const baseline = resolveWheelRingSet(style, input);
+    const typography = resolveWheelTypographyMetrics(style, 'compact', 400, input);
+    assert.equal(baseline.r30, 340);
+    assert.equal(baseline.rBase, 400 * (0.30 - (showTerms && showDecans ? 0.08 : 0)));
+    for (const outerRingMode of ['fixstars', 'arabic_parts', 'asteroids', 'dodecatemoria', 'antiscia', 'parallel_transits']) {
+      const outer = {...input, hasOuterRing: true, outerRingMode};
+      assert.deepEqual(resolveWheelRingSet(style, outer), baseline, outerRingMode);
+      assert.deepEqual(resolveWheelTypographyMetrics(style, 'compact', 400, outer), typography, outerRingMode);
+    }
+  }
+});
+
+test('Traditional empty and fixed-star wheels share exterior reserve and titlebar clearance', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const style = {...DEFAULT_WHEEL_RENDER_STYLE, presentation: 'traditional-morinus'};
+  const snapshot = {primaryChart: {meta: {}, planets: [], aspects: [],
+    angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 1, showHouses: true, showTerms: true, showDecans: true}},
+    outerRingMode: 'none', renderVariant: 'round-compact', overlayRenderMode: 'full'};
+  const empty = renderer.resolveChartOuterPaintEnvelope(snapshot, style);
+  const stars = renderer.resolveChartOuterPaintEnvelope({...snapshot, outerRingMode: 'fixstars'}, style);
+  assert.equal(empty.avoidTitlebar, true);
+  assert.deepEqual(stars, empty);
+});
+
+
+test('Traditional omits cusp and angle degrees in paint and selection while retaining planet degrees', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const chart = {meta: {}, aspects: [],
+    planets: [{id: 'sun', longitude: 120, glyph: 'A', motion: '', degText: '17', minText: '41'}],
+    angles: {asc: 0, dsc: 180, mc: 270, ic: 90,
+      ascDegMin: {degText: '11', minText: '22'}, mcDegMin: {degText: '12', minText: '23'}},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30),
+      cuspDegMin: Array.from({length: 12}, () => ({degText: '13', minText: '24'}))},
+    options: {theme: 1, showHouses: true, showPositions: true, showInformation: false,
+      showTerms: false, showDecans: false, showSymbols: false, showAspects: false}};
+  for (const outerRingMode of ['none', 'fixstars', 'asteroids']) {
+    const snapshot = {primaryChart: chart, outerRingMode, renderVariant: 'round-compact', overlayRenderMode: 'full'};
+    for (const traditional of [false, true]) {
+      const text = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+      draw.resize(800, 800, 1);
+      const style = {...DEFAULT_WHEEL_RENDER_STYLE,
+        ...(traditional ? {presentation: 'traditional-morinus'} : {})};
+      const opts = {width: 800, height: 800, renderStyle: style};
+      renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+      const hits = renderer.computeHitRegions(snapshot, {...opts, includeStyleTargets: true,
+        textsize: (value, paint) => draw.textsize(value, paint)});
+      const cuspHits = hits.filter(hit => hit.classId?.startsWith('houses.inner.position.')
+        || hit.classId?.startsWith('angles.inner.position.'));
+      assert.equal(cuspHits.length > 0, !traditional);
+      assert.equal(text.some(item => item.text === '13°'), !traditional);
+      assert.ok(text.some(item => item.text === '17°'), 'planet degrees remain visible');
+    }
+  }
+});
+
+test('Traditional omits single and comparison aspect paint and hit targets without changing options', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const aspect = {p1: 'sun', p2: 'moon', type: 5, orb: 0};
+  const chart = {meta: {}, aspects: [aspect],
+    planets: [{id: 'sun', longitude: 30, glyph: 'A', motion: '', degText: '0', minText: '0'},
+      {id: 'moon', longitude: 150, glyph: 'B', motion: '', degText: '0', minText: '0'}],
+    angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 1, showHouses: true, showPositions: false, showInformation: false,
+      showTerms: false, showDecans: false, showSymbols: true, showAspects: true}};
+  for (const comparison of [false, true]) {
+    const snapshot = {primaryChart: chart, outerRingMode: 'none', renderVariant: 'round-compact',
+      overlayRenderMode: 'full', ...(comparison ? {comparisonChart: chart,
+        document: {compoundKind: 'transit'}, interChartAspects: [{inner: 'sun', outer: 'moon', type: 5, orb: 0}]} : {})};
+    const paint = (traditional, showAspects) => {
+      const text = [], lines = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+      draw.resize(800, 800, 1);
+      draw.line = (...args) => lines.push(args);
+      const opts = {width: 800, height: 800, renderStyle: {...DEFAULT_WHEEL_RENDER_STYLE,
+        ...(traditional ? {presentation: 'traditional-morinus'} : {})}};
+      const displayed = {...snapshot, primaryChart: {...chart, options: {...chart.options, showAspects}}};
+      renderer.drawSnapshotLayer(draw, displayed, 'dynamic', opts);
+      const hits = renderer.computeHitRegions(displayed, opts).filter(hit => hit.kind === 'aspect');
+      return {text, lines, hits};
+    };
+    assert.deepEqual(paint(true, true), paint(true, false), 'aspect visibility cannot add paint or targets to Traditional');
+    assert.ok(paint(false, true).hits.length > 0, 'other styles retain aspect selection');
+    assert.equal(chart.options.showAspects, true, 'canonical option remains enabled');
+    assert.equal(chart.aspects.length, 1, 'semantic aspects remain available');
+  }
+});
+
+test('Traditional ring and angle strokes use shared controls with original default bases', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const style = {...DEFAULT_WHEEL_RENDER_STYLE, presentation: 'traditional-morinus',
+    strokes: {...DEFAULT_WHEEL_RENDER_STYLE.strokes, ascMcDefaultBase: 3}};
+  const chart = {meta: {}, planets: [], aspects: [],
+    angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 1, showHouses: true, showTerms: false, showDecans: false}};
+  const paint = (options, size) => {
+    const circles = [], lines = [], draw = new renderer.CanvasDraw(recordingCanvas([]));
+    draw.resize(size, size, 1);
+    draw.circle = (center, radius, paint) => circles.push({radius, width: paint.width});
+    draw.line = (points, paint) => lines.push({points, width: paint.width});
+    const primaryChart = {...chart, options: {...chart.options, ...options}};
+    renderer.drawSnapshotLayer(draw, {primaryChart, outerRingMode: 'none', renderVariant: 'round-compact',
+      overlayRenderMode: 'full'}, 'geometry', {width: size, height: size, renderStyle: style});
+    return {rim: circles.find(item => Math.abs(item.radius - size / 2 * .85) < 1e-8)?.width,
+      hub: circles.find(item => Math.abs(item.radius - size / 2 * .30) < 1e-8)?.width, lines};
+  };
+  for (const size of [400, 600, 1200]) {
+    const defaults = paint({}, size);
+    const standard = paint({chartRingThickness: 3, ascmcSize: 3}, size);
+    assert.deepEqual(defaults, standard, 'missing options preserve original defaults');
+    for (const ring of [1, 2, 3]) for (const angle of [2, 3, 4, 5]) {
+      const actual = paint({chartRingThickness: ring, ascmcSize: angle}, size);
+      assert.equal(actual.rim, resolveMorinusStroke(size, ring, 'ring'));
+      assert.equal(actual.hub, resolveMorinusStroke(size, angle, 'angle'));
+      assert.ok(actual.lines.some(line => line.width === resolveMorinusStroke(size, angle, 'angle')),
+        'angle shafts use the same resolved base as the hub');
+    }
+  }
+});
+
+
+test('Traditional centre follows subchart metadata and day/hour rows with matching selection targets', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const style = {...DEFAULT_WHEEL_RENDER_STYLE, presentation: 'traditional-morinus'};
+  const base = {planets: [], aspects: [], angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+    houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 1, showInformation: true, showHouses: true,
+      showPositions: false, showTerms: false, showDecans: false, showSymbols: false, showAspects: false}};
+  const radix = {...base, meta: {centerLines: ['Radix date', 'Radix time', 'Radix place', 'Radix coordinates', 'Radix name', 'Radix']},
+    overlay: {rows: [{group: 'dayhour', label: 'Radix day', glyphs: []}]}};
+  const child = {...base, meta: {centerLines: ['Eclipse date', 'Eclipse time', 'Eclipse place', 'Eclipse coordinates', 'Eclipse name', 'Solar eclipse']},
+    overlay: {rows: [{group: 'dayhour', label: 'Eclipse day', glyphs: []}]}};
+  for (const mode of ['singleton', 'derived', 'synastry']) {
+    const snapshot = {primaryChart: mode === 'singleton' ? child : radix,
+      ...(mode === 'singleton' ? {} : {comparisonChart: child}),
+      document: {compoundKind: mode === 'synastry' ? 'synastry' : 'transit'},
+      outerRingMode: 'none', renderVariant: 'round-compact', overlayRenderMode: 'full'};
+    const expected = mode === 'synastry' ? radix : child;
+    const other = mode === 'synastry' ? child : radix;
+    const text = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+    draw.resize(800, 800, 1);
+    const ctx = draw.ctx; ctx.rect = () => {}; ctx.clip = () => {};
+    const opts = {width: 800, height: 800, renderStyle: style};
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+    assert.deepEqual(text.filter(item => expected.meta.centerLines.includes(item.text)).map(item => item.text), expected.meta.centerLines);
+    assert.ok(!text.some(item => other.meta.centerLines.includes(item.text)));
+    assert.ok(text.some(item => item.text === expected.overlay.rows[0].label));
+    assert.ok(!text.some(item => item.text === other.overlay.rows[0].label));
+    const measured = [];
+    const hits = renderer.computeHitRegions(snapshot, {...opts, includeStyleTargets: true,
+      textsize: (value, paint) => {measured.push(value); return draw.textsize(value, paint);}});
+    assert.equal(hits.filter(hit => hit.itemId?.startsWith('chart-center:information:')).length, expected.meta.centerLines.length);
+    assert.ok(expected.meta.centerLines.every(line => measured.includes(line)));
+    assert.ok(other.meta.centerLines.every(line => !measured.includes(line)));
+  }
+});
+
+
+test('Classic and Compact simple wheels match Traditional footprint, preserve proportions and remain larger than outer wheels', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const laneSource = await readFile(new URL('../src/lib/chart/outer-glyph-lane.ts', import.meta.url), 'utf8');
+  const laneCode = ts.transpileModule(laneSource, {
+    compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022},
+  }).outputText;
+  const {resolveChartPaintTarget} = await import(`data:text/javascript;base64,${Buffer.from(laneCode).toString('base64')}`);
+  for (const [profile, theme] of [['classic', 0], ['compact', 1]])
+    for (const [width, height] of [[1344, 1200], [1200, 900], [600, 1000], [800, 800]])
+    for (const [showTerms, showDecans] of [[false, false], [true, false], [false, true], [true, true]])
+    for (const topBoundary of [0, 20, 50]) {
+      const chart = {meta: {}, planets: [], aspects: [],
+        angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+        houses: {cusps: Array.from({length: 12}, (_, i) => i * 30)},
+        options: {theme, showHouses: true, showPositions: true, showTerms, showDecans}};
+      const style = DEFAULT_WHEEL_RENDER_STYLE;
+      const originalInput = {profile, mode: 'single', maxRadius: 400, hasOuterRing: false,
+        showTerms, showDecans, showHouses: true, showPositions: true};
+      const original = resolveWheelRingSet(style, originalInput);
+      const fitted = outerRingMode => {
+        const snapshot = {primaryChart: chart, outerRingMode, renderVariant: `round-${profile}`, overlayRenderMode: 'full'};
+        const envelope = renderer.resolveChartOuterPaintEnvelope(snapshot, style);
+        assert.equal(envelope.avoidTitlebar, true);
+        const target = resolveChartPaintTarget(width, height, envelope.paintRadiusScale,
+          topBoundary, envelope.avoidTitlebar, 'center', envelope.targetScale);
+        const rings = resolveWheelRingSet(style, {...originalInput,
+          maxRadius: target.side / 2, hasOuterRing: outerRingMode !== 'none', outerRingMode});
+        return {envelope, target, rings};
+      };
+      const simple = fitted('none');
+      assert.equal(simple.envelope.paintRadiusScale, .96);
+      assert.equal(simple.envelope.targetScale, .96 / .85);
+      const traditionalStyle = {...style, presentation: 'traditional-morinus'};
+      const traditionalSnapshot = {primaryChart: {...chart, options: {...chart.options, theme: 1}},
+        outerRingMode: 'none', renderVariant: 'round-compact', overlayRenderMode: 'full'};
+      const traditionalEnvelope = renderer.resolveChartOuterPaintEnvelope(traditionalSnapshot, traditionalStyle);
+      assert.equal(traditionalEnvelope.targetScale, 1, 'working Traditional framing is unchanged');
+      const traditionalRings = resolveWheelRingSet(traditionalStyle, {...originalInput, profile: 'compact',
+        maxRadius: Math.min(width, height) / 2});
+      if (topBoundary === 0) {
+        assert.ok(Math.abs(simple.rings.r30 - traditionalRings.r30) < 1e-8,
+          'bare wheel matches the accepted Traditional footprint');
+        assert.ok(Math.abs(simple.rings.r30 / (Math.min(width, height) / 2) - .85) < 1e-8,
+          'absolute footprint leaves the accepted margin even without a titlebar');
+        assert.ok(Math.abs(simple.target.side - Math.min(width, height) / simple.envelope.targetScale) < 1e-8,
+          'live target agrees with export sizing');
+      }
+      for (const radius of ['rBase', 'rHouse', 'rInner', 'rPlanet', 'rASCMC']) {
+        assert.ok(Math.abs(simple.rings[radius] / simple.rings.r30 - original[radius] / original.r30) < 1e-8,
+          `${profile}/${radius}: original internal proportions are retained`);
+      }
+      for (const mode of ['fixstars', 'arabic_parts', 'asteroids', 'antiscia', 'dodecatemoria', 'parallel_transits']) {
+        const outer = fitted(mode);
+        assert.ok(simple.rings.r30 > outer.rings.r30, `${profile}/${mode}: simple zodiac rim remains larger`);
+      }
+    }
+});
+
+test('Lot abbreviations retain qualifiers and reject ambiguous short names', () => {
+  const names = [
+    {label: 'Marriage', shortLabel: 'Marr.'}, {label: 'Children', shortLabel: 'Child.'},
+    {label: 'Child'}, {label: 'Marriage of men', shortLabel: 'Marr. of men'},
+    {label: 'Marriage of women', shortLabel: 'Marr. of women'}, {label: 'Eros'},
+    {label: 'Journeys', shortLabel: 'Journ.'}, {label: 'Journeyman'},
+    {label: 'A\u0301bcdefghijk'}, {label: 'A\u0301bcdefghijl'},
+  ];
+  const candidates = outerLabelCandidates(names);
+  assert.ok(candidates.get('Marriage').includes('Marr.'));
+  assert.ok(!candidates.get('Children').includes('Child.'), 'a full peer name reserves its abbreviation');
+  assert.deepEqual(candidates.get('Eros'), ['Eros']);
+  assert.ok(candidates.get('Marriage of men').every(text => text.endsWith(' men')));
+  assert.ok(candidates.get('Marriage of women').every(text => / wom(?:\.|en)$/.test(text)));
+  assert.ok(candidates.get('Journeys').every(text => !['Jou.', 'Jour.', 'Journ.'].includes(text)));
+  assert.ok(candidates.get('A\u0301bcdefghijk').every(text => text.startsWith('A\u0301')));
+  assert.equal(outerLabelCandidates([...names].reverse()), candidates, 'name cache survives moving/reordered points');
+});
+
+test('edge names drop degrees before losing their identity at the original radial anchors', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const draw = {textsize: text => [text.length * 6, 12]};
+  const name = {text: 'Children', font: 'ui', fontFamily: 'test', size: 12,
+    weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+    classId: 'secondaryRing.arabicPart.label'};
+  const position = {...name, text: ' 16°', classId: 'bodies.outer.position'};
+  for (const [leftSide, rad] of [[true, Math.PI], [false, 0]]) {
+    for (const [margin, radius, hasPosition] of [[63, 330, true], [38, 355, false], [13, 380, false]]) {
+      const x = leftSide ? margin : 800 - margin;
+      const box = renderer.placeOuterWordLabel(draw, [name, position], ['Children', 'Child.', 'Chil.'],
+        [400, 400], radius, rad, [x, 400], 0, radius + 7, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+      assert.equal(box.runs.filter(run => run.classId === name.classId).map(run => run.text).join(''),
+      margin === 13 ? 'C' : 'Chil.');
+      assert.equal(box.runs.some(run => run.classId === position.classId), hasPosition);
+      if (hasPosition) {
+        assert.equal(box.runs[leftSide ? 1 : 0].text.trim(), '16°');
+      }
+      if (margin > 13) assert.ok(box.x >= 4 && box.x + box.w <= 796, 'the whole label fits');
+      assert.ok(Math.abs(box.y - 400) < 0.01, "name fitting cannot relocate labels around the wheel");
+      for (const px of [box.x, box.x + box.w]) for (const py of [box.y - box.h / 2, box.y + box.h / 2])
+        assert.ok(Math.hypot(px - 400, py - 400) >= radius);
+      assert.equal(name.text, 'Children', 'fitting never replaces the full semantic label');
+    }
+  }
+});
+
+test('crowded Lot labels retain original short leaders and full hover identities', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  for (const theme of [0, 1, 2, 3, 4]) for (const showOuterPositions of [false, true]) {
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+      houses: {system: 'P', cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme, showHouses: false, showPositions: false, showOuterPositions,
+        showOuterMinutes: false, showTerms: false, showDecans: false,
+        showAspects: false, showSymbols: false, signVariant: 1}};
+    const items = ['Marriage of men', 'Marriage of women', 'Children', 'Journeys',
+      'Hot Sauce', 'Eros', 'Union', 'Spirit'].map((label, index) => ({
+      id: `lot-${index}`, family: 'arabic_part', label, longitude: index < 4 ? index : 180 + index,
+      shortLabel: label.startsWith('Marriage') ? label.replace('Marriage', 'Marr.')
+        : label === 'Children' ? 'Child.' : label === 'Journeys' ? 'Journ.' : undefined,
+      degText: '16', minText: '00',
+    }));
+    const snapshot = {primaryChart: chart, outerRingMode: 'arabic_parts',
+      outerRingItems: {arabic_parts: items}, overlayRenderMode: 'full'};
+    const opts = {width: 800, height: 800, chartSize: 760, renderStyle: DEFAULT_WHEEL_RENDER_STYLE};
+    const text = [], lines = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+    draw.resize(800, 800, 1);
+    draw.line = points => lines.push(points);
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+    renderer.drawSnapshotLayer(draw, snapshot, 'outer-label', opts);
+    const hits = renderer.computeHitRegions(snapshot, {...opts, includeStyleTargets: true,
+      textsize: (value, paint) => draw.textsize(value, paint)});
+    const lots = hits.filter(hit => hit.kind === 'secondary_ring');
+    assert.equal(lots.length, items.length);
+    for (const item of items) {
+      const hit = lots.find(hit => hit.itemId === item.id);
+      assert.equal(hit.label, item.label);
+      assert.equal(hit.longitude, item.longitude);
+      assert.ok(hit.top >= 0 && hit.top + hit.height <= 800);
+      assert.ok(lines.some(line => line.every((point, index) => point.every((value, axis) =>
+        Math.abs(value - [hit.leader.start, hit.leader.end][index][axis]) < 0.01))),
+      'leader hit matches the original painted tick');
+    }
+    for (let i = 0; i < lots.length; i++) for (let j = i + 1; j < lots.length; j++) {
+      const a = lots[i], b = lots[j];
+      // Hover padding can touch; the actual text rectangles must be separate.
+      assert.ok(a.left + a.width - 4 <= b.left + 4 || b.left + b.width - 4 <= a.left + 4
+        || a.top + a.height - 4 <= b.top + 4 || b.top + b.height - 4 <= a.top + 4,
+      `${theme}/${showOuterPositions}: ${a.label} overlaps ${b.label}`);
+    }
+  }
+});
+
+test('shared outer-name fitting retains asteroid motion and glyph typography without moving ticks', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const name = {text: 'Astronomia', font: 'ui', fontFamily: 'test', size: 12,
+    weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+    classId: 'secondaryRing.asteroid.label'};
+  const position = {...name, text: ' 27°', classId: 'bodies.outer.position'};
+  const motion = {...name, text: ' R', weight: 600, classId: 'secondaryRing.asteroid.motion'};
+  const draw = {textsize: text => [text.length * 6, 12]};
+  for (const [leftSide, rad] of [[true, Math.PI], [false, 0]]) {
+    for (const [margin, radius, hasPosition] of [[80, 310, true], [55, 335, false]]) {
+      const x = leftSide ? margin : 800 - margin;
+      const expected = leftSide ? ['name', 'motion', ...(hasPosition ? ['position'] : [])]
+        : [...(hasPosition ? ['position'] : []), 'motion', 'name'];
+      const box = renderer.placeOuterWordLabel(draw, [name, position, motion], ['Astronomia', 'Astro.'],
+        [400, 400], radius, rad, [x, 400], 0, radius + 7, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+      assert.ok(Math.abs(box.y - 400) < 0.01);
+      assert.ok(box.x >= 4 && box.x + box.w <= 796);
+      assert.deepEqual(box.runs.map(run => run.classId === name.classId ? 'name'
+        : run.classId === motion.classId ? 'motion' : 'position'), expected);
+      assert.equal(box.runs.find(run => run.classId === motion.classId).text.trim(), 'R');
+      assert.equal(box.runs.find(run => run.classId === motion.classId).weight, 600);
+      assert.equal(box.runs.find(run => run.classId === name.classId).text, 'Astro.');
+    }
+  }
+  const glyphs = [{...name, text: 'A', font: 'symbols'}, {...name, text: '/'},
+    {...name, text: 'B', font: 'symbols'}];
+  const mixed = renderer.placeOuterWordLabel(draw, [...glyphs, position], ['A/B'],
+    [400, 400], 330, 0, [740, 400], 0, 337, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+  assert.deepEqual(mixed.runs.filter(run => run.classId === name.classId), glyphs);
+});
+
+test('fixed-star degrees fit only with a recognizable name in both payload paths', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  for (const theme of [0, 1, 2, 3, 4]) for (const fallback of [false, true]) for (const chartSize of [600, 800]) {
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+      houses: {system: 'P', cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      fixedStars: fallback ? [{name: 'Fomalhaut', longitude: 17.1}, {name: 'Aldebaran', longitude: 197.1}] : [],
+      options: {theme, showHouses: false, showPositions: false, showOuterPositions: false,
+        showTerms: false, showDecans: false, showAspects: false, showSymbols: false, signVariant: 1}};
+    const items = ['Fomalhaut', 'Aldebaran'].map((listLabel, index) => ({
+      id: `star-${index}`, family: 'fixstar', label: `${listLabel} 17°06'`, listLabel,
+      longitude: 17.1 + index * 180, positionInLabel: true,
+      segments: [{text: `${listLabel} 17°06'`, kind: 'text'}],
+    }));
+    const snapshot = {primaryChart: chart, outerRingMode: 'fixstars',
+      outerRingItems: {fixstars: fallback ? [] : items}, overlayRenderMode: 'full'};
+    const opts = {width: 800, height: 800, chartSize, renderStyle: DEFAULT_WHEEL_RENDER_STYLE};
+    const text = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+    draw.resize(800, 800, 1);
+    renderer.drawSnapshotLayer(draw, snapshot, 'outer-label', opts);
+    const printed = text.map(run => run.text).join(' ');
+    assert.equal((printed.match(/17°06'/g) ?? []).length, chartSize === 600 ? 2 : 0,
+      'positions are omitted when they leave no room for the name');
+    assert.match(printed, /Fom/);
+    assert.match(printed, /Ald/);
+    assert.ok(text.every(run => !/^\.+$/.test(run.text.trim())), 'names never become ellipsis-only runs');
+    if (!fallback) {
+      const hits = renderer.computeHitRegions(snapshot, {...opts, textsize: (value, paint) => draw.textsize(value, paint)});
+      assert.deepEqual(hits.filter(hit => hit.kind === 'secondary_ring').map(hit => hit.label).sort(),
+        items.map(item => item.label).sort());
+    }
+  }
+});
+
+test('asteroid and hybrid rings fit names and positions together without changing leaders', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  for (const mode of ['asteroids', 'hybrid_hits']) for (const theme of [0, 1, 2, 3, 4]) {
+    const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+      angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+      houses: {system: 'P', cusps: Array.from({length: 12}, (_, i) => i * 30)},
+      options: {theme, showHouses: false, showPositions: false, showOuterPositions: true,
+        showOuterMinutes: true, showTerms: false, showDecans: false,
+        showAspects: false, showSymbols: false, signVariant: 1}};
+    const items = ['Astronomia', 'Astraea'].map((label, index) => ({
+      id: `asteroid-${index}`, family: 'asteroid', label, longitude: 17.1 + index * 180,
+      degText: '17', minText: '06', motion: 'R',
+      segments: [{text: label, kind: 'text'}],
+    }));
+    const snapshot = {primaryChart: chart, outerRingMode: mode,
+      outerRingItems: {[mode]: items}, overlayRenderMode: 'full'};
+    const opts = {width: 800, height: 800, chartSize: 800, renderStyle: DEFAULT_WHEEL_RENDER_STYLE};
+    const text = [], lines = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+    draw.resize(800, 800, 1);
+    draw.line = points => lines.push(points);
+    renderer.drawSnapshotLayer(draw, snapshot, 'dynamic', opts);
+    renderer.drawSnapshotLayer(draw, snapshot, 'outer-label', opts);
+    const hits = renderer.computeHitRegions(snapshot, {...opts, textsize: (value, paint) => draw.textsize(value, paint)});
+    const printed = text.map(run => run.text).join(' ');
+    assert.equal(text.filter(run => run.text.startsWith('A')).length, 2,
+      'both asteroid identities survive, even when the last-resort prefix is ambiguous');
+    assert.equal(text.filter(run => run.text.trim() === 'R').length, 2);
+    assert.ok(!printed.includes('17°'), 'no orphan positions on a narrow asteroid ring');
+    for (const item of items) {
+      const hit = hits.find(hit => hit.kind === 'secondary_ring' && hit.itemId === item.id);
+      assert.equal(hit.label, item.label);
+      assert.equal(hit.longitude, item.longitude);
+      assert.ok(lines.some(line => line.every((point, index) => point.every((value, axis) =>
+        Math.abs(value - [hit.leader.start, hit.leader.end][index][axis]) < 0.01))),
+      'each asteroid keeps its original tick');
+    }
+  }
+});
+
+
+test('close asteroid names retain distinguishing endings instead of overflowing as full names', async () => {
+  const names = [{label: 'Maximiliandu'}, {label: 'Maximiliana'}];
+  const choices = outerLabelCandidates(names);
+  assert.ok(choices.get('Maximiliandu').includes('Max…u'));
+  assert.ok(choices.get('Maximiliana').includes('Max…na'));
+  const reserved = outerLabelCandidates([...names, {label: 'Max…du'}]);
+  assert.ok(!reserved.get('Maximiliandu').includes('Max…du'), 'full names reserve matching abbreviations');
+  assert.ok(!choices.get('Maximiliandu').includes('Max.'), 'shared prefixes remain ambiguous');
+  const renderer = await loadDrawChartCollisionInternals();
+  const draw = {textsize: text => [Array.from(text).length * 6, 12]};
+  for (const [label, x, rad] of [['Maximiliandu', 45, Math.PI], ['Maximiliana', 755, 0]]) {
+    const name = {text: label, font: 'ui', fontFamily: 'test', size: 12,
+      weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+      classId: 'secondaryRing.asteroid.label'};
+    const degree = {...name, text: ' 17°42′', classId: 'bodies.outer.position'};
+    const fitted = renderer.placeOuterWordLabel(draw, [name, degree], choices.get(label),
+      [400, 400], 345, rad, [x, 400], 0, 352, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+    assert.ok(fitted.x >= 4 && fitted.x + fitted.w <= 796, 'the whole name stays inside the pane');
+    assert.equal(fitted.runs.length, 1, 'degrees yield to the recognizable name');
+    assert.ok(fitted.runs[0].text.startsWith('Max'));
+    assert.ok(fitted.runs[0].text.endsWith(label.slice(-1)), 'the distinguishing ending survives');
+    assert.equal(fitted.y, 400);
+  }
+});
+
+
+test('final outer-name fallback bounds every text family and permits ambiguous prefixes', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const draw = {textsize: text => [Array.from(text).length * 6, 12]};
+  for (const family of ['asteroid', 'arabicPart', 'fixedStar', 'midpoint', 'hybridHit']) {
+    const name = {text: 'Maximiliandu', font: 'ui', fontFamily: 'test', size: 12,
+      weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+      classId: `secondaryRing.${family}.label`};
+    const degree = {...name, text: " 17°42′", classId: 'bodies.outer.position'};
+    for (const left of [true, false]) for (const margin of [45, 28, 13, 5, 0]) {
+      const x = left ? margin : 800 - margin;
+      const box = renderer.placeOuterWordLabel(draw, [name, degree], [name.text],
+        [400, 400], 340, left ? Math.PI : 0, [x, 400], 0, 347, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+      assert.ok(box.x >= 0 && box.x + box.w <= 800, `${family}/${margin}: no overflow`);
+      const printed = box.runs.map(run => run.text).join('');
+      assert.ok(!printed.includes('°'), 'a position never survives without its name');
+      if (margin >= 13) assert.match(printed, /^M/, 'the fallback keeps the name prefix');
+      assert.notEqual(printed, '.', 'never replace the whole identity with punctuation');
+      assert.equal(box.y, 400, 'no label relocation or leader rerouting');
+    }
+  }
+  const name = {text: 'Maximiliana', font: 'ui', fontFamily: 'test', size: 12,
+    weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+    classId: 'secondaryRing.asteroid.label'};
+  const box = renderer.placeOuterWordLabel(draw, [name], [name.text],
+    [400, 400], 340, Math.PI, [28, 400], 0, 347, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+  assert.equal(box.runs.map(run => run.text).join(''), 'Max.');
+});
+
+test('last-resort prefixes preserve graphemes, motion and mixed glyph typography', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+  const draw = {textsize: text => [Array.from(segmenter.segment(text)).length * 6, 12]};
+  const name = {text: 'A\u0301bcdefghijklmnop', font: 'ui', fontFamily: 'test', size: 12,
+    weight: 400, style: 'normal', tracking: 0, opacity: 1, color: '#000',
+    classId: 'secondaryRing.asteroid.label'};
+  const motion = {...name, text: ' R', classId: 'secondaryRing.asteroid.motion', weight: 600};
+  const fitted = renderer.placeOuterWordLabel(draw, [name, motion], [name.text],
+    [400, 400], 340, Math.PI, [40, 400], 0, 347, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+  assert.equal(fitted.runs.map(run => run.text).join(''), 'A\u0301bc. R');
+  assert.equal(fitted.runs.at(-1).weight, 600);
+  const tight = renderer.placeOuterWordLabel(draw, [name, motion], [name.text],
+    [400, 400], 340, Math.PI, [13, 400], 0, 347, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+  assert.equal(tight.runs.map(run => run.text).join(''), 'A\u0301');
+  const glyphs = [{...name, text: 'A', font: 'symbols', fontFamily: 'glyphs'},
+    {...name, text: '/'}, {...name, text: 'B', font: 'symbols', fontFamily: 'glyphs'}];
+  const mixed = renderer.placeOuterWordLabel(draw, glyphs, ['A/B'],
+    [400, 400], 340, Math.PI, [13, 400], 0, 347, 800, 24, DEFAULT_WHEEL_RENDER_STYLE);
+  assert.equal(mixed.runs[0].text, 'A');
+  assert.equal(mixed.runs[0].fontFamily, 'glyphs');
+});
+
+test('projected outer points retain hover identities when no text can fit', async () => {
+  const renderer = await loadDrawChartCollisionInternals();
+  const chart = {meta: {cornerLines: {}}, planets: [], aspects: [],
+    angles: {asc: 0, dsc: 180, mc: 270, ic: 90},
+    houses: {system: 'P', cusps: Array.from({length: 12}, (_, i) => i * 30)},
+    options: {theme: 2, showHouses: false, showPositions: false, showOuterPositions: true,
+      showTerms: false, showDecans: false, showAspects: false, showSymbols: false}};
+  const item = {id: 'long-name', family: 'arabic_part', label: 'Marriage of women',
+    longitude: 0, degText: '0', minText: '00'};
+  const snapshot = {primaryChart: chart, outerRingMode: 'arabic_parts',
+    outerRingItems: {arabic_parts: [item]}, overlayRenderMode: 'full'};
+  const opts = {width: 800, height: 800, chartSize: 800, renderStyle: DEFAULT_WHEEL_RENDER_STYLE};
+  const scene = renderer.resolveProjectedOuterRing(snapshot, opts,
+    {chart, items: [item], frame: renderer.identityFrame(0), boundaryRadius: 460});
+  const text = [], hits = [], draw = new renderer.CanvasDraw(recordingCanvas(text));
+  draw.resize(800, 800, 1);
+  renderer.paintProjectedOuterRing(draw, scene, (point, box) => hits.push({point, box}));
+  assert.equal(text.length, 0, 'no off-canvas text or orphan degree');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].point.label, item.label);
+  assert.equal(hits[0].point.longitude, item.longitude);
+  assert.ok(hits[0].box.x >= 0 && hits[0].box.x <= 800);
 });

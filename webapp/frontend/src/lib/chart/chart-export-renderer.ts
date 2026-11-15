@@ -1,13 +1,24 @@
 // Copyright (C) 2026 Max Lange
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { CanvasDraw } from "./canvas-draw";
+import { CanvasDraw, setCanvasDeviceFrame, type CanvasDeviceFrame } from "./canvas-draw";
 import { drawPngWatermark, preparePngWatermark } from "./chart-export-watermark";
 import { morinusTextFontFromTokens } from "./chart-fonts";
-import { informationCornerClass, radixOverlayTopLeftLines } from "./chart-overlay-lines";
-import { drawSnapshotLayer, resolveChartOuterPaintEnvelope, type ClickAspectState } from "./draw-chart";
+import { hasRelationshipCornerInformation, informationDisplayChart, informationCornerClass, radixOverlayTopLeftLines } from "./chart-overlay-lines";
+import { computeHitRegions, drawSnapshotLayer, resolveChartOuterPaintEnvelope, type ClickAspectState } from "./draw-chart";
+import {
+  exportDashboardPlacement,
+  printDashboard,
+  printDashboardColor,
+  substituteCssVars,
+  unionRect,
+} from "./chart-export-dashboard";
+import { cornerOuterLabelBounds, cssColorResolver, dashboardOuterLabelBounds, dashboardShown, dashboardTextObstacles } from "./dashboard-canvas";
+import { dashboardTextSize, dashboardTopLeftLines, type DashboardCorners, type DashboardLayout, type DashRect } from "./dashboard-layout";
+import { paintDashboard, type DashboardPrint, type DashObstacles } from "./dashboard-paint";
 import {
   applyProfileColorsToSnapshot,
+  minorDignityPaletteColor,
   readPaletteFromTheme,
   readPaletteProfileOverrides,
 } from "./palette";
@@ -21,16 +32,19 @@ import {
   type WheelTypographyProfile,
   wheelTypographyProfileForTheme,
 } from "./wheel-render-style";
+import { resolveChartPaintTarget } from "./outer-glyph-lane";
 import { applyPdfRasterPreset } from "./pdf-raster-presets";
-import { resolveWheelGeometryPresetStyle, type WheelGeometryPresetInput } from "./wheel-geometry-preset";
+import { resolveWheelGeometryPresetStyle, resolveWheelPresetSnapshot, type WheelGeometryPresetInput } from "./wheel-geometry-preset";
 import type {
   Chart,
+  ChartDashboard,
   ChartPalette,
   ChartPlanet,
   ChartRenderSnapshot,
   OverlayInfoRow,
 } from "./types";
 import type { ThemeState } from "@/lib/daemon/client";
+import type { TFunc } from "@/lib/i18n/i18n";
 import type {
   ChartExportRenderRequest,
   ChartExportRenderResult,
@@ -39,9 +53,16 @@ import type {
 const EXPORT_LONG_EDGE = 1200;
 const PNG_EXPORT_SIDE_GUTTER = 72;
 const PNG_EXPORT_DPR = 1;
-const PDF_EXPORT_DPR = 2;
-const PDF_EXPORT_WIDTH = 900;
-const PDF_EXPORT_HEIGHT = 1200;
+// Portrait ISO page (1:sqrt(2)) for PDFs and dashboard-view PNGs; the daemon
+// keeps that shape for the PDF's printable area
+// (`io_service._write_rendered_chart_pdf`). A3 is the A4 layout at a higher
+// pixel density. PDFs print at about 220 dpi. PNGs fill the whole sheet: A4 at
+// 300 dpi (2480 x 3508), A3 at about 280 dpi (3240 x 4583), which stays under
+// WebKit's 16.7-megapixel canvas limit.
+const PAGE_EXPORT_WIDTH = 900;
+const PAGE_EXPORT_HEIGHT = Math.round(PAGE_EXPORT_WIDTH * Math.SQRT2);
+const PDF_EXPORT_DPR = { A4: 2, A3: 2 * Math.SQRT2 } as const;
+const PNG_PAGE_EXPORT_DPR = { A4: 2480 / PAGE_EXPORT_WIDTH, A3: 3.6 } as const;
 const PRINT_BLACK = "rgb(0 0 0)";
 const PRINT_WHITE = "rgb(255 255 255)";
 
@@ -51,6 +72,36 @@ function exportDimensions(hasExteriorPaint: boolean): { width: number; height: n
   return {
     width: EXPORT_LONG_EDGE + (hasExteriorPaint ? PNG_EXPORT_SIDE_GUTTER * 2 : 0),
     height: EXPORT_LONG_EDGE,
+  };
+}
+
+/** Portrait page this export paints, or null for the square or as-shown PNG.
+ * PNG formats other than square apply to the dashboard view only. */
+function exportPage(request: ChartExportRenderRequest, dashboard: boolean): "A4" | "A3" | null {
+  if (request.kind === "pdf") return request.pageFormat === "A3" ? "A3" : "A4";
+  return dashboard && (request.pageFormat === "A4" || request.pageFormat === "A3") ? request.pageFormat : null;
+}
+
+/** Canvas size and pixel density of the export. */
+function exportFrame(
+  request: ChartExportRenderRequest,
+  dashboard: boolean,
+  viewport: { width: number; height: number },
+  hasExteriorPaint: boolean,
+): { size: { width: number; height: number }; dpr: number } {
+  if (request.kind === "png" && request.pageFormat === "viewport" && dashboard) {
+    // What you see is what you get: the chart area at its on-screen size
+    // and the display's pixel density.
+    return {
+      size: { width: Math.max(1, Math.round(viewport.width)), height: Math.max(1, Math.round(viewport.height)) },
+      dpr: Math.max(1, window.devicePixelRatio || 1),
+    };
+  }
+  const page = exportPage(request, dashboard);
+  if (!page) return { size: exportDimensions(hasExteriorPaint), dpr: PNG_EXPORT_DPR };
+  return {
+    size: { width: PAGE_EXPORT_WIDTH, height: PAGE_EXPORT_HEIGHT },
+    dpr: (request.kind === "pdf" ? PDF_EXPORT_DPR : PNG_PAGE_EXPORT_DPR)[page],
   };
 }
 
@@ -120,7 +171,16 @@ function resolveScreenStyle(
     ...(chart.primaryChart.palette ?? {}),
     ...readPaletteProfileOverrides(resolvedTheme),
   };
-  const snapshot = applyProfileColorsToSnapshot(chart, resolvedTheme);
+  const wheelPresetInput: WheelGeometryPresetInput = {
+    profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
+    presets: chart.primaryChart.options.wheelGeometryPresets,
+    readAppearanceValue: readValue,
+    appearanceOverrides: resolvedTheme?.profileOverrides?.wheelAuthoring ?? {},
+    preview: geometryPreview,
+  };
+  const snapshot = resolveWheelPresetSnapshot(
+    applyProfileColorsToSnapshot(chart, resolvedTheme), wheelPresetInput,
+  );
   const inheritedText = morinusTextFontFromTokens(resolvedTheme?.appTokens);
   const wheelText = readValue("--aries-wheel-font-text")?.trim();
   const fontUi = wheelText && !wheelText.startsWith("var(") ? wheelText : inheritedText;
@@ -142,12 +202,7 @@ function resolveScreenStyle(
       fontDecanSymbols: resolveRoleFont(readValue, "--aries-wheel-font-decan-symbols", fontSymbols),
       fontAspectSymbols: resolveRoleFont(readValue, "--aries-wheel-font-aspect-symbols", fontSymbols),
     },
-    {
-      profile: wheelTypographyProfileForTheme(chart.primaryChart.options.theme),
-      presets: chart.primaryChart.options.wheelGeometryPresets,
-      appearanceOverrides: resolvedTheme?.profileOverrides?.wheelAuthoring ?? {},
-      preview: geometryPreview,
-    },
+    wheelPresetInput,
   );
   return { snapshot, style, palette, readValue };
 }
@@ -200,6 +255,9 @@ function printPalette(
     textDim: PRINT_BLACK,
     textBright: PRINT_BLACK,
     fortune: PRINT_BLACK,
+    minorDignities: coloredDetails && request.dignityHighlights
+      ? (palette.minorDignities ?? []).map(readablePrintColor)
+      : blackArray(palette.minorDignities ?? []),
     elements: coloredDetails
       ? [...(palette.elements ?? [])]
       : blackArray(palette.elements ?? []),
@@ -214,6 +272,7 @@ function printPalette(
 function planetPaletteIndex(planet: ChartPlanet): number {
   if (planet.id === "nnode" || planet.id === "snode") return 10;
   if (planet.id === "chiron") return 12;
+  if (planet.id === "apogee") return 1;
   return Math.max(0, Math.min(9, Number(planet.seId) || 0));
 }
 
@@ -221,6 +280,7 @@ function printPlanetColor(
   planet: ChartPlanet,
   palette: ChartPalette,
   request: ChartExportRenderRequest,
+  blendMinorDignities: boolean,
 ): string {
   if (request.colorMode !== "colored-details") return PRINT_BLACK;
   if (request.dignityHighlights) {
@@ -229,6 +289,9 @@ function printPlanetColor(
       case "exil": return palette.exil;
       case "exal": return palette.exal;
       case "casus": return palette.casus;
+      case "peregrin": return minorDignityPaletteColor(
+        palette, planet.minorDignityCount ?? 0, blendMinorDignities,
+      ) ?? PRINT_BLACK;
       default: return PRINT_BLACK;
     }
   }
@@ -245,7 +308,7 @@ function printChart(
 ): Chart {
   const planets = chart.planets.map((planet) => ({
     ...planet,
-    color: printPlanetColor(planet, palette, request),
+    color: printPlanetColor(planet, palette, request, chart.options.blendMinorDignities === true),
   }));
   const colorsBySeId = new Map(planets.map((planet) => [planet.seId, planet.color ?? PRINT_BLACK]));
   const overlay = chart.overlay ? {
@@ -306,6 +369,15 @@ function printStyle(style: WheelRenderStyle, palette: ChartPalette): WheelRender
   return {
     ...style,
     palette,
+    authoringOverrides: {
+      ...style.authoringOverrides,
+      linePaint: Object.fromEntries(Object.entries(style.authoringOverrides.linePaint).map(([profile, classes]) => [
+        profile,
+        Object.fromEntries(Object.entries(classes).map(([classId, paint]) => [
+          classId, paint,
+        ])),
+      ])),
+    },
     elementColors: Object.fromEntries(
       Object.keys(style.elementColors).map((key) => [key, PRINT_BLACK]),
     ) as unknown as WheelRenderStyle["elementColors"],
@@ -380,20 +452,16 @@ function drawCornerLines(
   paint: ResolvedWheelTypographyPaint,
   lineHeight: number,
   gap: number,
-) {
+): DashRect | null {
   const rowHeight = paint.size * lineHeight;
+  let w = 0;
   lines.forEach((line, index) => {
-    draw.text([x, y + index * (rowHeight + gap)], line, {
-      fill: paint.color,
-      font: paint.font,
-      size: paint.size,
-      weight: paint.weight,
-      style: paint.style,
-      tracking: paint.tracking,
-      opacity: paint.opacity,
-      align,
-    });
+    draw.text([x, y + index * (rowHeight + gap)], line, { ...overlayTextOptions(paint), align });
+    w = Math.max(w, draw.textsize(line, overlayTextOptions(paint))[0]);
   });
+  if (!lines.length) return null;
+  const h = lines.length * rowHeight + Math.max(0, lines.length - 1) * gap;
+  return { x: align === "right" ? x - w : x, y, w, h };
 }
 
 const EVENT_OVERLAY_CLASSES = Object.freeze({
@@ -429,16 +497,23 @@ function overlayTextOptions(paint: ResolvedWheelTypographyPaint) {
   };
 }
 
-function drawSurfaceOverlays(
+/**
+ * Paints the corner text and PNG watermark and returns their boxes, the
+ * export's counterpart of the DOM corner overlays the dashboard layout clears
+ * (`dashboard-canvas.ts` `measureCornerBoxes`). The watermark joins the
+ * top-left box it sits under.
+ */
+export function drawSurfaceOverlays(
   draw: CanvasDraw,
   snapshot: ChartRenderSnapshot,
   style: WheelRenderStyle,
   width: number,
   height: number,
   request: ChartExportRenderRequest,
-) {
+): DashboardCorners {
+  const corners: DashboardCorners = { topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
   const primary = snapshot.primaryChart;
-  const display = snapshot.comparisonChart ?? primary;
+  const display = informationDisplayChart(snapshot);
   const primaryCorners = primary.meta.cornerLines;
   const corner = primaryCorners?.topLeft?.length || primaryCorners?.bottomLeft?.length
     ? primary
@@ -455,27 +530,44 @@ function drawSurfaceOverlays(
     defaults: Parameters<typeof resolveWheelTypographyPaint>[4],
   ) => resolveWheelTypographyPaint(style, profile, classId, maxRadius, defaults);
 
+  // Chart dashboard: one top-left chart-data block (date/time, place, house
+  // system) at the module text size; the bottom corners stay empty.
+  const merged = dashboardShown(snapshot.dashboard);
   const topPaint = resolvePaint("chartOverlay.information.topLeft", {
     font: fontUi,
-    size: overlay.infoFontSize,
+    size: merged ? dashboardTextSize(width, height) : overlay.infoFontSize,
     color: palette.textDim,
   });
   let watermarkY = overlay.topEdgeInset;
   let watermarkWidth = width - 2 * overlay.edgeInset;
-  if (request.includeOverlays && corner.options.showInformation) {
-    const topLines = radixOverlayTopLeftLines(corner, snapshot.radixChart);
-    drawCornerLines(
+  const showInformation = request.includeOverlays && corner.options.showInformation
+    && !(style.presentation === "traditional-morinus" && primary.options.showInformation
+      && !hasRelationshipCornerInformation(primary));
+  const placeLines = corner.meta.cornerLines?.bottomLeft ?? [corner.meta.place, corner.meta.placeCoords];
+  const houseLines = request.includeOverlays && display.options.showHouseSystem ? display.meta.houseSystemLines ?? [] : [];
+  if (showInformation || (merged && houseLines.length)) {
+    const topLines = merged
+      ? dashboardTopLeftLines(
+        showInformation ? radixOverlayTopLeftLines(corner, snapshot.radixChart) : [],
+        showInformation ? placeLines : [],
+        houseLines,
+      )
+      : radixOverlayTopLeftLines(corner, snapshot.radixChart);
+    const blockHeight = topLines.length * topPaint.size * metrics.cornerLineHeight
+      + Math.max(0, topLines.length - 1) * metrics.infoGap;
+    const box = drawCornerLines(
       draw, topLines, overlay.edgeInset, overlay.topEdgeInset, "left",
       topPaint, metrics.cornerLineHeight, metrics.infoGap,
     );
+    corners.topLeft = box;
     if (topLines.length) {
       watermarkWidth = Math.max(topPaint.size, ...topLines.map((line) =>
         draw.textsize(line, overlayTextOptions(topPaint))[0]));
-      watermarkY += topLines.length * topPaint.size * metrics.cornerLineHeight
-        + Math.max(0, topLines.length - 1) * metrics.infoGap
-        + topPaint.size * 0.3;
+      watermarkY += blockHeight + topPaint.size * 0.3;
     }
-    const bottomLines = corner.meta.cornerLines?.bottomLeft ?? [corner.meta.place, corner.meta.placeCoords];
+  }
+  if (showInformation && !merged) {
+    const bottomLines = placeLines;
     const bottomPaint = resolvePaint(informationCornerClass(corner, "bottomLeft"), {
       font: fontUi,
       size: overlay.infoFontSize,
@@ -483,14 +575,14 @@ function drawSurfaceOverlays(
     });
     const bottomHeight = bottomLines.length * bottomPaint.size * metrics.cornerLineHeight +
       Math.max(0, bottomLines.length - 1) * metrics.infoGap;
-    drawCornerLines(
+    corners.bottomLeft = drawCornerLines(
       draw, bottomLines, overlay.edgeInset, height - overlay.edgeInset - bottomHeight,
       "left", bottomPaint, metrics.cornerLineHeight, metrics.infoGap,
     );
   }
 
   if (request.kind === "png") {
-    drawPngWatermark(draw.ctx, width, request.watermarkLabel, {
+    corners.topLeft = unionRect(corners.topLeft, drawPngWatermark(draw.ctx, width, request.watermarkLabel, {
       x: overlay.edgeInset,
       y: watermarkY,
       size: topPaint.size * 1.15,
@@ -499,11 +591,11 @@ function drawSurfaceOverlays(
       style: request.watermarkStyle,
       color: palette.textBright,
       maxWidth: watermarkWidth,
-    });
+    }));
   }
-  if (!request.includeOverlays) return;
+  if (!request.includeOverlays) return corners;
 
-  if (display.options.showHouseSystem) {
+  if (display.options.showHouseSystem && !merged) {
     const lines = display.meta.houseSystemLines ?? [];
     const paint = resolvePaint("chartOverlay.houseSystem.bottomRight", {
       font: fontUi,
@@ -512,7 +604,7 @@ function drawSurfaceOverlays(
     });
     const blockHeight = lines.length * paint.size * metrics.cornerLineHeight +
       Math.max(0, lines.length - 1) * metrics.infoGap;
-    drawCornerLines(
+    corners.bottomRight = drawCornerLines(
       draw, lines, width - overlay.edgeInset, height - overlay.edgeInset - blockHeight,
       "right", paint, metrics.cornerLineHeight, metrics.infoGap,
     );
@@ -528,7 +620,7 @@ function drawSurfaceOverlays(
     rows.push({ spacer: overlay.gapBetweenGroups });
   }
   rows.push(...sections.signal);
-  if (!rows.length) return;
+  if (!rows.length) return corners;
 
   const prepared = rows.map((row) => {
     if ("spacer" in row) return row;
@@ -617,6 +709,62 @@ function drawSurfaceOverlays(
     }
     y += rowHeight;
   }
+  corners.topRight = { x: startX, y: overlay.topEdgeInset, w: width - overlay.edgeInset - startX, h: y - overlay.topEdgeInset };
+  return corners;
+}
+
+function tokenPixels(readValue: WheelCssValueReader, name: string, fallback: number): number {
+  const raw = readValue(name)?.trim()
+    || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Dashboard modules with the live painter. Screen appearance resolves the
+ * export theme's tokens; print appearance inks them black and paints the
+ * bodies in their printed wheel colours (`printSnapshot`).
+ */
+function paintExportDashboard(
+  draw: CanvasDraw,
+  snapshot: ChartRenderSnapshot,
+  layout: DashboardLayout,
+  style: WheelRenderStyle,
+  readValue: WheelCssValueReader,
+  request: ChartExportRenderRequest,
+  print: boolean,
+  t: TFunc,
+  obstacles?: DashObstacles,
+) {
+  const dashboard = print
+    ? printDashboard(
+      snapshot.dashboard!,
+      new Map(snapshot.primaryChart.planets.map((planet) => [Number(planet.seId), planet.color ?? PRINT_BLACK])),
+      request.colorMode === "colored-details",
+      PRINT_BLACK,
+    )
+    : snapshot.dashboard!;
+  const resolver = cssColorResolver(document.body);
+  const screenColor = (expression: string) => resolver.color(substituteCssVars(expression, readValue));
+  try {
+    paintDashboard(
+      {
+        ctx: draw.ctx,
+        dashboard,
+        color: print ? printDashboardColor(screenColor, PRINT_BLACK) : screenColor,
+        fonts: { ui: style.typography.families.ui, symbols: style.typography.families.symbols },
+        t,
+        obstacles,
+      },
+      layout,
+      {
+        rule: tokenPixels(readValue, "--aries-chart-module-rule-width", 1),
+        frame: tokenPixels(readValue, "--aries-chart-module-frame-width", 2),
+      },
+    );
+  } finally {
+    resolver.dispose();
+  }
 }
 
 async function canvasPngPayload(
@@ -674,13 +822,17 @@ export async function renderChartSurfaceExport(
   request: ChartExportRenderRequest,
   clickAspectState?: ClickAspectState,
   geometryPreview?: WheelGeometryPresetInput["preview"],
+  t: TFunc = (key) => key,
 ): Promise<ChartExportRenderResult> {
   if (request.kind === "png") await preparePngWatermark(request.watermarkStyle);
   const screen = resolveScreenStyle(chart, theme, geometryPreview);
-  const outerEnvelope = resolveChartOuterPaintEnvelope(chart, screen.style);
-  const size = request.kind === "pdf"
-    ? { width: PDF_EXPORT_WIDTH, height: PDF_EXPORT_HEIGHT }
-    : exportDimensions(outerEnvelope.avoidTitlebar);
+  const outerEnvelope = resolveChartOuterPaintEnvelope(screen.snapshot, screen.style);
+  const { size, dpr } = exportFrame(
+    request,
+    dashboardShown(screen.snapshot.dashboard),
+    viewport,
+    outerEnvelope.avoidTitlebar,
+  );
   const usesPrintAppearance = request.kind === "pdf" || request.colorMode !== "screen";
   const palette = usesPrintAppearance
     ? printPalette(screen.palette, request)
@@ -689,35 +841,71 @@ export async function renderChartSurfaceExport(
   const snapshot = usesPrintAppearance
     ? printSnapshot(screen.snapshot, palette, request)
     : screen.snapshot;
-  const dpr = request.kind === "png" ? PNG_EXPORT_DPR : PDF_EXPORT_DPR;
-  const chartSize = Math.min(size.width, size.height)
-    / outerEnvelope.targetScale;
-  const layers = (["fill", "geometry", "dynamic", "outer-label"] as const).map((layer) => {
+  // Wheel-first, as on screen (chart-canvas.tsx `resolveTarget`): the layout
+  // clears reserved corner areas from stable inputs; the painted corner text
+  // only feeds the Moon text's obstacles and is clipped at the wheel.
+  const overlays = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
+  const corners = request.includeOverlays || request.kind === "png"
+    ? drawSurfaceOverlays(overlays.draw, snapshot, style, size.width, size.height, request)
+    : null;
+  const inset = resolveWheelOverlayMetrics(style.overlays, size).edgeInset;
+  const cornerBoxes = corners ?? { topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
+  const placement = exportDashboardPlacement(snapshot.dashboard, size, style.overlays, outerEnvelope, corners);
+  const wheel = placement?.wheel ?? {
+    chartSize: Math.min(size.width, size.height) / outerEnvelope.targetScale,
+    center: undefined,
+  };
+  const wheelOptions = {
+    width: size.width,
+    height: size.height,
+    chartSize: wheel.chartSize,
+    ...(wheel.center ? { center: wheel.center } : {}),
+    // As on screen: corner text and the edges, plus the dashboard's modules and reservations.
+    outerLabelCollisionBounds: placement
+      ? dashboardOuterLabelBounds(placement.layout, size, style.overlays, corners)
+      : cornerOuterLabelBounds(corners, size),
+  };
+  // As on screen: the Moon text runs past its box only up to the nearest
+  // painted object, taken from the wheel's hit regions.
+  const dashboardObstacles = placement ? dashboardTextObstacles(
+    computeHitRegions(snapshot, {
+      ...wheelOptions,
+      renderStyle: style,
+      textsize: (text, options) => overlays.draw.textsize(text, options),
+      textbounds: (text, options) => overlays.draw.textbounds(text, options),
+      textcontour: (text, options) => overlays.draw.textcontour(text, options),
+    }),
+    placement.layout,
+    cornerBoxes,
+    { width: size.width, inset },
+  ) : undefined;
+  // One layer canvas at a time: a page PNG is up to 15 megapixels per canvas.
+  const output = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
+  for (const layer of ["fill", "geometry", "dynamic", "outer-label"] as const) {
     const item = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
     drawSnapshotLayer(item.draw, snapshot, layer, {
-      width: size.width,
-      height: size.height,
-      chartSize,
+      ...wheelOptions,
       renderStyle: style,
       geometryOwnsBackground: false,
+      includeCenterInformation: request.includeOverlays,
       ...(layer === "dynamic" ? { clickAspectState } : {}),
     });
-    return { layer, canvas: item.canvas };
-  });
-  const output = canvasLayer(size.width, size.height, style.typography.families.ui, dpr);
-  for (const item of layers) {
     output.draw.ctx.save();
-    if (item.layer !== "fill") {
-      const effect = exportLayerEffect(screen.readValue, item.layer);
+    if (layer !== "fill") {
+      const effect = exportLayerEffect(screen.readValue, layer);
       output.draw.ctx.globalAlpha = effect.opacity;
       output.draw.ctx.filter = effect.filter;
     }
     output.draw.ctx.drawImage(item.canvas, 0, 0, size.width, size.height);
     output.draw.ctx.restore();
+    item.canvas.width = 0;
+    // The live dashboard canvas sits between the dynamic and outer-label layers.
+    if (layer === "dynamic" && placement && snapshot.dashboard) {
+      paintExportDashboard(output.draw, snapshot, placement.layout, style, screen.readValue, request, usesPrintAppearance, t, dashboardObstacles);
+    }
   }
-  if (request.includeOverlays || request.kind === "png") {
-    drawSurfaceOverlays(output.draw, snapshot, style, size.width, size.height, request);
-  }
+  // Corner text never moves the wheel; composited last, it draws over it.
+  if (corners) output.draw.ctx.drawImage(overlays.canvas, 0, 0, size.width, size.height);
   if (request.kind === "pdf") {
     applyPdfRasterTreatment(output.canvas, request);
   }
@@ -726,4 +914,93 @@ export async function renderChartSurfaceExport(
     width: output.canvas.width,
     height: output.canvas.height,
   };
+}
+
+type PosterRect = Readonly<{ x: number; y: number; w: number; h: number }>;
+
+/** The chart wheel in its screen style for the astrolabe poster
+ * (astrolabe-poster.ts). `paint` composites the wheel's layers onto one poster
+ * tile, a canvas carrying the tile's device frame: the wheel is centred in
+ * `rect` of the CSS page and drawn only inside the `clip` disc, so the layer
+ * fill never covers the plate or the tables beside it. */
+export function posterWheelPainter(chart: ChartRenderSnapshot, theme: ThemeState | null) {
+  const screen = resolveScreenStyle(chart, theme);
+  const envelope = resolveChartOuterPaintEnvelope(screen.snapshot, screen.style);
+  const paint = (
+    target: HTMLCanvasElement,
+    frame: CanvasDeviceFrame,
+    page: Readonly<{ width: number; height: number }>,
+    rect: PosterRect,
+    clip: Readonly<{ cx: number; cy: number; r: number }>,
+    dpr: number,
+    includeCenterInformation: boolean,
+  ) => {
+    const fit = resolveChartPaintTarget(rect.w, rect.h, envelope.paintRadiusScale, 0, false, "center", envelope.targetScale);
+    const center: [number, number] = [rect.x + rect.w / 2, rect.y + fit.centerY];
+    const layerCanvas = document.createElement("canvas");
+    setCanvasDeviceFrame(layerCanvas, frame);
+    const draw = new CanvasDraw(layerCanvas);
+    draw.setDefaultFont(screen.style.typography.families.ui);
+    const ctx = target.getContext("2d");
+    if (!ctx) return;
+    try {
+      for (const layer of ["fill", "geometry", "dynamic", "outer-label"] as const) {
+        draw.resize(page.width, page.height, dpr);
+        draw.clear();
+        drawSnapshotLayer(draw, screen.snapshot, layer, {
+          width: page.width,
+          height: page.height,
+          chartSize: fit.side,
+          center,
+          renderStyle: screen.style,
+          geometryOwnsBackground: false,
+          includeCenterInformation,
+        });
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Only the fill (the wheel's paper) is held to its disc, so it never
+        // covers the plate; lines, glyphs and outer labels (fixed stars on
+        // their leaders) print whole.
+        if (layer === "fill") {
+          ctx.beginPath();
+          ctx.arc(frame.x + clip.cx * dpr, frame.y + clip.cy * dpr, clip.r * dpr, 0, Math.PI * 2);
+          ctx.clip();
+        } else {
+          const effect = exportLayerEffect(screen.readValue, layer);
+          ctx.globalAlpha = effect.opacity;
+          ctx.filter = effect.filter;
+        }
+        ctx.drawImage(layerCanvas, 0, 0);
+        ctx.restore();
+      }
+    } finally {
+      setCanvasDeviceFrame(layerCanvas, null);
+      layerCanvas.width = layerCanvas.height = 0;
+    }
+  };
+  /** The chart dashboard's modules in the screen's appearance, as the
+   * wheel export paints them (`paintExportDashboard`), at `layout`. */
+  const paintModules = (draw: CanvasDraw, dashboard: ChartDashboard, layout: DashboardLayout, t: TFunc, print?: DashboardPrint) => {
+    const resolver = cssColorResolver(document.body);
+    try {
+      paintDashboard(
+        {
+          ctx: draw.ctx,
+          dashboard,
+          color: (expression) => resolver.color(substituteCssVars(expression, screen.readValue)),
+          fonts: { ui: screen.style.typography.families.ui, symbols: screen.style.typography.families.symbols },
+          t,
+        },
+        layout,
+        {
+          rule: tokenPixels(screen.readValue, "--aries-chart-module-rule-width", 1),
+          frame: tokenPixels(screen.readValue, "--aries-chart-module-frame-width", 2),
+        },
+        print,
+      );
+    } finally {
+      resolver.dispose();
+    }
+  };
+  return { snapshot: screen.snapshot, palette: screen.palette, fonts: screen.style.typography.families, paint, paintModules };
 }

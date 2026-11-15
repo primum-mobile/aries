@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,11 +21,12 @@ const daemonPort = useNativeDaemon
   : positiveInt("ARIES_PERF_DAEMON_PORT", 8877);
 const daemonUrl = `http://127.0.0.1:${daemonPort}`;
 const scenarioProfile = process.env.CHART_STEP_PROFILE === "core" ? "core" : "extended";
+const coordinateScenario = process.env.CHART_STEP_COORDINATE_SCENARIO ?? null;
 const runExtendedScenarios = scenarioProfile === "extended";
 const retainAstrocart = process.env.CHART_STEP_RETAINED_ASTROCART === "1";
 const measureListScroll = process.env.CHART_STEP_LIST_SCROLL === "1";
 const measureLiveTransitList = process.env.CHART_STEP_LIVE_TRANSIT_LIST === "1";
-const measureFullPaint = process.env.CHART_STEP_FULL_PAINT === "1";
+const measureFullPaint = process.env.CHART_STEP_FULL_PAINT === "1" || Boolean(coordinateScenario);
 const measuredSteps = positiveInt("CHART_STEP_RUNS", 30);
 const liveListSteps = positiveInt("CHART_STEP_LIVE_LIST_RUNS", 12);
 const liveListIntervalMs = positiveInt("CHART_STEP_LIVE_LIST_INTERVAL_MS", 30);
@@ -41,6 +42,12 @@ const filter = process.env.CHART_STEP_FILTER ?? "";
 const requestedTheme = process.env.CHART_STEP_THEME?.trim() ?? "";
 const headless = process.env.HEADLESS !== "0";
 const traceEnabled = process.env.CHART_STEP_TRACE === "1";
+// Diagnostic only: a CPU profile of the measured burst, never the routine gate.
+const cpuProfileEnabled = process.env.CHART_STEP_CPU_PROFILE === "1";
+// Explicit specialist run; the automatic core fixture stays unchanged.
+const requestedDashboard = process.env.CHART_STEP_DASHBOARD === "1";
+// Diagnostic only: step the same fixture in zodiacal mode for a like-for-like baseline.
+const coordinateBaseline = process.env.CHART_STEP_COORDINATE_BASELINE === "1";
 const perfDir = process.env.ARIES_PERF_OUTPUT_DIR
   ? path.resolve(process.env.ARIES_PERF_OUTPUT_DIR)
   : path.join(frontendDir, ".tmp/perf");
@@ -53,7 +60,7 @@ function positiveInt(name, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function markPerfScript({ daemonBaseUrl, daemonToken, retainAstrocart }) {
+function markPerfScript({ daemonBaseUrl, daemonToken, retainAstrocart, requestedDashboard }) {
   Object.defineProperty(window, "__ARIES_DAEMON_URL__", {
     value: daemonBaseUrl,
     configurable: false,
@@ -65,6 +72,11 @@ function markPerfScript({ daemonBaseUrl, daemonToken, retainAstrocart }) {
     writable: false,
   });
   window.localStorage.setItem("ARIES_CHART_PERF", "1");
+  if (requestedDashboard) {
+    window.localStorage.setItem("aries.frame-layout", JSON.stringify({
+      state: { dashboardView: true, inspectorOpen: true }, version: 0,
+    }));
+  }
   if (retainAstrocart) {
     window.localStorage.setItem("ARIES_ASTROCART_FORCE_LOCAL_TILES", "1");
     window.localStorage.setItem("ARIES_ASTROCART_PERF", "1");
@@ -138,6 +150,25 @@ function sameIdSequence(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+/** Name the first unmet boundary condition, for reports only. */
+function incompleteBoundaryReason(event) {
+  const detail = event?.detail ?? {};
+  if (detail.timedOut !== false) return "timed-out";
+  const ids = integerEventIds(event, "inputIds");
+  if (ids.length === 0 || duplicateCount(ids) !== 0) return "input-ids";
+  for (const key of ["appliedInputs", "canvasAt", "intentAt", "nextFrameAt", "postRenderAt", "secondFrameAt",
+    "nextFrameTimestamp", "secondFrameTimestamp"]) {
+    if (!Number.isFinite(detail[key])) return `missing-${key}`;
+  }
+  if (detail.appliedInputs !== ids.length) return "applied-count";
+  if (![detail.postRenderOrder, detail.secondFrameOrder].every((value) => value === 2 || value === 3)
+    || detail.postRenderOrder === detail.secondFrameOrder) return "callback-order";
+  if (detail.intentAt > detail.canvasAt) return "intent-after-canvas";
+  if (detail.nextFrameAt < detail.canvasAt) return "frame-before-canvas";
+  if (detail.secondFrameTimestamp <= detail.nextFrameTimestamp) return "same-frame-timestamp";
+  return "ordering";
+}
+
 function completeRenderBoundary(event) {
   const detail = event?.detail;
   if (!detail || detail.timedOut !== false) return false;
@@ -207,6 +238,18 @@ function numericEventDetails(events, name, key, predicate = () => true) {
   return events
     .filter((event) => event.name === name && predicate(event))
     .map((event) => event.detail?.[key])
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function num(value) {
+  return typeof value === "number" ? value : Number.NaN;
+}
+
+/** One key → paint stage per step paint; a missing timestamp yields NaN and is dropped. */
+function stepSplitValues(paints, stage) {
+  return paints
+    .filter((event) => event.detail && typeof event.detail.stepIntentAt === "number")
+    .map((event) => stage(event.detail, event.at))
     .filter((value) => typeof value === "number" && Number.isFinite(value));
 }
 
@@ -365,6 +408,10 @@ async function openChart(page, context) {
   if (requestedTheme) {
     await daemonCommand(page, "/api/options/theme", { name: requestedTheme });
   }
+  if (requestedDashboard) {
+    if (useNativeDaemon) throw new Error("Dashboard fixture requires the isolated daemon.");
+    await daemonCommand(page, "/api/options", { display: { chart_dashboard: true } });
+  }
   const picker = await context.newPage();
   await picker.goto(`${frontendUrl}/chart-picker?mode=open-radix&chartPerf=1`, {
     waitUntil: "domcontentloaded",
@@ -420,6 +467,122 @@ async function daemonCommand(page, pathName, payload) {
     },
     { daemonBaseUrl: daemonUrl, commandPath: pathName, commandPayload: payload },
   );
+}
+
+async function prepareCoordinateScenario(page, rootId) {
+  if (!coordinateScenario) return { docId: rootId, modeSwitchMs: null };
+  const command = (actionId, payload) => daemonCommand(page, "/api/workspace/context-menu/action", {actionId, payload});
+  let docId = rootId;
+  if (coordinateScenario === "at" || coordinateScenario === "progression") {
+    const opened = await daemonCommand(page, "/api/workspace/open", {
+      kind: "supplementary", parentDocumentId: rootId,
+      featureKind: coordinateScenario === "at" ? "transits" : "secondary-progression",
+      when: "2026-06-16T12:00:00",
+    });
+    docId = opened.documentId;
+    if (coordinateScenario === "at") {
+      docId = (await daemonCommand(page, "/api/workspace/open-ascensional-transits", {
+        parentRadixId: rootId, sourceDocumentId: docId,
+      })).documentId;
+    }
+  }
+  if (coordinateScenario === "split") {
+    docId = (await command("workspace.open_ascensional_view", {documentId: rootId})).documentId;
+    await command("workspace.set_side_by_side", {enabled: true});
+    await command("workspace.set_side_by_side", {side: "left", documentId: rootId});
+    await command("workspace.set_side_by_side", {side: "right", documentId: docId});
+  }
+  if (coordinateScenario === "multiwheel") {
+    for (const featureKind of ["transits", "secondary-progression", "solar-arc"]) {
+      await daemonCommand(page, "/api/workspace/open", {kind: "supplementary", parentDocumentId: rootId, featureKind,
+        when: "2026-06-16T12:00:00"});
+    }
+    await command("workspace.set_chart_ring_count", {documentId: rootId, ringCount: 4});
+  }
+  await daemonCommand(page, "/api/workspace/activate", {docId});
+  if (coordinateScenario === "dense") {
+    if (useNativeDaemon) throw new Error("Dense fixtures require an isolated daemon.");
+    await daemonCommand(page, "/api/options", {orbs: {fixstarsOrbAll: 6}, display: {showfixstarshcs: true, showfixstars: 1}});
+  }
+  const started = performance.now();
+  const prepared = await command("workspace.set_chart_presentation", {documentId: docId, patch: {
+    coordinateMode: "ascensional", showEquatorialSigns: true,
+  }});
+  // Observe the mounted renderer's committed frame, not just the HTTP result.
+  await page.waitForFunction(id => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).some(event =>
+    event.name === "chart-canvas-paint" && event.detail?.docId === id
+    && event.detail?.overlay?.coordinateMode === "ascensional"), docId, {timeout: timeoutMs});
+  const modeSwitchMs = performance.now() - started;
+  if (coordinateBaseline) {
+    await command("workspace.set_chart_presentation", {documentId: docId, patch: {coordinateMode: "zodiacal"}});
+    await page.waitForFunction(id => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).at(-1)?.detail?.docId === id
+      && (window.__ARIES_CHART_PERF_EVENTS__ ?? []).at(-1)?.detail?.overlay?.coordinateMode !== "ascensional", docId, {timeout: timeoutMs});
+  }
+  const outerItemCount = Object.values(prepared.snapshot?.outerRingItems ?? {}).reduce((sum, items) => sum + items.length, 0);
+  if (coordinateScenario === "multiwheel" && prepared.snapshot?.rings?.length !== 4) {
+    throw new Error(`Multiwheel fixture has ${prepared.snapshot?.rings?.length ?? 0} rings instead of four.`);
+  }
+  if (coordinateScenario === "dense" && outerItemCount < 10) throw new Error(`Dense fixture has only ${outerItemCount} outer labels.`);
+  return {docId, modeSwitchMs, modeSwitchSamples: [], resizeMs: null, outerItemCount};
+}
+
+/** Menu-driven mode switches, measured after stepping: repeated context-menu
+ * round trips disturb headless frame scheduling and must not leak into burst
+ * cadence evidence. Ends in ascensional mode, as before. */
+async function measureCoordinateModeSwitches(page, docId) {
+  const modeSwitchSamples = [];
+  for (let sample = -2; sample < 10; sample += 1) {
+    for (const mode of ["zodiacal", "ascensional"]) {
+      // Exercise the mounted menu's command/publication gate. An out-of-band
+      // HTTP mutation instead measures the slower external-change refetch.
+      await page.locator(`[data-aries-chart-document="${docId}"]`).click({button: "right", position: {x: 30, y: 80}});
+      const item = page.getByRole("menuitemcheckbox", {name: "Ascensional", exact: true});
+      await item.waitFor();
+      // Time from the delivered click, not from Playwright's actionability
+      // wait for the submenu's opening transition to settle.
+      await page.evaluate(() => {
+        window.__ARIES_MENU_CLICK_AT__ = null;
+        document.addEventListener("click", (event) => { window.__ARIES_MENU_CLICK_AT__ = event.timeStamp; },
+          {capture: true, once: true});
+      });
+      await item.click();
+      const start = await page.waitForFunction(() => window.__ARIES_MENU_CLICK_AT__).then(handle => handle.jsonValue());
+      await page.waitForFunction(({id, mode, start}) => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).some(event =>
+        event.at >= start && event.name === "chart-canvas-paint" && event.detail?.docId === id && event.detail?.overlay?.coordinateMode === mode),
+        {id: docId, mode, start}, {timeout: timeoutMs});
+      const duration = await page.evaluate(({id, mode, start}) =>
+        (window.__ARIES_CHART_PERF_EVENTS__ ?? []).find(event => event.at >= start &&
+          event.name === "chart-canvas-paint" && event.detail?.docId === id
+          && event.detail?.overlay?.coordinateMode === mode).at - start, {id: docId, mode, start});
+      if (sample >= 0) modeSwitchSamples.push(duration);
+      if (sample === 9) {
+        modeSwitchSamples.timeline = await page.evaluate((start) => (window.__ARIES_CHART_PERF_EVENTS__ ?? [])
+          .filter((event) => event.at >= start).slice(0, 24)
+          .map((event) => [event.name, Math.round((event.at - start) * 10) / 10, Object.fromEntries(
+            Object.entries(event.detail ?? {}).filter(([key, value]) =>
+              (typeof value === "number" && key !== "at") || key === "path" || key === "mode"))]), start);
+      }
+      // Close the whole menu tree before the next right-click; a closing
+      // submenu can still intercept the trigger for a frame or two.
+      for (let dismiss = 0; dismiss < 6 && await page.getByRole("menu").count(); dismiss += 1) {
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(30);
+      }
+      await page.getByRole("menu").first().waitFor({state: "detached", timeout: timeoutMs}).catch(() => {});
+    }
+  }
+  return modeSwitchSamples;
+}
+
+/** One real resize, measured after stepping: an emulated viewport change
+ * alters headless frame scheduling and must not leak into burst cadence. */
+async function measureCoordinateResize(page, docId) {
+  const resizeStarted = performance.now();
+  const marker = await page.evaluate(() => performance.now());
+  await page.setViewportSize({width: 1180, height: 820});
+  await page.waitForFunction(({id, marker}) => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).some(event =>
+    event.at >= marker && event.name === "chart-canvas-paint" && event.detail?.docId === id), {id: docId, marker}, {timeout: timeoutMs});
+  return performance.now() - resizeStarted;
 }
 
 async function retainAstrocartSurface(page, docId) {
@@ -824,7 +987,7 @@ async function stepOnce(page, docId) {
     docId,
   );
   await page.keyboard.press(key);
-  await page.waitForFunction(
+  try { await page.waitForFunction(
     ({ activeDocId, previousCount }) =>
       (window.__ARIES_CHART_PERF_EVENTS__ ?? []).filter(
         (event) =>
@@ -834,7 +997,15 @@ async function stepOnce(page, docId) {
       ).length > previousCount,
     { activeDocId: docId, previousCount: before },
     { timeout: timeoutMs },
-  );
+  ); } catch (error) {
+    console.error('Warmup step did not paint', await page.evaluate(() => ({
+      focus: document.activeElement?.tagName,
+      events: (window.__ARIES_CHART_PERF_EVENTS__ ?? []).slice(-18).map(event => ({name: event.name,
+        docId: event.detail?.docId, mode: event.detail?.mode, stepped: event.detail?.stepped,
+        reason: event.detail?.reason})),
+    })));
+    throw error;
+  }
 }
 
 async function readLatestOverlayPerfState(page, docId) {
@@ -898,7 +1069,7 @@ async function stepBurst(page) {
 // commonly 80-100 ms). `stepOnce` cannot express a held key at all: it awaits
 // the paint before pressing again, so the burst never stays open.
 //
-// Invariant asserted here (doc/policy-time-architecture.md T1/T6):
+// Invariant asserted here:
 //   ZERO full settles while the key is held, EXACTLY ONE after release.
 // ---------------------------------------------------------------------------
 const cadenceSweepMs = (process.env.CHART_STEP_CADENCE_SWEEP_MS
@@ -1032,6 +1203,7 @@ async function runHouseToggleCoherenceScenario(page, docId) {
     throw new Error("House-toggle coherence scenario did not observe a step frame.");
   }
   const toggleOnce = async (previousShowHouses, eventCount) => {
+    const intentAt = await page.evaluate(() => performance.now());
     await page.keyboard.press("h");
     await page.waitForFunction(
       ({ activeDocId, startEventCount, previousHouseState }) =>
@@ -1039,7 +1211,6 @@ async function runHouseToggleCoherenceScenario(page, docId) {
           (event) =>
             event.name === "chart-canvas-paint" &&
             event.detail?.docId === activeDocId &&
-            event.detail?.mode === "full" &&
             event.detail?.showHouses === !previousHouseState,
         ),
       {
@@ -1057,24 +1228,32 @@ async function runHouseToggleCoherenceScenario(page, docId) {
         previousHouseState,
         previousDisplayDatetime,
         previousSemanticFrameSignature,
+        intentAt,
       }) => {
         const laterPaints = (window.__ARIES_CHART_PERF_EVENTS__ ?? [])
           .slice(startEventCount)
           .filter(
             (event) =>
               event.name === "chart-canvas-paint" &&
-              event.detail?.docId === activeDocId,
+              event.detail?.docId === activeDocId &&
+              // A validated overlay-only completion can visit the renderer
+              // with zero dirty layers. Count actual Canvas work, not that
+              // retained-frame acknowledgement, while still failing any stale
+              // completion that redraws even one visible layer.
+              Object.values(event.detail?.dirty ?? { unknown: true }).some(Boolean),
           );
         const togglePaints = laterPaints.filter(
           (event) => event.detail?.showHouses === !previousHouseState,
         );
         return {
+          paintLatencyMs: togglePaints[0]?.at - intentAt,
           totalPaints: laterPaints.length,
           togglePaints: togglePaints.length,
           staleSettlePaints: laterPaints.filter(
             (event) => event.detail?.settleOverlayOnly === true,
           ).length,
           modes: laterPaints.map((event) => event.detail?.mode ?? null),
+          paintedLayers: laterPaints.map((event) => event.detail?.dirty ?? null),
           displayDatetimes: laterPaints.map((event) => event.detail?.displayDatetime ?? null),
           semanticFrameSignatures: laterPaints.map(
             (event) => event.detail?.semanticFrameSignature ?? null,
@@ -1094,6 +1273,7 @@ async function runHouseToggleCoherenceScenario(page, docId) {
         previousHouseState: previousShowHouses,
         previousDisplayDatetime: stepState.displayDatetime,
         previousSemanticFrameSignature: stepState.semanticFrameSignature,
+        intentAt,
       },
     );
   };
@@ -1103,8 +1283,17 @@ async function runHouseToggleCoherenceScenario(page, docId) {
   );
   const restored = await toggleOnce(!stepState.showHouses, returnEventCount);
   const directions = [hiddenOrShown, restored];
+  let previous = stepState.showHouses;
+  for (let index = 0; index < 10; index += 1) {
+    const eventCount = await page.evaluate(() => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).length);
+    directions.push(await toggleOnce(previous, eventCount));
+    previous = !previous;
+  }
+  const latencies = directions.map(direction => direction.paintLatencyMs).sort((a, b) => a - b);
   const result = {
     toggles: directions.length,
+    paintLatencyP95Ms: latencies[Math.ceil(latencies.length * 0.95) - 1],
+    paintLatencyMaxMs: latencies.at(-1),
     directions,
     totalPaints: directions.reduce((total, direction) => total + direction.totalPaints, 0),
     togglePaints: directions.reduce((total, direction) => total + direction.togglePaints, 0),
@@ -1122,7 +1311,7 @@ async function runHouseToggleCoherenceScenario(page, docId) {
   return {
     ...result,
     passed:
-      result.toggles === 2 &&
+      result.toggles === 12 &&
       result.onePaintPerToggle &&
       result.staleSettlePaints === 0 &&
       result.sameCursor &&
@@ -1470,8 +1659,29 @@ try {
     daemonBaseUrl: daemonUrl,
     daemonToken,
     retainAstrocart,
+    requestedDashboard,
   });
   page = await context.newPage();
+  const pushMessageTypes = new Map();
+  if (cpuProfileEnabled) {
+    // Count React commits through the DevTools hook React registers with.
+    await page.addInitScript(() => {
+      const w = window;
+      w.__ARIES_REACT_COMMITS__ = 0;
+      w.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        supportsFiber: true, renderers: new Map(), isDisabled: false,
+        inject(renderer) { this.renderers.set(this.renderers.size + 1, renderer); return this.renderers.size; },
+        onCommitFiberRoot() { w.__ARIES_REACT_COMMITS__ += 1; },
+        onCommitFiberUnmount() {}, onPostCommitFiberRoot() {}, checkDCE() {},
+      };
+    });
+    page.on("websocket", (socket) => socket.on("framereceived", ({ payload }) => {
+      if (!pushMessageTypes.burst) return;
+      let type = "binary";
+      try { const parsed = JSON.parse(String(payload)); type = parsed.type ?? parsed.event ?? parsed.kind ?? "unknown"; } catch {}
+      pushMessageTypes.set(type, (pushMessageTypes.get(type) ?? 0) + 1);
+    }));
+  }
   page.on("request", (request) => {
     const pathname = new URL(request.url()).pathname;
     if (pathname.startsWith("/api/search/")) searchRequestPaths.push(pathname);
@@ -1483,7 +1693,13 @@ try {
     await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
     traceStarted = true;
   }
-  const docId = await openChart(page, context);
+  const rootId = await openChart(page, context);
+  const coordinateSetup = await prepareCoordinateScenario(page, rootId);
+  const {docId} = coordinateSetup;
+  if (coordinateScenario) {
+    await page.locator('[data-workspace-focus-anchor]:visible').first().focus();
+    await page.evaluate(() => window.focus());
+  }
   const retainedAstrocartId = retainAstrocart
     ? await retainAstrocartSurface(page, docId)
     : null;
@@ -1497,15 +1713,53 @@ try {
   await page.evaluate(() => {
     window.__ARIES_CHART_PERF_EVENTS__ = [];
   });
+  const cpuProfiler = cpuProfileEnabled ? await page.context().newCDPSession(page) : null;
+  if (cpuProfiler) {
+    await cpuProfiler.send("Profiler.enable");
+    await cpuProfiler.send("Profiler.setSamplingInterval", { interval: 200 });
+    await cpuProfiler.send("Profiler.start");
+    await page.evaluate(() => { window.__ARIES_REACT_COMMITS__ = 0; });
+    pushMessageTypes.burst = true;
+  }
   if (burstSize > 0) {
     await stepBurst(page);
   } else {
     for (let index = 0; index < measuredSteps; index += 1) await stepOnce(page, docId);
   }
   await waitForCoherentSettle(page, docId);
+  if (cpuProfiler) {
+    const { profile } = await cpuProfiler.send("Profiler.stop");
+    writeFileSync(path.join(perfDir, "chart-step-burst.cpuprofile"), JSON.stringify(profile));
+    pushMessageTypes.burst = false;
+    const burstEvents = await page.evaluate(() => (window.__ARIES_CHART_PERF_EVENTS__ ?? []).reduce((counts, event) => {
+      counts[event.name] = (counts[event.name] ?? 0) + 1;
+      return counts;
+    }, { reactCommits: window.__ARIES_REACT_COMMITS__ }));
+    writeFileSync(path.join(perfDir, "chart-step-burst-events.json"), JSON.stringify({
+      events: burstEvents, pushMessages: Object.fromEntries(pushMessageTypes),
+    }, null, 1));
+    await cpuProfiler.detach();
+  }
   await runFullPaintScenario(page, docId);
   const noListSearchRequests = searchRequestPaths.slice(searchRequestBaseline);
   const events = await page.evaluate(() => window.__ARIES_CHART_PERF_EVENTS__ ?? []);
+  // Specialist coordinate measurements run after burst evidence is captured.
+  if (coordinateScenario) {
+    const switchProfiler = cpuProfileEnabled ? await page.context().newCDPSession(page) : null;
+    if (switchProfiler) {
+      await switchProfiler.send("Profiler.enable");
+      await switchProfiler.send("Profiler.setSamplingInterval", { interval: 200 });
+      await switchProfiler.send("Profiler.start");
+    }
+    coordinateSetup.modeSwitchSamples = await measureCoordinateModeSwitches(page, docId);
+    if (switchProfiler) {
+      const { profile } = await switchProfiler.send("Profiler.stop");
+      writeFileSync(path.join(perfDir, "chart-mode-switch.cpuprofile"), JSON.stringify(profile));
+      await switchProfiler.detach();
+    }
+    coordinateSetup.modeSwitchTimeline = coordinateSetup.modeSwitchSamples.timeline ?? null;
+    coordinateSetup.resizeMs = await measureCoordinateResize(page, docId);
+  }
   const displayToggleCoherence = runExtendedScenarios
     ? await runHouseToggleCoherenceScenario(page, docId)
     : null;
@@ -1530,6 +1784,9 @@ try {
       event.detail?.docId === docId &&
       event.detail?.mode === "step_fast",
   );
+  if (requestedDashboard && (!paints.length || paints.some((event) => !event.detail?.dashboard))) {
+    throw new Error("Dashboard fixture did not paint the dashboard on every measured step.");
+  }
   const rawStepInputs = events.filter(
     (event) =>
       event.name === "chart-step-input" &&
@@ -1757,6 +2014,16 @@ try {
     boundaryTimeouts,
     incompleteBoundaryCallbacks:
       renderBoundaryCallbacks.length - completeBoundaryCallbacks.length,
+    incompleteBoundaryReasons: renderBoundaryCallbacks
+      .filter((event) => !completeRenderBoundary(event))
+      .map(incompleteBoundaryReason),
+    incompleteBoundaryDetails: renderBoundaryCallbacks
+      .filter((event) => !completeRenderBoundary(event))
+      .slice(0, 8)
+      .map((event) => event.detail),
+    repeatedFrameCallbacks: renderBoundaryCallbacks.reduce(
+      (sum, event) => sum + (event.detail?.repeatedFrameCallbacks ?? 0), 0,
+    ),
     completedBoundaryProbes: completeBoundaryCallbacks.length,
     uniqueNextRafOpportunities: nextRafTimestampSummary.unique,
     rafCollisionGroups: nextRafTimestampSummary.groups,
@@ -1903,6 +2170,8 @@ try {
       firstPaintValues,
       budgetValue("time-step.first-useful-paint"),
     ),
+    ...(coordinateScenario ? {"coordinate.mode-switch": summarizeMetric(coordinateSetup.modeSwitchSamples,
+      budgetValue("time-step.first-useful-paint"))} : {}),
     "chart.canvas.step_fast": summarizeMetric(
       canvasValues,
       budgetValue("chart.canvas.step_fast"),
@@ -1954,6 +2223,34 @@ try {
     "time-step.payload-bytes": summarizeMetric(
       numericEventDetails(navigateCommands, "workspace-command", "bytes"),
       budgetValue("time-step.payload-bytes"),
+    ),
+    // Measured split of key → paint; the stages sum to stepIntentToPaintMs.
+    "time-step.split.queue-wait": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.stepRequestStartAt) - num(d.stepIntentAt)),
+    ),
+    "time-step.split.command": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.stepResponseAt) - num(d.stepRequestStartAt)),
+    ),
+    "time-step.split.daemon-navigate": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.stepDaemonNavigateMs)),
+    ),
+    "time-step.split.daemon-live-surfaces": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.stepDaemonLiveSurfacesMs)),
+    ),
+    "time-step.split.transport": summarizeMetric(
+      stepSplitValues(
+        paints,
+        (d) => num(d.stepResponseAt) - num(d.stepRequestStartAt) - num(d.stepDaemonHandlerMs),
+      ),
+    ),
+    "time-step.split.presentation-hold": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.stepPublishedAt) - num(d.stepResponseAt)),
+    ),
+    "time-step.split.publish-to-schedule": summarizeMetric(
+      stepSplitValues(paints, (d) => num(d.scheduledAt) - num(d.stepPublishedAt)),
+    ),
+    "time-step.split.raf-wait": summarizeMetric(
+      stepSplitValues(paints, (d, at) => num(at) - num(d.totalMs) - num(d.scheduledAt)),
     ),
     "browser.long-task": summarizeMetric(
       numericEventDetails(longTasks, "browser-long-task", "durationMs"),
@@ -2018,6 +2315,9 @@ try {
     "daemon.navigate.pre-snapshot": summarizeMetric(
       nestedNumericEventDetails(navigateCommands, ["debugTiming", "preSnapshotMs"]),
     ),
+    "daemon.navigate.live-surfaces": summarizeMetric(
+      nestedNumericEventDetails(navigateCommands, ["debugTiming", "liveSurfacesMs"]),
+    ),
     "daemon.snapshot.total": summarizeMetric(
       nestedNumericEventDetails(navigateCommands, ["debugTiming", "snapshot", "totalMs"]),
     ),
@@ -2034,6 +2334,7 @@ try {
   };
   const requiredMetrics = [
     "chart.canvas.step_fast",
+    ...(coordinateScenario ? ["coordinate.mode-switch"] : []),
     "chart.canvas.body-layout",
     "time-step.first-useful-paint",
     "time-step.command-total",
@@ -2066,6 +2367,8 @@ try {
     platform: `${os.platform()} ${os.release()} ${os.arch()}`,
     harnessMode: useNativeDaemon ? "shared native daemon" : "isolated daemon",
     scenarioProfile,
+    coordinateScenario,
+    coordinateSetup,
     requiredMetrics,
     requiredContracts,
     browserVersion: browser.version(),
@@ -2073,6 +2376,7 @@ try {
     key,
     requestedTheme: requestedTheme || null,
     warmupSteps,
+    requestedDashboard,
     measuredSteps,
     burst: burstSize > 0
       ? {

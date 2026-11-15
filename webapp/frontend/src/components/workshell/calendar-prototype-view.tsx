@@ -20,8 +20,10 @@ import "dayjs/locale/es";
 import "dayjs/locale/fr";
 import "dayjs/locale/hu";
 import "dayjs/locale/it";
+import "dayjs/locale/ja";
 import "dayjs/locale/ko";
 import "dayjs/locale/ru";
+import "dayjs/locale/tr";
 import "dayjs/locale/zh-cn";
 import "dayjs/locale/zh-tw";
 
@@ -56,8 +58,10 @@ const DAYJS_LOCALE = {
   fr: "fr",
   hu: "hu",
   it: "it",
+  ja: "ja",
   ko: "ko",
   ru: "ru",
+  tr: "tr",
   "zh-Hans": "zh-cn",
   "zh-Hant": "zh-tw",
 } as const;

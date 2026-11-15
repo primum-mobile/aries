@@ -3,13 +3,17 @@
 
 "use client";
 
+import { aspectViewState } from "@/lib/chart/aspect-view-state";
+
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
-import { Bell, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, Columns2, Map as MapIcon, PanelLeft, NotebookPen, Pencil, ScrollText, Search, Settings } from "lucide-react";
+import { Bell, CalendarDays, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coffee, Columns2, Ellipsis, IceCreamCone, Map as MapIcon, PanelLeft, NotebookPen, Pencil, RotateCcw, ScrollText, Search, Settings } from "lucide-react";
 import { radixPaneOwner } from "@/lib/radix-pane-state";
 import { handleChartEventsMenuAction } from "./chart-events-actions";
+import { shouldRestoreWorkspaceKeyboardFocus } from "./workspace-keyboard-focus";
 import { SideBySideCharts, useSideBySideCommand } from "./side-by-side-charts";
 import { aspectListViewContext } from "@/lib/chart/aspect-list-context";
 
@@ -28,8 +32,16 @@ import type {
   ChartRenderSnapshot,
   OverlayInfoRow,
 } from "@/lib/chart/types";
+import { usesLegacyAscensionalRenderer } from "@/lib/chart/chart-coordinates";
+import { fetchCachedDocumentSnapshot, getDocumentSnapshot } from "@/lib/chart/document-snapshot-cache";
 import { morinusTextFontFromTokens } from "@/lib/chart/chart-fonts";
-import { informationCornerClass, radixOverlayTopLeftLines } from "@/lib/chart/chart-overlay-lines";
+import { hasRelationshipCornerInformation, informationDisplayChart, informationCornerClass, radixOverlayTopLeftLines } from "@/lib/chart/chart-overlay-lines";
+import { CornerLines, overlayTypographyCss } from "@/components/workshell/chart-corner-lines";
+import { dashboardShown, withDashboardView } from "@/lib/chart/dashboard-canvas";
+import { dashboardTextSize, dashboardTopLeftLines } from "@/lib/chart/dashboard-layout";
+import { useMobileNavSlot } from "@/components/workshell/mobile-nav-slot";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useAstrolabeStore } from "@/stores/astrolabe-store";
 import {
   readPaletteFromTheme,
   readPaletteProfileOverrides,
@@ -38,7 +50,6 @@ import {
   projectWheelAuthoringStyle,
   resolveWheelOverlayMetrics,
   resolveWheelRenderStyleFromTokens,
-  resolveWheelTypographyPaint,
   type WheelChartOverlayClass,
   type WheelRenderStyle,
   type WheelTypographyProfile,
@@ -60,6 +71,7 @@ import {
 import { appUiFontStack, collectUiFontFaces } from "@/lib/chart/astrocart-ui-font";
 import { STYLE_FONT_ASSETS_READY_EVENT } from "@/lib/style-lab/fonts";
 import { useT, useTFallback, useLocale, type TFunc } from "@/lib/i18n/i18n";
+import { requestVanillaToggle, useVanillaMode } from "@/components/workshell/vanilla-mode-controller";
 import {
   coerceDateConvention,
   formatIsoDateDisplay,
@@ -84,6 +96,8 @@ import { activeRightPaneModule } from "./right-pane-layout";
 import {
   closeInspectorAndNotes,
   closeWorkspaceTransientPanes,
+  toggleWorkspaceInspector,
+  toggleWorkspaceNotes,
 } from "./workspace-ui-commands";
 import {
   localizedWorkspaceDocumentTitle,
@@ -103,11 +117,17 @@ import {
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import { EMBEDDED_MANIFEST_SHORTCUT_EVENT } from "@/shortcuts/manifest-shortcuts";
 import { TitlebarOptionsMenu } from "./titlebar-options-menu";
+import { BrowserAppMenu } from "./browser-menu-bar";
+import {
+  formatShortcutKeys,
+  primaryModifierHeld,
+  useAppleShortcuts,
+  useShortcutModifierLabels,
+} from "@/lib/shortcut-display";
 import {
   RIGHT_PANE_COLLAPSE_THRESHOLD,
   SIDEBAR_STARTUP_WIDTH,
   clampRightPaneWidth,
-  rightPanePriorityLayout,
   rightPaneWidthPolicy,
   useFrameLayoutStore,
   type RightPaneModuleKind,
@@ -119,12 +139,12 @@ import {
   patchOptions,
   fetchAppSplash,
   storeAstrocartViewState,
+  setDefaultLocationFromMap,
   workspaceActivate,
   workspaceAstrocartHere,
   type AppSplashPayload,
   type AstrocartConfigurationPayload,
   type AstrocartMapSpec,
-  type AstrocartHereAction,
   type AstrocartLineMode,
   type AstrocartPdfPageFormat,
   type AstrocartPdfSelection,
@@ -133,6 +153,7 @@ import {
   type AstrocartViewState,
   type AstrocartViewStateScope,
   type DaemonDocumentSummary,
+  type RecentChartItem,
   type ThemeState,
   type WorkspaceManifest,
 } from "@/lib/daemon/client";
@@ -141,7 +162,15 @@ import {
   resolveNativeShellPlatform,
   resolveShellHost,
   resolveWindowsCaptionInset,
+  subscribeWindowsCaptionInset,
 } from "@/lib/shell-host";
+import { useMobileLayout } from "@/hooks/use-mobile-layout";
+import {
+  RetainedPaneVisibleContext,
+  TouchPaneBackRow,
+  TouchPaneRestoreBar,
+  useTouchPanePresentation,
+} from "./touch-pane-chrome";
 import type { SettingsTabId } from "./settings-dialog";
 import {
   chartNavbarHoverZoneFromRect,
@@ -169,10 +198,6 @@ const SquareChartView = dynamic(
 );
 const MundaneChartView = dynamic(
   () => import("./mundane-chart-view").then((mod) => mod.MundaneChartView),
-  { loading: () => null },
-);
-const AscensionalTransitsPane = dynamic(
-  () => import("./ascensional-transits-view").then((mod) => mod.AscensionalTransitsPane),
   { loading: () => null },
 );
 const AscensionalTransitsView = dynamic(
@@ -232,6 +257,11 @@ const EclipsesView = dynamic(
   () => import("./eclipses-view").then((mod) => mod.EclipsesView),
   { loading: () => null },
 );
+const PdPositionsView = dynamic(
+  () => import("./pd-positions-view").then((mod) => mod.PdPositionsView),
+  { ssr: false },
+);
+
 const LunarMansionsView = dynamic(
   () => import("./lunar-mansions-view").then((mod) => mod.LunarMansionsView),
   { loading: () => null },
@@ -305,7 +335,6 @@ function isChartBearingSurfaceKind(kind: WorkspaceDocument["kind"] | null | unde
     "ephemeris",
     "transit-search",
     "table",
-    "ascensional-transits",
   ].includes(kind);
 }
 
@@ -875,43 +904,7 @@ function ActiveSurfaceArea({
   navbar,
   onOpenSettings,
 }: Props) {
-  const openAscensionalTransitsPane = useWorkspaceStore(
-    (s) => s.openAscensionalTransitsPane,
-  );
-  const lastAutoOpenedAscensionalPaneRef = React.useRef<string | null>(null);
-
-  React.useEffect(() => {
-    const isAscensionalMode =
-      !chart?.sideBySide?.enabled && (activeDoc?.kind === "ascensional-transits" ||
-      activeDoc?.chartVisualMode === "ascensional_transits");
-    if (!isAscensionalMode) {
-      lastAutoOpenedAscensionalPaneRef.current = null;
-      return;
-    }
-    if (lastAutoOpenedAscensionalPaneRef.current === activeDoc.id) return;
-    lastAutoOpenedAscensionalPaneRef.current = activeDoc.id;
-    openAscensionalTransitsPane({
-      documentId: activeDoc.id,
-      sourceName: activeDoc.sourceName,
-      ascensionalEventJd: activeDoc.ascensionalEventJd ?? null,
-      ascensionalEventPlace: activeDoc.ascensionalEventPlace ?? null,
-      ascensionalFilterToActiveMoment: activeDoc.ascensionalFilterToActiveMoment ?? true,
-      ascensionalApplyPrecession: activeDoc.ascensionalApplyPrecession ?? true,
-    });
-    closeInspectorAndNotes();
-  }, [
-    chart?.sideBySide?.enabled,
-    activeDoc?.ascensionalApplyPrecession,
-    activeDoc?.ascensionalEventJd,
-    activeDoc?.ascensionalEventPlace,
-    activeDoc?.ascensionalFilterToActiveMoment,
-    activeDoc?.id,
-    activeDoc?.kind,
-    activeDoc?.chartVisualMode,
-    activeDoc?.sourceName,
-    openAscensionalTransitsPane,
-  ]);
-
+  const astrolabe = useAstrolabeChartInputs(activeDoc?.kind === "astrolabe" ? activeDoc : null);
   if (chart?.sideBySide?.enabled && activeDoc &&
       [chart.sideBySide.leftDocumentId, chart.sideBySide.rightDocumentId].includes(activeDoc.id)) {
     return <ChartArea chart={chart} activeDoc={activeDoc} navbar={navbar} />;
@@ -933,12 +926,25 @@ function ActiveSurfaceArea({
     );
   }
   if (activeDoc?.kind === "astrolabe") {
+    // ChartArea stays at the same tree position as every other chart surface,
+    // so the wheel chrome and retained right panes survive a switch.
     return (
-      <AstrolabeView
-        key={activeDoc.id}
-        documentId={activeDoc.id}
-        sourceName={activeDoc.sourceName}
-        source={activeDoc.fpath}
+      <ChartArea
+        chart={astrolabe.inspectorChart}
+        activeDoc={activeDoc}
+        navbar={navbar}
+        keyboardFocusTarget={astrolabe.keyboardFocusTarget}
+        surface={(
+          <AstrolabeView
+            key={activeDoc.id}
+            onKeyboardFocusTarget={astrolabe.setKeyboardFocusTarget}
+            documentId={activeDoc.id}
+            inspectorDocumentId={astrolabe.inspectorDocumentId}
+            inspectorChart={astrolabe.inspectorChart}
+            sourceName={activeDoc.sourceName}
+            source={activeDoc.fpath}
+          />
+        )}
       />
     );
   }
@@ -1060,7 +1066,7 @@ function ActiveSurfaceArea({
   if (
     activeDoc &&
     isChartBearingSurfaceDocument(activeDoc) &&
-    isMdoVisualMode(activeDoc.chartVisualMode)
+    isMdoVisualMode(activeDoc.chartVisualMode) && usesLegacyAscensionalRenderer(chart)
   ) {
     return (
       <ChartArea
@@ -1082,7 +1088,7 @@ function ActiveSurfaceArea({
       />
     );
   }
-  if (activeDoc?.kind === "ascensional-transits") {
+  if (activeDoc?.kind === "ascensional-transits" && usesLegacyAscensionalRenderer(chart)) {
     return (
       <ChartArea
         chart={chart}
@@ -1095,6 +1101,31 @@ function ActiveSurfaceArea({
   return (
     <ChartArea chart={chart} activeDoc={activeDoc} navbar={navbar} />
   );
+}
+
+/** The Astrolabe's inspector chart (its radix) and keyboard focus target. */
+function useAstrolabeChartInputs(activeDoc: WorkspaceDocument | null) {
+  const inspectorDocumentId = activeDoc ? activeDoc.parentDocumentId ?? activeDoc.id : null;
+  const [keyboardFocusTarget, setKeyboardFocusTarget] = React.useState<HTMLDivElement | null>(null);
+  const [fetched, setFetched] = React.useState<{ documentId: string; chart: ChartRenderSnapshot | null } | null>(null);
+  const refreshSeq = useDaemonWorkspaceStore((state) => {
+    const change = state.lastSessionChange;
+    return inspectorDocumentId && change?.docId === inspectorDocumentId ? change.seq : 0;
+  });
+  React.useEffect(() => {
+    if (!inspectorDocumentId) return;
+    let active = true;
+    void fetchCachedDocumentSnapshot(inspectorDocumentId)
+      .then((snapshot) => { if (active) setFetched({ documentId: inspectorDocumentId, chart: snapshot }); })
+      .catch((error) => { if (active) console.error("[astrolabe:inspector-chart]", error); });
+    return () => { active = false; };
+  }, [inspectorDocumentId, refreshSeq]);
+  const inspectorChart = !inspectorDocumentId
+    ? null
+    : fetched?.documentId === inspectorDocumentId
+      ? fetched.chart
+      : getDocumentSnapshot(inspectorDocumentId) ?? null;
+  return { inspectorDocumentId: inspectorDocumentId ?? "", inspectorChart, keyboardFocusTarget, setKeyboardFocusTarget };
 }
 
 export function graphicEphemerisModeButtonLabelKey(
@@ -1167,7 +1198,7 @@ function WorkspaceDocumentSurface({ children }: { children: React.ReactNode }) {
   return (
     <div
       data-aries-surface="canvas"
-      className="relative box-border flex h-full w-full min-h-0 flex-1 pt-[var(--titlebar-h)] [&>*]:bg-transparent"
+      className="relative box-border flex h-full w-full min-h-0 min-w-0 flex-1 pt-[var(--titlebar-h)] [&>*]:min-w-0 [&>*]:bg-transparent"
     >
       {children}
     </div>
@@ -1441,8 +1472,6 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   );
   const featureCatalogPane = useWorkspaceStore((state) => state.featureCatalogPane);
   const closeFeatureCatalogPane = useWorkspaceStore((state) => state.closeFeatureCatalogPane);
-  const sidebarOpen = useFrameLayoutStore((state) => state.sidebarOpen);
-  const sidebarWidth = useFrameLayoutStore((state) => state.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((state) => state.rightPaneWidth);
   const theme = useThemeStore((s) => s.theme);
   const bootTheme = theme?.mode === "light" ? "light" : "dark";
@@ -1495,12 +1524,9 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     ? "feature-catalog"
     : controlsOpen ? "astrocart-controls" : null;
   const activePanePolicy = rightPaneWidthPolicy(activePaneKind);
-  const effectivePaneWidth = rightPanePriorityLayout(
-    sidebarOpen,
-    sidebarWidth,
-    rightPaneWidth,
-    activePaneKind,
-  ).rightPaneWidth;
+  const effectivePaneWidth = activePaneKind
+    ? clampRightPaneWidth(rightPaneWidth, activePanePolicy)
+    : 0;
   const paneTrack = useCoherentRightPaneTrack(
     activePaneKind !== null,
     effectivePaneWidth,
@@ -2183,6 +2209,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       if (point.point?.id) pointLabels[point.point.id] = label;
     }
     const labels = {
+      defaultLocation: t("astrocart.menu.defaultLocation"),
       birthplaceMarker: t("astrocart.birthplaceMarker.title"),
       asterisms: t("astrocart.overlay.asterisms"),
       aspect: t("astrocart.overlay.aspect"),
@@ -2559,7 +2586,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
     event: React.MouseEvent<HTMLButtonElement>,
   ) => {
     applyAstrocartLineModes(
-      toggleAstrocartLineMode(lineModes, mode, event.metaKey),
+      // ⌘-click on Apple, Ctrl-click elsewhere, adds a primary line family.
+      toggleAstrocartLineMode(lineModes, mode, primaryModifierHeld(event)),
     );
   }, [applyAstrocartLineModes, lineModes]);
 
@@ -3194,8 +3222,8 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
   // activate the new child document so it opens focused like every other
   // launcher (relocation/solar_return/transit open a child; set_pob mutates the
   // radix in place while this retained map stays active and refreshes from the
-  // daemon's session.changed event). Shortcut payloads re-enter the canonical
-  // manifest dispatcher so iframe focus does not create a second key model;
+  // daemon's session.changed event). Shortcut payloads re-enter workspace
+  // keyboard dispatch so the same handlers work with iframe focus;
   // line-click payloads remain deferred.
   React.useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -3217,6 +3245,7 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
               reason?: string;
               eventType?: "keydown" | "keyup";
               key?: string;
+              code?: string;
               shiftKey?: boolean;
               metaKey?: boolean;
               ctrlKey?: boolean;
@@ -3305,6 +3334,11 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
           }
           return;
         }
+        if (payload.key === "space") {
+          if (payload.eventType === "keydown" && !payload.shiftKey && !payload.altKey &&
+              !payload.ctrlKey && !payload.metaKey) navigation.onResetCursor?.();
+          return;
+        }
         if (payload.key !== "left" && payload.key !== "right" &&
             payload.key !== "up" && payload.key !== "down") return;
         if (payload.ctrlKey || payload.metaKey) return;
@@ -3386,7 +3420,13 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
         return;
       }
       if (payload.type !== "here") return;
-      const action = payload.action as AstrocartHereAction | undefined;
+      const action = payload.action;
+      if (typeof payload.lon !== "number" || typeof payload.lat !== "number") return;
+      if (action === "set_default_loc") {
+        void setDefaultLocationFromMap(payload.lon, payload.lat, payload.placeName ?? "")
+          .catch((err) => console.error("[acg-default-location]", err));
+        return;
+      }
       if (
         action !== "relocation" &&
         action !== "solar_return" &&
@@ -3395,7 +3435,6 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
       ) {
         return;
       }
-      if (typeof payload.lon !== "number" || typeof payload.lat !== "number") return;
       void workspaceAstrocartHere(
         documentId,
         action,
@@ -3610,15 +3649,17 @@ const AstrocartSurface = React.memo(function AstrocartSurface({
  * `data-tauri-drag-region` makes the empty areas drag the window; the buttons
  * stay clickable. In a plain browser there are no lights — it's just the header.
  */
+const NO_RECENT_CHARTS: RecentChartItem[] = [];
+
 export function UnifiedTitleBar({
   chart,
   activeDoc,
   manifest,
   overlay = false,
   onOpenSettings,
-  onOpenStyleLab,
   onMenuCommand,
   isMenuCommandEnabled,
+  recentCharts = NO_RECENT_CHARTS,
   canCopyChart = false,
   onCopyChart,
   dateConvention = "current",
@@ -3633,18 +3674,16 @@ export function UnifiedTitleBar({
   // dropped; the centred title sits on its own backplate over the map.
   overlay?: boolean;
   onOpenSettings?: (tab?: SettingsTabId) => void;
-  onOpenStyleLab?: () => void;
   onMenuCommand: (command: string) => void;
   isMenuCommandEnabled: (command: string) => boolean;
+  recentCharts?: RecentChartItem[];
   canCopyChart?: boolean;
   onCopyChart?: () => void | Promise<boolean>;
   dateConvention?: DateConvention;
 }) {
   const toggleSidebar = useFrameLayoutStore((s) => s.toggleSidebar);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
-  const toggleInspector = useFrameLayoutStore((s) => s.toggleInspector);
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
-  const toggleNotesPane = useFrameLayoutStore((s) => s.toggleNotesPane);
   const notesPaneOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
   const requestEditChart = useWorkspaceStore((s) => s.requestEditChart);
   const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
@@ -3653,7 +3692,9 @@ export function UnifiedTitleBar({
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const openTransitSearchPane = useWorkspaceStore((s) => s.openTransitSearchPane);
   const closeTransitSearchPane = useWorkspaceStore((s) => s.closeTransitSearchPane);
-  const closeAllRightPanes = useWorkspaceStore((s) => s.closeAllRightPanes);
+  // Phone layout: the bottom navigation owns the launcher and inspector toggles.
+  const mobile = useMobileLayout();
+  const vanillaMode = useVanillaMode().active;
   const captionActionsRef = useRef<HTMLDivElement>(null);
   const sideBySideCommand = useSideBySideCommand();
   const t = useT();
@@ -3664,7 +3705,10 @@ export function UnifiedTitleBar({
     () => astrocartTitleParts(daemonDocuments, activeDoc?.id ?? null, dateConvention, t),
     [activeDoc?.id, daemonDocuments, dateConvention, t],
   );
-  const parts = mapTitleParts ?? buildTitleParts(chart, activeDoc, t);
+  const astrolabeSuffix = useAstrolabeStore((s) =>
+    activeDoc?.kind === "astrolabe" ? s.titleSuffix[activeDoc.id] ?? null : null);
+  const baseParts = mapTitleParts ?? buildTitleParts(chart, activeDoc, t);
+  const parts = astrolabeSuffix ? [...baseParts, astrolabeSuffix] : baseParts;
   const transparentBackplate = overlay || isChartBearingSurfaceDocument(activeDoc);
   // Mark the native platform explicitly: macOS reserves the leading traffic
   // lights, while Windows reserves the measured trailing caption controls.
@@ -3675,21 +3719,23 @@ export function UnifiedTitleBar({
     const captionActions = captionActionsRef.current;
     root.classList.add("is-tauri");
     if (platform) root.classList.add(`is-${platform}`);
+    const setCaptionInset = (inset: number) =>
+      captionActions?.style.setProperty("margin-right", `${inset}px`);
+    let stopCaptionInset = () => {};
     if (platform === "windows") {
-      captionActions?.style.setProperty(
-        "margin-right",
-        `${resolveWindowsCaptionInset()}px`,
-      );
+      setCaptionInset(resolveWindowsCaptionInset());
+      stopCaptionInset = subscribeWindowsCaptionInset(setCaptionInset);
     }
     return () => {
+      stopCaptionInset();
       root.classList.remove("is-tauri");
       if (platform) root.classList.remove(`is-${platform}`);
       captionActions?.style.removeProperty("margin-right");
     };
   }, []);
-  // The pencil edits the active chart's data (the wx-free twin of the radix
-  // context menu's "Edit chart data", morin.py:14813). View-only docs
-  // (astrocart/directions/astrolabe) have no editable chart record.
+  // Astrolabes edit their live source through the shared chart editor.
+  const canEditAstrolabeSource = activeDoc?.kind === "astrolabe" &&
+    daemonDocuments.some((doc) => doc.documentId === activeDoc.parentDocumentId && doc.hasChart);
   const canEdit =
     !!activeDoc &&
     activeDoc.kind !== "astrocart" &&
@@ -3716,17 +3762,17 @@ export function UnifiedTitleBar({
     closeInspectorAndNotes();
   };
   const handleToggleInspector = () => {
-    closeAllRightPanes();
-    toggleInspector();
-  };
-  const handleToggleNotesPane = () => {
-    closeAllRightPanes();
-    toggleNotesPane();
+    toggleWorkspaceInspector();
   };
   return (
     <header
       data-tauri-drag-region
-      className="absolute inset-x-0 top-0 grid h-[var(--titlebar-h)] select-none grid-cols-[minmax(var(--titlebar-side-min-w),1fr)_minmax(0,2fr)_minmax(var(--titlebar-side-min-w),1fr)] items-center px-[var(--aries-titlebar-padding-x)] text-[color:var(--aries-header-text)]"
+      className={cn(
+        "absolute inset-x-0 top-0 grid h-[var(--titlebar-h)] select-none items-center px-[var(--aries-titlebar-padding-x)] text-[color:var(--aries-header-text)]",
+        mobile
+          ? "aries-mobile-titlebar grid-cols-[auto_minmax(0,1fr)_auto]"
+          : "grid-cols-[minmax(var(--titlebar-side-min-w),1fr)_minmax(0,2fr)_minmax(var(--titlebar-side-min-w),1fr)]",
+      )}
     >
       <div
         data-tauri-drag-region
@@ -3742,13 +3788,36 @@ export function UnifiedTitleBar({
       />
       {/* On macOS this starts after the native traffic lights; Windows uses the
           default leading inset and reserves its native controls on the right. */}
-      <div data-tauri-drag-region className="absolute left-[var(--titlebar-left-controls-x)] top-0 z-[42] flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-[var(--aries-titlebar-cluster-gap)]">
-        <HeaderButton label={t("toolbar.toggleSidebar")} onClick={toggleSidebar} pressed={sidebarOpen}>
-          <PanelLeft className="size-[var(--morinus-header-icon-size)]" />
-        </HeaderButton>
-        {canEdit ? (
+      <div
+        data-urania-target="navigation"
+        data-tauri-drag-region
+        className={mobile
+          ? "relative z-[42] col-start-1 flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-[var(--aries-titlebar-cluster-gap)]"
+          : "absolute left-[var(--titlebar-left-controls-x)] top-0 z-[42] flex h-[var(--titlebar-h)] min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-start gap-[var(--aries-titlebar-cluster-gap)]"}
+      >
+        {mobile ? null : (
+          <HeaderButton label={t("toolbar.toggleSidebar")} onClick={toggleSidebar} pressed={sidebarOpen}>
+            <PanelLeft className="size-[var(--morinus-header-icon-size)]" />
+          </HeaderButton>
+        )}
+        {/* Browser host only: the native OS menu bar folds into one button.
+            Phones reach the same menu from the bottom navigation sheet. */}
+        {mobile ? null : (
+          <BrowserAppMenu
+            manifest={manifest}
+            recentCharts={recentCharts}
+            onCommand={onMenuCommand}
+            isCommandEnabled={isMenuCommandEnabled}
+          />
+        )}
+        {canEdit || canEditAstrolabeSource ? (
           <HeaderButton label={t("toolbar.editChartData")} onClick={() => requestEditChart(activeDoc)}>
             <Pencil className="size-[var(--morinus-header-icon-size)]" />
+          </HeaderButton>
+        ) : null}
+        {vanillaMode ? (
+          <HeaderButton label={t("vanilla.badgeHint")} onClick={requestVanillaToggle} active>
+            <IceCreamCone className="size-[var(--morinus-header-icon-size)]" />
           </HeaderButton>
         ) : null}
       </div>
@@ -3762,13 +3831,14 @@ export function UnifiedTitleBar({
             enabled={canCopyChart && onCopyChart != null}
             onCopy={onCopyChart}
           >
-            <TitleText parts={parts} />
+            <TitleText parts={parts} twoLine={mobile} />
           </ChartCopyControl>
         </div>
       </div>
       {/* Right cluster — chart options, search and right-pane toggles. */}
       <div
         ref={captionActionsRef}
+        data-urania-target="toolbar"
         data-tauri-drag-region
         className="relative z-[42] col-start-3 flex min-w-0 translate-y-[var(--titlebar-content-offset-y)] items-center justify-end gap-[var(--aries-titlebar-cluster-gap)]"
       >
@@ -3776,39 +3846,69 @@ export function UnifiedTitleBar({
           manifest={manifest}
           onCommand={onMenuCommand}
           isCommandEnabled={isMenuCommandEnabled}
-          onOpenStyleLab={onOpenStyleLab}
           onOpenSettings={onOpenSettings}
         />
-        {chart && isAspectListQueryHostDocument(activeDoc) ? (
-          <HeaderButton label={t("chartview.sideBySide")} pressed={chart.sideBySide?.enabled}
-            onClick={() => sideBySideCommand({ enabled: !chart.sideBySide?.enabled })}>
-            <Columns2 className="size-[var(--morinus-header-icon-size)]" />
-          </HeaderButton>
-        ) : null}
-        {canOpenSearch ? (
-          <HeaderButton label={t("toolbar.search")} onClick={handleToggleSearchPane} pressed={searchActive}>
-            <Search className="size-[var(--morinus-header-icon-size)]" />
-          </HeaderButton>
-        ) : null}
-        {canEdit && eventsOwner ? (
-          <HeaderButton label={t("chartEvents.title")} pressed={chartEventsPane?.documentId === eventsOwner}
-            onClick={() => {
-              if (chartEventsPane?.documentId === eventsOwner) closeChartEventsPane();
-              else void handleChartEventsMenuAction("workspace.show_events", { documentId: eventsOwner });
-            }}>
-            <CalendarRange className="size-[var(--morinus-header-icon-size)]" />
-          </HeaderButton>
-        ) : null}
-        {activeDoc?.kind !== "astrocart" ? (
+        {mobile ? (
+          <MobileTitlebarOverflow
+            items={[
+              chart && isAspectListQueryHostDocument(activeDoc)
+                ? { id: "side-by-side", label: t("chartview.sideBySide"), checked: Boolean(chart.sideBySide?.enabled),
+                    run: () => sideBySideCommand({ enabled: !chart.sideBySide?.enabled }) }
+                : null,
+              canOpenSearch
+                ? { id: "search", label: t("toolbar.search"), checked: searchActive, run: handleToggleSearchPane }
+                : null,
+              canEdit && eventsOwner
+                ? { id: "events", label: t("chartEvents.title"), checked: chartEventsPane?.documentId === eventsOwner,
+                    run: () => {
+                      if (chartEventsPane?.documentId === eventsOwner) closeChartEventsPane();
+                      else void handleChartEventsMenuAction("workspace.show_events", { documentId: eventsOwner });
+                    } }
+                : null,
+              activeDoc?.kind !== "astrocart"
+                ? { id: "notes", label: t("toolbar.toggleNotes"), checked: notesPaneOpen, run: toggleWorkspaceNotes }
+                : null,
+            ]}
+          />
+        ) : (
           <>
-            <HeaderButton label={t("toolbar.toggleInspector")} onClick={handleToggleInspector} pressed={inspectorOpen}>
-              <ScrollText className="size-[var(--morinus-header-icon-size)]" />
+          {chart && isAspectListQueryHostDocument(activeDoc) ? (
+            <HeaderButton label={t("chartview.sideBySide")} pressed={chart.sideBySide?.enabled}
+              onClick={() => sideBySideCommand({ enabled: !chart.sideBySide?.enabled })}>
+              <Columns2 className="size-[var(--morinus-header-icon-size)]" />
             </HeaderButton>
-            <HeaderButton label={t("toolbar.toggleNotes")} onClick={handleToggleNotesPane} pressed={notesPaneOpen}>
-              <NotebookPen className="size-[var(--morinus-header-icon-size)]" />
+          ) : null}
+          {canOpenSearch ? (
+            <HeaderButton label={t("toolbar.search")} onClick={handleToggleSearchPane} pressed={searchActive}>
+              <Search className="size-[var(--morinus-header-icon-size)]" />
             </HeaderButton>
+          ) : null}
+          {canEdit && eventsOwner ? (
+            <HeaderButton label={t("chartEvents.title")} pressed={chartEventsPane?.documentId === eventsOwner}
+              onClick={() => {
+                if (chartEventsPane?.documentId === eventsOwner) closeChartEventsPane();
+                else void handleChartEventsMenuAction("workspace.show_events", { documentId: eventsOwner });
+              }}>
+              <CalendarRange className="size-[var(--morinus-header-icon-size)]" />
+            </HeaderButton>
+          ) : null}
+          {activeDoc?.kind !== "astrocart" ? (
+            <>
+              <HeaderButton label={t("toolbar.toggleInspector")} onClick={handleToggleInspector} pressed={inspectorOpen}>
+                <ScrollText className="size-[var(--morinus-header-icon-size)]" />
+              </HeaderButton>
+              <HeaderButton label={t("toolbar.toggleNotes")} onClick={() => toggleWorkspaceNotes()} pressed={notesPaneOpen}>
+                <NotebookPen className="size-[var(--morinus-header-icon-size)]" />
+              </HeaderButton>
+            </>
+          ) : null}
+          {onOpenSettings ? (
+            <HeaderButton label={t("toolbar.settings")} onClick={() => onOpenSettings()}>
+              <Settings className="size-[var(--morinus-header-icon-size)]" />
+            </HeaderButton>
+          ) : null}
           </>
-        ) : null}
+        )}
       </div>
     </header>
   );
@@ -4065,6 +4165,8 @@ export type ModeHintRailProps = {
   bottomOffset?: string;
   revealToken?: number;
   autoHideMs?: number;
+  /** Shown as if hovered (the walkthrough's time step); releasing it lets auto-hide resume. */
+  held?: boolean;
   overlay: boolean;
   hasChart: boolean;
   hasComparisonChart?: boolean;
@@ -4082,6 +4184,12 @@ export type ModeHintRailProps = {
   cursorDatetime?: string | null;
   dateConvention?: string;
   onSetCursorMoment?: (moment: string) => Promise<boolean>;
+  onSetCursorNow?: () => Promise<boolean>;
+  onResetCursor?: () => void;
+  /** Canonical cursor reset (the Space shortcut); a long press on the phone's step unit runs it. */
+  onResetNavigation?: () => void;
+  /** Phone layout: always visible in the bottom navigation bar, one selectable unit. */
+  mobile?: boolean;
   modeHintLabel?: string | null;
   modeHintTitle?: string | null;
   onToggleModeHint?: () => void;
@@ -4092,6 +4200,8 @@ export type ModeHintRailProps = {
     modifiers?: { shift?: boolean; alt?: boolean },
   ) => void;
   onNavigateHintEnd?: (key: NavigationHintKey) => void;
+  /** Spotlight "current" on the active chart, for pane time controls. */
+  onSetChartMoment?: (moment: string) => Promise<boolean>;
   onHarmonicNumberChange?: (harmonicNumber: number) => void;
   onHintInteraction?: () => void;
 };
@@ -4108,6 +4218,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   bottomOffset,
   revealToken = 0,
   autoHideMs = 0,
+  held = false,
   overlay,
   hasChart,
   hasComparisonChart,
@@ -4125,6 +4236,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   cursorDatetime,
   dateConvention,
   onSetCursorMoment,
+  onSetCursorNow,
   modeHintLabel,
   modeHintTitle,
   onToggleModeHint,
@@ -4134,18 +4246,29 @@ export const ModeHintRail = React.memo(function ModeHintRail({
   onNavigateHintEnd,
   onHarmonicNumberChange,
   onHintInteraction,
+  onResetNavigation,
+  mobile = false,
 }: ModeHintRailProps) {
   const t = useT();
+  const navSlot = useMobileNavSlot();
   const [hiddenRevealToken, setHiddenRevealToken] = React.useState<number | null>(null);
   const [pointerInside, setPointerInside] = React.useState(false);
+  const [wasHeld, setWasHeld] = React.useState(held);
+  if (wasHeld !== held) {
+    setWasHeld(held);
+    // Releasing a hold is the pointer leaving the bar: it lingers for the
+    // normal auto-hide delay instead of vanishing on an older timeout.
+    if (!held) setHiddenRevealToken(null);
+  }
+  const hovered = pointerInside || held;
   React.useEffect(() => {
-    if (!visible || autoHideMs <= 0 || pointerInside) return;
+    if (!visible || autoHideMs <= 0 || hovered) return;
     const token = revealToken;
     const timer = window.setTimeout(() => setHiddenRevealToken(token), autoHideMs);
     return () => window.clearTimeout(timer);
-  }, [autoHideMs, pointerInside, revealToken, visible]);
+  }, [autoHideMs, hovered, revealToken, visible]);
   const autoVisible = Boolean(
-    visible && (pointerInside || autoHideMs <= 0 || hiddenRevealToken !== revealToken),
+    visible && (hovered || autoHideMs <= 0 || hiddenRevealToken !== revealToken),
   );
   const showCustomModeHint = Boolean(hasChart && modeHintLabel && onToggleModeHint);
   const showComparisonModeHint = Boolean(
@@ -4218,7 +4341,9 @@ export const ModeHintRail = React.memo(function ModeHintRail({
     hasChart && onNavigateHint && (stepHintGroups.length > 0 || showHarmonicControls),
   );
   const active = Boolean(
-    autoVisible && !overlay && (showModeHint || showRelationshipControls || showNavigationHints),
+    (mobile || autoVisible) &&
+    !overlay &&
+    (showModeHint || showRelationshipControls || showNavigationHints),
   );
   const tooltipSide = placement === "bottom" ? "top" : "bottom";
   const handlePositionSettled = React.useCallback((
@@ -4241,7 +4366,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
     handleLostPointerCapture: handleOverlayLostPointerCapture,
     handleDoubleClick: handleOverlayDoubleClick,
   } = useDraggableOverlay({
-    disabled: !active,
+    disabled: !active || mobile,
     anchored: docked,
     resetKey: placement,
     isBlockedTarget: isInteractivePointerTarget,
@@ -4288,7 +4413,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
     },
     [onNavigateHintEnd],
   );
-  return (
+  const rail = (
     <div
       ref={overlayRef}
       className={cn(
@@ -4296,6 +4421,7 @@ export const ModeHintRail = React.memo(function ModeHintRail({
         placement === "bottom" ? "aries-mode-hint--bottom" : "aries-mode-hint--top",
         appearance === "astrocart" && "aries-mode-hint--astrocart",
         docked && "aries-mode-hint--docked",
+        mobile && "aries-mode-hint--mobile",
         !active && "aries-mode-hint--hidden",
       )}
       style={
@@ -4485,6 +4611,13 @@ export const ModeHintRail = React.memo(function ModeHintRail({
             </span>
           </div>
         </div>
+      ) : onNavigateHint && stepHintGroups.length > 0 && mobile ? (
+        <MobileStepControls
+          groups={stepHintGroups}
+          onClick={handleNavigateHintClick}
+          onEnd={handleNavigateHintEnd}
+          onReset={onResetNavigation}
+        />
       ) : onNavigateHint && stepHintGroups.length > 0 ? (
         <div className="aries-step-hints" aria-label={t("toolbar.timeNavigationControls")}>
           {stepHintGroups.map((group) => (
@@ -4521,8 +4654,54 @@ export const ModeHintRail = React.memo(function ModeHintRail({
           onSetMoment={onSetCursorMoment}
         />
       ) : null}
+      {appearance === "astrocart" && onSetCursorNow ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="aries-step-arrow-button"
+                aria-label={t("toolbar.navbar.goToCurrentTime")}
+                title={t("toolbar.navbar.goToCurrentTime")}
+                onPointerEnter={onHintInteraction}
+                onClick={() => { void onSetCursorNow(); }}
+              />
+            }
+          >
+            <RotateCcw aria-hidden />
+          </TooltipTrigger>
+          <TooltipContent side={tooltipSide} className="aries-mode-hint-flag">
+            {t("toolbar.navbar.goToCurrentTime")}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
     </div>
   );
+  // Phone: the rail is the centre of the bottom navigation bar, so the wheel
+  // keeps the height a rail above the navigation would take. The reset glyph sits in the chart pane's top-right corner, where the
+  // round wheel leaves its square empty.
+  if (mobile && !docked) {
+    const mobileStepping = active && !showRelationshipControls && !showHarmonicControls
+      && Boolean(onNavigateHint) && stepHintGroups.length > 0;
+    const resetLabel = t("toolbar.navbar.resetToChartTime");
+    return (
+      <>
+        {navSlot ? createPortal(rail, navSlot) : null}
+        {mobileStepping && onResetNavigation ? (
+          <button
+            type="button"
+            className="aries-mobile-chart-reset"
+            aria-label={resetLabel}
+            title={resetLabel}
+            onClick={onResetNavigation}
+          >
+            <RotateCcw aria-hidden />
+          </button>
+        ) : null}
+      </>
+    );
+  }
+  return rail;
 });
 
 function AstrocartCursorDateTime({
@@ -4560,8 +4739,8 @@ function AstrocartCursorDateTime({
     if (nextDate === cursorDate) return;
     setPendingDate(nextDate);
     void onSetMoment(nextDate).then((accepted) => {
-      if (accepted) return;
       setPendingDate(null);
+      if (accepted) return;
       setDraft(dateLabel);
     }).catch(() => {
       setPendingDate(null);
@@ -4704,8 +4883,8 @@ function AstrocartCursorTime({
     if (nextTime === cursorTime) return true;
     setPendingTime(nextTime);
     void onSetMoment(nextTime).then((accepted) => {
-      if (accepted) return;
       setPendingTime(null);
+      if (accepted) return;
       setDraft(cursorTime);
     }).catch(() => {
       setPendingTime(null);
@@ -4957,11 +5136,112 @@ function StepHintArrowButton({
   );
 }
 
+/** Hold time on the phone's step unit that resets to the chart time. */
+const MOBILE_STEP_RESET_HOLD_MS = 500;
+
+/**
+ * Phone stepping controls in the bottom bar: the same step groups and arrow
+ * buttons as the desktop navbar (identical keyboard-equivalent navigation
+ * intents), reduced to one selectable unit, with the canonical Space reset on
+ * a long press of that unit, so they share a phone-width bar with the tabs.
+ */
+function MobileStepControls({
+  groups,
+  onClick,
+  onEnd,
+  onReset,
+}: {
+  groups: NavigationHintGroup[];
+  onClick: (
+    key: NavigationHintKey,
+    modifiers?: { shift?: boolean; alt?: boolean },
+  ) => void;
+  onEnd: (key: NavigationHintKey) => void;
+  onReset?: () => void;
+}) {
+  const t = useT();
+  const groupsKey = groups.map((group) => group.id).join("|");
+  // The unmodified arrow unit (last group) is the keyboard's default step.
+  const [selection, setSelection] = React.useState({ key: groupsKey, index: groups.length - 1 });
+  const index = selection.key === groupsKey
+    ? Math.min(selection.index, groups.length - 1)
+    : groups.length - 1;
+  const group = groups[index];
+  const unitLabel = onReset
+    ? t("toolbar.navbar.changeStepUnitHoldReset", { unit: group.label })
+    : t("toolbar.navbar.changeStepUnit", { unit: group.label });
+  // The unit button cycles the step unit on tap; holding it resets to the
+  // chart time (the Space shortcut), so the bar needs no separate reset button.
+  const resetTimerRef = React.useRef<number | null>(null);
+  const resetFiredRef = React.useRef(false);
+  const cancelResetHold = React.useCallback(() => {
+    if (resetTimerRef.current === null) return;
+    window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = null;
+  }, []);
+  React.useEffect(() => cancelResetHold, [cancelResetHold]);
+  const startResetHold = React.useCallback(() => {
+    resetFiredRef.current = false;
+    cancelResetHold();
+    if (!onReset) return;
+    resetTimerRef.current = window.setTimeout(() => {
+      resetTimerRef.current = null;
+      resetFiredRef.current = true;
+      onReset();
+    }, MOBILE_STEP_RESET_HOLD_MS);
+  }, [cancelResetHold, onReset]);
+  const handleUnitClick = React.useCallback(() => {
+    if (resetFiredRef.current) {
+      resetFiredRef.current = false;
+      return;
+    }
+    if (groups.length < 2) return;
+    setSelection({ key: groupsKey, index: (index + 1) % groups.length });
+  }, [groups.length, groupsKey, index]);
+  return (
+    <div className="aries-step-hints" aria-label={t("toolbar.timeNavigationControls")}>
+      <StepHintArrowButton
+        action="backward"
+        navigationKey={group.backwardKey}
+        group={group}
+        tooltipSide="top"
+        onClick={onClick}
+        onEnd={onEnd}
+      />
+      <button
+        type="button"
+        className="aries-mode-hint-button aries-mobile-step-unit"
+        aria-label={unitLabel}
+        title={unitLabel}
+        aria-disabled={groups.length < 2 && !onReset ? true : undefined}
+        onPointerDown={startResetHold}
+        onPointerUp={cancelResetHold}
+        onPointerCancel={cancelResetHold}
+        onPointerLeave={cancelResetHold}
+        onContextMenu={(event) => event.preventDefault()}
+        onClick={handleUnitClick}
+      >
+        <span className="aries-step-unit">{group.label}</span>
+      </button>
+      <StepHintArrowButton
+        action="forward"
+        navigationKey={group.forwardKey}
+        group={group}
+        tooltipSide="top"
+        onClick={onClick}
+        onEnd={onEnd}
+      />
+    </div>
+  );
+}
+
 function ShortcutFlag({ label, shortcut }: { label: string; shortcut: string }) {
+  const appleShortcuts = useAppleShortcuts();
+  const modifierLabels = useShortcutModifierLabels();
   return (
     <>
       <span>{label}</span>
-      <kbd data-slot="kbd">{shortcut}</kbd>
+      <kbd data-slot="kbd">{formatShortcutKeys(shortcut, appleShortcuts, modifierLabels)}</kbd>
     </>
   );
 }
@@ -5009,6 +5289,17 @@ export function navigationHintGroups({
     return [
       buildNavigationHintGroup("month", "left", "right", undefined, t),
       buildNavigationHintGroup("year", "down", "up", undefined, t),
+    ];
+  }
+  if (kind === "astrolabe") {
+    // The rete arc steps like PD-in-Chart; up/down jump between PD events.
+    return [
+      ...buildLeftRightHintGroups([
+        ["week", { alt: true }],
+        ["month", { shift: true }],
+        ["year", undefined],
+      ], t),
+      buildNavigationHintGroup("event", "down", "up", undefined, t),
     ];
   }
   if (!isChartBearingSurfaceKind(kind)) return [];
@@ -5137,7 +5428,7 @@ function formatHarmonicNumber(value: number | null | undefined): string {
   return Number(value.toFixed(6)).toString();
 }
 
-function TitleText({ parts }: { parts: TitlePart[] }) {
+function TitleText({ parts, twoLine = false }: { parts: TitlePart[]; twoLine?: boolean }) {
   const compact = parts.slice(0, Math.min(2, parts.length));
   const partText = (part: TitlePart) => (typeof part === "string" ? part : part.text);
   const partTitle = (part: TitlePart) => (typeof part === "string" ? undefined : part.title);
@@ -5160,6 +5451,19 @@ function TitleText({ parts }: { parts: TitlePart[] }) {
         </span>
       </React.Fragment>
     ));
+  if (twoLine) {
+    // Phone: the name on the first line, kind and date on a defined second one.
+    return (
+      <span className="pointer-events-none flex min-w-0 max-w-full flex-col items-center leading-tight">
+        <span className="block max-w-full truncate whitespace-nowrap">{renderRun(parts.slice(0, 1), "name")}</span>
+        {parts.length > 1 ? (
+          <span className="block max-w-full truncate whitespace-nowrap text-[length:var(--aries-font-size-small)]">
+            {renderRun(parts.slice(1), "detail")}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   return (
     <>
       <span className="pointer-events-none block min-w-0 max-w-full truncate whitespace-nowrap sm:hidden">
@@ -5169,6 +5473,38 @@ function TitleText({ parts }: { parts: TitlePart[] }) {
         {renderRun(parts, "full")}
       </span>
     </>
+  );
+}
+
+type TitlebarOverflowItem = { id: string; label: string; checked: boolean; run: () => void };
+
+/** Phone title bar: the secondary toggles share one overflow menu so the
+ * remaining direct actions keep 44 px targets and the title keeps its room. */
+function MobileTitlebarOverflow({ items }: { items: readonly (TitlebarOverflowItem | null)[] }) {
+  const t = useT();
+  const visible = items.filter((item): item is TitlebarOverflowItem => item !== null);
+  if (!visible.length) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={t("toolbar.moreActions")}
+        className="flex h-[var(--morinus-header-btn-h)] w-[var(--morinus-header-btn-w)] items-center justify-center rounded-[var(--morinus-header-btn-radius)] text-[color:var(--aries-titlebar-icon)] outline-none data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-[color:var(--aries-titlebar-icon-active)]"
+      >
+        <Ellipsis className="size-[var(--morinus-header-icon-size)]" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-max max-w-(--available-width)">
+        {visible.map((item) => (
+          <DropdownMenuCheckboxItem
+            key={item.id}
+            checked={item.checked}
+            onCheckedChange={() => item.run()}
+            className="min-h-11"
+          >
+            {item.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -5208,29 +5544,6 @@ function HeaderButton({
   );
 }
 
-function shouldRestoreChartPaneFocus(chartPaneElement: HTMLElement): boolean {
-  if (typeof document === "undefined") return false;
-  const active = document.activeElement;
-  if (!active || active === document.body || active === document.documentElement) {
-    return true;
-  }
-  if (!(active instanceof HTMLElement)) return true;
-  if (!active.isConnected) return true;
-  if (active === chartPaneElement) return false;
-  if (active.closest('[role="dialog"], [role="alertdialog"]')) return false;
-  if (isEditableFocusTarget(active)) return false;
-  return true;
-}
-
-function isEditableFocusTarget(element: HTMLElement): boolean {
-  return (
-    element.tagName === "INPUT" ||
-    element.tagName === "TEXTAREA" ||
-    element.tagName === "SELECT" ||
-    element.isContentEditable
-  );
-}
-
 function isInteractivePointerTarget(target: EventTarget | null): boolean {
   // Pointer targets inside icon buttons are often SVGElement/path nodes rather
   // than HTMLElement. Treat every DOM Element as eligible for closest() so a
@@ -5249,17 +5562,17 @@ function ChartArea({
   activeDoc,
   surface,
   navbar,
+  keyboardFocusTarget,
 }: {
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
   surface?: React.ReactNode;
   navbar?: ModeHintRailProps | null;
+  keyboardFocusTarget?: HTMLElement | null;
 }) {
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
   const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
-  const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
-  const sidebarWidth = useFrameLayoutStore((s) => s.sidebarWidth);
   const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
   const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
   const transitListPane = useWorkspaceStore((s) => s.transitListPane);
@@ -5270,11 +5583,11 @@ function ChartArea({
   const decennialsPane = useWorkspaceStore((s) => s.decennialsPane);
   const profectionsPane = useWorkspaceStore((s) => s.profectionsPane);
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
+  const pdPositionsPane = useWorkspaceStore((s) => s.pdPositionsPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
   const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
   const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
-  const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeRightPane = activeRightPaneModule({
@@ -5290,23 +5603,18 @@ function ChartArea({
     decennialsPane,
     profectionsPane,
     eclipsesPane,
+    pdPositionsPane,
     lunarMansionsPane,
     synodicCyclesPane,
     chartEventsPane,
     aspectListPane,
-    ascensionalTransitsPane,
     calendarPane,
     featureCatalogPane,
   });
   const rightPaneOpen = activeRightPane !== null;
   const rightPanePolicy = rightPaneWidthPolicy(activeRightPane);
   const effectiveRightPaneWidth = activeRightPane
-    ? rightPanePriorityLayout(
-        sidebarOpen,
-        sidebarWidth,
-        rightPaneWidth,
-        activeRightPane,
-      ).rightPaneWidth
+    ? clampRightPaneWidth(rightPaneWidth, rightPanePolicy)
     : rightPaneWidth;
   const rightPaneTrack = useCoherentRightPaneTrack(
     rightPaneOpen,
@@ -5315,7 +5623,17 @@ function ChartArea({
   const closeRightPane = React.useCallback(() => {
     closeWorkspaceTransientPanes();
   }, []);
+  // Touch layout: the Inspector becomes a sheet under the wheel, every other
+  // pane a full-screen view that Back minimizes to a bar (still mounted), and
+  // the stepping rail docks in flow under the wheel.
+  const mobile = useMobileLayout();
+  const touchPane = useTouchPanePresentation(mobile, activeRightPane);
+  const touchPresentation = touchPane.presentation;
   const [chartPaneElement, setChartPaneElement] = useState<HTMLDivElement | null>(null);
+  const focusTarget = keyboardFocusTarget ?? chartPaneElement;
+  const focusChart = React.useCallback(() => {
+    focusTarget?.focus({ preventScroll: true });
+  }, [focusTarget]);
   const chartPaneViewport = useElementSize(chartPaneElement);
   const chartPaneSize = Math.min(chartPaneViewport.width, chartPaneViewport.height);
   const navbarScale = chartNavbarScaleForPane(chartPaneSize);
@@ -5325,21 +5643,23 @@ function ChartArea({
   ].join(":");
 
   useEffect(() => {
-    if (!chartPaneElement) return;
-    if (!shouldRestoreChartPaneFocus(chartPaneElement)) return;
+    if (!focusTarget) return;
+    const canRestore = () => !document.activeElement?.matches("iframe[data-notes-editor]") &&
+      shouldRestoreWorkspaceKeyboardFocus(focusTarget);
+    if (!canRestore()) return;
     const frame = window.requestAnimationFrame(() => {
-      if (shouldRestoreChartPaneFocus(chartPaneElement)) {
-        chartPaneElement.focus({ preventScroll: true });
+      if (canRestore()) {
+        focusChart();
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [chartPaneElement, focusKey]);
+  }, [focusChart, focusTarget, focusKey]);
 
   const focusChartPane = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (isInteractivePointerTarget(event.target)) return;
-    if (!chartPaneElement || !shouldRestoreChartPaneFocus(chartPaneElement)) return;
-    chartPaneElement.focus({ preventScroll: true });
-  }, [chartPaneElement]);
+    if (!focusTarget || !shouldRestoreWorkspaceKeyboardFocus(focusTarget)) return;
+    focusChart();
+  }, [focusChart, focusTarget]);
 
   return (
     <div
@@ -5351,9 +5671,19 @@ function ChartArea({
       onTransitionEnd={rightPaneTrack.onTransitionEnd}
       style={{
         "--right-pane-width": `${rightPaneTrack.width}px`,
-        gridTemplateColumns: rightPaneTrack.open
-          ? "minmax(0, 1fr) min(var(--right-pane-width), 50vw)"
-          : "minmax(0, 1fr) 0px",
+        // Phone: the open pane is a second row, so the wheel shrinks into the
+        // space above it instead of being covered (the canvas keeps its
+        // centred-square resize contract).
+        gridTemplateRows: mobile
+          ? touchPresentation === "sheet" || touchPresentation === "minimized"
+            ? "minmax(0, 1fr) auto"
+            : "minmax(0, 1fr)"
+          : undefined,
+        gridTemplateColumns: mobile
+          ? "minmax(0, 1fr)"
+          : rightPaneTrack.open
+            ? "minmax(0, 1fr) min(var(--right-pane-width), 50vw)"
+            : "minmax(0, 1fr) 0px",
       } as React.CSSProperties}
     >
       <div
@@ -5373,9 +5703,9 @@ function ChartArea({
             <EmptyWorkspace />
           </WorkspaceDocumentSurface>
         ))}
-        {navbar ? <ModeHintRail {...navbar} /> : null}
+        {navbar ? <ModeHintRail {...navbar} mobile={mobile} /> : null}
       </div>
-      {rightPaneOpen ? (
+      {rightPaneOpen && !mobile ? (
         <RightPaneSash
           width={effectiveRightPaneWidth}
           minWidth={rightPanePolicy.minContentWidth}
@@ -5383,10 +5713,15 @@ function ChartArea({
           onCollapse={closeRightPane}
         />
       ) : null}
+      {touchPresentation === "minimized" ? (
+        <TouchPaneRestoreBar activeRightPane={activeRightPane} onClose={closeRightPane} />
+      ) : null}
       <aside
-        aria-hidden={!rightPaneOpen}
+        aria-hidden={!rightPaneOpen || touchPresentation === "minimized"}
         data-right-pane-module={activeRightPane ?? undefined}
         data-right-pane-role={rightPaneOpen ? rightPanePolicy.role : undefined}
+        data-touch-pane={touchPresentation ?? undefined}
+        inert={touchPresentation === "minimized" || undefined}
         className={cn(
           // The mounted pane owns the one material boundary: Inspector/Notes
           // paint themselves, while other retained panes use
@@ -5394,6 +5729,12 @@ function ChartArea({
           // authored alpha and backdrop filter.
           "box-border min-w-0 overflow-hidden border-l border-[color:var(--aries-titlebar-seam-rule)] bg-transparent pt-[var(--titlebar-pane-pad-top)] text-[color:var(--aries-panel-text)]",
           !rightPaneOpen && "pointer-events-none",
+          mobile && touchPresentation !== "fullscreen" && touchPresentation !== "minimized" && "aries-mobile-pane-sheet",
+          // A minimized view keeps its full-screen box (hidden), so its list
+          // keeps its viewport and scroll position for the way back.
+          (touchPresentation === "fullscreen" || touchPresentation === "minimized") && "aries-touch-pane-fullscreen",
+          touchPresentation === "minimized" && "aries-touch-pane-minimized",
+          mobile && !rightPaneOpen && "hidden",
         )}
         style={
           {
@@ -5402,7 +5743,18 @@ function ChartArea({
           } as React.CSSProperties
         }
       >
-        {rightPaneOpen ? <RightPaneStack chart={chart} activeDoc={activeDoc} /> : null}
+        {touchPresentation === "fullscreen" || touchPresentation === "minimized" ? (
+          <>
+            <TouchPaneBackRow token={touchPane.token} />
+            <div className="aries-touch-pane-body">
+              <RetainedPaneVisibleContext value={touchPresentation !== "minimized"}>
+                <RightPaneStack chart={chart} activeDoc={activeDoc} focusChart={focusChart} />
+              </RetainedPaneVisibleContext>
+            </div>
+          </>
+        ) : (
+          rightPaneOpen ? <RightPaneStack chart={chart} activeDoc={activeDoc} focusChart={focusChart} /> : null
+        )}
       </aside>
     </div>
   );
@@ -5637,7 +5989,7 @@ function RightPaneSash({
       onPointerDown={onPointerDown}
       onDoubleClick={resetRightPaneWidth}
       className={cn(
-        "absolute inset-y-0 z-50 w-3 -translate-x-1/2 cursor-col-resize select-none outline-none",
+        "absolute inset-y-0 z-50 w-3 -translate-x-1/2 cursor-col-resize touch-none select-none outline-none pointer-coarse:w-8",
         "after:absolute after:inset-y-0 after:left-1/2 after:w-[var(--aries-sash-rule-size)] after:-translate-x-1/2 after:bg-[color:var(--aries-sash-idle-color)] after:content-['']",
         dragging && "after:bg-[color:var(--aries-sash-active-color)]",
       )}
@@ -5653,7 +6005,7 @@ function RightPaneSash({
  */
 function SplitChartSurface(props: React.ComponentProps<typeof ChartSurface>) {
   const document = props.chart.document;
-  if (document && isMdoVisualMode(document.chartVisualMode)) {
+  if (document && isMdoVisualMode(document.chartVisualMode) && usesLegacyAscensionalRenderer(props.chart)) {
     return <MundaneChartView
       key={document.documentId}
       documentId={document.documentId}
@@ -5669,7 +6021,7 @@ function SplitChartSurface(props: React.ComponentProps<typeof ChartSurface>) {
 }
 
 export function ChartSurface({
-  chart,
+  chart: sourceChart,
   appControlsEnabled = true,
   inheritAppTheme = true,
   resolvedTheme,
@@ -5683,16 +6035,22 @@ export function ChartSurface({
   exportRegistrationEnabled?: boolean;
   wheelVerticalAlignment?: WheelVerticalAlignment;
 }) {
+  const dashboardView = useFrameLayoutStore((state) => state.dashboardView);
+  const chart = React.useMemo(
+    () => withDashboardView(sourceChart, dashboardView),
+    [sourceChart, dashboardView],
+  );
   const [hostElement, setHostElement] = useState<HTMLDivElement | null>(null);
   const viewport = useElementSize(hostElement);
   const viewportWidth = viewport.width;
   const viewportHeight = viewport.height;
   const appTheme = useThemeStore((state) => state.theme);
   const appStyleRevision = useStyleRevision();
-  const selectedAspectBody = useWorkspaceStore((state) => state.selectedAspectBody);
-  const hideAllAspects = useWorkspaceStore((state) => state.hideAllAspects);
-  const minorOnlyAspects = useWorkspaceStore((state) => state.minorOnlyAspects);
+  const selectedAspectBody = useWorkspaceStore((state) => aspectViewState(state, chart.document?.documentId).selectedAspectBody);
+  const hideAllAspects = useWorkspaceStore((state) => aspectViewState(state, chart.document?.documentId).hideAllAspects);
+  const minorOnlyAspects = useWorkspaceStore((state) => aspectViewState(state, chart.document?.documentId).minorOnlyAspects);
   const theme = resolvedTheme === undefined ? appTheme : resolvedTheme;
+  const t = useT();
   const styleRevision = resolvedTheme === undefined
     ? appStyleRevision
     : `${theme?.schemaVersion ?? 0}:${theme?.styleRevision ?? 0}:${theme?.styleHash ?? "none"}`;
@@ -5715,6 +6073,7 @@ export function ChartSurface({
           minorOnly: minorOnlyAspects,
         },
         assembleWheelGeometryPreview(geometryDraft),
+        t,
       );
     });
   }, [
@@ -5723,6 +6082,7 @@ export function ChartSurface({
     hideAllAspects,
     minorOnlyAspects,
     selectedAspectBody,
+    t,
     theme,
     viewportHeight,
     viewportWidth,
@@ -5730,21 +6090,26 @@ export function ChartSurface({
 
   const primaryChart = chart.primaryChart;
   const isMultiwheel = (chart.rings?.length ?? 0) >= 3;
-  const displayChart = isPlainSynastryBiwheel(chart)
-    ? primaryChart
-    : chart.comparisonChart ?? primaryChart;
+  const displayChart = informationDisplayChart(chart);
+  const centerInformation = !isMultiwheel && primaryChart.options.theme === 1
+    && primaryChart.options.wheelGeometryPresets?.compact?.overrides["wheel.presentation"] === "traditional-morinus"
+    && primaryChart.options.showInformation && !hasRelationshipCornerInformation(primaryChart);
   const primaryCornerLines = primaryChart.meta.cornerLines;
   const cornerChart =
     primaryCornerLines?.topLeft?.length || primaryCornerLines?.bottomLeft?.length
       ? primaryChart
       : displayChart;
+  // Every stepped snapshot is a new chart object with the same daemon palette.
+  // Key on the palette's content so a time step does not re-resolve both wheel
+  // styles; a real palette change still produces a new key.
+  const chartPaletteKey = JSON.stringify(primaryChart.palette ?? null);
   const palette = React.useMemo(
     () => ({
       ...readPaletteFromTheme(theme),
-      ...resolvePalette(primaryChart),
+      ...resolvePalette(JSON.parse(chartPaletteKey)),
       ...readPaletteProfileOverrides(theme),
     }),
-    [primaryChart, theme],
+    [chartPaletteKey, theme],
   );
   const chartTextFont = morinusTextFontFromTokens(theme?.appTokens);
   const wheelStyle = React.useMemo(
@@ -5767,6 +6132,7 @@ export function ChartSurface({
   const overlaySections = splitOverlayRows(overlayRows);
   const hasOverlayRows = overlayRows.length > 0;
   const overlayMetrics = resolveWheelOverlayMetrics(overlayStyle, viewport);
+  const mobile = useMobileLayout();
   const {
     infoFontSize,
     iconSize: overlayIconSize,
@@ -5787,72 +6153,149 @@ export function ChartSurface({
     wheelProfile,
   );
 
+  const canvas = (
+    <ChartCanvas
+      chart={chart}
+      appControlsEnabled={appControlsEnabled}
+      inheritAppTheme={inheritAppTheme}
+      wheelVerticalAlignment={wheelVerticalAlignment}
+    />
+  );
+  const showInformationCorners =
+    !isMultiwheel && !centerInformation && cornerChart.options.showInformation;
+  const showHouseSystemCorner = !isMultiwheel && displayChart.options.showHouseSystem;
+  const informationTopLines = radixOverlayTopLeftLines(cornerChart, chart.radixChart);
+  const informationPlaceLines =
+    cornerChart.meta.cornerLines?.bottomLeft ??
+    [cornerChart.meta.place, cornerChart.meta.placeCoords];
+  const houseSystemCornerLines = displayChart.meta.houseSystemLines ?? [];
+  // Chart dashboard: one top-left chart-data block at the module text size;
+  // the bottom corners stay empty (lib/chart/dashboard-layout.ts).
+  const dashboardCorners = !mobile && dashboardShown(chart.dashboard);
+  const dashboardTopLines = dashboardCorners
+    ? dashboardTopLeftLines(
+      showInformationCorners ? informationTopLines : [],
+      showInformationCorners ? informationPlaceLines : [],
+      showHouseSystemCorner ? houseSystemCornerLines : [],
+    )
+    : [];
+  const overlayCorner = (sections: ReturnType<typeof splitOverlayRows>, style: React.CSSProperties) => (
+    <OverlayCorner
+      wheelStyle={projectedOverlayStyle}
+      sections={sections}
+      palette={palette}
+      labelSize={overlayLabelSize}
+      iconSize={overlayIconSize}
+      lineHeight={overlayLineHeight}
+      gapAfterDayHour={overlayGapAfterDayHour}
+      gapBetweenGroups={overlayGapBetweenGroups}
+      columnGap={overlayColumnGap}
+      glyphLineHeight={overlayStyle.glyphLineHeight}
+      maxWidth={mobile ? undefined : overlayMaxWidth}
+      inFlow={mobile}
+      style={style}
+    />
+  );
+  const topLeftLines = dashboardCorners ? (
+    <CornerLines
+      semanticClassId="chartOverlay.information.topLeft"
+      corner="topLeft"
+      wheelStyle={projectedOverlayStyle}
+      lines={dashboardTopLines}
+      color={palette.textDim}
+      fontSize={dashboardTextSize(viewportWidth, viewportHeight)}
+      gap={overlayStyle.infoGap}
+      lineHeight={overlayStyle.cornerLineHeight}
+      style={{ top: topEdgeInset, left: edgeInset, textAlign: "left" }}
+    />
+  ) : showInformationCorners ? (
+    <CornerLines
+      semanticClassId="chartOverlay.information.topLeft"
+      corner="topLeft"
+      wheelStyle={projectedOverlayStyle}
+      lines={informationTopLines}
+      color={palette.textDim}
+      fontSize={infoFontSize}
+      gap={overlayStyle.infoGap}
+      lineHeight={overlayStyle.cornerLineHeight}
+      inFlow={mobile}
+      style={mobile ? FLOW_TEXT_START : { top: topEdgeInset, left: edgeInset, textAlign: "left" }}
+    />
+  ) : null;
+  const bottomLeftLines = showInformationCorners && !dashboardCorners ? (
+    <CornerLines
+      semanticClassId={informationCornerClass(cornerChart, "bottomLeft")}
+      corner="bottomLeft"
+      wheelStyle={projectedOverlayStyle}
+      lines={informationPlaceLines}
+      color={palette.textDim}
+      fontSize={infoFontSize}
+      gap={overlayStyle.infoGap}
+      lineHeight={overlayStyle.cornerLineHeight}
+      inFlow={mobile}
+      style={mobile ? FLOW_TEXT_START : { bottom: edgeInset, left: edgeInset, textAlign: "left" }}
+    />
+  ) : null;
+  const houseSystemLines = showHouseSystemCorner && !dashboardCorners ? (
+    <CornerLines
+      semanticClassId="chartOverlay.houseSystem.bottomRight"
+      corner="bottomRight"
+      wheelStyle={projectedOverlayStyle}
+      lines={houseSystemCornerLines}
+      color={palette.textDim}
+      fontSize={infoFontSize}
+      gap={overlayStyle.infoGap}
+      lineHeight={overlayStyle.cornerLineHeight}
+      inFlow={mobile}
+      style={mobile ? FLOW_TEXT_START : { right: edgeInset, bottom: edgeInset, textAlign: "right" }}
+    />
+  ) : null;
+
+  if (mobile) {
+    // Phone: the wheel is the largest square the pane allows (its full width
+    // in portrait) and never shrinks for the chart facts. They follow it in
+    // flow as wrapping blocks, below it in portrait or beside it when the pane
+    // is wide, and the pane scrolls when they do not fit (globals.css
+    // .aries-mobile-chart). Event facts lead; the title bar already names the
+    // chart, its date and place.
+    return (
+      <div ref={setHostElement} className="aries-mobile-chart font-morinus-text">
+        <div className="aries-mobile-chart-wheel">{canvas}</div>
+        <div className="aries-mobile-chart-facts">
+          {!isMultiwheel && hasOverlayRows ? (
+            <>
+              {overlayCorner({ ...NO_OVERLAY_SECTIONS, dayhour: overlaySections.dayhour }, FLOW_TEXT_START)}
+              {overlayCorner({ ...NO_OVERLAY_SECTIONS, header: overlaySections.header }, FLOW_TEXT_START)}
+              {overlayCorner({ ...NO_OVERLAY_SECTIONS, signal: overlaySections.signal }, FLOW_TEXT_START)}
+            </>
+          ) : null}
+          {topLeftLines}
+          {bottomLeftLines}
+          {houseSystemLines}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={setHostElement} className="font-morinus-text relative flex h-full w-full min-w-0 overflow-hidden">
-      <ChartCanvas
-        chart={chart}
-        appControlsEnabled={appControlsEnabled}
-        inheritAppTheme={inheritAppTheme}
-        wheelVerticalAlignment={wheelVerticalAlignment}
-      />
-      {!isMultiwheel && cornerChart.options.showInformation ? (
-        <CornerLines
-          semanticClassId="chartOverlay.information.topLeft"
-          wheelStyle={projectedOverlayStyle}
-          lines={radixOverlayTopLeftLines(cornerChart, chart.radixChart)}
-          color={palette.textDim}
-          fontSize={infoFontSize}
-          gap={overlayStyle.infoGap}
-          lineHeight={overlayStyle.cornerLineHeight}
-          style={{ top: topEdgeInset, left: edgeInset, textAlign: "left" }}
-        />
-      ) : null}
-      {!isMultiwheel && hasOverlayRows ? (
-        <OverlayCorner
-          wheelStyle={projectedOverlayStyle}
-          sections={overlaySections}
-          palette={palette}
-          labelSize={overlayLabelSize}
-          iconSize={overlayIconSize}
-          lineHeight={overlayLineHeight}
-          gapAfterDayHour={overlayGapAfterDayHour}
-          gapBetweenGroups={overlayGapBetweenGroups}
-          columnGap={overlayColumnGap}
-          glyphLineHeight={overlayStyle.glyphLineHeight}
-          maxWidth={overlayMaxWidth}
-          style={{ top: topEdgeInset, right: edgeInset }}
-        />
-      ) : null}
-      {!isMultiwheel && cornerChart.options.showInformation ? (
-        <CornerLines
-          semanticClassId={informationCornerClass(cornerChart, "bottomLeft")}
-          wheelStyle={projectedOverlayStyle}
-          lines={
-            cornerChart.meta.cornerLines?.bottomLeft ??
-            [cornerChart.meta.place, cornerChart.meta.placeCoords]
-          }
-          color={palette.textDim}
-          fontSize={infoFontSize}
-          gap={overlayStyle.infoGap}
-          lineHeight={overlayStyle.cornerLineHeight}
-          style={{ bottom: edgeInset, left: edgeInset, textAlign: "left" }}
-        />
-      ) : null}
-      {!isMultiwheel && displayChart.options.showHouseSystem ? (
-        <CornerLines
-          semanticClassId="chartOverlay.houseSystem.bottomRight"
-          wheelStyle={projectedOverlayStyle}
-          lines={displayChart.meta.houseSystemLines ?? []}
-          color={palette.textDim}
-          fontSize={infoFontSize}
-          gap={overlayStyle.infoGap}
-          lineHeight={overlayStyle.cornerLineHeight}
-          style={{ right: edgeInset, bottom: edgeInset, textAlign: "right" }}
-        />
-      ) : null}
+      {canvas}
+      {topLeftLines}
+      {!isMultiwheel && hasOverlayRows
+        ? overlayCorner(overlaySections, { top: topEdgeInset, right: edgeInset })
+        : null}
+      {bottomLeftLines}
+      {houseSystemLines}
     </div>
   );
 }
+
+const FLOW_TEXT_START: React.CSSProperties = { textAlign: "start" };
+const NO_OVERLAY_SECTIONS: ReturnType<typeof splitOverlayRows> = {
+  dayhour: [],
+  header: [],
+  signal: [],
+};
 
 /**
  * Right-side pane stack. Only mounted when the parent decides a right pane is
@@ -5884,9 +6327,11 @@ function FeatureCatalogPaneContent({
 function RightPaneStack({
   chart,
   activeDoc,
+  focusChart,
 }: {
   chart: ChartRenderSnapshot | null;
   activeDoc: WorkspaceDocument | null;
+  focusChart: () => void;
 }) {
   const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
   const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
@@ -5898,6 +6343,7 @@ function RightPaneStack({
   const closeTransitListPane = useWorkspaceStore((s) => s.closeTransitListPane);
   const directionsPane = useWorkspaceStore((s) => s.directionsPane);
   const closeDirectionsPane = useWorkspaceStore((s) => s.closeDirectionsPane);
+  const setDirectionsPaneView = useWorkspaceStore((s) => s.setDirectionsPaneView);
   const timeLordPane = useWorkspaceStore((s) => s.timeLordPane);
   const closeTimeLordPane = useWorkspaceStore((s) => s.closeTimeLordPane);
   const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
@@ -5911,12 +6357,10 @@ function RightPaneStack({
   const daemonDocuments = useDaemonWorkspaceStore((s) => s.documents);
   const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
   const closeEclipsesPane = useWorkspaceStore((s) => s.closeEclipsesPane);
+  const pdPositionsPane = useWorkspaceStore((s) => s.pdPositionsPane);
   const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
+  const closePdPositionsPane = useWorkspaceStore((s) => s.closePdPositionsPane);
   const closeLunarMansionsPane = useWorkspaceStore((s) => s.closeLunarMansionsPane);
-  const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
-  const closeAscensionalTransitsPane = useWorkspaceStore(
-    (s) => s.closeAscensionalTransitsPane,
-  );
   const calendarPane = useWorkspaceStore((s) => s.calendarPane);
   const closeCalendarPane = useWorkspaceStore((s) => s.closeCalendarPane);
   const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
@@ -6264,9 +6708,6 @@ function RightPaneStack({
 
   if (directionsPane) {
     const cursorDocumentId = directionsPane.cursorDocumentId ?? directionsPane.documentId;
-    const focusDocumentId = directionsActiveDocBelongs
-      ? activeDoc?.id ?? cursorDocumentId
-      : cursorDocumentId;
     const directionsFocusDatetime = resolveListFocusDatetime(
       directionsPane.followPolicy,
       directionsLiveFocusDatetime,
@@ -6279,7 +6720,6 @@ function RightPaneStack({
           source={directionsPane.source}
           documentId={directionsPane.documentId}
           cursorDocumentId={cursorDocumentId}
-          focusDocumentId={focusDocumentId}
           focusDatetime={directionsFocusDatetime ?? undefined}
           followStepBursts={
             directionsActiveDocBelongs && activeDoc?.launcherKind === "pd_in_chart"
@@ -6291,6 +6731,12 @@ function RightPaneStack({
           secondaryMethod={directionsPane.secondaryMethod}
           customSignificator={directionsPane.customSignificator ?? null}
           followPolicy={directionsPane.followPolicy}
+          significatorsDocumentId={
+            directionsActiveDocBelongs && activeDoc ? activeDoc.id : cursorDocumentId
+          }
+          chart={chart}
+          retainedView={directionsPane.view}
+          onViewChange={setDirectionsPaneView}
           onClose={closeDirectionsPane}
         />
       </RightInspectorPaneFrame>
@@ -6323,6 +6769,15 @@ function RightPaneStack({
     );
   }
 
+  if (pdPositionsPane) {
+    return (
+      <RightInspectorPaneFrame kind="pd-positions">
+        <PdPositionsView documentId={pdPositionsPane.documentId} sourceName={pdPositionsPane.sourceName}
+          chart={chart} onClose={closePdPositionsPane} />
+      </RightInspectorPaneFrame>
+    );
+  }
+
   if (lunarMansionsPane) {
     return (
       <RightInspectorPaneFrame kind="lunar-mansions">
@@ -6335,60 +6790,10 @@ function RightPaneStack({
     );
   }
 
-  if (ascensionalTransitsPane) {
-    const ascensionalDocument = daemonDocuments.find(
-      (doc) => doc.documentId === ascensionalTransitsPane.documentId,
-    );
-    const activeAscensionalDoc =
-      activeDoc?.id === ascensionalTransitsPane.documentId ? activeDoc : null;
-    return (
-      <RightInspectorPaneFrame kind="ascensional-transits">
-        <AscensionalTransitsPane
-          key={ascensionalTransitsPane.documentId}
-          documentId={ascensionalTransitsPane.documentId}
-          sourceName={
-            activeAscensionalDoc?.sourceName ??
-            ascensionalDocument?.sourceName ??
-            ascensionalDocument?.subtitle ??
-            ascensionalTransitsPane.sourceName
-          }
-          ascensionalEventJd={
-            activeAscensionalDoc?.ascensionalEventJd ??
-            ascensionalDocument?.ascensionalEventJd ??
-            ascensionalTransitsPane.ascensionalEventJd ??
-            null
-          }
-          ascensionalEventPlace={
-            activeAscensionalDoc?.ascensionalEventPlace ??
-            ascensionalDocument?.ascensionalEventPlace ??
-            ascensionalTransitsPane.ascensionalEventPlace ??
-            null
-          }
-          ascensionalFilterToActiveMoment={
-            activeAscensionalDoc?.ascensionalFilterToActiveMoment ??
-            ascensionalDocument?.ascensionalFilterToActiveMoment ??
-            ascensionalTransitsPane.ascensionalFilterToActiveMoment ??
-            true
-          }
-          ascensionalApplyPrecession={
-            activeAscensionalDoc?.ascensionalApplyPrecession ??
-            ascensionalDocument?.ascensionalApplyPrecession ??
-            ascensionalTransitsPane.ascensionalApplyPrecession ??
-            true
-          }
-          onClose={closeAscensionalTransitsPane}
-        />
-      </RightInspectorPaneFrame>
-    );
-  }
-
   if (styleEditorOpen) {
     return (
       <RightInspectorPaneFrame kind="chart-style">
-        <ChartStylePanel
-          applyThemeToApp
-          onClose={() => setStyleEditorOpen(false)}
-        />
+        <ChartStylePanel onClose={() => setStyleEditorOpen(false)} />
       </RightInspectorPaneFrame>
     );
   }
@@ -6416,7 +6821,8 @@ function RightPaneStack({
             documentId={notesDocumentId}
             scratch={notesScratch}
             eventId={eventNote?.eventId}
-          recordId={eventNote?.recordId}
+            recordId={eventNote?.recordId}
+            focusChart={focusChart}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -6434,6 +6840,7 @@ function RightPaneStack({
           scratch={notesScratch}
           eventId={eventNote?.eventId}
           recordId={eventNote?.recordId}
+          focusChart={focusChart}
         />
       ) : null}
     </div>
@@ -6488,7 +6895,8 @@ function useElementSize(element: HTMLElement | null) {
   return size;
 }
 
-function resolvePalette(chart: ChartRenderSnapshot["primaryChart"]): ChartPalette {
+function resolvePalette(chartPalette: ChartRenderSnapshot["primaryChart"]["palette"] | null): ChartPalette {
+  const chart = { palette: chartPalette };
   return {
     background: chart.palette?.background ?? "rgb(35 36 40)",
     frame: chart.palette?.frame ?? "rgb(220 220 221)",
@@ -6520,83 +6928,6 @@ function splitOverlayRows(rows: OverlayInfoRow[]) {
   };
 }
 
-function overlayTypographyCss(
-  wheelStyle: WheelRenderStyle,
-  classId: WheelChartOverlayClass,
-  defaults: Readonly<{
-    font: string;
-    size: number;
-    color: string;
-  }>,
-): React.CSSProperties {
-  const paint = resolveWheelTypographyPaint(
-    wheelStyle,
-    wheelStyle.authoringTargetProfile,
-    classId,
-    wheelStyle.authoringTargetRadius,
-    defaults,
-  );
-  return {
-    color: paint.color,
-    fontFamily: paint.font,
-    fontSize: paint.size,
-    fontWeight: paint.weight,
-    fontStyle: paint.style,
-    letterSpacing: paint.tracking,
-    opacity: paint.opacity,
-  };
-}
-
-function CornerLines({
-  semanticClassId,
-  wheelStyle,
-  lines,
-  color,
-  fontSize,
-  gap,
-  lineHeight,
-  style,
-}: {
-  semanticClassId: WheelChartOverlayClass;
-  wheelStyle: WheelRenderStyle;
-  lines: string[];
-  color: string;
-  fontSize: number;
-  gap: number;
-  lineHeight: number;
-  style: React.CSSProperties;
-}) {
-  if (!lines.length || fontSize <= 0) {
-    return null;
-  }
-
-  return (
-    <div
-      className="pointer-events-none absolute z-10 select-none font-ui"
-      style={{
-        ...style,
-        ...overlayTypographyCss(wheelStyle, semanticClassId, {
-          font: wheelStyle.typography.families.ui,
-          size: fontSize,
-          color,
-        }),
-        lineHeight,
-      }}
-    >
-      <div className="flex flex-col" style={{ gap }}>
-        {lines.map((line) => (
-          <div
-            key={`${line}-${fontSize}`}
-            data-aries-style-class={semanticClassId}
-          >
-            {line}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function OverlayCorner({
   wheelStyle,
   sections,
@@ -6609,6 +6940,7 @@ function OverlayCorner({
   columnGap,
   glyphLineHeight,
   maxWidth,
+  inFlow = false,
   style,
 }: {
   wheelStyle: WheelRenderStyle;
@@ -6622,6 +6954,8 @@ function OverlayCorner({
   columnGap: number;
   glyphLineHeight: number;
   maxWidth?: string;
+  /** Phone: a block in the chart facts flow instead of the top-right corner. */
+  inFlow?: boolean;
   style: React.CSSProperties;
 }) {
   const hasRows = sections.dayhour.length || sections.header.length || sections.signal.length;
@@ -6642,11 +6976,12 @@ function OverlayCorner({
 
   return (
     <div
-      className="pointer-events-none absolute z-10 select-none font-ui"
+      data-aries-chart-corner={inFlow ? undefined : "topRight"}
+      className={cn("pointer-events-none select-none font-ui", !inFlow && "absolute z-[41]")}
       style={{ ...style, maxWidth }}
     >
       <div
-        className="grid items-center justify-end"
+        className={cn("grid items-center", inFlow ? "justify-start" : "justify-end")}
         style={{
           gridTemplateColumns: "max-content max-content max-content",
           columnGap,
@@ -6813,10 +7148,8 @@ function overlayGlyphColor(
 
 export function StatusBar({
   chart,
-  onOpenSettings,
 }: {
   chart: ChartRenderSnapshot | null;
-  onOpenSettings: () => void;
 }) {
   const t = useT();
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
@@ -6866,17 +7199,6 @@ export function StatusBar({
         className="flex h-full shrink-0 items-center gap-[var(--aries-statusbar-gap)] overflow-hidden bg-transparent px-[var(--morinus-nav-side-margin)]"
         style={{ width: leftCellWidth }}
       >
-        {sidebarOpen ? (
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            aria-label={t("toolbar.settings")}
-            title={t("toolbar.settings")}
-            className="flex size-[var(--aries-statusbar-action-size)] shrink-0 items-center justify-center rounded-[var(--aries-toolbar-control-radius)] text-[length:var(--aries-font-size-nav)] text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <Settings className="size-[var(--aries-control-icon-size)] shrink-0" />
-          </button>
-        ) : null}
         {sidebarOpen && buildField ? <StatusText>{buildField}</StatusText> : null}
       </div>
       <div

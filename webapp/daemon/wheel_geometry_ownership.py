@@ -12,11 +12,13 @@ LEGACY_GEOMETRY_TOKENS = frozenset(_CONTRACT['legacyTokens'])
 _LEGACY_KEYS = LEGACY_GEOMETRY_TOKENS | frozenset(_CONTRACT['legacyTokens'].values())
 _PROPERTIES = frozenset(_CONTRACT['authoringProperties'])
 _SCALE_CLASSES = frozenset(_CONTRACT['scaleClasses'])
+RADIUS_PRIORITY_ROLES = frozenset(_CONTRACT['radiusPriorityRoles'])
+OUTER_DEGREE_BINDINGS = frozenset(_CONTRACT['outerDegreeBindings'])
 _DIRECT_KEY = re.compile(r'^authoring\.wheel\.(base|classic|compact|anglo|houses|cusps)\.(.+)\.([^.]+)$')
 
 
 def is_geometry_key(key: str) -> bool:
-    if key in _LEGACY_KEYS:
+    if key in _LEGACY_KEYS or key in _CONTRACT['presentationKeys']:
         return True
     match = _DIRECT_KEY.fullmatch(key)
     return bool(match and (match[3] in _PROPERTIES or (match[3] == 'scale' and match[2] in _SCALE_CLASSES)))

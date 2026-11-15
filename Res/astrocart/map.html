@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Morinus Astrocartography</title>
+<title>Aries Astrocartography</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#1a1d21">
@@ -78,6 +78,14 @@
     color-scheme:light;
   }
   html, body, #map { margin:0; padding:0; width:100%; height:100%; background:var(--page-bg); }
+  /* Windows High Contrast: the map and its markers are data colours, like an
+     image; the chrome panels keep the system palette. */
+  @media (forced-colors: active) {
+    .maplibregl-canvas-container,
+    .maplibregl-marker,
+    .acg-birthplace-marker,
+    .acg-reference-house-number { forced-color-adjust: none; }
+  }
   body { font-family:var(--chrome-font-ui); color:var(--chrome-text); }
   body { -webkit-user-select:none; user-select:none; }
   input, textarea, [contenteditable="true"] { -webkit-user-select:text; user-select:text; }
@@ -373,6 +381,29 @@
     z-index:12;
   }
   #acg-hint.on { opacity:0.94; }
+  /* Narrow (phone) viewports: the top controls wrap inside the viewport, the
+     legend moves to the lower right, and the bottom chrome clears the host's
+     line-mode bar (about 24 px plus its gap) instead of stacking under it. */
+  @media (max-width: 600px) {
+    :root { --acg-bottom-reserve: 40px; }
+    html, body { overflow-x:hidden; }
+    #top-controls {
+      right:var(--chrome-inset);
+      flex-wrap:wrap;
+    }
+    #place-search { width:auto; flex:1 1 140px; min-width:0; }
+    #legend {
+      top:auto;
+      bottom:calc(var(--acg-bottom-reserve) + var(--chrome-control-size) + var(--chrome-inset) * 2);
+      max-width:min(210px, calc(100vw - var(--chrome-inset) * 2));
+    }
+    #status { bottom:calc(var(--acg-bottom-reserve) + var(--chrome-inset)); }
+    #acg-hint {
+      bottom:calc(var(--acg-bottom-reserve) + var(--chrome-control-size) + var(--chrome-inset) * 2);
+      max-width:calc(100vw - var(--chrome-inset) * 2);
+    }
+    .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom:var(--acg-bottom-reserve); }
+  }
   .acg-birthplace-marker {
     width:16px; height:16px;
     display:flex; align-items:center; justify-content:center;
@@ -458,9 +489,9 @@
   <button data-action="transit" data-context="chart">Transit here</button>
   <hr data-context="chart">
   <button data-action="set_pob" data-context="chart">Set place of birth</button>
+  <button data-action="set_default_loc" data-context="chart default_location">Set default location</button>
   <hr data-context="chart">
   <button data-action="ruler" data-context="chart" role="menuitemcheckbox" aria-checked="false"></button>
-  <button data-action="set_default_loc" data-context="default_location">Set default location</button>
   <button data-action="set_ascensional_event_place" data-context="ascensional_event_place">Set event place</button>
 </div>
 <div id="acg-hint"></div>
@@ -878,6 +909,9 @@
     document.body.style.setProperty('--page-bg', bg);
   }
 
+  // Keep in step with the @media (max-width: 600px) chrome block.
+  const NARROW_MAP_QUERY = '(max-width: 600px)';
+
   function applyTitlebarSafeTop(value) {
     const n = Number(value);
     const px = Number.isFinite(n) && n > 0 ? Math.min(96, Math.round(n)) : 0;
@@ -953,7 +987,7 @@
 
   // OpenFreeMap Liberty is a public vector basemap with OpenMapTiles-style
   // layers and no API key. We keep the source remote, but restyle it locally
-  // so Morinus can control ocean/land/border/place-label colors directly.
+  // so Aries can control ocean/land/border/place-label colors directly.
   const BASE_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
   const PRINT_BASEMAP_ATTRIBUTION =
     'OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors · https://www.openstreetmap.org/copyright';
@@ -2378,7 +2412,7 @@
       fallbackUnknownColor: '#888888',
       eclipseShadowColor: isDark ? 'rgba(5, 6, 7, 0.34)' : 'rgba(38, 42, 46, 0.18)',
       eclipseOutlineColor: isDark ? '#c8c2b5' : '#5e6872',
-      eclipseCenterColor: isDark ? '#d9b760' : '#8a6418',
+      eclipseCenterColor: isDark ? '#00bfff' : '#112bcd',
       eclipseHaloColor: isDark ? 'rgba(8, 11, 15, 0.92)' : 'rgba(255, 255, 255, 0.92)',
       casingWidth: 3.0,
       casingOpacity: 0.9,
@@ -3234,6 +3268,16 @@
       fadeDuration: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 100,
     });
     ensurePolarOverlayCanvas();
+    // Narrow (phone) viewports: start the compact attribution collapsed so it
+    // does not sit on the status line and the host's mode bar; its "i" button
+    // still opens it.
+    if (window.matchMedia?.(NARROW_MAP_QUERY).matches) {
+      map.once('idle', () => {
+        const attribution = document.querySelector('.maplibregl-ctrl-attrib');
+        attribution?.classList.remove('maplibregl-compact-show');
+        attribution?.removeAttribute('open');
+      });
+    }
     let fallbackStylePending = false;
     let startupFallbackTimer = window.setTimeout(() => {
       if (mapReady) return;
@@ -3425,7 +3469,7 @@
     configureRuler(rulerOptions);
     mapRuler.setActive(mapHostActive);
     map.on('contextmenu', onMapContextMenu);
-    map.on('click', hideContextMenu);
+    map.on('click', onMapClick);
     map.on('render', () => {
       if (ACG_PERF_MODE) recordRenderFrame();
       renderPolarOverlay();
@@ -7803,6 +7847,17 @@
       return;
     }
     if (event.ctrlKey || event.metaKey) return;
+    // The focused iframe does not bubble keydown to the sidebar provider.
+    const isCaret = key === '^' || (
+      key === 'Dead' && !event.shiftKey &&
+      (event.code === 'Backquote' || event.code === 'IntlBackslash')
+    );
+    if (isCaret && window.parent !== window) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) postToParent({ type: 'shortcut', key, code: event.code, shiftKey: event.shiftKey });
+      return;
+    }
     const isLetter = key.length === 1 && /^[a-z]$/i.test(key);
     const isEscape = key === 'Escape';
     if (isEscape && mapRuler?.enabled) return;
@@ -7830,11 +7885,13 @@
     const target = event.target;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
       target.tagName === 'SELECT' || target.isContentEditable)) return;
-    const keys = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+    const keys = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', ' ': 'space' };
     const key = keys[event.key];
     if (!key) return;
+    if (key === 'space' && (event.shiftKey || event.altKey)) return;
     event.preventDefault();
     event.stopPropagation();
+    if (key === 'space' && event.repeat) return;
     postToParent({
       type: 'navigation-key', eventType, key,
       shiftKey: event.shiftKey, altKey: event.altKey,
@@ -7853,6 +7910,27 @@
     const place = placeFeatureAtPoint(e.point);
     const placeName = place ? featurePlaceName(place) : '';
     showContextMenu(e.point, e.lngLat, placeName);
+  }
+
+  // In the place-picking contexts a plain click chooses the point: it drops
+  // the same pin as a search result and posts a place-selection, which the
+  // host commits with OK. The right-click menu remains as a shortcut.
+  function onMapClick(e) {
+    hideContextMenu();
+    const menu = document.getElementById('acg-menu');
+    if (!menu || menu.getAttribute('data-mode') !== 'default_location') return;
+    if (rulerOptions.enabled || !e || !e.lngLat) return;
+    const place = placeFeatureAtPoint(e.point);
+    const placeName = place ? featurePlaceName(place) : '';
+    const lon = ((Number(e.lngLat.lng) + 540) % 360) - 180;
+    const lat = Number(e.lngLat.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+    dropSearchPin({
+      lon, lat,
+      name: placeName || `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`,
+      country: '', secondary: '',
+    });
+    postToParent({ type: 'place-selection', lon, lat, placeName });
   }
 
   function showContextMenu(point, lngLat, placeName) {
@@ -8492,28 +8570,76 @@
   // Two-tier search:
   //   1. Offline city-list: filters the `placesData` array already loaded
   //      for the on-globe labels (~16k cities from places.geojson). Instant.
-  //   2. Nominatim (https://nominatim.openstreetmap.org/): debounced fetch
-  //      for everything else \u2014 addresses, landmarks, villages too small to
-  //      ship in the bundled list. Online-only; if the API is unreachable
-  //      the local section keeps working unchanged.
+  //   2. Photon (https://photon.komoot.io/, open-source OSM geocoder built
+  //      for search-as-you-type): debounced fetch for everything else —
+  //      addresses, streets, landmarks, villages too small to ship in the
+  //      bundled list. Results are biased toward the current map view, so
+  //      "57th Street" over Manhattan finds Manhattan first. Online-only; if
+  //      the API is unreachable the local section keeps working unchanged.
   //
-  // We respect Nominatim's usage policy by setting a real User-Agent on
-  // the wxWebView (see astrocartframe._aries_user_agent), debouncing input
-  // to one query per ~350ms, aborting stale requests, and caching results.
+  // Nominatim's usage policy forbids autocomplete, hence Photon. We stay
+  // within Photon's fair-use terms by debouncing input to one query per
+  // ~350ms, aborting stale requests, and caching results.
 
   let activeSearchIndex = -1;
   let currentSearchMatches = [];
-  let nominatimController = null;
-  let nominatimQueryToken = 0;
-  let nominatimDebounceTimer = null;
-  const nominatimCache = new Map();
-  const NOMINATIM_DEBOUNCE_MS = 350;
-  const NOMINATIM_MIN_QUERY = 3;
-  const NOMINATIM_TIMEOUT_MS = 5500;
-  const NOMINATIM_CACHE_MAX = 32;
+  let geocodeController = null;
+  let geocodeQueryToken = 0;
+  let geocodeDebounceTimer = null;
+  const geocodeCache = new Map();
+  const GEOCODE_URL = 'https://photon.komoot.io/api/';
+  const GEOCODE_DEBOUNCE_MS = 350;
+  const GEOCODE_MIN_QUERY = 3;
+  const GEOCODE_TIMEOUT_MS = 5500;
+  const GEOCODE_CACHE_MAX = 32;
+  const GEOCODE_RESULT_LIMIT = 8;
+  // Photon localizes result names only for these languages; others get the
+  // local (OSM default) names.
+  const GEOCODE_LANGS = new Set(['en', 'de', 'fr', 'it']);
+  // Fly-to zoom per Photon result type; POIs and anything unknown go close.
+  const GEOCODE_TYPE_ZOOM = {
+    country: 4, state: 6, county: 8, city: 10,
+    district: 13, locality: 13, street: 15, house: 17,
+  };
+
+  function geocodeLang() {
+    const tag = String((navigator.languages && navigator.languages[0]) || navigator.language || '');
+    const base = tag.toLowerCase().split('-')[0];
+    return GEOCODE_LANGS.has(base) ? base : '';
+  }
+
+  // Current view as a Photon location bias. The bias zoom follows the map
+  // zoom, so a zoomed-out globe barely biases while a city view strongly
+  // prefers nearby matches.
+  function geocodeBias() {
+    if (!map) return null;
+    try {
+      const c = map.getCenter();
+      const z = map.getZoom();
+      if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng) || !Number.isFinite(z)) return null;
+      const lon = ((c.lng + 540) % 360) - 180;
+      return {
+        lat: Math.max(-85, Math.min(85, c.lat)),
+        lon,
+        zoom: Math.max(1, Math.min(18, Math.round(z))),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Cache entries are per query and coarse view, so panning to another
+  // city re-ranks instead of replaying the old city's answer.
+  function geocodeCacheKey(query) {
+    const bias = geocodeBias();
+    if (!bias) return query;
+    const step = bias.zoom >= 10 ? 0.1 : (bias.zoom >= 6 ? 1 : 10);
+    const snap = (v) => (Math.round(v / step) * step).toFixed(1);
+    return `${query}|${snap(bias.lat)},${snap(bias.lon)}|${bias.zoom}`;
+  }
 
   function normalizeSearchString(s) {
-    return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
 
   function searchPlaces(query, limit) {
@@ -8538,44 +8664,72 @@
     }));
   }
 
-  function nominatimRowFromHit(hit) {
-    const lon = Number(hit.lon);
-    const lat = Number(hit.lat);
+  function geocodeRowFromFeature(feature) {
+    const coords = feature && feature.geometry && feature.geometry.coordinates;
+    if (!Array.isArray(coords)) return null;
+    const lon = Number(coords[0]);
+    const lat = Number(coords[1]);
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
-    const display = String(hit.display_name || '');
-    const addr = hit.address || {};
-    const name = (hit.name && String(hit.name)) || display.split(',')[0].trim();
-    const country = String(addr.country_code || '').toUpperCase();
-    const rest = display.split(',').slice(1).map((s) => s.trim()).filter(Boolean);
-    const secondary = rest.join(', ') || addr.country || '';
-    return { lon, lat, name, country, secondary, source: 'osm' };
+    const p = feature.properties || {};
+    const text = (v) => (v == null ? '' : String(v).trim());
+    const streetLine = [text(p.housenumber), text(p.street)].filter(Boolean).join(' ');
+    const name = text(p.name) || streetLine;
+    if (!name) return null;
+    const parts = [];
+    const seen = new Set([name.toLowerCase()]);
+    const pushPart = (v) => {
+      const s = text(v);
+      if (!s || seen.has(s.toLowerCase())) return;
+      seen.add(s.toLowerCase());
+      parts.push(s);
+    };
+    if (text(p.name)) pushPart(streetLine);
+    pushPart(p.locality);
+    pushPart(p.district);
+    pushPart(p.city);
+    pushPart(p.county && !p.city ? p.county : '');
+    pushPart(p.state);
+    const secondary = parts.join(', ') || text(p.country);
+    const zoom = GEOCODE_TYPE_ZOOM[text(p.type)] || 16;
+    return {
+      lon, lat, name,
+      country: text(p.countrycode).toUpperCase(),
+      secondary, zoom, source: 'osm',
+      housenumber: text(p.housenumber).toLowerCase(),
+    };
   }
 
-  async function searchNominatim(query) {
+  async function searchGeocoder(query) {
     const q = (query || '').trim();
-    if (q.length < NOMINATIM_MIN_QUERY) return [];
-    if (nominatimCache.has(q)) {
+    if (q.length < GEOCODE_MIN_QUERY) return [];
+    const key = geocodeCacheKey(q);
+    if (geocodeCache.has(key)) {
       // refresh LRU order
-      const cached = nominatimCache.get(q);
-      nominatimCache.delete(q);
-      nominatimCache.set(q, cached);
+      const cached = geocodeCache.get(key);
+      geocodeCache.delete(key);
+      geocodeCache.set(key, cached);
       return cached;
     }
-    if (nominatimController) {
-      try { nominatimController.abort(); } catch (_) {}
+    if (geocodeController) {
+      try { geocodeController.abort(); } catch (_) {}
     }
     const controller = new AbortController();
-    nominatimController = controller;
+    geocodeController = controller;
     const timer = window.setTimeout(() => {
       try { controller.abort(); } catch (_) {}
-    }, NOMINATIM_TIMEOUT_MS);
-    const params = new URLSearchParams({
-      q: q,
-      format: 'jsonv2',
-      limit: '8',
-      addressdetails: '1',
-    });
-    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    }, GEOCODE_TIMEOUT_MS);
+    // Photon often returns several OSM ways of one street; over-fetch and
+    // collapse identical labels.
+    const params = new URLSearchParams({ q, limit: String(GEOCODE_RESULT_LIMIT * 2) });
+    const bias = geocodeBias();
+    if (bias) {
+      params.set('lat', bias.lat.toFixed(4));
+      params.set('lon', bias.lon.toFixed(4));
+      params.set('zoom', String(bias.zoom));
+    }
+    const lang = geocodeLang();
+    if (lang) params.set('lang', lang);
+    const url = `${GEOCODE_URL}?${params.toString()}`;
     try {
       const res = await fetch(url, {
         signal: controller.signal,
@@ -8584,12 +8738,29 @@
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      const rows = (Array.isArray(data) ? data : [])
-        .map(nominatimRowFromHit).filter(Boolean);
-      nominatimCache.set(q, rows);
-      if (nominatimCache.size > NOMINATIM_CACHE_MAX) {
-        const oldest = nominatimCache.keys().next().value;
-        nominatimCache.delete(oldest);
+      const features = data && Array.isArray(data.features) ? data.features : [];
+      const rows = [];
+      const labels = new Set();
+      for (const feature of features) {
+        const row = geocodeRowFromFeature(feature);
+        if (!row) continue;
+        const label = `${row.name}|${row.secondary}|${row.country}`.toLowerCase();
+        if (labels.has(label)) continue;
+        labels.add(label);
+        rows.push(row);
+      }
+      // Photon can rank the bare street above the exact address; a typed
+      // house number that a result matches wins.
+      const typedNumber = (q.match(/^\s*(\d+[a-z]?)\b/i) || [])[1];
+      if (typedNumber) {
+        const n = typedNumber.toLowerCase();
+        rows.sort((a, b) => (b.housenumber === n) - (a.housenumber === n));
+      }
+      rows.length = Math.min(rows.length, GEOCODE_RESULT_LIMIT);
+      geocodeCache.set(key, rows);
+      if (geocodeCache.size > GEOCODE_CACHE_MAX) {
+        const oldest = geocodeCache.keys().next().value;
+        geocodeCache.delete(oldest);
       }
       return rows;
     } catch (err) {
@@ -8597,7 +8768,7 @@
       return [];
     } finally {
       window.clearTimeout(timer);
-      if (nominatimController === controller) nominatimController = null;
+      if (geocodeController === controller) geocodeController = null;
     }
   }
 
@@ -8701,41 +8872,65 @@
     if (!input) return;
     const q = input.value;
     const trimmed = q.trim();
+    const mayBeCoordinates = /^[+−.\d-]/.test(trimmed);
     const local = searchPlaces(q, 6);
-    const willHitOsm = trimmed.length >= NOMINATIM_MIN_QUERY;
-    const cached = willHitOsm ? nominatimCache.get(trimmed) : null;
+    const willHitOsm = trimmed.length >= GEOCODE_MIN_QUERY;
+    const cached = willHitOsm && !mayBeCoordinates ? geocodeCache.get(geocodeCacheKey(trimmed)) : null;
     renderSearchResults({
       local,
       osm: cached || [],
       loading: willHitOsm && !cached,
     });
 
-    if (nominatimDebounceTimer) {
-      window.clearTimeout(nominatimDebounceTimer);
-      nominatimDebounceTimer = null;
+    if (geocodeDebounceTimer) {
+      window.clearTimeout(geocodeDebounceTimer);
+      geocodeDebounceTimer = null;
     }
     if (!willHitOsm) {
-      if (nominatimController) {
-        try { nominatimController.abort(); } catch (_) {}
+      if (geocodeController) {
+        try { geocodeController.abort(); } catch (_) {}
       }
       return;
     }
     if (cached) return;  // already rendered above
 
-    const token = ++nominatimQueryToken;
-    nominatimDebounceTimer = window.setTimeout(() => {
-      searchNominatim(trimmed).then((osm) => {
-        if (osm === null) return; // aborted by a newer query
-        if (token !== nominatimQueryToken) return;
-        const liveInput = document.getElementById('place-search-input');
-        if (!liveInput || liveInput.value.trim() !== trimmed) return;
-        renderSearchResults({
-          local: searchPlaces(liveInput.value, 6),
-          osm: osm,
-          loading: false,
-        });
+    const token = ++geocodeQueryToken;
+    const isCurrent = () => token === geocodeQueryToken && input.value.trim() === trimmed;
+    geocodeDebounceTimer = window.setTimeout(async () => {
+      if (mayBeCoordinates) {
+        const point = await searchCoordinatePlace(trimmed);
+        if (!isCurrent()) return;
+        if (point) {
+          renderSearchResults({ local: [point] });
+          return;
+        }
+      }
+      const osm = await searchGeocoder(trimmed);
+      if (osm === null || !isCurrent()) return;
+      renderSearchResults({
+        local: searchPlaces(input.value, 6),
+        osm,
+        loading: false,
       });
-    }, NOMINATIM_DEBOUNCE_MS);
+    }, GEOCODE_DEBOUNCE_MS);
+  }
+
+  async function searchCoordinatePlace(query) {
+    const params = new URLSearchParams({ q: query, coordinatesOnly: 'true' });
+    const token = URL_THEME.get('token');
+    try {
+      const response = await fetch('/api/editor/resolve-place?' + params, {
+        headers: token ? { 'X-Aries-Token': token } : {},
+        cache: 'no-store',
+      });
+      if (!response.ok) return null;
+      const { candidates } = await response.json();
+      const point = candidates?.[0];
+      if (!point) return null;
+      return { lon: point.lon, lat: point.lat, name: point.label, country: point.countryCode, source: 'coordinate' };
+    } catch (_) {
+      return null;
+    }
   }
 
   // The persistent pin dropped by the search box. One at a time — a new
@@ -8791,17 +8986,17 @@
     if (list) { list.replaceChildren(); list.style.display = 'none'; }
     activeSearchIndex = -1;
     currentSearchMatches = [];
-    if (nominatimDebounceTimer) {
-      window.clearTimeout(nominatimDebounceTimer);
-      nominatimDebounceTimer = null;
+    if (geocodeDebounceTimer) {
+      window.clearTimeout(geocodeDebounceTimer);
+      geocodeDebounceTimer = null;
     }
-    if (nominatimController) {
-      try { nominatimController.abort(); } catch (_) {}
+    if (geocodeController) {
+      try { geocodeController.abort(); } catch (_) {}
     }
-    // Zoom levels picked for context: OSM hits are typically street/address
-    // grain so we go to 13 (≈ city neighborhood); local-list hits are city
-    // centroids so 9 (≈ regional context, surrounding suburbs visible).
-    const targetZoom = place.source === 'osm' ? 13 : 9;
+    // Zoom levels picked for context: OSM hits carry a zoom for their result
+    // type (country … house); local-list hits are city centroids so 9
+    // (≈ regional context, surrounding suburbs visible).
+    const targetZoom = place.source === 'osm' && Number.isFinite(place.zoom) ? place.zoom : 9;
     try {
       map.flyTo({
         center: [place.lon, place.lat],
@@ -8854,12 +9049,12 @@
         list.style.display = 'none';
         activeSearchIndex = -1;
         currentSearchMatches = [];
-        if (nominatimDebounceTimer) {
-          window.clearTimeout(nominatimDebounceTimer);
-          nominatimDebounceTimer = null;
+        if (geocodeDebounceTimer) {
+          window.clearTimeout(geocodeDebounceTimer);
+          geocodeDebounceTimer = null;
         }
-        if (nominatimController) {
-          try { nominatimController.abort(); } catch (_) {}
+        if (geocodeController) {
+          try { geocodeController.abort(); } catch (_) {}
         }
         input.blur();
         return;
@@ -8887,8 +9082,8 @@
       try {
         const data = geojson || { type: 'FeatureCollection', features: [] };
         if (!mapReady) { pendingData = data; return; }
-        curveRefinement?.cancel();
         currentData = data;
+        curveRefinement?.retainUnchanged(currentData);
         if (runtimeOverlaySceneDeferred()) {
           deferRuntimeOverlayScene({ data: true });
           return;
@@ -9012,11 +9207,9 @@
       // style.load handler reads the updated IS_DARK value. Once settled, all
       // theme-owned paint/layout properties can be changed without setStyle(),
       // whose teardown races consecutive daemon theme/style messages.
-      if (
-        !map ||
-        !mapReady ||
-        (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())
-      ) return;
+      // Source/tile loading also makes isStyleLoaded() false; existing layers
+      // can still be repainted. The style.load handler owns boot/replacement.
+      if (!map || !mapReady) return;
       applyDevColors();
     },
     setDevSettings(settings) {
@@ -9030,18 +9223,19 @@
       ACTIVE_ASTROCART_STYLE = style;
       applyAstrocartChrome(style);
       this.setTheme(style.mode, style.chrome.pageBg);
-      if (
-        !map ||
-        !mapReady ||
-        typeof map.isStyleLoaded !== 'function' ||
-        !map.isStyleLoaded()
-      ) return true;
+      // Do not drop this paint while sources load: the hash is already stored,
+      // so a repeated payload will be deduplicated rather than replayed.
+      if (!map || !mapReady) return true;
       applyDisplayStyle(style);
       applyDevColors();
       return true;
     },
     setUiLabels(labels) {
       uiLabels = Object.assign({}, uiLabels, labels || {});
+      const defaultLocationButton = document.querySelector('#acg-menu button[data-action="set_default_loc"]');
+      if (defaultLocationButton && uiLabels.defaultLocation) {
+        defaultLocationButton.textContent = uiLabels.defaultLocation;
+      }
       applyBirthplaceMarkerLabel();
       applyAsterismButtonLabel();
       applyAcgLabelPresentation();

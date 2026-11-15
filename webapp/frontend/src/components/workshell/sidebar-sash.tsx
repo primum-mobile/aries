@@ -10,11 +10,8 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
-  rightPanePriorityLayout,
   useFrameLayoutStore,
 } from "@/stores/frame-layout-store";
-import { useWorkspaceStore } from "@/stores/workspace-store";
-import { activeRightPaneModule } from "./right-pane-layout";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 
@@ -43,11 +40,7 @@ const RESIZING_ATTR = "data-sidebar-resizing";
  * of the pointermove loop, matching the React guidance to keep high-frequency
  * transient values out of render state.
  */
-export function SidebarSash({
-  activeAstrocartDocumentId,
-}: {
-  activeAstrocartDocumentId: string | null;
-}) {
+export function SidebarSash() {
   const t = useT();
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
   const width = useFrameLayoutStore((s) => s.sidebarWidth);
@@ -56,59 +49,6 @@ export function SidebarSash({
   const resetSidebarWidth = useFrameLayoutStore((s) => s.resetSidebarWidth);
   const setSidebarDragging = useFrameLayoutStore((s) => s.setSidebarDragging);
   const dragging = useFrameLayoutStore((s) => s.sidebarDragging);
-  const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
-  const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
-  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
-  const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
-  const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
-  const transitListPane = useWorkspaceStore((s) => s.transitListPane);
-  const directionsPane = useWorkspaceStore((s) => s.directionsPane);
-  const timeLordPane = useWorkspaceStore((s) => s.timeLordPane);
-  const zodiacalReleasingPane = useWorkspaceStore((s) => s.zodiacalReleasingPane);
-  const firdariaPane = useWorkspaceStore((s) => s.firdariaPane);
-  const decennialsPane = useWorkspaceStore((s) => s.decennialsPane);
-  const profectionsPane = useWorkspaceStore((s) => s.profectionsPane);
-  const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
-  const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
-  const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
-  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
-  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
-  const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
-  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
-  const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
-  const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
-  const activeRightPane = activeRightPaneModule({
-    inspectorOpen,
-    notesOpen,
-    styleEditorOpen,
-    transitSearchPane,
-    transitListPane,
-    directionsPane,
-    timeLordPane,
-    zodiacalReleasingPane,
-    firdariaPane,
-    decennialsPane,
-    profectionsPane,
-    eclipsesPane,
-    lunarMansionsPane,
-    synodicCyclesPane,
-    chartEventsPane,
-    aspectListPane,
-    ascensionalTransitsPane,
-    calendarPane,
-    astrocartControlsPane,
-    activeAstrocartDocumentId,
-    featureCatalogPane,
-  });
-  const visualWidth = activeRightPane
-    ? rightPanePriorityLayout(
-        sidebarOpen,
-        width,
-        rightPaneWidth,
-        activeRightPane,
-      ).sidebarWidth
-    : width;
-
   // The desktop navigator is pinned to the window's left edge; the splitter
   // width is therefore the pointer x-coordinate in viewport space.
   const leftEdgeRef = React.useRef(0);
@@ -223,42 +163,10 @@ export function SidebarSash({
       const handle = e.currentTarget;
       const pointerId = e.pointerId;
       const state = useFrameLayoutStore.getState();
-      const workspaceState = useWorkspaceStore.getState();
-      const currentStoredWidth = state.sidebarWidth;
-      const currentRightPane = activeRightPaneModule({
-        inspectorOpen: state.inspectorOpen,
-        notesOpen: state.notesPaneOpen,
-        styleEditorOpen: state.styleEditorOpen,
-        transitSearchPane: workspaceState.transitSearchPane,
-        transitListPane: workspaceState.transitListPane,
-        directionsPane: workspaceState.directionsPane,
-        timeLordPane: workspaceState.timeLordPane,
-        zodiacalReleasingPane: workspaceState.zodiacalReleasingPane,
-        firdariaPane: workspaceState.firdariaPane,
-        decennialsPane: workspaceState.decennialsPane,
-        profectionsPane: workspaceState.profectionsPane,
-        eclipsesPane: workspaceState.eclipsesPane,
-        lunarMansionsPane: workspaceState.lunarMansionsPane,
-        synodicCyclesPane: workspaceState.synodicCyclesPane,
-        chartEventsPane: workspaceState.chartEventsPane,
-        aspectListPane: workspaceState.aspectListPane,
-        ascensionalTransitsPane: workspaceState.ascensionalTransitsPane,
-        calendarPane: workspaceState.calendarPane,
-        astrocartControlsPane: workspaceState.astrocartControlsPane,
-        activeAstrocartDocumentId,
-        featureCatalogPane: workspaceState.featureCatalogPane,
-      });
-      const currentVisualWidth = currentRightPane
-        ? rightPanePriorityLayout(
-            state.sidebarOpen,
-            currentStoredWidth,
-            state.rightPaneWidth,
-            currentRightPane,
-          ).sidebarWidth
-        : currentStoredWidth;
+      const currentWidth = state.sidebarWidth;
       leftEdgeRef.current = 0;
-      lastWidthRef.current = currentVisualWidth;
-      dragStartWidthRef.current = currentVisualWidth;
+      lastWidthRef.current = currentWidth;
+      dragStartWidthRef.current = currentWidth;
       // Resolve the CSS-var carriers for the pane and the unified titlebar.
       wrapperRef.current = document.querySelector<HTMLElement>(
         '[data-slot="sidebar-wrapper"]',
@@ -295,7 +203,6 @@ export function SidebarSash({
       }
     },
     [
-      activeAstrocartDocumentId,
       endDrag,
       sidebarOpen,
       setSidebarDragging,
@@ -368,12 +275,12 @@ export function SidebarSash({
       aria-label={t("a11y.resizeSidebar")}
       aria-valuemin={SIDEBAR_MIN_WIDTH}
       aria-valuemax={SIDEBAR_MAX_WIDTH}
-      aria-valuenow={visualWidth}
+      aria-valuenow={width}
       onPointerDown={onPointerDown}
       onDoubleClick={resetSidebarWidth}
       // 12px fixed hit zone straddling the structural sidebar split. No grip.
       className={cn(
-        "fixed inset-y-0 left-[var(--sidebar-width)] z-50 w-3 -translate-x-1/2 cursor-col-resize select-none transition-[left] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
+        "fixed inset-y-0 left-[var(--sidebar-width)] z-50 w-3 -translate-x-1/2 cursor-col-resize touch-none select-none pointer-coarse:w-8 transition-[left] duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)]",
         "after:absolute after:inset-y-0 after:left-1/2 after:w-[var(--aries-sash-rule-size)] after:-translate-x-1/2 after:bg-[color:var(--aries-sash-idle-color)] after:content-['']",
         "hover:after:bg-[color:var(--aries-sash-hover-color)]",
         dragging && "transition-none",

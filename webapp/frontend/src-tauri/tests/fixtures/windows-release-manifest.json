@@ -1,0 +1,28 @@
+{
+  "channels": {
+    "beta": {
+      "version": "9.8.7-beta.3",
+      "notes": "Fixture notes.",
+      "pub_date": "2026-11-04T00:00:00+00:00",
+      "source": {
+        "repository": "https://github.com/primum-mobile/aries",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "platforms": {
+        "darwin-aarch64": {
+          "url": "https://downloads.example.test/licensed/Aries-9.8.7-beta.3-darwin-aarch64-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.app.tar.gz",
+          "signature": "rehearsal-placeholder-signature"
+        },
+        "windows-x86_64": {
+          "url": "https://downloads.example.test/licensed/Aries-9.8.7-beta.3-windows-x86_64-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-setup.exe",
+          "signature": "fixture-windows-signature"
+        },
+        "windows-x86_64-nsis": {
+          "url": "https://downloads.example.test/licensed/Aries-9.8.7-beta.3-windows-x86_64-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-setup.exe",
+          "signature": "fixture-windows-signature"
+        }
+      },
+      "private_source": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+# Aries browser (WASM) build — served from aries.sh/webapp.
+Options -Indexes
+AddType application/wasm .wasm
+AddType text/javascript .mjs
+
+# build_web.py writes Brotli (.br) and gzip (.gz) copies next to every file
+# they shrink. foo.js.br keeps foo.js's type and is sent with
+# Content-Encoding: br; the browser decodes it before the page, the service
+# worker cache or Pyodide's integrity check sees it.
+<IfModule mod_mime.c>
+  RemoveType .br .gz
+  AddEncoding br .br
+  AddEncoding gzip .gz
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Pages: the Next export writes /webapp/<page> as <page>.html next to a
+  # <page>/ folder of prefetch data, so /webapp/<page> and /webapp/<page>/
+  # both serve <page>.html. A folder with its own index.html (and /webapp
+  # itself) keeps mod_dir's usual slash redirect and index.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME}/index.html !-f
+  RewriteCond %{REQUEST_FILENAME} ^(.+?)/?$
+  RewriteCond %1.html -f
+  RewriteRule ^(.+?)/?$ $1.html [L]
+  # mod_dir would otherwise answer /webapp/<page> with a redirect to the
+  # <page>/ folder, overriding the rewrite above.
+  <IfModule mod_dir.c>
+    <If "-d %{REQUEST_FILENAME} && -f '%{REQUEST_FILENAME}.html' && !-f '%{REQUEST_FILENAME}/index.html'">
+      DirectorySlash Off
+    </If>
+  </IfModule>
+
+  # Already encoded: never compress it again on the fly.
+  RewriteRule \.(br|gz)$ - [E=no-gzip:1,E=no-brotli:1]
+  # Also covers /webapp/ itself: mod_dir looks up index.html through these rules.
+  RewriteCond %{HTTP:Accept-Encoding} \bbr\b
+  RewriteCond %{REQUEST_FILENAME}.br -f
+  RewriteRule ^(.+)$ $1.br [L]
+  RewriteCond %{HTTP:Accept-Encoding} \bgzip\b
+  RewriteCond %{REQUEST_FILENAME}.gz -f
+  RewriteRule ^(.+)$ $1.gz [L]
+</IfModule>
+
+# Fallback where the host compresses on the fly: files without a precompressed
+# copy (and every file if mod_rewrite is off) go out gzip-encoded.
+<IfModule mod_deflate.c>
+  <IfModule mod_filter.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json application/wasm text/plain image/svg+xml font/ttf font/otf
+  </IfModule>
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Pyodide compiles WebAssembly, so this subtree needs 'wasm-unsafe-eval' and
+  # same-origin workers; the daemon map renders inside a same-origin iframe.
+  Header always set Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data: blob:; connect-src 'self' blob: data: https:; frame-src 'self' blob:; upgrade-insecure-requests"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Robots-Tag "noindex, nofollow"
+  Header always set Service-Worker-Allowed "/webapp/"
+  # Caches must keep the encoded and the plain answer apart.
+  <FilesMatch "\.(wasm|m?js|data|json|css|html|txt|svg|xml|zip|whl|ttf|otf|map|webmanifest)(\.br|\.gz)?$">
+    Header merge Vary "Accept-Encoding"
+  </FilesMatch>
+  <FilesMatch "^(sw\.js|boot\.js|engine-worker\.js|index\.html)(\.br|\.gz)?$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  # Versioned files: the runtime directory carries the Pyodide version, wheels
+  # their package version, the engine bundle its content hash and Next chunks
+  # theirs, so browsers may keep them for good (sw.js also keeps them).
+  <If "%{REQUEST_URI} =~ m#/wasm/(pyodide-[^/]+/|wheels/|aries-engine\.[0-9a-f]+\.zip(\.br|\.gz)?$)|/_next/static/#">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>

@@ -93,6 +93,7 @@ export function ChartEventsSubmenu({ documentId, count, onAction }: {
         {view.error ? <ContextMenuItem disabled>{t(view.error)}</ContextMenuItem> : null}
         {!view.rows.length ? <ContextMenuItem disabled>{t(view.loading ? "chartEvents.loading" : "chartEvents.none")}</ContextMenuItem> : null}
         <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onAction("workspace.show_events", { documentId, search: true })}>{t("chartEvents.search")}</ContextMenuItem>
         <ContextMenuItem onClick={() => onAction("workspace.show_events", { documentId })}>{t("chartEvents.manage")}</ContextMenuItem>
       </ContextMenuSubContent>
     </ContextMenuSub>

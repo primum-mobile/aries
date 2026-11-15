@@ -27,8 +27,6 @@ ids (``new_chart``, ``solar_return`` …) are translated to those dispatch ids v
 ``_DISPATCH_ID``. Actions with no dispatch id (not-yet-built surfaces) are
 emitted with ``enabled: False`` so the skin can grey/omit them without
 re-deriving the catalog.
-
-Spec parity: doc/migration/surfaces (workspace-daemon).
 """
 from __future__ import annotations
 
@@ -213,15 +211,35 @@ def _section_items(section) -> list:
     return ordered_items
 
 
-def _group_payload(section, collapsed_sections: set[str]) -> dict:
-    actions = [_action_payload(item) for item in _section_items(section)]
+def _hidden_actions() -> dict[str, set[str]]:
+    stored = getattr(chart_snapshot_service.options, "workspace_sidebar_hidden_actions", {}) or {}
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        str(section): {str(action_id) for action_id in ids}
+        for section, ids in stored.items()
+        if isinstance(ids, (list, tuple))
+    }
+
+
+def _group_payload(section, collapsed_sections: set[str], hidden: dict[str, set[str]]) -> dict:
+    hidden_ids = hidden.get(section.title, set())
+    actions = []
+    for item in _section_items(section):
+        payload = _action_payload(item)
+        if getattr(item, "action_id", "") in hidden_ids:
+            payload["hidden"] = True
+        actions.append(payload)
     if section.title == "Research":
-        actions.append({
+        search = {
             "id": _DISPATCH_ID["search_module"],
             "label": mtexts.txts.get("Search", "Search"),
             "enabled": True,
             "shortcut": shortcut_registry.workspace_shortcut("search_module"),
-        })
+        }
+        if "search_module" in hidden_ids:
+            search["hidden"] = True
+        actions.append(search)
     return {
         # Group id from the title (the wx sidebar has no separate id).
         "id": section.title.strip().lower().replace(" ", "-"),
@@ -295,6 +313,62 @@ def set_action_order(section_label: str, action_id: str, before_id: str | None) 
     if callable(save):
         save()
     return build_manifest()
+
+
+def _section_action_ids(section) -> list[str]:
+    ids = [getattr(item, "action_id", "") for item in _section_items(section)]
+    if section.title == "Research":
+        ids.append("search_module")
+    return ids
+
+
+def set_actions_hidden(section_label: str, action_ids: list[str], hidden: bool) -> dict:
+    """Hide or show sidebar launchers in one section.
+
+    Display-only: hidden launchers stay in the manifest flagged ``hidden`` so
+    the Edit Sidebar mode can list them in place, and their shortcuts and menu
+    commands keep working. Unknown ids are ignored.
+    """
+    section = next(
+        (s for s in workspace_model.DEFAULT_SECTIONS if s.title == section_label),
+        None,
+    )
+    if section is None:
+        return build_manifest()
+    known = _section_action_ids(section)
+    targets = {_canonical_action_id(action_id) for action_id in action_ids} & set(known)
+    if not targets:
+        return build_manifest()
+    current = _hidden_actions().get(section_label, set())
+    current = current | targets if hidden else current - targets
+    opts = chart_snapshot_service.options
+    stored = {
+        title: sorted(ids)
+        for title, ids in _hidden_actions().items()
+        if ids and title != section_label
+    }
+    if current:
+        # Keep the section's sidebar order so the stored list reads naturally.
+        stored[section_label] = [aid for aid in known if aid in current]
+    opts.workspace_sidebar_hidden_actions = stored
+    _save_sidebar_options(opts)
+    return build_manifest()
+
+
+def reset_hidden_actions() -> dict:
+    """Show every sidebar launcher again (the shipped default)."""
+    opts = chart_snapshot_service.options
+    opts.workspace_sidebar_hidden_actions = {}
+    _save_sidebar_options(opts)
+    return build_manifest()
+
+
+def _save_sidebar_options(opts) -> None:
+    # Any save method persists settings.json, which carries the def_-only
+    # hidden-launcher setting together with the sidebar order.
+    save = getattr(opts, "saveWorkspaceSidebarOrder", None)
+    if callable(save):
+        save()
 
 
 def _native_accelerator_display(accelerator: str) -> str:
@@ -494,7 +568,7 @@ def _shortcut_entries(native_menu: dict | None = None) -> list[dict]:
         "⌥ + ← / →": "help.shortcut.finestStep",
         "↑ / ↓": "help.shortcut.weekOrListStep",
         "⇧ + ↑ / ↓": "help.shortcut.lunarQuarter",
-        "Tab": "help.shortcut.toggleComparison",
+        "Tab": "help.shortcut.toggleComparisonOrDashboard",
     }
     for group in shortcut_registry.SHORTCUT_HELP_GROUPS:
         raw_title = group.get("title", "")
@@ -555,6 +629,8 @@ def _overlay_localized() -> dict:
         "step to next lunar phase quarter": mtexts.txts.get("ShortcutStepLunarQuarter", "step to next lunar phase quarter"),
         "compare": mtexts.txts.get("ShortcutCompare", "compare"),
         "derived charts only": mtexts.txts.get("ShortcutDerivedChartsOnly", "derived charts only"),
+        "compare or dashboard": mtexts.txts.get("ShortcutCompareOrDashboard", "compare or dashboard"),
+        "dashboard on single charts": mtexts.txts.get("ShortcutDashboardOnSingleCharts", "dashboard on single charts"),
         "close panel / overlay": mtexts.txts.get("ShortcutClosePanel", "close panel / overlay"),
         "open spotlight": mtexts.txts.get("ShortcutOpenSpotlight", "open spotlight"),
         "double-tap shift": mtexts.txts.get("ShortcutDoubleTapShift", "double-tap shift"),
@@ -568,6 +644,16 @@ def _canonical_labels() -> dict:
         for item in section.items:
             labels[item.action_id] = item.label
     return labels
+
+
+# Pack manifests declare a stable era slug; the pack name itself is the pack
+# author's title and stays verbatim.
+_CORPUS_ERA_KEYS = {
+    "hellenistic": "CorpusEraHellenistic",
+    "medieval": "CorpusEraMedieval",
+    "renaissance": "CorpusEraRenaissance",
+    "early-modern": "CorpusEraEarlyModern",
+}
 
 
 def _corpus_packs_submenu() -> dict | None:
@@ -606,7 +692,12 @@ def _corpus_packs_submenu() -> dict | None:
         if not pack_id:
             continue
         era = pack.get("era") or ""
-        label = pack["name"] if not era else f"{pack['name']} ({era})"
+        era_key = _CORPUS_ERA_KEYS.get(era)
+        era_label = str(mtexts.txts.get(era_key, era)) if era_key else era
+        label = (
+            pack["name"] if not era
+            else str(mtexts.txts.get("CorpusPackEraFmt", "%s (%s)")) % (pack["name"], era_label)
+        )
         children.append({
             "type": "check",
             "id": f"corpus.pack:{pack_id}",
@@ -627,7 +718,14 @@ def _corpus_packs_submenu() -> dict | None:
     }
 
 
-def _quick_check(id_: str, label: str, *, label_key: str | None = None) -> dict:
+def _quick_check(
+    id_: str,
+    label: str,
+    *,
+    label_key: str | None = None,
+    glyph: str | None = None,
+    glyph_font: str = "morinus",
+) -> dict:
     node = {
         "type": "check",
         "id": id_,
@@ -639,7 +737,37 @@ def _quick_check(id_: str, label: str, *, label_key: str | None = None) -> dict:
     }
     if label_key:
         node["labelKey"] = label_key
+    if glyph:
+        node["glyph"] = glyph
+        node["glyphFont"] = glyph_font
     return node
+
+
+def _layer_glyphs() -> dict[str, str]:
+    """Morinus glyph chars for the Chart layers body items, matching the
+    Settings dialog rows (Uranus/Pluto follow the selected glyph variants)."""
+    try:
+        from webapp.daemon.options_service import options_service
+
+        opts = chart_snapshot_service.options
+        selected = {seid: options_service._selected_planet_glyph(opts, seid) for seid in (7, 8, 9)}
+    except Exception:
+        selected = {7: "H", 8: "I", 9: "J"}
+    return {
+        "uranus": selected[7], "neptune": selected[8], "pluto": selected[9],
+        "chiron": "}", "apogee": "\u26b8", "vertex": "!", "nodes": "K", "fortuna": "4",
+    }
+
+
+def _aspect_glyphs(count: int) -> list[tuple[str, str]]:
+    """(glyph, font role) per aspect index, the same Morinus chars the wheel
+    and Aspect List draw (common.aspect_glyph)."""
+    try:
+        import common
+
+        return [common.common.aspect_glyph(i) for i in range(count)]
+    except Exception:
+        return [("", "morinus")] * count
 
 
 def _quick_radio(prefix: str, choices: list[tuple[str, str]]) -> list[dict]:
@@ -652,7 +780,10 @@ def _quick_submenu(
     children: list[dict],
     *,
     label_key: str | None = None,
+    settings_tab: str | None = None,
 ) -> dict:
+    if settings_tab is not None:
+        children = [*children, *_settings_link(settings_tab, id_)]
     node = {
         "type": "submenu",
         "id": id_,
@@ -665,6 +796,59 @@ def _quick_submenu(
     if label_key:
         node["labelKey"] = label_key
     return node
+
+
+_SETTINGS_TAB_IDS = frozenset(tab["id"] for tab in settings_registry.SETTINGS_TABS)
+
+
+def _settings_link(tab_id: str, owner_id: str) -> list[dict]:
+    """Close a quick submenu with the Settings pane that holds its full controls.
+
+    Several submenus share one pane, and native labels are pushed by item id,
+    so the owning submenu id keeps each link's id unique.
+    """
+    if tab_id not in _SETTINGS_TAB_IDS:
+        raise ValueError(f"unknown settings tab {tab_id!r}")
+    return [
+        {"type": "separator"},
+        {
+            "type": "item",
+            "id": f"settings.more:{tab_id}/{owner_id}",
+            "label": "More settings…",
+            "labelKey": "quickopt.moreSettings",
+            "enabled": True,
+            "status": "live",
+        },
+    ]
+
+
+def _settings_sections_submenu() -> dict:
+    """Every Settings pane in registry order, for the menu bar only.
+
+    The menu bar is the complete, Help-searchable catalog; the titlebar drawer
+    stays a quick surface and omits this node (``menuBarOnly``).
+    """
+    return {
+        "type": "submenu",
+        "id": "menu.options.settings-sections",
+        "label": "Settings sections",
+        "labelKey": "quickopt.settingsSections",
+        "enabled": True,
+        "status": "live",
+        "menuBarOnly": True,
+        "source": "settings_registry.SETTINGS_TABS",
+        "children": [
+            {
+                "type": "item",
+                "id": f"settings.tab:{tab['id']}",
+                "label": tab["label"],
+                "labelKey": tab["labelKey"],
+                "enabled": True,
+                "status": "live",
+            }
+            for tab in settings_registry.SETTINGS_TABS
+        ],
+    }
 
 
 def _mirrored_options_submenus() -> list[dict]:
@@ -689,6 +873,7 @@ def _mirrored_options_submenus() -> list[dict]:
             section["label"],
             children,
             label_key=section["labelKey"],
+            settings_tab=section["tabId"],
         ))
     return sections
 
@@ -747,6 +932,7 @@ def _theme_presets_submenu(theme_presets: list[dict] | None = None) -> dict:
         "Theme presets",
         children,
         label_key="quickopt.themePresets",
+        settings_tab="colors",
     )
 
 
@@ -777,6 +963,7 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
     ayanamsha_choices = [
         (str(i), str(label)) for i, label in mtexts.ayanamsha_display_entries()
     ]
+    layer_glyphs = _layer_glyphs()
     return [
         _quick_submenu("menu.options.quick.wheel-layout", "Wheel layout", [
             *_quick_radio("quick.options.layout", [
@@ -787,7 +974,9 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ("4", "Cusp Wheel"),
             ]),
             *[_quick_check(f"quick.options.wheel-preset:{style['id']}", str(style['name']))
-              for style in (wheel_styles or []) if str(style.get('id', '')).startswith('user.')],
+              for style in (wheel_styles or [])
+              if str(style.get('id', '')).startswith('user.')
+              or (style.get('factory') and style.get('id') != f"factory.{style.get('layout')}")],
             {"type": "separator"},
             _quick_submenu(
                 "menu.options.quick.anglo-dense-label-layout",
@@ -811,63 +1000,57 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ],
                 label_key="optmenu.angloDenseLabelLayout",
             ),
-        ]),
+        ], settings_tab="appearance"),
         {"type": "separator"},
-        _quick_submenu("menu.options.quick.node", "Node calculation", _quick_radio(
-            "quick.options.node",
-            [
-                ("1", str(mtexts.menutxts['OMNMean']).split('\t')[0]),
-                ("0", str(mtexts.menutxts['OMNTrue']).split('\t')[0]),
-            ],
-        )),
         _quick_submenu("menu.options.quick.ayanamsha", "Ayanamsha", _quick_radio(
             "quick.options.ayanamsha", ayanamsha_choices,
-        )),
+        ), settings_tab="appearance"),
         _quick_submenu("menu.options.quick.houses", "House system", _quick_radio(
             "quick.options.house",
             [(code, house_labels.get(code, code)) for code in houses.Houses.hsystems],
-        )),
+        ), settings_tab="appearance"),
         {"type": "separator"},
         _quick_submenu("menu.options.quick.layers", "Chart layers", [
             _quick_check("quick.options.display:houses", "Houses"),
             _quick_check("quick.options.display:housesystem", "House system label"),
-            _quick_check("quick.options.display:showchiron", "Chiron"),
-            _quick_check("quick.options.display:showvertex", "Vertex"),
-            _quick_check("quick.options.display:shownodes", "Nodes"),
-            _quick_check("quick.options.display:showlof", "Fortuna"),
-            _quick_check("quick.options.display:showprenatalsyzygy", "Syzygy", label_key="optmenu.prenatalSyzygy"),
+            _quick_check("quick.options.terms", "Terms"),
+            _quick_check("quick.options.display:showdecans", "Decans"),
+            {"type": "separator"},
+            _quick_check("quick.options.transcendental:0", "Uranus", glyph=layer_glyphs["uranus"]),
+            _quick_check("quick.options.transcendental:1", "Neptune", glyph=layer_glyphs["neptune"]),
+            _quick_check("quick.options.transcendental:2", "Pluto", glyph=layer_glyphs["pluto"]),
+            _quick_check("quick.options.display:showchiron", "Chiron", glyph=layer_glyphs["chiron"]),
+            _quick_check("quick.options.display:showapogee", mtexts.txts["Apogee"], label_key="astrocart.point.apogee", glyph=layer_glyphs["apogee"]),
+            _quick_check("quick.options.display:showvertex", "Vertex", glyph=layer_glyphs["vertex"]),
+            _quick_check("quick.options.display:shownodes", "Nodes", glyph=layer_glyphs["nodes"]),
+            _quick_check("quick.options.display:showlof", "Fortuna", glyph=layer_glyphs["fortuna"]),
+            _quick_check("quick.options.display:showprenatalsyzygy", "Syzygy", label_key="optmenu.prenatalSyzygy", glyph="Sy", glyph_font="text"),
             _quick_check(
                 "quick.options.display:showprenataleclipse",
                 str(mtexts.txts.get("Eclipses", "Eclipses")),
                 label_key="settings.prenatalEclipseMarker",
+                glyph="Ec",
+                glyph_font="text",
             ),
-            _quick_check("quick.options.display:positions", "Chart position labels", label_key="settings.chartPositionLabels"),
-            _quick_check("quick.options.terms", "Terms"),
-            _quick_check("quick.options.display:showdecans", "Decans"),
-            _quick_check("quick.options.display:topocentric", "Moon parallax correction"),
-            _quick_check("quick.options.display:morin_antiscia", "Morin antiscia"),
             {"type": "separator"},
-            _quick_check("quick.options.transcendental:0", "Uranus"),
-            _quick_check("quick.options.transcendental:1", "Neptune"),
-            _quick_check("quick.options.transcendental:2", "Pluto"),
-        ]),
+            _quick_check("quick.options.display:positions", "Chart position labels", label_key="settings.chartPositionLabels"),
+            _quick_check("quick.options.display:topocentric", "Topocentric parallax correction"),
+            _quick_check("quick.options.display:morin_antiscia", "Morin antiscia"),
+        ], settings_tab="appearance"),
         _quick_submenu("menu.options.quick.aspects", "Aspects", [
             _quick_check("quick.options.display:aspects", "Aspects"),
+            {"type": "separator"},
             _quick_check("quick.options.display:symbols", "With symbols"),
             _quick_check("quick.options.traditional-aspects", "Traditional only"),
             _quick_check("quick.options.display:showaspectstovertex", "Aspects to Vertex"),
             _quick_check("quick.options.display:aspectstonodes", "Aspects to Nodes"),
             _quick_check("quick.options.display:showaspectstolof", "Aspects to Fortuna"),
-            _quick_check("quick.options.display:showlofouterring", "Outer-ring Fortuna label"),
             {"type": "separator"},
-            *[_quick_check(f"quick.options.aspect:{i}", label) for i, label in enumerate(aspect_labels)],
-            {"type": "separator"},
-            _quick_check("quick.options.exclusive-aspects", "Exclusive on click"),
-            _quick_check("quick.options.exclusive-minor", "Exclusive click: show minor"),
-            _quick_check("quick.options.exclusive-traditional", "Exclusive click: traditional"),
-            _quick_check("quick.options.display:aspect_thickness_mode", "Orb as line thickness"),
-            _quick_check("quick.options.display:aspect_flag_show_parties", "Planets in hover flag"),
-        ]),
+            *[
+                _quick_check(f"quick.options.aspect:{i}", label, glyph=glyph, glyph_font=font)
+                for i, (label, (glyph, font)) in enumerate(zip(aspect_labels, _aspect_glyphs(len(aspect_labels))))
+            ],
+        ], settings_tab="orbs"),
         _quick_submenu("menu.options.quick.outer", "Outer ring and signals", [
             *_quick_radio("quick.options.fixstars", [
                 ("0", str(mtexts.txts.get('None', 'None'))),
@@ -881,10 +1064,10 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ("5", str(mtexts.txts.get('ArabicParts', 'Arabic Parts'))),
             ]),
             {"type": "separator"},
-            _quick_check("quick.options.display:showfixstarsnodes", "Fixstars to Nodes"),
+            _quick_check("quick.options.display:showfixstarsnodes", "Nodes", label_key="settings.nodes"),
             _quick_check("quick.options.display:showfixstarshcs", "Fixed stars / asteroids to intermediate cusps",
                          label_key="optmenu.fixstarsToIntermediateHcs"),
-            _quick_check("quick.options.display:showfixstarslof", "Fixstars to Fortuna"),
+            _quick_check("quick.options.display:showfixstarslof", "Fortuna", label_key="settings.fortuna"),
             {"type": "separator"},
             _quick_submenu("menu.options.quick.phasis", "Phasis mode", _quick_radio("quick.options.phasis", [
                 ("0", "Astronomical"),
@@ -903,26 +1086,36 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ("1", "All"),
             ])),
             _quick_check("quick.options.display:showeclipseoverlay", "Eclipse overlay"),
-        ]),
+            _quick_submenu("menu.options.quick.void-course", mtexts.txts["VoidCourseTitle"], [
+                _quick_check("quick.options.display:showvoidcourse", mtexts.txts["DisplayGroup"], label_key="settings.display"),
+                {"type": "separator"},
+                *[
+                    _quick_check("quick.options.void-course:%d" % value, mtexts.txts[key], label_key=label_key)
+                    for value, key, label_key in (
+                        (0, "VoidCourseHellenistic", "voc.hellenistic"),
+                        (1, "VoidCourseLilly", "voc.lilly"),
+                        (2, "VoidCourseModern", "voc.modern"),
+                    )
+                ],
+            ], label_key="voc.title"),
+        ], settings_tab="appearance"),
         _quick_submenu("menu.options.quick.points", "Planets and points", [
-            _quick_submenu("menu.options.quick.fortuna", "Lot of Fortune", _quick_radio("quick.options.fortuna", [
-                ("0", str(mtexts.txts.get('LFMoonSun', 'Moon - Sun'))),
-                ("1", str(mtexts.txts.get('LFDSunMoon', 'Diurnal: Sun - Moon'))),
-                ("2", str(mtexts.txts.get('LFDMoonSun', 'Diurnal: Moon - Sun'))),
-            ])),
-            _quick_submenu("menu.options.quick.syzygy", "Syzygy", _quick_radio("quick.options.syzygy", [
-                ("0", str(mtexts.txts.get('SyzMoon', 'Moon'))),
-                ("1", str(mtexts.txts.get('SyzAbove', 'Above horizon'))),
-                ("2", str(mtexts.txts.get('SyzAboveNatal', 'Above natal horizon'))),
-            ])),
-        ]),
+            _quick_check("quick.options.true-node", str(mtexts.menutxts['OMNTrue']).split('\t')[0], label_key="quickopt.trueNode"),
+            _quick_check("quick.options.true-apogee", mtexts.txts["Apogee"], label_key="quickopt.trueApogee"),
+            _quick_check("quick.options.fortuna-reverse", mtexts.txts["FortuneReversedByNight"], label_key="quickopt.fortuneReverseByNight"),
+            _quick_submenu("menu.options.quick.syzygy", str(mtexts.txts['Syzygy']), _quick_radio("quick.options.syzygy", [
+                ("0", str(mtexts.txts['SyzMoon'])),
+                ("1", str(mtexts.txts['SyzAboveAtFullMoon'])),
+                ("2", str(mtexts.txts['SyzAboveBirthHorizon'])),
+            ]), label_key="settings.referencePoint"),
+        ], settings_tab="planets"),
         _quick_submenu("menu.options.quick.layout", "Header and layout", [
             _quick_check("quick.options.quickcharts:subcharts_open_compound_default", "Sub charts as biwheels"),
             _quick_check("quick.options.display:planetarydayhour", "Planetary hour"),
             _quick_check("quick.options.display:information", "Information"),
             _quick_check("quick.options.display:showseconds", "Seconds in header"),
             _quick_check("quick.options.display:show_help_chip", "Chart navigation bar"),
-        ]),
+        ], settings_tab="appearance"),
         _quick_submenu("menu.options.quick.progressions", "Progressions", [
             _quick_submenu("menu.options.quick.progressed-angle", "Progressed angles", _quick_radio(
                 "quick.options.progressed-angle",
@@ -954,31 +1147,35 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                     [(str(v), posfordate.progression_angle_method_label(v)) for v in sorted(posfordate.ANGLE_METHOD_NAMES)],
                 ), label_key="settings.calculatedAngles"),
             ], label_key="settings.tabSolarArcDirections"),
-        ], label_key="settings.tabProgressions"),
+        ], label_key="settings.tabProgressions", settings_tab="supplementary"),
         _quick_submenu("menu.options.quick.returns", "Returns", [
+            _quick_submenu("menu.options.quick.supplementary-location", mtexts.txts["Place"], [
+                _quick_check("quick.options.supplementary-location:radix", mtexts.txts["Radix"], label_key="settings.useNatal"),
+                _quick_check("quick.options.supplementary-location:default", mtexts.txts["DefaultLocation"], label_key="settings.tabDefaultLocation"),
+            ], label_key="settings.supplementaryLocation"),
             _quick_submenu("menu.options.quick.solar-year", "Solar return year", _quick_radio("quick.options.solar-year", [
                 ("0", "Current year"),
                 ("1", "Next year"),
             ])),
-            _quick_submenu("menu.options.quick.solar-location", "Solar return location", _quick_radio("quick.options.solar-location", [
-                ("0", "Use natal"),
-                ("1", "Ask"),
-            ])),
-            _quick_submenu("menu.options.quick.lunar-location", "Lunar return location", _quick_radio("quick.options.lunar-location", [
-                ("0", "Use natal"),
-                ("1", "Ask"),
-            ])),
-            _quick_submenu("menu.options.quick.planetary-location", "Planetary return location", _quick_radio("quick.options.planetary-location", [
-                ("0", "Use natal"),
-                ("1", "Ask"),
-            ])),
+            _quick_submenu("menu.options.quick.solar-location", "Solar return location", [
+                _quick_check("quick.options.solar-location:0", mtexts.txts["Radix"], label_key="settings.useSupplementaryLocation"),
+                *_quick_radio("quick.options.solar-location", [("1", "Ask")]),
+            ]),
+            _quick_submenu("menu.options.quick.lunar-location", "Lunar return location", [
+                _quick_check("quick.options.lunar-location:0", mtexts.txts["Radix"], label_key="settings.useSupplementaryLocation"),
+                *_quick_radio("quick.options.lunar-location", [("1", "Ask")]),
+            ]),
+            _quick_submenu("menu.options.quick.planetary-location", "Planetary return location", [
+                _quick_check("quick.options.planetary-location:0", mtexts.txts["Radix"], label_key="settings.useSupplementaryLocation"),
+                *_quick_radio("quick.options.planetary-location", [("1", "Ask")]),
+            ]),
             _quick_check("quick.options.return-mode:tithi_pravesha", "Tithi Pravesha (Annual Soli-Lunar Return)"),
             _quick_check("quick.options.return-mode:soli_lunar", "Lunar Phase (Embolismic)"),
             _quick_check("quick.options.return-mode:jonas_arc", "Jonas Arc"),
             _quick_check("quick.options.revolutions:revsidereal_marr_solar", "Marr sidereal solar returns"),
             _quick_check("quick.options.revolutions:revsidereal_marr_lunar", "Marr sidereal lunar returns"),
             _quick_check("quick.options.revolutions:revsidereal_marr_planet", "Marr sidereal planetary returns"),
-        ], label_key="settings.tabRevolutions"),
+        ], label_key="settings.tabRevolutions", settings_tab="revolutions"),
         _quick_submenu("menu.options.quick.timelords", "Time lords and alerts", [
             _quick_check("quick.options.profections:wholeSign", "Whole-sign profections"),
             _quick_check("quick.options.profections:zodiacal", "Zodiacal profections"),
@@ -988,16 +1185,8 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
                 ("1", str(mtexts.txts.get('Bonatus', 'Bonatus'))),
                 ("0", str(mtexts.txts.get('AlBiruni', 'Al-Biruni'))),
             ])),
-        ]),
+        ], settings_tab="timelords"),
         *_mirrored_options_submenus(),
-        {
-            "type": "item",
-            "id": "menu.options.default-location",
-            "label": "Default Location",
-            "labelKey": "settings.tabDefaultLocation",
-            "enabled": True,
-            "status": "live",
-        },
         _quick_submenu("menu.options.quick.other", "Other options", [
             _quick_submenu("menu.options.quick.mansions-zodiac", "Lunar Mansions zodiac", _quick_radio("quick.options.mansions", [
                 ("auto", "Follow chart zodiac"),
@@ -1031,7 +1220,28 @@ def _options_menu_children(theme_presets: list[dict] | None = None, wheel_styles
             "enabled": True,
             "status": "live",
         },
+        {"type": "separator"},
         _theme_presets_submenu(theme_presets),
+        {
+            "type": "item",
+            "id": "open-style-lab",
+            "label": "Chart Style Lab",
+            "labelKey": "styleLab.title",
+            "enabled": True,
+            "status": "live",
+        },
+        # Default Location closes the tree in its own group so it reads as the
+        # app-wide setup entry; the titlebar drawer follows it with Full settings.
+        {"type": "separator"},
+        {
+            "type": "item",
+            "id": "menu.options.default-location",
+            "label": "Default Location",
+            "labelKey": "settings.tabDefaultLocation",
+            "enabled": True,
+            "status": "live",
+        },
+        _settings_sections_submenu(),
     ]
 
 
@@ -1101,7 +1311,7 @@ _NATIVE_MENU_LABEL_KEYS = {
     "menu.options.relationship-charts": "RelationshipCharts",
     "menu.ayanamsha": "OMAyanamsha", "menu.options.languages": "OMLanguages",
     # Help
-    "menu.help.help": "HEMHelp", "menu.help.about": "HEMAbout",
+    "menu.help.about": "HEMAbout",
 }
 
 
@@ -1120,8 +1330,12 @@ _NATIVE_MENU_FRONTEND_KEYS = {
     "menu.import.charts": "nativeMenu.importCharts",
     "menu.table.asteroids": "chartmenu.asteroids",
     "menu.table.surveil-studies": "chartmenu.surveilStudies",
+    "menu.help.help": "help.title",
     "menu.help.license": "license.menuItem",
+    "menu.help.report-bug": "bugReport.title",
     "menu.help.features": "featureCatalog.menuItem",
+    "menu.help.find-setting": "settings.findMenu",
+    "menu.help.walkthrough": "urania.menu",
     "menu.alternative-charts": "nativeMenu.alternativeCharts",
     "planetary-return:2": "nativeMenu.mercuryReturn",
     "planetary-return:3": "nativeMenu.venusReturn",
@@ -1146,6 +1360,8 @@ _NATIVE_MENU_FRONTEND_KEYS = {
     "horary:Absent Person": "nativeMenu.horaryAbsentPerson",
     "horary:Battle / War": "nativeMenu.horaryBattleWar",
     "horary:Short Journey": "nativeMenu.horaryShortJourney",
+    "menu.view": "nativeMenu.view",
+    "menu.view.edit-sidebar": "sidebar.editSidebar",
     "menu.options.display": "nativeMenu.displayCharts",
     "cycle-secondary-view": "nativeMenu.cycleSecondaryView",
     "toggle-houses": "nativeMenu.toggleHouses",
@@ -1199,7 +1415,7 @@ def _native_menu_manifest() -> dict:
 
     Legacy-backed labels are localized against the active mtexts language at
     startup. Modern static labels and the generated Options submenu carry stable
-    frontend labelKeys; both the native live-relabel path and BrowserMenuBar
+    frontend labelKeys; both the native live-relabel path and BrowserAppMenu
     resolve those keys from the shared React catalogs.
     """
     # Resolve the active language FIRST — accessing options triggers
@@ -1211,7 +1427,14 @@ def _native_menu_manifest() -> dict:
         active_langid = 0
     with NATIVE_MENU_MANIFEST_PATH.open("r", encoding="utf-8") as handle:
         manifest = json.load(handle)
+    has_bug_report = sys.platform in ("darwin", "win32") and bool(
+        os.environ.get("ARIES_DAEMON_TOKEN", "").strip()
+    )
     for menu_node in manifest.get("menus", []):
+        if menu_node.get("id") == "menu.help" and not has_bug_report:
+            menu_node["children"] = [
+                item for item in menu_node["children"] if item.get("id") != "menu.help.report-bug"
+            ]
         _attach_native_menu_frontend_keys(menu_node)
     options_menu = next(
         (m for m in manifest.get("menus", []) if m.get("id") == "menu.options"),
@@ -1269,10 +1492,11 @@ def build_manifest() -> dict:
     orthogonal — do not conflate them.
     """
     collapsed_sections = _collapsed_sections()
+    hidden = _hidden_actions()
     native_menu = _native_menu_manifest()
     return {
         "groups": [
-            _group_payload(section, collapsed_sections)
+            _group_payload(section, collapsed_sections, hidden)
             for section in workspace_model.DEFAULT_SECTIONS
         ],
         "topActions": [_action_payload(a) for a in workspace_model.DEFAULT_TOP_ACTIONS],
@@ -1298,6 +1522,12 @@ class ManifestService:
         before_id: str | None,
     ) -> dict:
         return set_action_order(section_label, action_id, before_id)
+
+    def set_actions_hidden(self, section_label: str, action_ids: list[str], hidden: bool) -> dict:
+        return set_actions_hidden(section_label, action_ids, hidden)
+
+    def reset_hidden_actions(self) -> dict:
+        return reset_hidden_actions()
 
 
 manifest_service = ManifestService()

@@ -9,10 +9,10 @@ Zone B is the inspector body zone below the hover/region card. Two pieces are
 engine-computed and daemon-portable:
 
 - **Significations** — passive source-text definitions contributed by an active
-  inspector-content pack. Valens maps planet, sign, and house targets to the
+  inspector-content pack. Valens maps planet, sign, house, and bounds targets to the
   existing parsed corpus without entering an interpretation discipline.
-  No passage / citation / body text is fabricated here: every field is passed
-  through exactly as ``CorpusDB`` yields it from ``corpus/parsed/valens.json``.
+  Original text and citations pass through from CorpusDB. Display paragraphs
+  omit a bounds passage's leading degree labels, already shown in its header.
 
 - **Pack alerts** — the active-lens rule-engine verdicts, produced by
   ``elections_rules.evaluate`` / ``horary_rules.evaluate`` exactly as the wx
@@ -20,12 +20,12 @@ engine-computed and daemon-portable:
   (discipline / theme / context) is taken as request params — the daemon does
   NOT reconstruct MFrame lens-management state.
 
-Spec: doc/migration/surfaces/inspector-zone-b.md
 Sits beside the committed Zone-A ``inspector_service``; reuses its chart
 identity + region-building so the region dict is identical to the hover path.
 """
 from __future__ import annotations
 
+import re
 import sys
 import threading
 from pathlib import Path
@@ -36,6 +36,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from webapp.daemon.inspector_service import inspector_service
+from webapp.daemon.fixed_star_inspector import constellation_code
 from webapp.daemon import corpus_text
 
 import elections_rules
@@ -45,18 +46,48 @@ import horary_rules
 import rule_engine
 
 from webapp.daemon.corpus_packs_service import corpus_packs_service
+from webapp.daemon.display_palette import effective_display_options, sign_color_role
+import common
 
 # Lens-resolution constants, mirrored from the wx oracle (morin.py:8994-8999).
 _DISCIPLINE_ELECTIONS = "elections"
 _DISCIPLINE_HORARY = "horary"
 
 
-def _section_to_passage(section: Optional[dict]) -> Optional[dict]:
+def _sign_glyph_colors(display_options, sign_index: int) -> Optional[dict]:
+    """Both canonical display modes let retained source cards repaint locally."""
+    if display_options is None or getattr(display_options, "clrsigns", None) is None:
+        return None
+    bw = bool(getattr(display_options, "bw", False))
+    element = common.get_sign_color(display_options, sign_index, force_element=True)
+    return {
+        "plain": {
+            "colour": (0, 0, 0) if bw else display_options.clrsigns,
+            "colourRole": None if bw else "--morinus-signs",
+        },
+        "element": {
+            "colour": element,
+            "colourRole": sign_color_role(
+                display_options, sign_index, force_element=True, resolved_color=element,
+            ),
+        },
+    }
+
+
+def _color_passage_runs(runs: list, display_options) -> list:
+    return [
+        {**run, "signColors": _sign_glyph_colors(display_options, run["signIndex"])}
+        if "signIndex" in run else run
+        for run in runs
+    ]
+
+
+def _section_to_passage(section: Optional[dict], *, display_options=None, omit_bound_degree_label: bool = False, omit_annotations: bool = False) -> Optional[dict]:
     """Flatten a CorpusDB section dict into a JSON passage.
 
-    Pass-through ONLY — citation is the section's book/chapter plus
-    Kroll/Pingree page anchors; body is section['text'] verbatim.
-    Never synthesise or alter prose (memory feedback_corpus_no_hallucination.md).
+    Original text and citation remain verbatim. Display-only bounds excerpts
+    omit their leading degree labels. Decan cards omit annotation spans and
+    commentary, without changing the stored source text.
     """
     if not section:
         return None
@@ -69,16 +100,29 @@ def _section_to_passage(section: Optional[dict]) -> Optional[dict]:
         cite_bits.append(f"Kroll p.{section.get('kroll_page')}")
     if section.get("pingree_page") is not None:
         cite_bits.append(f"Pingree p.{section.get('pingree_page')}")
-    display = corpus_text.structured_section(section)
+    display_text = section.get("text") or ""
+    if omit_bound_degree_label:
+        # Libra has a second, editorial range (<[14-20]>). Remove the whole
+        # leading run of range labels, preserving editorial prose elsewhere.
+        display_text = re.sub(
+            r"^\s*(?:(?:<\[\d+\s*[-–]\s*\d+\]>|\[\d+\s*[-–]\s*\d+\])\s*)+",
+            "", display_text, count=1,
+        )
+    if omit_annotations:
+        display_text = corpus_text.main_passage_text(display_text)
+    display = corpus_text.structured_section({
+        **section, "text": display_text,
+        **({"footnotes": []} if omit_annotations else {}),
+    })
     return {
-        "source": (
+        "source": section.get("source") or (
             f"Valens, Anthologies {book}.{chapter}"
             if book is not None and chapter is not None
             else "Valens, Anthologies"
         ),
-        "citation": ", ".join(cite_bits),
+        "citation": section.get("citation") or ", ".join(cite_bits),
         "citation_label": display["citation"],
-        "citation_runs": display["citation_runs"],
+        "citation_runs": _color_passage_runs(display["citation_runs"], display_options),
         "heading": section.get("heading"),
         "book": book,
         "book_title": section.get("book_title"),
@@ -88,22 +132,36 @@ def _section_to_passage(section: Optional[dict]) -> Optional[dict]:
         "pingree_page": section.get("pingree_page"),
         "tags": list(section.get("tags") or []),
         "text": section.get("text") or "",
-        "paragraphs": display["paragraphs"],
+        "paragraphs": [
+            {**paragraph, "runs": _color_passage_runs(paragraph["runs"], display_options)}
+            for paragraph in display["paragraphs"]
+        ],
         # Styled runs mirror the wx desktop's corpuspane rendering: cleaned text
         # (LaTeX/page-ref debris removed) segmented into italic / bold /
         # editorial / Morinus-glyph spans. The frontend renders these so the
         # passage formatting matches the desktop instead of dumping raw markers.
-        "runs": corpus_text.styled_runs(section.get("text") or ""),
+        "runs": _color_passage_runs(corpus_text.styled_runs(display_text), display_options),
         "footnotes": display["footnotes"],
-        "editorial_notes": list(section.get("editorial_notes") or []),
+        "footnote_runs": [
+            _color_passage_runs(runs, display_options) for runs in display["footnote_runs"]
+        ],
+        "editorial_notes": [] if omit_annotations else list(section.get("editorial_notes") or []),
     }
 
 
-def _alert_to_dict(alert) -> dict:
+def _alert_to_dict(alert, *, display_options=None) -> dict:
     """Flatten a rule_engine.Alert (rule_engine.py:29-40) for JSON."""
+    glyph = getattr(alert, "glyph", "") or ""
+    glyph_colors = None
+    symbols = getattr(common, "common", None)
+    for signs in (getattr(symbols, "Signs1", ()), getattr(symbols, "Signs2", ())):
+        if glyph in signs:
+            glyph_colors = _sign_glyph_colors(display_options, signs.index(glyph))
+            break
     return {
         "status": getattr(alert, "status", None),
-        "glyph": getattr(alert, "glyph", "") or "",
+        "glyph": glyph,
+        "glyphColors": glyph_colors,
         "title": getattr(alert, "title", "") or "",
         "titleKey": getattr(alert, "title_key", None),
         "body": getattr(alert, "body", "") or "",
@@ -144,6 +202,7 @@ class InspectorZoneBService:
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
         max_results: int = 4,
+        at_jd: Optional[float] = None,
     ) -> dict:
         """Return passive source text contributed by the active content pack."""
         with self._lock:
@@ -159,7 +218,11 @@ class InspectorZoneBService:
                     "packId": None,
                     "section": None,
                 }
-            if selector is None:
+            fixed_star = (
+                kind == "secondary_ring"
+                and str(object_id).split("|", 1)[0] in {"fixstar", "fixed_star"}
+            )
+            if selector is None and not fixed_star:
                 return {
                     "region": {"kind": kind, "object_id": object_id},
                     "packId": pack_id,
@@ -176,6 +239,7 @@ class InspectorZoneBService:
                 binding_payload=binding_payload,
                 view_mode=view_mode,
                 ring_index=ring_index,
+                at_jd=at_jd,
             )
             region = inspector_service.build_region(
                 chrt,
@@ -186,13 +250,38 @@ class InspectorZoneBService:
                 chart_role,
             )
 
-            raw = corpus_bridge.inspector_section(selector)
-            section = _section_to_passage(raw)
+            lookup_kind, lookup_id = kind, object_id
+            fallback_targets = []
+            if fixed_star:
+                # Resolve identity from the same live chart/role as Zone A.
+                # The renderer's longitude and label are not corpus keys.
+                code = (region.get("data") or {}).get("fixstar_code") or ""
+                lookup_kind, lookup_id = "fixed_star", code
+                constellation = constellation_code(code)
+                if constellation:
+                    fallback_targets.append(("fixed_star_constellation", constellation))
+            contents = rule_engine.active_inspector_contents(
+                lookup_kind, lookup_id, fallback_targets=fallback_targets,
+            )
+            sections = []
+            display_options = effective_display_options(opts) if opts is not None else None
+            for source_pack_id, source_selector in contents:
+                section = _section_to_passage(
+                    corpus_bridge.inspector_section(source_selector),
+                    display_options=display_options,
+                    omit_bound_degree_label=(
+                        kind == "term" and source_selector.get("asset") == "valens-bounds"
+                    ),
+                    omit_annotations=(kind == "decan"),
+                )
+                if section is not None:
+                    sections.append({"packId": source_pack_id, "section": section})
 
             return {
                 "region": {"kind": kind, "object_id": region.get("object_id")},
-                "packId": pack_id,
-                "section": section,
+                "packId": contents[0][0] if contents else pack_id,
+                "section": sections[0]["section"] if sections else None,
+                "sections": sections,
             }
 
     # ── Pack alerts (B3) ─────────────────────────────────────────────────
@@ -287,7 +376,11 @@ class InspectorZoneBService:
                 traceback.print_exc()
                 raw_alerts = []
 
-            alerts = [_alert_to_dict(a) for a in (raw_alerts or []) if a is not None]
+            display_options = effective_display_options(opts) if opts is not None else None
+            alerts = [
+                _alert_to_dict(a, display_options=display_options)
+                for a in (raw_alerts or []) if a is not None
+            ]
             timing_witnesses = [
                 witness
                 for alert in (raw_alerts or []) if alert is not None

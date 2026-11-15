@@ -19,11 +19,15 @@ class FixStars:
 	def __init__(self, tjd_ut, flag, names, obl, ayanamsha_offset=0.0):
 		
 		self.data = []
+		# Settings position of each row; primary directions index
+		# pdfixstarssel through ``mixed``, so a skipped row must not shift it.
+		source_index = []
 
-		i = 0
-		for k in names.keys():
-			self.data.append(['', '', 0.0, 0.0, 0.0, 0.0])
+		for i, k in enumerate(names.keys()):
 			ret, name, dat, serr = astrology.swe_fixstar_ut(','+k, tjd_ut, flag)
+			# A failed lookup returns zeros; never draw it as a star at 0° Aries.
+			if ret < 0 or len(dat) < 2:
+				continue
 
 			nam = name[0].strip()
 			nomnam = ''
@@ -37,27 +41,25 @@ class FixStars:
 			if nomnam == u'laSco' or nam == u'Mula':
 				nam = u'Shaula'
 
-			self.data[i][FixStars.NAME] = nam
-			self.data[i][FixStars.NOMNAME] = nomnam
+			row = ['', '', 0.0, 0.0, 0.0, 0.0]
+			row[FixStars.NAME] = nam
+			row[FixStars.NOMNAME] = nomnam
 
-			self.data[i][FixStars.LON] = dat[0]
-			self.data[i][FixStars.LAT] = dat[1]
+			row[FixStars.LON] = dat[0]
+			row[FixStars.LAT] = dat[1]
 			tropical_lon = util.to_tropical_lon(dat[0], ayanamsha_offset)
 			ra, decl, dist = astrology.swe_cotrans(tropical_lon, dat[1], 1.0, -obl)
-			self.data[i][FixStars.RA] = ra
-			self.data[i][FixStars.DECL] = decl
+			row[FixStars.RA] = ra
+			row[FixStars.DECL] = decl
+			self.data.append(row)
+			source_index.append(i)
 
-			i += 1
-
-		self.sort()
+		self.sort(source_index)
 
 
-	def sort(self):
+	def sort(self, source_index=None):
 		num = len(self.data)
-		self.mixed = []
-			
-		for i in range(num):
-			self.mixed.append(i)
+		self.mixed = list(source_index) if source_index is not None else list(range(num))
 
 		for i in range(num):
 			for j in range(num-1):

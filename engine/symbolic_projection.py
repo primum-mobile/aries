@@ -299,7 +299,7 @@ def pd_entry_signature(pd):
 	if pd is None:
 		return None
 	try:
-		return (
+		signature = (
 			int(getattr(pd, 'prom', -1)),
 			int(getattr(pd, 'prom2', -1)),
 			int(getattr(pd, 'promasp', -1)),
@@ -324,6 +324,11 @@ def pd_entry_signature(pd):
 		)
 	except Exception:
 		return None
+	converse_kind = getattr(pd, 'converse_kind', None)
+	if converse_kind is not None:
+		# Append-only: direct and modern-converse signatures are unchanged.
+		signature += (converse_kind,)
+	return signature
 
 
 def resolve_pd_index_from_state(entries, state):

@@ -4,7 +4,7 @@
 /**
  * The style editor's class hierarchy.
  *
- * Stage 1 of `doc/ui-specs/style-editor-families-and-swatches.md`. Semantic
+ * Semantic
  * class ids are dotted paths, and the path already *is* the hierarchy:
  * `bodies.inner.position.degree` states its own place in the tree. The editor
  * lists all fifty classes flat and alphabetically, which is the wrong altitude

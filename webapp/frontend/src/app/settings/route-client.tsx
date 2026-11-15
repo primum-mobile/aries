@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useToolWindowIntent, useRevealToolWindow } from "@/lib/shell/tool-window-lifecycle";
-import { SettingsDialog, isSettingsTabId, type SettingsTabId } from "@/components/workshell/settings-dialog";
+import { SettingsDialog, type SettingsTabId } from "@/components/workshell/settings-dialog";
+import { resolveSettingsTabId } from "@/lib/settings-navigation";
 import { ThemeProvider } from "@/components/workshell/theme-provider";
 import { hideNativeSettings, requestSettingsAction, SETTINGS_OPEN, SETTINGS_STATE, type SettingsContext } from "@/lib/shell/settings-window";
 import type { CorpusSemanticProfilesPayload, OptionsPayload } from "@/lib/daemon/client";
@@ -21,16 +22,9 @@ const flushSourceWheel = () => requestSettingsAction({ kind: "flush-wheel" });
 const endThemePreview = () => requestSettingsAction({ kind: "end-theme-preview" });
 
 export function SettingsRouteClient() {
-  const intent = useToolWindowIntent<{tab?: string}>(SETTINGS_OPEN);
+  const intent = useToolWindowIntent<{ tab?: string; focusSearch?: boolean }>(SETTINGS_OPEN);
   const requestedTab = intent?.context?.tab;
-  const [tab, setTab] = useState<SettingsTabId>("appearance");
-  // Follow a *newly* requested tab only; comparing against `tab` would snap
-  // every manual tab click back to the requested one.
-  const [appliedRequestedTab, setAppliedRequestedTab] = useState<string>();
-  if (requestedTab !== appliedRequestedTab) {
-    setAppliedRequestedTab(requestedTab);
-    if (requestedTab && isSettingsTabId(requestedTab)) setTab(requestedTab);
-  }
+  const tab: SettingsTabId | undefined = resolveSettingsTabId(requestedTab) ?? undefined;
   const open = intent?.open ?? false;
   const [readyGeneration, setReadyGeneration] = useState(-1);
   const [contextReady, setContextReady] = useState(false);
@@ -109,6 +103,8 @@ export function SettingsRouteClient() {
       <p>{t("settings.loadFailed")}</p>
     </NativeDialogContent>
   </Dialog> : contextReady && <SettingsDialog nativeWindow open={open} initialTab={tab}
+    tabRequestGeneration={intent?.generation}
+    focusSearch={intent?.context?.focusSearch}
     onOpenChange={onOpenChange} onReady={onReady} onEndThemePreview={endThemePreview} onBeforeWheelAction={flushSourceWheel}
     onOptionsPatched={publishOptions} onSemanticProfileSelect={selectProfile}
     onSemanticProfilesCommitted={publishProfiles} getSemanticProfileRevision={getProfileRevision} />}</ThemeProvider>;

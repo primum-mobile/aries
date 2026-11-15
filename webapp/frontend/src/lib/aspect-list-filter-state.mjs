@@ -18,6 +18,18 @@ export function defaultAspectListSecondaryRingIncluded(mode) {
   return mode !== "arabic_parts";
 }
 
+/** Major rows always show; minor and declination rows follow their pills.
+ * Rows without a family (ascensional contacts) are not aspect-class gated. */
+export function isAspectListAspectClassIncluded(
+  aspectClass,
+  includeMinorAspects = false,
+  includeDeclination = false,
+) {
+  if (aspectClass === "minor") return includeMinorAspects;
+  if (aspectClass === "declination") return includeDeclination;
+  return true;
+}
+
 export function isAspectListPhaseIncluded(phase, phaseFilter = "both") {
   return phaseFilter === "both" || phase === phaseFilter;
 }

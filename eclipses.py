@@ -6,9 +6,12 @@
 
 from __future__ import division
 import datetime
+from engine import moment
 import math
 from collections import OrderedDict
+from functools import lru_cache
 import astrology  # sweastrology 래퍼
+import chart as chart_mod
 import geonames
 import util       # decToDeg 등
 import mtexts     # user-facing label localization (resolved at serve time)
@@ -153,8 +156,16 @@ def syzygy_jdut_near(jdut, is_solar=True, search_days=0.75):
         center = float(jdut)
     except Exception:
         return jdut
-    target = 0.0 if bool(is_solar) else 180.0
-    span = abs(float(search_days))
+    return _syzygy_jdut_near_cached(center, bool(is_solar), float(search_days))
+
+
+@lru_cache(maxsize=512)
+def _syzygy_jdut_near_cached(center, is_solar, search_days):
+    # A pure function of its arguments (geocentric Swiss Ephemeris positions).
+    # Every time step of a chart resolves the same prenatal eclipse, so the
+    # search would otherwise rerun about a hundred position pairs per step.
+    target = 0.0 if is_solar else 180.0
+    span = abs(search_days)
     step = min(0.02, max(0.002, span / 40.0))
     a = center - span
     fa = _phase_error(a, target)
@@ -219,6 +230,10 @@ def selected_prenatal_eclipse_point(chart, options=None):
     Search, Aspect List, Astrocartography, and inspectors.  Wheel visibility is
     intentionally not consulted here.
     """
+    # A PDs-in-Chart chart shows the natal eclipse directed (pd_in_chart).
+    directed = getattr(chart, 'directedPrenatalEclipsePoint', None)
+    if directed is not None:
+        return directed
     opts = options if options is not None else getattr(chart, 'options', None)
     mode = str(getattr(opts, 'prenatal_eclipse_mode', 'solar_and_lunar'))
     solar_only = mode == 'solar_only'
@@ -270,6 +285,11 @@ def eclipse_kind_label(event):
         'NONE': ('EclipseUnknown', u'Unknown'),
     }.get(str(token), ('EclipseUnknown', u'Unknown'))
     return str(mtexts.txts.get(key, fallback))
+
+
+def prenatal_eclipse_point_label():
+    """Stable name for the semantic point, independent of its selected event."""
+    return str(mtexts.txts['PrenatalEclipse'])
 
 
 def eclipse_event_label(event):
@@ -400,8 +420,9 @@ def first_saros_event(event, search_days=80.0):
     if parsed is None:
         return None
     series, member = parsed
-    if member <= 1:
-        return event
+    # Series bindings can supply identity-only seeds, including member one.
+    # Resolve the first member through the normal builder so type, coordinates,
+    # and derived fields are present instead of returning the seed's defaults.
     try:
         approx_jd = float(getattr(event, 'jdut', 0.0)) - (float(member - 1) * SAROS_PERIOD_DAYS)
     except Exception:
@@ -478,15 +499,7 @@ def saros_series_events(event, search_days=80.0, max_members=100):
 
 
 def _utc_tuple_from_jdut(jdut):
-    y, m, d, h = astrology.swe_revjul(jdut, astrology.SE_GREG_CAL)
-    hh = int(h)
-    mm = int((h - hh) * 60.0)
-    ss = int(round(((h - hh) * 60.0 - mm) * 60.0))
-    if ss == 60:
-        ss = 0; mm += 1
-    if mm == 60:
-        mm = 0; hh += 1
-    return y, m, d, hh, mm, ss
+    return moment.jd_to_civil_tuple(jdut)
 
 
 def _zone_fields_from_local_datetime(local_dt):
@@ -588,19 +601,13 @@ def local_datetime_tuple_and_context(jdut, chart):
     zone_result = _local_datetime_tuple_and_context_from_zoneinfo(jdut, chart)
     if zone_result is not None:
         return zone_result
-    off = _tz_offset_hours(chart)
-    jd_local = float(jdut) + off / 24.0
-    y, m, d, h = astrology.swe_revjul(jd_local, _calflag(chart))
-    hh = int(h)
-    mm = int((h - hh) * 60.0)
-    ss = int(round(((h - hh) * 60.0 - mm) * 60.0))
-    if ss == 60:
-        ss = 0
-        mm += 1
-    if mm == 60:
-        mm = 0
-        hh += 1
-    return (int(y), int(m), int(d), int(hh), int(mm), int(ss)), _time_context_from_chart(chart)
+    context = _time_context_from_chart(chart)
+    jd_ut = float(jdut)
+    jd_local = jd_ut + _tz_offset_hours(chart) / 24.0
+    if int(context.get('zt', 0)) == chart_mod.Time.LOCALAPPARENT:
+        jd_local += chart_mod.Time.equation_of_time(jd_ut)
+    values = moment.jd_to_civil_tuple(jd_local, calendar=1 if _calflag(chart) == astrology.SE_JUL_CAL else 0)
+    return values, context
 
 
 def local_datetime_tuple(jdut, chart):
@@ -1302,18 +1309,10 @@ def _tz_offset_hours(chart):
         zt = 0
     if zt == 1:
         return 0.0
-    if zt in (2, 3):
+    if zt in (chart_mod.Time.LOCALMEAN, chart_mod.Time.LOCALAPPARENT):
         place = getattr(chart, 'place', None)
-        if place is None:
-            return 0.0
-        lon = getattr(place, 'lon', None)
-        if isinstance(lon, (int, float)):
-            return float(lon) / 15.0
-        try:
-            base = float(getattr(place, 'deglon', 0)) + float(getattr(place, 'minlon', 0)) / 60.0
-            return base / 15.0 if bool(getattr(place, 'east', True)) else -base / 15.0
-        except Exception:
-            return 0.0
+        daylight_hours = 1.0 if getattr(t, 'daylightsaving', False) else 0.0
+        return float(getattr(place, 'lon', 0.0)) / 15.0 + daylight_hours
     # 1) 시/분 분리형
     hours = None; minutes = 0.0
     for hnm in ('zh','zoneh','hours','zone'):

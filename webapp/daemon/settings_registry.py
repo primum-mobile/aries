@@ -45,30 +45,28 @@ SHIPPING_THEME_PRESET_NAMES = tuple(definition["name"] for definition in THEME_P
 THEME_PRESET_NAMES = SHIPPING_THEME_PRESET_NAMES + ("Diurnal", "Susan Miller")
 
 
+# ``label`` is the English fallback the native menu shows until the frontend
+# relabels it from ``labelKey``; ``menuCommands`` are the legacy entry points.
 SETTINGS_TABS: tuple[dict, ...] = (
-    {"id": "appearance", "labelKey": "settings.tabAppearance", "menuCommands": ["appearance.toggle", "menu.symbols"]},
-    {"id": "colors", "labelKey": "settings.tabColors", "menuCommands": ["menu.colors"]},
-    {"id": "location", "labelKey": "settings.tabDefaultLocation", "menuCommands": ["menu.options.default-location"]},
-    {"id": "planets", "labelKey": "settings.tabPlanetsPoints", "menuCommands": ["menu.options.planets-points", "menu.options.nodes", "menu.options.arabic-parts", "menu.options.syzygy"]},
-    {"id": "orbs", "labelKey": "settings.tabOrbs", "menuCommands": ["menu.options.orbs"]},
-    {"id": "dignities", "labelKey": "settings.tabDignities", "menuCommands": ["menu.options.dignities"]},
-    {"id": "houses", "labelKey": "settings.tabHouseSystem", "menuCommands": ["menu.house-system"]},
-    {"id": "ayanamsha", "labelKey": "settings.tabAyanamsha", "menuCommands": ["menu.ayanamsha"]},
-    {"id": "revolutions", "labelKey": "settings.tabRevolutions", "menuCommands": ["menu.options.revolutions"]},
-    {"id": "supplementary", "labelKey": "settings.tabProgressions", "menuCommands": ["menu.options.quick-charts", "menu.options.solar-arc"]},
-    {"id": "timelords", "labelKey": "settings.tabTimeLords", "menuCommands": ["menu.options.time-lords"]},
-    {"id": "eclipses", "labelKey": "settings.tabEclipses", "menuCommands": ["menu.options.eclipses"]},
-    {"id": "relationship", "labelKey": "settings.tabRelationshipCharts", "menuCommands": ["menu.options.relationship-charts"]},
-    {"id": "primarydirections", "labelKey": "settings.tabPrimaryDirections", "menuCommands": ["menu.options.primary-directions"]},
-    {"id": "almutens", "labelKey": "settings.tabAlmutens", "menuCommands": ["menu.options.almutens"]},
-    {"id": "speculum", "labelKey": "settings.tabSpeculum", "menuCommands": ["menu.options.speculum"]},
-    {"id": "fixstars", "labelKey": "settings.tabFixedStars", "menuCommands": ["menu.options.fixed-stars"]},
-    {"id": "asteroids", "labelKey": "settings.tabAsteroids", "menuCommands": ["menu.options.asteroids"]},
-    {"id": "mansions", "labelKey": "settings.tabLunarMansions", "menuCommands": ["menu.lunar-mansions"]},
-    {"id": "astrocartography", "labelKey": "settings.astrocartography", "menuCommands": ["menu.options.astrocartography"]},
-    {"id": "export", "labelKey": "settings.tabExport", "menuCommands": []},
-    {"id": "languages", "labelKey": "settings.tabLanguages", "menuCommands": ["menu.options.languages"]},
-    {"id": "interpretation", "labelKey": "settings.tabInterpretation", "menuCommands": []},
+    {"id": "appearance", "labelKey": "settings.tabChartDisplay", "label": "Chart display", "menuCommands": ["appearance.toggle", "menu.symbols", "menu.house-system", "menu.ayanamsha", "menu.options.eclipses", "menu.lunar-mansions"]},
+    {"id": "colors", "labelKey": "settings.tabColors", "label": "Colors", "menuCommands": ["menu.colors"]},
+    {"id": "location", "labelKey": "settings.tabDefaultLocation", "label": "Default Location", "menuCommands": ["menu.options.default-location"]},
+    {"id": "planets", "labelKey": "settings.arabicParts", "label": "Arabic Parts", "menuCommands": ["menu.options.planets-points", "menu.options.nodes", "menu.options.arabic-parts", "menu.options.syzygy"]},
+    {"id": "orbs", "labelKey": "settings.tabOrbs", "label": "Orbs", "menuCommands": ["menu.options.orbs"]},
+    {"id": "dignities", "labelKey": "settings.tabDignities", "label": "Dignities", "menuCommands": ["menu.options.dignities"]},
+    {"id": "revolutions", "labelKey": "settings.tabRevolutions", "label": "Revolutions", "menuCommands": ["menu.options.revolutions"]},
+    {"id": "supplementary", "labelKey": "settings.tabProgressions", "label": "Progressions", "menuCommands": ["menu.options.quick-charts", "menu.options.solar-arc"]},
+    {"id": "timelords", "labelKey": "settings.tabTimeLords", "label": "Time Lords", "menuCommands": ["menu.options.time-lords"]},
+    {"id": "relationship", "labelKey": "settings.tabRelationshipCharts", "label": "Relationship Charts", "menuCommands": ["menu.options.relationship-charts"]},
+    {"id": "primarydirections", "labelKey": "settings.tabPrimaryDirections", "label": "Primary Directions", "menuCommands": ["menu.options.primary-directions"]},
+    {"id": "almutens", "labelKey": "settings.tabAlmutens", "label": "Almutens", "menuCommands": ["menu.options.almutens"]},
+    {"id": "speculum", "labelKey": "settings.tabSpeculum", "label": "Speculum", "menuCommands": ["menu.options.speculum"]},
+    {"id": "fixstars", "labelKey": "settings.tabFixedStars", "label": "Fixed Stars", "menuCommands": ["menu.options.fixed-stars"]},
+    {"id": "asteroids", "labelKey": "settings.tabAsteroids", "label": "Asteroids", "menuCommands": ["menu.options.asteroids"]},
+    {"id": "astrocartography", "labelKey": "settings.astrocartography", "label": "Astrocartography", "menuCommands": ["menu.options.astrocartography"]},
+    {"id": "export", "labelKey": "settings.tabExport", "label": "Export", "menuCommands": []},
+    {"id": "languages", "labelKey": "settings.tabLanguages", "label": "Languages", "menuCommands": ["menu.options.languages"]},
+    {"id": "interpretation", "labelKey": "settings.tabInterpretation", "label": "Interpretation", "menuCommands": []},
 )
 
 

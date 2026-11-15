@@ -6,11 +6,14 @@ import { CopyPlus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { WheelComposition } from '@/lib/chart/wheel-composition';
 import { createWheelCompositionWriter, enqueueWheelPresetWrite, flushWheelGeometry, waitForWheelPresetWrites } from '@/lib/daemon/wheel-preset-sync';
 import type { WheelTypographyProfile } from '@/lib/chart/wheel-render-style';
+import { wheelStyleDisplayId } from '@/lib/chart/wheel-style-menu';
 import { WheelCompositionControls } from './wheel-composition-controls';
 import { fetchWheelPresets, mutateWheelPreset, WheelPresetApiError, type WheelPresetMutation } from '@/lib/daemon/wheel-presets-client';
 import { useT } from '@/lib/i18n/i18n';
 import { useDaemonWorkspaceStore } from '@/stores/daemon-workspace-store';
-import { equalChartStyleOverrides, useChartStyleEditorStore } from '@/stores/chart-style-editor-store';
+import { equalChartStyleOverrides, useChartStyleEditorStore, wheelPresetAppearanceEdits } from '@/stores/chart-style-editor-store';
+import { wheelPresetAppearanceForLayout } from '@/lib/chart/wheel-preset-appearance';
+import { captureWheelPresetAppearance } from '@/lib/style-lab/wheel-preset-save';
 
 let wheelPresetTransitions = 0;
 
@@ -27,6 +30,8 @@ export function WheelPresetControls({profile, surface = 'editor', beforeAction}:
   const synced = useChartStyleEditorStore(state => state.syncedGeometryOverrides);
   const loadedProfile = useChartStyleEditorStore(state => state.geometryProfile);
   const gesture = useChartStyleEditorStore(state => state.gestureStart);
+  const appearanceDirty = useChartStyleEditorStore(state => surface === 'editor'
+    && Object.keys(wheelPresetAppearanceEdits(state, profile)).length > 0);
   const [pendingAction, setPendingAction] = useState<WheelPresetMutation['action'] | null>(null);
   const busy = pendingAction !== null;
   const geometryBusy = pendingAction !== null && pendingAction !== 'save';
@@ -50,10 +55,10 @@ export function WheelPresetControls({profile, surface = 'editor', beforeAction}:
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selected = presets?.activePresets?.[profile] ?? presets?.presets.find(item => item.id === presets.selected[profile]);
   const choices = presets?.presets ?? [];
-  const selectedId = selected?.id.startsWith('working.') ? `factory.${profile}` : presets?.selected[profile] ?? '';
+  const selectedId = selected ? wheelStyleDisplayId(selected.id, profile, selected.overrides) : presets?.selected[profile] ?? '';
   const listed = Boolean(selected && presets?.presets.some(item => item.id === selected.id));
   const pending = loadedProfile === profile && !equalChartStyleOverrides(geometry, synced);
-  const dirty = Boolean(presets?.drafts[profile]?.dirty) || pending || Boolean(compositionPreview[profile]);
+  const dirty = Boolean(presets?.drafts[profile]?.dirty) || pending || appearanceDirty || Boolean(compositionPreview[profile]);
   const canOverwrite = Boolean(selected && listed && !selected.factory);
   // Settings can edit a different layout from the parked Style Lab variant.
   // Share the catalog without retargeting that editor's live geometry draft.
@@ -131,11 +136,22 @@ export function WheelPresetControls({profile, surface = 'editor', beforeAction}:
         if (!current || context.current.generation !== generation) return;
         const targetProfile = action === 'select' && surface === 'settings'
           ? current.presets.find(item => item.id === extras.presetId)?.layout ?? profile : profile;
-        await mutateWheelPreset({action, layout: targetProfile, activateLayout: action === 'select' && surface === 'settings', baseRevision: current.revision, ...extras}).then(result => {
+        const editor = useChartStyleEditorStore.getState();
+        if (action === 'save' && surface === 'editor' && current.context?.sourceThemeName
+          && editor.remoteSourceThemeName !== current.context.sourceThemeName) throw new WheelPresetApiError(409, current);
+        const appearance = action === 'save' && surface === 'editor'
+          ? captureWheelPresetAppearance(editor.resolvedOverrides, profile, editor.tokenMetadata,
+            current.drafts[profile]?.appearance, wheelPresetAppearanceEdits(editor, profile), editor.semanticOverrides,
+            current.drafts[profile]?.overrides['wheel.presentation'])
+          : undefined;
+        const appearanceBaseline = appearance
+          ? wheelPresetAppearanceForLayout(editor.semanticOverrides, profile, editor.tokenMetadata) : undefined;
+        await mutateWheelPreset({action, layout: targetProfile, activateLayout: action === 'select' && surface === 'settings',
+          baseRevision: current.revision, ...extras, ...(appearance ? {appearance} : {})}).then(result => {
           const currentContext = context.current.generation === generation;
           useChartStyleEditorStore.getState().acceptWheelPresets(result, profile,
             currentContext
-              ? {clearHistory: transition, preserveLocalChanges: action === 'save', metadataOnly: metadataOnly()}
+              ? {clearHistory: transition, preserveLocalChanges: action === 'save', metadataOnly: metadataOnly(), appearanceBaseline}
               : {metadataOnly: true});
           if (!currentContext) return;
           setFailure(null);
@@ -166,12 +182,13 @@ export function WheelPresetControls({profile, surface = 'editor', beforeAction}:
         {selected && !choices.some(item => item.id === selectedId) && <option value={selected.id}>{t('wheelPreset.custom')}</option>}
         {!presets && <option value="">{t('styleLab.status.connecting')}</option>}
         {choices.filter(item => surface === 'settings' || item.layout === profile).map(item => <option key={item.id} value={item.id}>
-          {item.factory ? t(`styleLab.variant.${item.layout}`)
+          {item.id === `factory.${item.layout}` ? t(`styleLab.variant.${item.layout}`)
             : item.name}{item.id === selectedId && dirty ? ' *' : ''}
         </option>)}
       </select>
     </label>
-    <p className="text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">{t('wheelPreset.geometryScope')}</p>
+    <p className="text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">{t(surface === 'editor'
+      ? 'wheelPreset.designScope' : 'wheelPreset.geometryScope')}</p>
     <div className="flex flex-wrap gap-1">
       <button type="button" className={buttonClass}
         disabled={busy || Boolean(gesture) || !dirty}

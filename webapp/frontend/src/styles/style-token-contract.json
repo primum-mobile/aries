@@ -3,10 +3,10 @@
   "inventoryPath": "src/styles/style-token-inventory.generated.json",
   "publicManifestPath": "src/styles/style-token-public.generated.json",
   "expected": {
-    "cssTokens": 1491,
-    "runtimeOnlyTokens": 14,
+    "cssTokens": 1621,
+    "runtimeOnlyTokens": 15,
     "externalTokens": 10,
-    "inventoryTokens": 1515
+    "inventoryTokens": 1646
   },
   "legacyOverlay": {
     "source": "src/styles/style-tokens.ts",
@@ -168,12 +168,12 @@
         "cssVar": "--aries-ephem-frame-width-large"
       },
       {
-        "id": "ephemCurveWidthSmall",
-        "cssVar": "--aries-ephem-curve-width-small"
+        "id": "ephemCurveWidthInner",
+        "cssVar": "--aries-ephem-curve-width-inner"
       },
       {
-        "id": "ephemCurveWidthLarge",
-        "cssVar": "--aries-ephem-curve-width-large"
+        "id": "ephemCurveWidthOuter",
+        "cssVar": "--aries-ephem-curve-width-outer"
       },
       {
         "id": "ephemGridLineWidth",
@@ -186,18 +186,6 @@
       {
         "id": "ephemGridDashOff",
         "cssVar": "--aries-ephem-grid-dash-off"
-      },
-      {
-        "id": "ephemStationTickMin",
-        "cssVar": "--aries-ephem-station-tick-min"
-      },
-      {
-        "id": "ephemStationTickMax",
-        "cssVar": "--aries-ephem-station-tick-max"
-      },
-      {
-        "id": "ephemStationTickLineWidth",
-        "cssVar": "--aries-ephem-station-tick-line-width"
       },
       {
         "id": "ephemEventGlyphMin",
@@ -230,6 +218,19 @@
     ]
   },
   "runtimeOnly": [
+    {
+      "name": "--aries-inspector-text-scale",
+      "default": "1",
+      "family": "app.inspector",
+      "class": "runtime",
+      "role": "text-scale",
+      "owner": "inspector-panel",
+      "provider": "react-inline",
+      "providerFile": "src/components/workshell/inspector-panel.tsx",
+      "scope": "component",
+      "type": "number",
+      "unit": ""
+    },
     {
       "name": "--aries-navbar-scale",
       "default": "1",
@@ -567,7 +568,8 @@
         "--aries-status-avoid",
         "--aries-status-neutral",
         "--aries-unsaved-indicator",
-        "--aries-validation-error"
+        "--aries-validation-error",
+        "--aries-signal"
       ],
       "defaults": {
         "class": "runtime",
@@ -867,6 +869,21 @@
       }
     },
     {
+      "id": "renderer.chart-module",
+      "match": [
+        "--aries-chart-module-*"
+      ],
+      "defaults": {
+        "class": "runtime",
+        "role": "renderer-metric",
+        "owner": "chart-module",
+        "provider": "css-declaration",
+        "scope": "renderer",
+        "type": "infer",
+        "unit": "infer"
+      }
+    },
+    {
       "id": "renderer.aspect-matrix",
       "match": [
         "--aries-aspect-matrix-*"
@@ -980,6 +997,7 @@
         "--morinus-positions",
         "--morinus-table",
         "--morinus-dignity-*",
+        "--morinus-minor-dignity-*",
         "--morinus-body-*",
         "--morinus-aspect-*",
         "--morinus-element-*"
@@ -1187,7 +1205,8 @@
         "--aries-surface-subtle",
         "--aries-accent",
         "--aries-accent-foreground",
-        "--aries-border-subtle"
+        "--aries-border-subtle",
+        "--aries-signal"
       ],
       "set": {
         "class": "public",
@@ -1201,7 +1220,6 @@
         "--aries-status-caution",
         "--aries-status-avoid",
         "--aries-status-neutral",
-        "--aries-statusbar-action-size",
         "--aries-statusbar-field-padding-x",
         "--aries-statusbar-gap",
         "--aries-statusbar-height",
@@ -1334,7 +1352,8 @@
         "--aries-inspector-hover-flag-min-height",
         "--aries-inspector-hover-flag-content-min-width",
         "--aries-inspector-hover-flag-accent-border-opacity",
-        "--aries-inspector-hover-flag-backdrop-blur"
+        "--aries-inspector-hover-flag-backdrop-blur",
+        "--aries-inspector-own-glyph-opacity"
       ],
       "set": {
         "class": "public",
@@ -1396,11 +1415,16 @@
     },
     {
       "match": [
+        "--aries-chart-module-rule-width",
+        "--aries-chart-module-frame-width",
         "--aries-aspect-matrix-cell-size",
         "--aries-aspect-matrix-fixed-star-rail-width",
         "--aries-aspect-matrix-outer-padding",
         "--aries-aspect-matrix-axis-glyph-size",
+        "--aries-aspect-matrix-section-gap",
         "--aries-aspect-matrix-rule-width",
+        "--aries-aspect-matrix-frame-width",
+        "--aries-aspect-matrix-exact-width",
         "--aries-aspect-matrix-exact-inset",
         "--aries-aspect-matrix-applying-marker-size",
         "--aries-aspect-matrix-glyph-inset-x",
@@ -1486,7 +1510,10 @@
     },
     {
       "match": [
-        "--morinus-text-dim"
+        "--morinus-text-dim",
+        "--morinus-minor-dignity-1",
+        "--morinus-minor-dignity-2",
+        "--morinus-minor-dignity-3"
       ],
       "set": {
         "class": "derived",
@@ -2216,7 +2243,7 @@
     "--aries-menu-quick-width": {
       "semanticId": "app.menu.quickOptionsWidth",
       "label": "Quick-options menu width",
-      "description": "Inline size of the retained quick-options menu opened from the titlebar.",
+      "description": "Minimum inline size of the retained quick-options menu; longer rows expand it to their full content width.",
       "tier": "component",
       "scope": "app",
       "effectiveAuthority": "css-root",
@@ -2233,50 +2260,6 @@
       },
       "safetyNotes": [
         "Check long localized option labels and narrow application windows."
-      ]
-    },
-    "--aries-menu-quick-max-height": {
-      "semanticId": "app.menu.quickOptionsMaxHeight",
-      "label": "Quick-options maximum height",
-      "description": "Pixel cap on the retained quick-options menu before it scrolls.",
-      "tier": "component",
-      "scope": "app",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-max-height",
-      "affectedSurfaces": [
-        "titlebar quick-options menu"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "bounds": {
-        "min": 240,
-        "max": 900,
-        "step": 8
-      },
-      "safetyNotes": [
-        "The viewport-relative cap still prevents the menu from escaping short windows."
-      ]
-    },
-    "--aries-menu-quick-viewport-max-height": {
-      "semanticId": "app.menu.quickOptionsViewportMaxHeight",
-      "label": "Quick-options viewport height cap",
-      "description": "Maximum share of viewport height available to the retained quick-options menu.",
-      "tier": "component",
-      "scope": "app",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-menu-quick-viewport-max-height",
-      "affectedSurfaces": [
-        "titlebar quick-options menu"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "bounds": {
-        "min": 40,
-        "max": 95,
-        "step": 1
-      },
-      "safetyNotes": [
-        "Leave enough viewport around the menu to preserve its transient context."
       ]
     },
     "--aries-menu-command-max-height": {
@@ -3162,6 +3145,28 @@
       },
       "safetyNotes": [
         "Retain enough contrast for dignity and aspect accents over the translucent card background."
+      ]
+    },
+    "--aries-inspector-own-glyph-opacity": {
+      "semanticId": "app.inspector.ownGlyphOpacity",
+      "label": "Inspected glyph opacity",
+      "description": "Alpha applied to the inspected planet's own dignity-coloured glyph in Inspector aspect rows, so the partner planet reads first.",
+      "tier": "component",
+      "scope": "app",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-inspector-own-glyph-opacity",
+      "affectedSurfaces": [
+        "inspector aspect rows"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 0,
+        "max": 1,
+        "step": 0.05
+      },
+      "safetyNotes": [
+        "Keep the dignity colour recognisable while the partner glyph stays dominant."
       ]
     },
     "--aries-inspector-hover-flag-backdrop-blur": {
@@ -6503,14 +6508,14 @@
         "Do not reconnect this role to --morinus-dignity-exil; review contrast."
       ]
     },
-    "--aries-ephem-curve-width-large": {
-      "semanticId": "renderer.ephemeris.curve.strokeLarge",
-      "label": "Ephemeris curve stroke large",
-      "description": "Planet-curve stroke above the graphic-ephemeris curve breakpoint.",
+    "--aries-ephem-curve-width-inner": {
+      "semanticId": "renderer.ephemeris.curve.strokeInner",
+      "label": "Ephemeris inner curve stroke",
+      "description": "Planet-curve stroke for Mercury, Venus and Mars on the graphic ephemeris.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-large",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-inner",
       "affectedSurfaces": [
         "graphic ephemeris Canvas",
         "graphic ephemeris export"
@@ -6521,14 +6526,14 @@
         "Respect recorded metric ordering and verify dense event/station scenes."
       ]
     },
-    "--aries-ephem-curve-width-small": {
-      "semanticId": "renderer.ephemeris.curve.strokeSmall",
-      "label": "Ephemeris curve stroke small",
-      "description": "Planet-curve stroke below the graphic-ephemeris curve breakpoint.",
+    "--aries-ephem-curve-width-outer": {
+      "semanticId": "renderer.ephemeris.curve.strokeOuter",
+      "label": "Ephemeris outer curve stroke",
+      "description": "Planet-curve stroke for Jupiter outward, Chiron and the nodes on the graphic ephemeris.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-small",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-curve-width-outer",
       "affectedSurfaces": [
         "graphic ephemeris Canvas",
         "graphic ephemeris export"
@@ -6783,60 +6788,6 @@
       "handoffStatus": "editable",
       "safetyNotes": [
         "Keep the retained header/hover UI usable at compact viewport sizes."
-      ]
-    },
-    "--aries-ephem-station-tick-line-width": {
-      "semanticId": "renderer.ephemeris.station.stroke",
-      "label": "Ephemeris station stroke",
-      "description": "Stroke width for station marker ticks.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-line-width",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
-      ]
-    },
-    "--aries-ephem-station-tick-max": {
-      "semanticId": "renderer.ephemeris.station.tickMax",
-      "label": "Ephemeris station tick maximum",
-      "description": "Maximum half-length for a station marker tick.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-max",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
-      ]
-    },
-    "--aries-ephem-station-tick-min": {
-      "semanticId": "renderer.ephemeris.station.tickMin",
-      "label": "Ephemeris station tick minimum",
-      "description": "Minimum half-length for a station marker tick.",
-      "tier": "renderer-metric",
-      "scope": "chart",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-ephem-station-tick-min",
-      "affectedSurfaces": [
-        "graphic ephemeris Canvas",
-        "graphic ephemeris export"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "safetyNotes": [
-        "Respect recorded metric ordering and verify dense event/station scenes."
       ]
     },
     "--aries-font-size-base": {
@@ -7306,17 +7257,18 @@
         "Keep axis glyphs legible and smaller than the configured matrix cell."
       ]
     },
-    "--aries-aspect-matrix-rule-width": {
-      "semanticId": "chart.aspectMatrix.ruleWidth",
-      "label": "Aspect-matrix rule width",
-      "description": "Stroke width for cell rules and exact-aspect inset frames.",
+    "--aries-chart-module-rule-width": {
+      "semanticId": "chart.module.ruleWidth",
+      "label": "Chart-module rule width",
+      "description": "Hairline width shared by chart modules: aspect-matrix and dashboard grid cell rules, declination ticks and the Moon list rule.",
       "tier": "renderer-metric",
       "scope": "chart",
       "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-aspect-matrix-rule-width",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-chart-module-rule-width",
       "affectedSurfaces": [
         "aspect matrix",
-        "fixed-star aspect matrix"
+        "fixed-star aspect matrix",
+        "chart dashboard"
       ],
       "inheritanceMode": "concrete-css-default",
       "handoffStatus": "editable",
@@ -7326,7 +7278,123 @@
         "step": 0.25
       },
       "safetyNotes": [
-        "Interior cells draw adjacent rules, so verify dense matrices at the upper bound."
+        "Each rule is drawn once; keep it at or below the module frame width."
+      ]
+    },
+    "--aries-chart-module-frame-width": {
+      "semanticId": "chart.module.frameWidth",
+      "label": "Chart-module frame width",
+      "description": "Heavier line shared by chart modules: matrix block outlines, the dashboard grid staircase and the declination scale axis.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-chart-module-frame-width",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix",
+        "chart dashboard"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 1,
+        "max": 4,
+        "step": 1
+      },
+      "safetyNotes": [
+        "Keep the frame at least as heavy as the rules; whole pixels stay crisp at 1x."
+      ]
+    },
+    "--aries-aspect-matrix-rule-width": {
+      "semanticId": "chart.aspectMatrix.ruleWidth",
+      "label": "Aspect-matrix rule width",
+      "description": "Stroke width for the rules between cells inside a matrix block; defaults to the shared chart-module rule width.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-aspect-matrix-rule-width",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "inheritanceMode": "alias-default-with-component-override",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 0.5,
+        "max": 3,
+        "step": 0.25
+      },
+      "safetyNotes": [
+        "Each rule is drawn once; keep it at or below the block frame width."
+      ]
+    },
+    "--aries-aspect-matrix-section-gap": {
+      "semanticId": "chart.aspectMatrix.sectionGap",
+      "label": "Aspect-matrix section gap",
+      "description": "Space between the framed Asc/MC, planet, house and fixed-star blocks and their open axis labels.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-aspect-matrix-section-gap",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 0,
+        "max": 24,
+        "step": 1
+      },
+      "safetyNotes": [
+        "Keep blocks visibly separate; zero merges adjacent frames into a double rule."
+      ]
+    },
+    "--aries-aspect-matrix-frame-width": {
+      "semanticId": "chart.aspectMatrix.frameWidth",
+      "label": "Aspect-matrix frame width",
+      "description": "Outline width of each framed matrix block, including the triangle staircase; defaults to the shared chart-module frame width.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-aspect-matrix-frame-width",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "inheritanceMode": "alias-default-with-component-override",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 1,
+        "max": 4,
+        "step": 1
+      },
+      "safetyNotes": [
+        "Keep the frame at least as heavy as the cell rules; whole pixels stay crisp at 1x."
+      ]
+    },
+    "--aries-aspect-matrix-exact-width": {
+      "semanticId": "chart.aspectMatrix.exactWidth",
+      "label": "Exact-aspect frame width",
+      "description": "Stroke width of the exact-aspect inset frame.",
+      "tier": "renderer-metric",
+      "scope": "chart",
+      "effectiveAuthority": "css-root",
+      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-aspect-matrix-exact-width",
+      "affectedSurfaces": [
+        "aspect matrix",
+        "fixed-star aspect matrix"
+      ],
+      "inheritanceMode": "concrete-css-default",
+      "handoffStatus": "editable",
+      "bounds": {
+        "min": 1,
+        "max": 3,
+        "step": 1
+      },
+      "safetyNotes": [
+        "Check that the frame clears the aspect glyph and orb at the selected cell size."
       ]
     },
     "--aries-aspect-matrix-exact-inset": {
@@ -7945,28 +8013,6 @@
       },
       "safetyNotes": [
         "Keep build text visible at the minimum sidebar width."
-      ]
-    },
-    "--aries-statusbar-action-size": {
-      "semanticId": "app.statusbar.actionSize",
-      "label": "Status bar action size",
-      "description": "Square target size for the status bar settings action.",
-      "tier": "component",
-      "scope": "app",
-      "effectiveAuthority": "css-root",
-      "editTarget": "webapp/frontend/src/app/globals.css :root --aries-statusbar-action-size",
-      "affectedSurfaces": [
-        "workspace status bar settings action"
-      ],
-      "inheritanceMode": "concrete-css-default",
-      "handoffStatus": "editable",
-      "bounds": {
-        "min": 18,
-        "max": 36,
-        "step": 1
-      },
-      "safetyNotes": [
-        "Keep the action within the total status bar height and clear of build text."
       ]
     },
     "--aries-statusbar-field-padding-x": {
@@ -9142,6 +9188,23 @@
       "safetyNotes": [
         "The derived dim role follows this color; review small chart annotations against the chart background."
       ]
+    },
+    "--aries-signal": {
+      "semanticId": "app.color.signal",
+      "label": "Signal color",
+      "description": "Theme highlight for attention marks and eclipse paths, independent of chart geometry.",
+      "tier": "semantic-app",
+      "scope": "app",
+      "effectiveAuthority": "daemon-theme-state",
+      "editTarget": "webapp/daemon/options_service.py::_style_signal_color",
+      "affectedSurfaces": [
+        "Astrocartography eclipse path, maximum marker and label"
+      ],
+      "inheritanceMode": "profile-overrides-theme-default",
+      "handoffStatus": "editable",
+      "safetyNotes": [
+        "Keep the signal distinct from neutral geometry and readable over the map."
+      ]
     }
   },
   "relationalConstraints": [
@@ -9371,19 +9434,10 @@
       "id": "renderer.ephemeris.curve-width.order",
       "kind": "ascending",
       "tokens": [
-        "--aries-ephem-curve-width-small",
-        "--aries-ephem-curve-width-large"
+        "--aries-ephem-curve-width-outer",
+        "--aries-ephem-curve-width-inner"
       ],
-      "description": "Responsive curve strokes do not become thinner on larger canvases."
-    },
-    {
-      "id": "renderer.ephemeris.station-tick.range",
-      "kind": "ascending",
-      "tokens": [
-        "--aries-ephem-station-tick-min",
-        "--aries-ephem-station-tick-max"
-      ],
-      "description": "The station tick clamp has a valid minimum and maximum."
+      "description": "Outer-planet curves never draw heavier than inner-planet curves."
     },
     {
       "id": "renderer.ephemeris.event-glyph.range",
@@ -9524,10 +9578,9 @@
       "kind": "ascending",
       "tokens": [
         "--aries-statusbar-line-box",
-        "--aries-statusbar-action-size",
         "--aries-statusbar-height"
       ],
-      "description": "Status text and the leading action fit within the persistent status bar."
+      "description": "Status text fits within the persistent status bar."
     },
     {
       "id": "app.form.columns.order",

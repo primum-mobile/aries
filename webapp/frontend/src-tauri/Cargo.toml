@@ -12,6 +12,17 @@ rust-version = "1.77.2"
 name = "aries_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# CI release rehearsal only (.github/workflows/windows-release-rehearsal.yml):
+# lets a throwaway build check a local update server. Release builds never
+# enable it, and build.rs refuses it for any non-rehearsal version.
+update-rehearsal = []
+# CI release rehearsal only (same workflow): with ARIES_CI_LICENCE_BYPASS=1
+# the shell treats the licence as not required, so runners can test the real
+# app past the serial gate (src/ci_licence_bypass.rs). Release builds never
+# enable it, and build.rs refuses it for any non-rehearsal version.
+ci-licence-bypass = []
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 
@@ -35,6 +46,9 @@ ed25519-dalek = "=2.1.1"
 getrandom = "0.2"
 keyring = { version = "3.6.3", default-features = false }
 log = "0.4"
+# Already linked through ureq; named directly to classify TLS failures and, on
+# Windows, to verify the license server against the system certificate store.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # Blocking HTTP client used for the local startup menu fetch and the remote
 # license/update contract. The latter requires rustls-backed HTTPS.
 sha2 = "0.10"
@@ -46,6 +60,7 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-updater = "2.10.1"
 tokio = { version = "1.52.3", features = ["io-util", "net", "sync", "time"] }
+zip = { version = "4.6.1", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
@@ -59,4 +74,17 @@ security-framework-sys = "=2.12.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Windows certificate store (enterprise roots, TLS-inspecting proxies) for the
+# license client; the updater's reqwest already uses the same verifier.
+rustls-platform-verifier = "0.6.1"
+# LaunchServices keeps macOS single-instance; Windows needs the plugin so two
+# daemons never share %APPDATA%\Aries.
+tauri-plugin-single-instance = "2.4.5"
+# Same WebView2 bindings as wry, for settings Tauri does not expose
+# (browser accelerator keys).
+webview2-com = "0.38.2"
+# Windows release/build number for bug reports (bug_report.rs).
+windows-version = "0.1.7"
+# Globalization, KeyboardAndMouse, Registry, SystemInformation and
+# Storage_FileSystem serve the support diagnostics report (diagnostics.rs).
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Networking_WinHttp", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Kernel", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

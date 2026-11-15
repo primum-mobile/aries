@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import astrology
+import chart_bodies
 import common
 import fortune
 import houses
@@ -69,12 +70,13 @@ def build_columns(chrt, options, mainsigs):
 				'label': common.common.get_planet_glyph(body_id),
 			})
 
-	if getattr(chrt, 'chiron', None) is not None and common.common.is_planet_visible(options, astrology.SE_CHIRON):
-		columns.append({
-			'kind': KIND_BODY,
-			'body_id': astrology.SE_CHIRON,
-			'label': common.common.get_planet_glyph(astrology.SE_CHIRON),
-		})
+	for body_id, _body in chart_bodies.iter_dynamic_bodies(chrt):
+		if common.common.is_planet_visible(options, body_id):
+			columns.append({
+				'kind': KIND_BODY,
+				'body_id': body_id,
+				'label': common.common.get_planet_glyph(body_id),
+			})
 
 	return columns
 
@@ -111,7 +113,7 @@ def get_body_header_color(chrt, options, body_id, bw, default_color):
 	if getattr(options, 'useplanetcolors', False):
 		color_idx = min(common.common.get_planet_color_index(body_id), len(options.clrindividual)-1)
 		return options.clrindividual[color_idx]
-	if body_id == astrology.SE_CHIRON:
+	if body_id == astrology.SE_CHIRON or body_id in chart_bodies.APOGEE_IDS:
 		return options.clrperegrin
 	palette = (
 		options.clrdomicil,

@@ -169,6 +169,30 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
     [mainRows, drilledRowId],
   );
 
+  // The daemon ships children only for the current path and opened rows; a
+  // drill into any other branch asks for it through the table binding.
+  const loadDrillRows = React.useCallback(
+    async (targetId: string) => {
+      const bindings = asRecord(payload?.capabilities?.bindings);
+      const expanded = Array.isArray(bindings.expanded_row_ids) ? bindings.expanded_row_ids : [];
+      try {
+        await workspaceUpdateTableBinding(
+          documentId,
+          // The branch ships only when its L1 is open as well.
+          { ...bindings, expanded_row_ids: [...expanded, targetId.split(":l2:")[0], targetId] },
+          TABLE_ID,
+        );
+        const refreshed = await fetchGenericTablePayload(TABLE_ID, documentId);
+        rememberGenericTablePayload(TABLE_ID, documentId, refreshed);
+        setPayload(refreshed);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [documentId, payload],
+  );
+
   // L1 click drills the same-start L2 (the wx _l2_row_for_l1 model,
   // decennialswnd.py:214-277: the first L2 of the L1 block shares its start).
   const toggleDrill = React.useCallback(
@@ -178,9 +202,13 @@ export function DecennialsView({ documentId, parentDocumentId, sourceName, onClo
       if (level === 1) {
         targetId = `${row.id}:l2:0`;
       }
-      setDrilledRowId((current) => (current === targetId ? null : targetId));
+      const opening = drilledRowId !== targetId;
+      setDrilledRowId(opening ? targetId : null);
+      if (opening && !(payload?.rows ?? []).some((item) => item.meta?.parentId === targetId)) {
+        void loadDrillRows(targetId);
+      }
     },
-    [],
+    [drilledRowId, loadDrillRows, payload],
   );
 
   // Scroll the current period into view when the payload (re)loads — prefer

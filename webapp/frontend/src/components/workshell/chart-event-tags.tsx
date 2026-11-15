@@ -54,7 +54,8 @@ export function EventTagEditor({ documentId, event, catalog, onTagContext, onEdi
     }}>
       <Popover.Trigger ref={setAnchor} render={<Button type="button" size="xs" variant="ghost"
         className="h-auto max-w-full flex-wrap justify-start px-0 whitespace-normal"
-        aria-label={t("chartEvents.tags")} />} onClick={(e) => e.stopPropagation()}>
+        aria-label={t("chartEvents.tags")} />} onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}>
         {tags.map((tag) => <span key={tag.id} data-event-tag={tag.id}
           onContextMenu={() => onTagContext(tag)}
           className="rounded-[var(--aries-radius-ui-control-compact)] border border-border px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-small)] [overflow-wrap:anywhere]">{tag.name}</span>)}

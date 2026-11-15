@@ -9,6 +9,21 @@ import type {
   OverlayRenderMode,
 } from "@/lib/chart/types";
 
+import { withHouseVisibility } from "./house-visibility";
+
+let houseVisibility: boolean | null = null;
+
+export function setRetainedHouseVisibility(value: boolean | null): void {
+  houseVisibility = value;
+  if (value !== null) {
+    for (const [id, snapshot] of documentSnapshotCache) {
+      documentSnapshotCache.set(id, withHouseVisibility(snapshot, value));
+    }
+  }
+}
+
+export function retainedHouseVisibility(): boolean | null { return houseVisibility; }
+
 const documentSnapshotCache = new Map<string, ChartRenderSnapshot>();
 const documentSnapshotInflight = new Map<string, Promise<ChartRenderSnapshot>>();
 let documentSnapshotEpoch = 0;
@@ -17,6 +32,10 @@ export function rememberDocumentSnapshot(
   docId: string,
   snapshot: ChartRenderSnapshot,
 ): ChartRenderSnapshot {
+  if (houseVisibility !== null) {
+    const projected = withHouseVisibility(snapshot, houseVisibility);
+    if (projected !== snapshot) Object.assign(snapshot, projected);
+  }
   for (const [peerId, peer] of Object.entries(snapshot.sideBySideSnapshots ?? {})) {
     rememberDocumentSnapshot(peerId, peer);
   }

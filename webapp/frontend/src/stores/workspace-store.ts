@@ -4,10 +4,10 @@
 // Modified for Aries in 2026 by Max Lange.
 
 import { create } from "zustand";
+import { changeAspectView, type AspectViewState } from "@/lib/chart/aspect-view-state";
 
 import type {
   DignityKind,
-  PdDirectionState,
   PlanetId,
   RingLabelSegment,
   SymbolicTimeReadout,
@@ -27,9 +27,16 @@ import {
   type ListFollowPolicy,
 } from "@/lib/list-follow-policy";
 import { sameRetainedPaneActivation } from "@/lib/retained-pane-activation.mjs";
-import { radixPaneOwner, retainRadixPanes } from "@/lib/radix-pane-state";
+import { hasRadixPane, livePane, radixPaneOwner, retainRadixPanes } from "@/lib/radix-pane-state";
+import { noteTouchPaneOpened, restoreTouchPane } from "@/stores/touch-pane-store";
+import { rightPaneWidthPolicy, useFrameLayoutStore } from "@/stores/frame-layout-store";
+import { activeRightPaneModule } from "@/components/workshell/right-pane-layout";
 
-export type HoverRegion =
+export type HoverRegion = {
+  viewDocumentId?: string;
+  coordinateRevision?: number;
+  coordinateMode?: "zodiacal" | "ascensional";
+} & (
   | {
       kind: "planet";
       planetId: PlanetId;
@@ -47,6 +54,9 @@ export type HoverRegion =
       chartRole?: "primary" | "outer";
       /** Zero-based chart index when the body belongs to a multi-wheel. */
       ringIndex?: number;
+      /** Hovered moment (JD UT) of a view that plots time (Graphic Ephemeris):
+       * the body in the transit sky at that moment over the view's radix. */
+      atJd?: number;
     }
   // Vertex is its OWN region kind, not a planet — graphchart draws it via
   // _iter_draw_body_ids with object_id = CHART_OBJECT_VERTEX (graphchart.py:
@@ -59,6 +69,8 @@ export type HoverRegion =
   | { kind: "angle"; angleId: "asc" | "mc" | "dsc" | "ic"; longitude: number; chartRole?: "primary" | "outer"; ringIndex?: number }
   | { kind: "house"; houseIndex: number; longitude: number; chartRole?: "primary" | "outer" }
   | { kind: "sign"; signIndex: number; longitude: number }
+  | { kind: "term"; signIndex: number; rulerSeId: number; longitude: number }
+  | { kind: "decan"; signIndex: number; decanIndex: number; rulerSeId: number; longitude: number }
   | {
       kind: "secondary_ring";
       family: string;
@@ -67,26 +79,22 @@ export type HoverRegion =
       longitude: number;
       chartRole?: "primary" | "outer";
       searchObjectId?: string;
+      /** Exact catalog identity for an astrolabe star outside the chart selection. */
+      starCode?: string;
       segments?: RingLabelSegment[];
     }
-  | { kind: "aspect"; p1: string; p2: string; aspectType: number; scope?: "primary" | "interchart" }
+  | { kind: "aspect"; p1: string; p2: string; aspectType: number; scope?: "primary" | "interchart"; method?: string; contactId?: string }
   | { kind: "drishti"; relationId: string; method: "parashari" | "jaimini" }
-  | {
-      kind: "pd_event";
-      eventId: string;
-      eventKind: "body-aspect-to-angle" | "angle-to-body-aspect";
-      component: "direction-ray" | "directed-angle" | "directed-angle-label";
-      partyRole: "promissor" | "significator";
-      sourceRole: "primary" | "outer";
-      track: "inner" | "outer";
-      motion: "fixed" | "moving";
-      exactNow: boolean;
-      longitude: number;
-      nativeCoordinate: number;
-      directionState: PdDirectionState;
-    };
+  /** Chart dashboard: a body's parallels / contraparallels in orb, or one pair. */
+  | { kind: "declination"; seId: number; partner?: number });
 
 export function hoverRegionKey(region: HoverRegion | null): string | null {
+  const semantic = semanticHoverRegionKey(region);
+  return semantic && region?.viewDocumentId
+    ? `${region.viewDocumentId}:${region.coordinateMode ?? "zodiacal"}:${region.coordinateRevision ?? 0}:${semantic}` : semantic;
+}
+
+function semanticHoverRegionKey(region: HoverRegion | null): string | null {
   if (!region) return null;
   // chartRole disambiguates inner vs outer body in a biwheel so hovering the
   // outer Sun doesn't share a key with the inner Sun (graphchart keys hover by
@@ -97,7 +105,7 @@ export function hoverRegionKey(region: HoverRegion | null): string | null {
     : "";
   switch (region.kind) {
     case "planet":
-      return `planet:${region.seId}${role}${ring}`;
+      return `planet:${region.seId}${role}${ring}${region.atJd != null ? `:at:${region.atJd}` : ""}`;
     case "vertex":
       return `vertex${role}${ring}`;
     case "fortune":
@@ -112,14 +120,19 @@ export function hoverRegionKey(region: HoverRegion | null): string | null {
       return `house:${region.houseIndex}`;
     case "sign":
       return `sign:${region.signIndex}`;
+    case "term":
+      return `term:${region.signIndex}:${region.rulerSeId}`;
+    case "decan":
+      return `decan:${region.signIndex}:${region.decanIndex}`;
     case "secondary_ring":
-      return `secondary_ring:${region.family}:${region.itemId}:${region.searchObjectId ?? ""}:${region.label}${role}`;
+      return `secondary_ring:${region.family}:${region.itemId}:${region.starCode ?? ""}:${region.searchObjectId ?? ""}:${region.label}${role}`;
+    case "declination":
+      return `declination:${region.seId}:${region.partner ?? ""}`;
     case "aspect":
-      return `aspect:${region.scope ?? "primary"}:${region.p1}:${region.p2}:${region.aspectType}`;
+      return region.contactId ? `aspect:${region.method}:${region.contactId}`
+        : `aspect:${region.scope ?? "primary"}:${region.p1}:${region.p2}:${region.aspectType}`;
     case "drishti":
       return `drishti:${region.relationId}`;
-    case "pd_event":
-      return `pd_event:${region.eventId}:${region.component}:${region.partyRole}:${region.sourceRole}:${region.track}`;
   }
 }
 
@@ -143,6 +156,13 @@ export type TransitListPaneState = {
 
 export type TransitListPreferences = SidebarListPreferencesPayload["transitList"];
 
+/** The pane's selected technique tab and Primary surface. Part of the
+ * retained pane object, so leaving and re-entering a radix restores it. */
+export type DirectionsPaneView = {
+  tab: "primary" | "secondary";
+  surface: "directions" | "circumambulation" | "significators";
+};
+
 export type DirectionsPaneState = {
   documentId: string;
   followPolicy?: ListFollowPolicy;
@@ -156,6 +176,7 @@ export type DirectionsPaneState = {
   initialPrimaryDirection?: number;
   secondaryMethod?: "secondary" | "minor" | "tertiary";
   customSignificator?: DirectionCustomSignificator | null;
+  view?: DirectionsPaneView;
 };
 
 export type TimeLordTableId =
@@ -226,6 +247,11 @@ export type EclipsesPaneState = {
   followPolicy?: ListFollowPolicy;
 };
 
+export type PdPositionsPaneState = {
+  documentId: string;
+  sourceName: string;
+};
+
 export type LunarMansionsPaneState = {
   documentId: string;
   sourceName: string;
@@ -240,6 +266,9 @@ export type SynodicCyclesPaneState = {
 };
 
 export type SynodicListPreferences = {
+  planetIds: number[];
+  ingressesEnabled: boolean;
+  synodicsEnabled: boolean;
   ingressPlanetIds: number[];
   synodicPlanetIds: number[];
   lunarCycleIds: string[];
@@ -280,13 +309,19 @@ export type AspectListPreferences = {
   rxFocusEnabled: boolean;
   /** Independent display inclusion for house cusp contacts. */
   includeHouseCusps: boolean;
+  /** Display inclusion for minor-aspect rows (always calculated). */
+  includeMinorAspects: boolean;
+  /** Display inclusion for parallel/contraparallel rows (always calculated). */
+  includeDeclination: boolean;
+  /** Ascensional view's own orb choice, in arcminutes. */
+  ascensionalMaxOrbArcmin: number;
   /** Retained inclusion overrides keyed by the active secondary-ring mode. */
   secondaryRingEnabledByMode: Record<string, boolean>;
   filterDrawerOpen: boolean;
 };
 
 const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   aspectList: {
     mode: null,
     maxOrb: 10,
@@ -297,6 +332,9 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     focusMatchMode: "or",
     rxFocusEnabled: false,
     includeHouseCusps: true,
+    includeMinorAspects: false,
+    includeDeclination: false,
+    ascensionalMaxOrbArcmin: 25,
     secondaryRingEnabledByMode: {},
     filterDrawerOpen: false,
   },
@@ -308,18 +346,20 @@ const DEFAULT_SIDEBAR_LIST_PREFERENCES: SidebarListPreferencesPayload = {
     direction: "direct",
   },
   synodicList: {
+    planetIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15],
+    ingressesEnabled: true,
+    synodicsEnabled: true,
     ingressPlanetIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15],
     synodicPlanetIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15],
-    lunarCycleIds: ["draconic", "anomalistic"],
+    lunarCycleIds: ["draconic", "anomalistic", "void-course"],
     ingressDrawerOpen: false,
     synodicDrawerOpen: false,
     lunarDrawerOpen: false,
   },
   secondaryProgressions: {
-    pointFilterSide: "from",
     planetIds: null,
     angleIds: null,
-    aspectIds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    aspectIds: [0, 3, 5, 6, 10],
     filterDrawerOpen: false,
   },
   vimshottari: {
@@ -439,20 +479,6 @@ function persistSidebarListPreferencePatch(
   });
 }
 
-// Ascensional Transits right pane — companion list/options for the
-// chart-backed AT child. The chart stays in the main document surface; the
-// daemon-owned AT list lives in the same closable/resizable right pane ontology
-// as Directions/Transit Search.
-export type AscensionalTransitsPaneState = {
-  documentId: string;
-  sourceName: string;
-  followPolicy?: ListFollowPolicy;
-  ascensionalEventJd?: number | null;
-  ascensionalEventPlace?: Record<string, unknown> | null;
-  ascensionalFilterToActiveMoment?: boolean | null;
-  ascensionalApplyPrecession?: boolean | null;
-};
-
 export type AstrocartControlsPaneState = {
   documentId: string;
 };
@@ -495,10 +521,10 @@ export type RightInspectorPaneState =
   | { kind: "decennials"; state: DecennialsPaneState }
   | { kind: "profections"; state: ProfectionsPaneState }
   | { kind: "eclipses"; state: EclipsesPaneState }
+  | { kind: "pd-positions"; state: PdPositionsPaneState }
   | { kind: "lunar-mansions"; state: LunarMansionsPaneState }
   | { kind: "synodic-cycles"; state: SynodicCyclesPaneState }
   | { kind: "aspect-list"; state: AspectListPaneState }
-  | { kind: "ascensional-transits"; state: AscensionalTransitsPaneState }
   | { kind: "calendar"; state: CalendarPaneState }
   | { kind: "astrocart-controls"; state: AstrocartControlsPaneState }
   | { kind: "feature-catalog"; state: FeatureCatalogPaneState };
@@ -515,11 +541,11 @@ type RightPaneKey =
   | "decennialsPane"
   | "profectionsPane"
   | "eclipsesPane"
+  | "pdPositionsPane"
   | "lunarMansionsPane"
   | "synodicCyclesPane"
   | "chartEventsPane"
   | "aspectListPane"
-  | "ascensionalTransitsPane"
   | "calendarPane"
   | "astrocartControlsPane"
   | "featureCatalogPane";
@@ -534,11 +560,11 @@ export const RIGHT_PANE_KEYS = [
   "decennialsPane",
   "profectionsPane",
   "eclipsesPane",
+  "pdPositionsPane",
   "lunarMansionsPane",
   "synodicCyclesPane",
   "chartEventsPane",
   "aspectListPane",
-  "ascensionalTransitsPane",
   "calendarPane",
   "astrocartControlsPane",
   "featureCatalogPane",
@@ -589,6 +615,8 @@ export const SUPPLEMENTARY_KIND_LABELS: Record<SupplementaryKind, string> = {
 export type WorkspaceDocument = {
   id: string;
   parentDocumentId: string | null;
+  /** This document's saved event identity; descendants may only inherit notes. */
+  savedEventId?: string | null;
   /** Stable semantic title key for daemon documents (table.<id>, supplementary.*).
    * When present, chrome renders the live locale instead of a baked title. */
   titleKey?: string | null;
@@ -625,6 +653,7 @@ export type WorkspaceDocument = {
   supplementaryFeatureKind?: SupplementaryKind;
   /** Daemon-owned chart rendering layer. "zodiac" is the ordinary wheel. */
   chartVisualMode?: "zodiac" | "mdo" | "mundane" | "ascensional_transits" | string;
+  chartPresentation?: import("@/lib/chart/types").ChartPresentation;
   /** Internal daemon launch route for chart-session specializations. */
   launcherKind?: string;
   /** For synastry: the second radix's source name (outer ring). */
@@ -662,7 +691,6 @@ export type WorkspaceDocument = {
   eclipseEvent?: { jdUt: number; retflag: number } | null;
   ascensionalEventJd?: number | null;
   ascensionalEventPlace?: Record<string, unknown> | null;
-  ascensionalFilterToActiveMoment?: boolean | null;
   ascensionalApplyPrecession?: boolean | null;
   title: string;
   /** Daemon-reported unsaved-changes flag (slice 3). Drives the sidebar dirty
@@ -671,6 +699,7 @@ export type WorkspaceDocument = {
   /** Daemon-reported backing file path (empty for ephemeral charts). Used to
    * mirror the close-prompt "file-backed" predicate (morin.py:11536). */
   fpath?: string;
+  saveName?: string;
   /** Daemon runtime launcher gate for this document's session. View-only
    * children may have no chart session; callers can fall back to their parent
    * radix document's gate for sidebar/menu launchers. */
@@ -706,13 +735,13 @@ type WorkspaceState = {
   decennialsPane: DecennialsPaneState | null;
   profectionsPane: ProfectionsPaneState | null;
   eclipsesPane: EclipsesPaneState | null;
+  pdPositionsPane: PdPositionsPaneState | null;
   lunarMansionsPane: LunarMansionsPaneState | null;
   synodicCyclesPane: SynodicCyclesPaneState | null;
   synodicListPreferencesByDocument: Record<string, SynodicListPreferences>;
   chartEventsPane: ChartEventsPaneState | null;
   aspectListPane: AspectListPaneState | null;
   aspectListPreferencesByDocument: Record<string, AspectListPreferences>;
-  ascensionalTransitsPane: AscensionalTransitsPaneState | null;
   calendarPane: CalendarPaneState | null;
   calendarViewDate: string | null;
   calendarView: CalendarView;
@@ -734,6 +763,7 @@ type WorkspaceState = {
   selectedAspectBody: string | null;
   hideAllAspects: boolean;
   minorOnlyAspects: boolean;
+  aspectViews: Record<string, AspectViewState>;
 
   // Inspector Zone B — the active interpretation lens (discipline/theme/context)
   // that pack alerts evaluate against. PRESENTATION-only cursor: the daemon owns
@@ -796,6 +826,7 @@ type WorkspaceState = {
     preferences: SidebarListPreferencesPayload,
   ) => void;
   openDirectionsPane: (state: DirectionsPaneState) => void;
+  setDirectionsPaneView: (view: DirectionsPaneView) => void;
   closeDirectionsPane: () => void;
   setSecondaryProgressionsPreferences: (
     documentId: string,
@@ -816,6 +847,8 @@ type WorkspaceState = {
   closeProfectionsPane: () => void;
   openEclipsesPane: (state: EclipsesPaneState) => void;
   closeEclipsesPane: () => void;
+  openPdPositionsPane: (state: PdPositionsPaneState) => void;
+  closePdPositionsPane: () => void;
   openLunarMansionsPane: (state: LunarMansionsPaneState) => void;
   closeLunarMansionsPane: () => void;
   openSynodicCyclesPane: (state: SynodicCyclesPaneState) => void;
@@ -832,8 +865,6 @@ type WorkspaceState = {
     documentId: string,
     patch: Partial<AspectListPreferences>,
   ) => void;
-  openAscensionalTransitsPane: (state: AscensionalTransitsPaneState) => void;
-  closeAscensionalTransitsPane: () => void;
   openCalendarPane: (state: CalendarPaneState) => void;
   closeCalendarPane: () => void;
   setCalendarViewDate: (date: string) => void;
@@ -847,6 +878,9 @@ type WorkspaceState = {
   openWhatsNewPane: (version: string, notes: string) => void;
   closeFeatureCatalogPane: () => void;
   closeAllRightPanes: () => void;
+  /** Hide frame panes when another pane takes over. */
+  suspendFramePanes: () => boolean;
+  reopenRightPane: (options?: { skipStyleEditor?: boolean }) => boolean;
   reconcileWorkspaceChrome: (documents: WorkspaceDocument[]) => void;
   applyWorkspaceOpenResult: (
     result: WorkspaceOpenResult,
@@ -862,15 +896,15 @@ type WorkspaceState = {
   /** Toggle the exclusive-aspect click target for a body key. Same body → clear
    * (toggle off); different body → switch; either way clears hideAllAspects.
    * Port of morin._on_chart_click_for_aspects body branch (morin.py:4286-4293). */
-  toggleSelectedAspectBody: (bodyKey: string) => void;
+  toggleSelectedAspectBody: (bodyKey: string, documentId?: string) => void;
   /** Toggle the midband_empty "hide all aspects" state; clears any body
    * selection. Port of the hide_all branch (morin.py:4257-4258). */
-  toggleHideAllAspects: () => void;
+  toggleHideAllAspects: (documentId?: string) => void;
   /** Toggle M's inner-wheel minor-only exception without opening A's
    * comparison/transit gate. Has an effect only while hideAllAspects is set. */
-  toggleMinorOnlyAspects: () => void;
+  toggleMinorOnlyAspects: (documentId?: string) => void;
   /** Clear all click-aspect selection (back to normal render). */
-  clearAspectSelection: () => void;
+  clearAspectSelection: (documentId?: string) => void;
 
   /** Set (or clear) the active Zone B interpretation lens. Presentation-only. */
   setInspectorLens: (
@@ -918,20 +952,24 @@ const EMPTY_RIGHT_PANES = {
   decennialsPane: null,
   profectionsPane: null,
   eclipsesPane: null,
+  pdPositionsPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
   chartEventsPane: null,
   aspectListPane: null,
-  ascensionalTransitsPane: null,
   calendarPane: null,
   astrocartControlsPane: null,
   featureCatalogPane: null,
 } satisfies Pick<WorkspaceState, RightPaneKey>;
 
+// Both helpers serve explicit pane opens only (radix restores write the store
+// directly), so an open also brings a minimized touch-layout view back.
 function openExclusiveRightPane<K extends RightPaneKey>(
   key: K,
   value: WorkspaceState[K],
 ): Pick<WorkspaceState, RightPaneKey> {
+  restoreTouchPane();
+  noteTouchPaneOpened(value);
   return { ...EMPTY_RIGHT_PANES, [key]: value } as Pick<WorkspaceState, RightPaneKey>;
 }
 
@@ -941,6 +979,7 @@ function activateRetainedRightPane<K extends RightPaneKey>(
   requested: Exclude<WorkspaceState[K], null>,
   remountOnSemanticChange = false,
 ): WorkspaceState | Pick<WorkspaceState, RightPaneKey> {
+  restoreTouchPane();
   const active = current[key] as Record<string, unknown> | null;
   const next = (
     remountOnSemanticChange
@@ -1013,9 +1052,9 @@ function reconcileWorkspaceChromeState(
 
   for (const key of RIGHT_PANE_KEYS) {
     const pane = state[key];
-    if (!pane) continue;
-    if (!("documentId" in pane) || documentIds.has(pane.documentId)) continue;
-    next[key] = null;
+    const live = livePane(pane, documentIds);
+    if (live === pane) continue;
+    (next as Record<RightPaneKey, unknown>)[key] = live;
     changed = true;
   }
 
@@ -1031,6 +1070,11 @@ function reconcileWorkspaceChromeState(
     changed = true;
   }
 
+  const liveAspectViews = Object.fromEntries(Object.entries(state.aspectViews).filter(([id]) => documentIds.has(id)));
+  if (Object.keys(liveAspectViews).length !== Object.keys(state.aspectViews).length) {
+    next.aspectViews = liveAspectViews;
+    changed = true;
+  }
   return changed ? next : {};
 }
 
@@ -1050,13 +1094,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   decennialsPane: null,
   profectionsPane: null,
   eclipsesPane: null,
+  pdPositionsPane: null,
   lunarMansionsPane: null,
   synodicCyclesPane: null,
   synodicListPreferencesByDocument: {},
   chartEventsPane: null,
   aspectListPane: null,
   aspectListPreferencesByDocument: {},
-  ascensionalTransitsPane: null,
   calendarPane: null,
   calendarViewDate: null,
   calendarView: "month",
@@ -1067,6 +1111,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   selectedAspectBody: null,
   hideAllAspects: false,
   minorOnlyAspects: false,
+  aspectViews: {},
   inspectorLens: null,
   packsVersion: 0,
   semanticProfileVersion: 0,
@@ -1146,6 +1191,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           ),
       }, true),
     ),
+  setDirectionsPaneView: (view) =>
+    set((current) => {
+      const pane = current.directionsPane;
+      if (!pane || (pane.view?.tab === view.tab && pane.view?.surface === view.surface)) return current;
+      // A view patch, not a new activation: no openSeq bump or remount.
+      return { directionsPane: { ...pane, view } };
+    }),
   closeDirectionsPane: () => set({ directionsPane: null }),
   setSecondaryProgressionsPreferences: (documentId, patch) => {
     set((current) => {
@@ -1236,6 +1288,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }),
     ),
   closeEclipsesPane: () => set({ eclipsesPane: null }),
+  openPdPositionsPane: (state) =>
+    set((current) => activateRetainedRightPane(current, "pdPositionsPane", state)),
+  closePdPositionsPane: () => set({ pdPositionsPane: null }),
   openLunarMansionsPane: (state) =>
     set((current) =>
       activateRetainedRightPane(current, "lunarMansionsPane", state),
@@ -1311,14 +1366,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
     persistSidebarListPreferencePatch({ aspectList: patch });
   },
-  openAscensionalTransitsPane: (state) =>
-    set((current) =>
-      activateRetainedRightPane(current, "ascensionalTransitsPane", {
-        ...state,
-        followPolicy: state.followPolicy ?? defaultFollowPolicyForPane(state.documentId),
-      }),
-    ),
-  closeAscensionalTransitsPane: () => set({ ascensionalTransitsPane: null }),
   openCalendarPane: (state) =>
     set((current) => activateRetainedRightPane(current, "calendarPane", state)),
   closeCalendarPane: () => set({ calendarPane: null }),
@@ -1362,6 +1409,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     ),
   closeFeatureCatalogPane: () => set({ featureCatalogPane: null }),
   closeAllRightPanes: () => set(EMPTY_RIGHT_PANES),
+  suspendFramePanes: () => suspendFramePanes(),
+  reopenRightPane: (options) => reopenRememberedRadixPane(options),
   reconcileWorkspaceChrome: (documents) =>
     set((state) =>
       reconcileWorkspaceChromeState(state, documents),
@@ -1386,26 +1435,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         : {}),
     }));
   },
-  toggleSelectedAspectBody: (bodyKey) =>
-    set((state) => ({
-      selectedAspectBody: state.selectedAspectBody === bodyKey ? null : bodyKey,
-      hideAllAspects: false,
-      minorOnlyAspects: false,
-    })),
-  toggleHideAllAspects: () =>
-    set((state) => ({
-      hideAllAspects: !state.hideAllAspects,
-      selectedAspectBody: null,
-      minorOnlyAspects: false,
-    })),
-  toggleMinorOnlyAspects: () =>
-    set((state) => (
-      state.hideAllAspects
-        ? { minorOnlyAspects: !state.minorOnlyAspects, selectedAspectBody: null }
-        : {}
-    )),
-  clearAspectSelection: () =>
-    set({ selectedAspectBody: null, hideAllAspects: false, minorOnlyAspects: false }),
+  toggleSelectedAspectBody: (bodyKey, documentId) =>
+    set((state) => changeAspectView(state, documentId ?? useDaemonWorkspaceStore.getState().activeDocumentId, "body", bodyKey)),
+  toggleHideAllAspects: (documentId) =>
+    set((state) => changeAspectView(state, documentId ?? useDaemonWorkspaceStore.getState().activeDocumentId, "hide")),
+  toggleMinorOnlyAspects: (documentId) =>
+    set((state) => changeAspectView(state, documentId ?? useDaemonWorkspaceStore.getState().activeDocumentId, "minor")),
+  clearAspectSelection: (documentId) =>
+    set((state) => changeAspectView(state, documentId ?? useDaemonWorkspaceStore.getState().activeDocumentId, "clear")),
   setInspectorLens: (lens) => set({ inspectorLens: lens }),
   setTimedChartShowRadix: (value) => set({ timedChartShowRadix: value }),
   setAspectListPerfectionLinkMode: (value) => set({ aspectListPerfectionLinkMode: value }),
@@ -1425,24 +1462,199 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 }));
 
-// Presentation memory lives beside the other workspace chrome. Query owners
-// remain unchanged; nested subsidiaries share their root's active pane.
+// Remember radix content; keep an open sidebar useful with Inspector wherever
+// the destination has no content. Inspector has no per-tab visibility policy.
+type RadixPaneChrome = Pick<WorkspaceState, RightPaneKey> & {
+  inspectorPane: object | null;
+  notesPane: object | null;
+  stylePane: object | null;
+};
+type FramePaneState = Pick<ReturnType<typeof useFrameLayoutStore.getState>,
+  "inspectorOpen" | "notesPaneOpen" | "styleEditorOpen">;
+const OPEN_FRAME_PANE = {};
+const EMPTY_RADIX_CHROME: RadixPaneChrome = {
+  ...EMPTY_RIGHT_PANES, inspectorPane: null, notesPane: null, stylePane: null,
+};
+
+function radixPaneChrome(
+  workspace: WorkspaceState,
+  frame: FramePaneState = useFrameLayoutStore.getState(),
+): RadixPaneChrome {
+  const panes = Object.fromEntries(RIGHT_PANE_KEYS.map((key) => [key, workspace[key]])) as Pick<WorkspaceState, RightPaneKey>;
+  const listOpen = hasRadixPane(panes);
+  return {
+    ...panes,
+    inspectorPane: !listOpen && frame.inspectorOpen ? OPEN_FRAME_PANE : null,
+    notesPane: !listOpen && frame.notesPaneOpen ? OPEN_FRAME_PANE : null,
+    stylePane: !listOpen && frame.styleEditorOpen ? OPEN_FRAME_PANE : null,
+  };
+}
+
+function compatibleRadixPane(chrome: RadixPaneChrome, owner: string | null): RadixPaneChrome {
+  if (chrome.chartEventsPane && owner) {
+    return { ...EMPTY_RADIX_CHROME, chartEventsPane: { documentId: owner } };
+  }
+  if (chrome.inspectorPane || chrome.notesPane || chrome.stylePane) {
+    return {
+      ...EMPTY_RADIX_CHROME,
+      inspectorPane: chrome.inspectorPane,
+      notesPane: chrome.notesPane,
+      stylePane: chrome.stylePane,
+    };
+  }
+  return { ...EMPTY_RADIX_CHROME, inspectorPane: OPEN_FRAME_PANE };
+}
+
+function radixPaneModule(chrome: RadixPaneChrome) {
+  const daemon = useDaemonWorkspaceStore.getState();
+  const active = daemon.documents.find((doc) => doc.documentId === daemon.activeDocumentId);
+  const map = active?.kind === "astrocart" ? active : daemon.documents.find(
+    (doc) => doc.documentId === active?.parentDocumentId && doc.kind === "astrocart",
+  );
+  return activeRightPaneModule({
+    ...chrome,
+    inspectorOpen: chrome.inspectorPane !== null,
+    notesOpen: chrome.notesPane !== null,
+    styleEditorOpen: chrome.stylePane !== null,
+    activeAstrocartDocumentId: map?.documentId ?? null,
+  });
+}
+
+function preservePaneWidth(chrome: RadixPaneChrome): void {
+  const kind = radixPaneModule(chrome);
+  if (!kind) return;
+  const frame = useFrameLayoutStore.getState();
+  const width = Math.max(frame.rightPaneWidth, rightPaneWidthPolicy(kind).minContentWidth);
+  if (width !== frame.rightPaneWidth) frame.setRightPaneWidth(width);
+}
+
 let activePaneRadix = radixPaneOwner(
   useDaemonWorkspaceStore.getState().documents,
   useDaemonWorkspaceStore.getState().activeDocumentId,
 );
-let panesByRadix: Record<string, Pick<WorkspaceState, RightPaneKey>> = {};
+let panesByRadix: Record<string, RadixPaneChrome> = {};
+let restoringRadixPane = false;
+
+function contentChrome(chrome: RadixPaneChrome): RadixPaneChrome {
+  // Inspector alone is the global fallback, not remembered radix content.
+  // Keep the combined Inspector/Notes view as real content.
+  return chrome.inspectorPane && !chrome.notesPane && !chrome.stylePane
+    ? { ...chrome, inspectorPane: null } : chrome;
+}
+
+function rememberRadixPane(): void {
+  if (restoringRadixPane) return;
+  const chrome = contentChrome(radixPaneChrome(useWorkspaceStore.getState()));
+  if (activePaneRadix && hasRadixPane(chrome)) panesByRadix[activePaneRadix] = chrome;
+  preservePaneWidth(chrome);
+}
+
+function applyRadixPaneChrome(next: RadixPaneChrome): void {
+  const current = useWorkspaceStore.getState();
+  const frame = useFrameLayoutStore.getState();
+  const framePatch = {
+    inspectorOpen: next.inspectorPane !== null,
+    notesPaneOpen: next.notesPane !== null,
+    styleEditorOpen: next.stylePane !== null,
+  };
+  const frameChanged = frame.inspectorOpen !== framePatch.inspectorOpen ||
+    frame.notesPaneOpen !== framePatch.notesPaneOpen || frame.styleEditorOpen !== framePatch.styleEditorOpen;
+  const panesChanged = RIGHT_PANE_KEYS.some((key) => current[key] !== next[key]);
+  if (!frameChanged && !panesChanged) return;
+  restoringRadixPane = true;
+  try {
+    preservePaneWidth(next);
+    if (frameChanged) useFrameLayoutStore.setState({ ...framePatch, notesFocusRequest: null });
+    if (panesChanged) {
+      useWorkspaceStore.setState(Object.fromEntries(RIGHT_PANE_KEYS.map((key) => [key, next[key]])) as Pick<WorkspaceState, RightPaneKey>);
+    }
+  } finally {
+    restoringRadixPane = false;
+  }
+}
+
+function suspendFramePanes(): boolean {
+  const frame = useFrameLayoutStore.getState();
+  if (!frame.inspectorOpen && !frame.notesPaneOpen && !frame.styleEditorOpen) return false;
+  restoringRadixPane = true;
+  try {
+    useFrameLayoutStore.setState({ inspectorOpen: false, notesPaneOpen: false, styleEditorOpen: false, notesFocusRequest: null });
+  } finally {
+    restoringRadixPane = false;
+  }
+  return true;
+}
+
+function reopenRememberedRadixPane(options?: { skipStyleEditor?: boolean }): boolean {
+  if (hasRadixPane(radixPaneChrome(useWorkspaceStore.getState()))) return false;
+  const daemon = useDaemonWorkspaceStore.getState();
+  const restored = retainRadixPanes(
+    daemon.documents, null, activePaneRadix, EMPTY_RADIX_CHROME, panesByRadix, EMPTY_RADIX_CHROME,
+  );
+  panesByRadix = restored.retained;
+  const next = restored.panes;
+  if (!hasRadixPane(next)) return false;
+  if (next.astrocartControlsPane && !radixPaneModule(next)) return false;
+  // Inspector intent must not revive the editor; branch navigation still can.
+  if (options?.skipStyleEditor && next.stylePane) return false;
+  // Reopen the saved object directly: no activation counter, new launch seed,
+  // preference write, or Inspector selection replaces the remembered list.
+  applyRadixPaneChrome(next);
+  return true;
+}
+
+useWorkspaceStore.subscribe((state, previous) => {
+  if (!RIGHT_PANE_KEYS.some((key) => state[key] !== previous[key])) return;
+  if (restoringRadixPane) return;
+  // Also covers timed row opens which restore their originating list after
+  // daemon activation has temporarily selected a destination fallback.
+  if (RIGHT_PANE_KEYS.some((key) => state[key] !== null)) {
+    // A list takes over the shared frame.
+    suspendFramePanes();
+  }
+  rememberRadixPane();
+});
+useFrameLayoutStore.subscribe((state, previous) => {
+  if (state.inspectorOpen === previous.inspectorOpen &&
+      state.notesPaneOpen === previous.notesPaneOpen &&
+      state.styleEditorOpen === previous.styleEditorOpen) return;
+  if (restoringRadixPane) return;
+  const chrome = radixPaneChrome(useWorkspaceStore.getState(), state);
+  if (activePaneRadix && chrome.inspectorPane && !chrome.notesPane && !chrome.stylePane) {
+    // Explicit Inspector intent selects the default instead of restoring the
+    // previous list/editor on the next visit. Automatic fallback is guarded.
+    delete panesByRadix[activePaneRadix];
+  }
+  rememberRadixPane();
+});
+
 useDaemonWorkspaceStore.subscribe((state, previous) => {
   if (state.documents === previous.documents && state.activeDocumentId === previous.activeDocumentId) return;
   const nextOwner = radixPaneOwner(state.documents, state.activeDocumentId);
   const current = useWorkspaceStore.getState();
-  const panes = Object.fromEntries(RIGHT_PANE_KEYS.map((key) => [key, current[key]])) as Pick<WorkspaceState, RightPaneKey>;
-  const restored = retainRadixPanes(state.documents, activePaneRadix, nextOwner, panes, panesByRadix, EMPTY_RIGHT_PANES);
-  panesByRadix = restored.retained;
-  activePaneRadix = nextOwner;
-  if (RIGHT_PANE_KEYS.some((key) => current[key] !== restored.panes[key])) {
-    useWorkspaceStore.setState(restored.panes);
+  const chrome = radixPaneChrome(current);
+  const wasOpen = hasRadixPane(chrome);
+  const changedTab = state.activeDocumentId !== previous.activeDocumentId;
+  if (changedTab && useFrameLayoutStore.getState().notesFocusRequest) {
+    useFrameLayoutStore.setState({ notesFocusRequest: null });
   }
+  const restored = retainRadixPanes(state.documents, activePaneRadix, nextOwner, contentChrome(chrome), panesByRadix, EMPTY_RADIX_CHROME);
+  panesByRadix = restored.retained;
+  const sameRadix = activePaneRadix === nextOwner;
+  activePaneRadix = nextOwner;
+  let next = !wasOpen && changedTab && nextOwner
+    ? panesByRadix[nextOwner] ?? restored.panes : restored.panes;
+  if (next.astrocartControlsPane && !radixPaneModule(next)) {
+    next = EMPTY_RADIX_CHROME;
+  }
+  // Same-tab updates never undo a close. Keep visible Inspector chrome even
+  // though it is deliberately absent from the retained radix content.
+  if (!changedTab && sameRadix && (hasRadixPane(next) || !wasOpen)) {
+    applyRadixPaneChrome({ ...next, inspectorPane: chrome.inspectorPane });
+    return;
+  }
+  if (!hasRadixPane(next) && wasOpen) next = compatibleRadixPane(chrome, nextOwner);
+  applyRadixPaneChrome(next);
 });
 
 // A row-link mark freezes cursor-aware lists against the opened chart's

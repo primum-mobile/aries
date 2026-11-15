@@ -6,10 +6,17 @@ import { WHEEL_GEOMETRY_LEGACY_TOKENS } from "../src/lib/chart/wheel-geometry-ow
 import type { WheelPresetsState } from "../src/lib/daemon/wheel-presets-client";
 import type { WheelTypographyProfile } from "../src/lib/chart/wheel-render-style";
 import { canPersistStyleDraft, refreshStyleDraftForSave } from "../src/lib/style-lab/prepare-save";
+import { compileFlatWheelAuthoringOverrides } from "../src/lib/style-lab/wheel-authoring-adapter";
+import { DEFAULT_WHEEL_RENDER_STYLE, projectWheelAuthoringStyle, resolveWheelRingSet } from "../src/lib/chart/wheel-render-style";
+import { WHEEL_FACTORY_SETTINGS } from "../src/lib/chart/wheel-composition";
+import type { WheelComposition } from "../src/lib/chart/wheel-composition";
+import { captureWheelPresetAppearance } from '../src/lib/style-lab/wheel-preset-save';
 
 import {
+  applyOverrideEdit,
   normalizeRecentColors,
   themeWheelModified,
+  wheelPresetAppearanceEdits,
   useChartStyleEditorStore,
 } from "../src/stores/chart-style-editor-store";
 
@@ -20,10 +27,13 @@ function resetStore() {
     geometryOverrides: {},
     syncedGeometryOverrides: {},
     wheelPresetState: null,
+    wheelGeometryReceipts: {},
+    wheelAppearanceBaseline: null,
     themeWheelBaseline: null,
     pendingWheelCompositions: {},
     syncedOverrides: {},
     selectedFamily: null,
+    sceneElements: [],
     gestureOwner: null,
     semanticOverrides: {},
     resolvedOverrides: {},
@@ -36,6 +46,134 @@ function resetStore() {
 }
 
 test.beforeEach(resetStore);
+
+test('first radius edit freezes the inherited recipe and origin restoration removes the complete migration', () => {
+  const term = 'authoring.wheel.anglo.rings.term.radius';
+  const inner = 'authoring.wheel.anglo.rings.innerBoundary.radius';
+  const original = {[term]: 335.1, [inner]: 299.1};
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', original), 'anglo');
+  store.beginGesture('radius');
+  store.setOverride(term, 335.101);
+  let state = useChartStyleEditorStore.getState();
+  expect(state.geometryOverrides[term.replace('.radius', '.recipeRadius')]).toBe(335.1);
+  expect(state.geometryOverrides[inner.replace('.radius', '.recipeRadius')]).toBe(299.1);
+  expect(state.geometryOverrides[term.replace('.radius', '.radiusAuthored')]).toBe(true);
+  expect(state.geometryOverrides['authoring.wheel.anglo.canvas.chart.recipeVersion']).toBe(1);
+  store.restoreGestureProperty(term, 'radius');
+  store.endGesture('radius');
+  state = useChartStyleEditorStore.getState();
+  expect(state.geometryOverrides).toEqual(original);
+  expect(state.undoStack).toEqual([]);
+});
+
+test('a handle-drag preview paints exactly what the release will store, without writing', () => {
+  const term = 'authoring.wheel.anglo.rings.term.radius';
+  const inner = 'authoring.wheel.anglo.rings.innerBoundary.radius';
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {[term]: 335.1, [inner]: 299.1}), 'anglo');
+  store.beginGesture('canvas');
+  const before = useChartStyleEditorStore.getState();
+  const preview = applyOverrideEdit(before, term, 341.5);
+  // Previewing leaves the store untouched.
+  expect(useChartStyleEditorStore.getState()).toBe(before);
+  expect(useChartStyleEditorStore.getState().geometryOverrides[term]).toBe(335.1);
+  store.setOverride(term, 341.5);
+  const stored = useChartStyleEditorStore.getState();
+  expect(preview.geometryOverrides).toEqual(stored.geometryOverrides);
+  expect(preview.resolvedOverrides).toEqual(stored.resolvedOverrides);
+  expect(preview.cssOverrides).toEqual(stored.cssOverrides);
+  store.endGesture('canvas');
+});
+
+test('explicit radii remain authored at their recipe value while another radius takes priority', () => {
+  const term = 'authoring.wheel.anglo.rings.term.radius';
+  const inner = 'authoring.wheel.anglo.rings.innerBoundary.radius';
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {[term]: 335.1, [inner]: 299.1}), 'anglo');
+  store.beginGesture('first');
+  // Equal to the imported recipe is still an explicit request if the current
+  // topology displays that circle elsewhere. UI no-op guards compare display.
+  store.setOverride(term, 335.1);
+  store.endGesture('first');
+  store.beginGesture('second');
+  store.setOverride(inner, 295);
+  store.endGesture('second');
+  const compiled = compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides);
+  expect(compiled.recipeRadii?.anglo).toEqual({termRing: 335.1, innerBoundaryRing: 299.1});
+  expect(compiled.ringRadii.anglo).toEqual({termRing: 335.1, innerBoundaryRing: 295});
+  expect(compiled.radiusPriority?.anglo).toBe('innerBoundaryRing');
+  store.resetProperty(inner);
+  const reset = compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides);
+  expect(reset.ringRadii.anglo).toEqual({termRing: 335.1});
+  expect(reset.recipeRadii?.anglo?.innerBoundaryRing).toBe(299.1);
+  store.undo();
+  expect(compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides).ringRadii.anglo)
+    .toEqual({termRing: 335.1, innerBoundaryRing: 295});
+});
+
+test('crossing an inherited raw radius during a reordered gesture preserves explicit intent', () => {
+  const key = 'authoring.wheel.anglo.rings.innerBoundary.radius';
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {[key]: 299.1}), 'anglo');
+  // The physical circle begins at315 after reordering. Its imported raw source
+  // is299.1, which the pointer crosses before returning to that physical origin.
+  store.beginGesture('reordered');
+  store.setOverride(key, 310);
+  store.setOverride(key, 299.1);
+  const compiled = compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides);
+  expect(compiled.ringRadii.anglo).toEqual({innerBoundaryRing: 299.1});
+  expect(compiled.recipeRadii?.anglo).toEqual({innerBoundaryRing: 299.1});
+  store.restoreGestureProperty(key, 'reordered');
+  store.endGesture('reordered');
+  expect(useChartStyleEditorStore.getState().geometryOverrides).toEqual({[key]: 299.1});
+  expect(useChartStyleEditorStore.getState().undoStack).toEqual([]);
+});
+
+test('resetting an inherited radius removes its remembered preference while undo restores it', () => {
+  const term = 'authoring.wheel.anglo.rings.term.radius';
+  const inner = 'authoring.wheel.anglo.rings.innerBoundary.radius';
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {[term]: 335.1, [inner]: 299.1}), 'anglo');
+  store.beginGesture('term');
+  store.setOverride(term, 336);
+  store.endGesture('term');
+  store.resetProperty(inner);
+  const reset = compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides);
+  expect(reset.recipeRadii?.anglo).toEqual({termRing: 335.1});
+  expect(reset.ringRadii.anglo).toEqual({termRing: 336});
+  store.undo();
+  expect(compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides).recipeRadii?.anglo)
+    .toEqual({termRing: 335.1, innerBoundaryRing: 299.1});
+});
+
+test('the first epsilon radius edit preserves the production geometry around an inherited recipe', () => {
+  const imported = Object.fromEntries(Object.entries({zodiacOuter: 379.1, zodiacInner: 348.1,
+    term: 335.1, angloCuspOuter: 321.4, innerBoundary: 299.1, houseBoundary: 211, base: 190.6})
+    .map(([role, value]) => [`authoring.wheel.anglo.rings.${role}.radius`, value]));
+  const source = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition) as WheelComposition;
+  const composition: WheelComposition = {...source, rings: source.rings.map(ring =>
+    ['terms', 'decans'].includes(ring.archetypeId) ? {...ring, enabled: true} : ring)};
+  const input = {profile: 'anglo' as const, mode: 'single' as const, composition, maxRadius: 400,
+    showTerms: true, showDecans: true, showHouses: true, showPositions: true, hasOuterRing: false,
+    comparisonWithOuterHouses: false};
+  const resolve = () => resolveWheelRingSet(projectWheelAuthoringStyle({...DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: compileFlatWheelAuthoringOverrides(useChartStyleEditorStore.getState().geometryOverrides)},
+  400, 'anglo'), input);
+  const store = useChartStyleEditorStore.getState();
+  store.acceptWheelPresets(wheelPresetFixture('anglo', imported), 'anglo');
+  const original = resolve();
+  store.beginGesture('epsilon');
+  store.setOverride('authoring.wheel.anglo.rings.term.radius', original.rDecans + .001);
+  const edited = resolve();
+  for (const field of ['r30', 'r0', 'rInner', 'rHouse', 'rBase'] as const) {
+    expect(Math.abs(edited[field] - original[field])).toBeLessThan(.01);
+  }
+  store.cancelGesture('epsilon');
+  expect(resolve()).toEqual(original);
+  store.acceptWheelPresets(wheelPresetFixture('cusps', {}, 2), 'cusps');
+  expect(useChartStyleEditorStore.getState().geometryOverrides).toEqual({});
+});
 
 test("save remains retryable after a failed write or revision conflict", () => {
   expect(canPersistStyleDraft("error", 3)).toBe(true);
@@ -136,7 +274,7 @@ test("multi-property style transfer is one undo transaction", () => {
 });
 
 test("editing a family writes every member as one undo step", () => {
-  // Max: "the pos ° glyph stuff doesn't change yet." A position's degree, sign
+  // Editing the position degree glyph alone changed nothing. A position's degree, sign
   // and minute are read as one thing, so editing them one at a time was three
   // hunts through the list for a single change. Selecting the family edits all
   // of them.
@@ -180,8 +318,35 @@ test("a family write never touches a class outside the family", () => {
   store.setOverride("chart.background", "#000000");
   const after = useChartStyleEditorStore.getState().semanticOverrides;
   expect(Object.keys(after).sort()).toEqual([
+    "authoring.wheel.classic.canvas.chart.radiusPriority",
+    "authoring.wheel.classic.canvas.chart.recipeVersion",
     "authoring.wheel.classic.rings.term.radius",
+    "authoring.wheel.classic.rings.term.radiusAuthored",
     "chart.background",
+  ]);
+  expect(after["authoring.wheel.classic.canvas.chart.radiusPriority"]).toBe("termRing");
+});
+
+test("a family write skips members that do not have the property", () => {
+  resetStore();
+  // The angle family mixes a label with a ray, and the aspect family a line
+  // with a glyph: a font size must not reach the ray, nor a dash the glyph.
+  useChartStyleEditorStore.setState({
+    selectedFamily: ["angles.outer.ray", "angles.outer.label", "aspects.primary.line", "aspects.primary.glyph"],
+  });
+  const store = useChartStyleEditorStore.getState();
+  store.setOverride("authoring.wheel.base.angles.outer.label.fontSize", 14);
+  store.setOverride("authoring.wheel.base.aspects.primary.line.strokeStyle", "dashed");
+  store.setOverride("authoring.wheel.base.angles.outer.ray.color", "#112233");
+  expect(Object.keys(useChartStyleEditorStore.getState().semanticOverrides).sort()).toEqual([
+    "authoring.wheel.base.angles.outer.label.color",
+    "authoring.wheel.base.angles.outer.label.fontSize",
+    "authoring.wheel.base.angles.outer.ray.color",
+    "authoring.wheel.base.angles.outer.ray.strokeStyle",
+    "authoring.wheel.base.aspects.primary.glyph.color",
+    "authoring.wheel.base.aspects.primary.glyph.fontSize",
+    "authoring.wheel.base.aspects.primary.line.color",
+    "authoring.wheel.base.aspects.primary.line.strokeStyle",
   ]);
 });
 
@@ -279,6 +444,38 @@ test("a reference resolves against the theme being edited, not the factory", () 
   expect(useChartStyleEditorStore.getState().cssOverrides["--morinus-frame"])
     .toBe("rgb(1 2 3)");
 });
+
+for (const [roleId, cssColor, paintedColor] of [
+  ["chart.color.signs", "rgb(1 2 3)", "rgb(1 2 3 / 100%)"],
+  ["chart.color.body.sun", "#c86432", "rgb(200 100 50 / 100%)"],
+  ["chart.color.aspect.trine", "rgb(20 40 60 / 50%)", "rgb(20 40 60 / 50%)"],
+  ["chart.color.dignity.domicile", "rgb(30, 50, 70)", "rgb(30 50 70 / 100%)"],
+  ["chart.color.element.fire", "#abcdef", "rgb(171 205 239 / 100%)"],
+] as const) {
+  test(`a ${roleId} swatch immediately reaches wheel class paint and stays linked`, () => {
+    withColorTokens();
+    const store = useChartStyleEditorStore.getState();
+    store.setTokenMetadata([...COLOR_TOKENS, {
+      ...COLOR_TOKENS[0], semanticId: roleId, cssVar: "--test-swatch",
+    }]);
+    store.setStyleLabBaseTheme({
+      sourceThemeName: "swatch-test", mode: "dark", appTokens: {},
+      chartPalette: { "--test-swatch": cssColor }, chartData: {}, appAuthoring: {},
+    });
+    const classId = "zodiac.signGlyph";
+    const target = `authoring.wheel.base.${classId}.color`;
+    store.beginGesture("swatch");
+    store.setOverride(target, `{${roleId}}`);
+    store.endGesture("swatch");
+    const paint = () => compileFlatWheelAuthoringOverrides(
+      useChartStyleEditorStore.getState().resolvedOverrides,
+    ).typography.classic?.[classId]?.color;
+    expect(paint()).toBe(paintedColor);
+    expect(useChartStyleEditorStore.getState().semanticOverrides[target]).toBe(`{${roleId}}`);
+    store.setOverride(roleId, [9, 8, 7]);
+    expect(paint()).toBe("rgb(9 8 7)");
+  });
+}
 
 test("a new base theme re-resolves what follows a role", () => {
   withColorTokens();
@@ -393,13 +590,17 @@ test('geometry edits remain on the selected wheel when appearance scope is share
   store.setOverride('authoring.wheel.base.rings.term.radius', 130);
   store.endGesture('wheel');
   expect(useChartStyleEditorStore.getState().geometryOverrides).toEqual({
+    'authoring.wheel.anglo.canvas.chart.radiusPriority': 'termRing',
+    'authoring.wheel.anglo.canvas.chart.recipeVersion': 1,
     'authoring.wheel.anglo.rings.term.radius': 130,
+    'authoring.wheel.anglo.rings.term.radiusAuthored': true,
   });
   expect(useChartStyleEditorStore.getState().undoStack).toHaveLength(1);
   store.undo();
   expect(useChartStyleEditorStore.getState().geometryOverrides).toEqual({});
   store.redo();
   expect(useChartStyleEditorStore.getState().geometryOverrides['authoring.wheel.anglo.rings.term.radius']).toBe(130);
+  expect(useChartStyleEditorStore.getState().geometryOverrides['authoring.wheel.anglo.canvas.chart.radiusPriority']).toBe('termRing');
 });
 
 test('resetting theme overrides preserves wheel geometry and resolves every preview map together', () => {
@@ -467,8 +668,13 @@ test('a preset response for a departed wheel updates metadata without replacing 
   store.acceptWheelPresets(wheelPresetFixture('anglo', {[geometryKey]: 80}, 3), 'anglo', {metadataOnly: true});
   const state = useChartStyleEditorStore.getState();
   expect(state.geometryProfile).toBe('cusps');
-  expect(state.geometryOverrides).toEqual({[key]: 120});
+  expect(state.geometryOverrides).toEqual({[key]: 120,
+    [key.replace('.radius', '.radiusAuthored')]: true,
+    'authoring.wheel.cusps.canvas.chart.recipeVersion': 1,
+    'authoring.wheel.cusps.canvas.chart.radiusPriority': 'termRing'});
   expect(state.wheelPresetState?.revision).toBe(3);
+  expect(state.wheelGeometryReceipts.anglo).toBeUndefined();
+  expect(state.wheelGeometryReceipts.cusps?.revision).toBe(2);
 });
 
 
@@ -555,4 +761,62 @@ test('shared band background edits are atomic and leave band widths independent'
   useChartStyleEditorStore.getState().selectElement(null);
   useChartStyleEditorStore.getState().setOverride('authoring.wheel.anglo.fills.decanBand.fillPattern', 'hatch');
   expect(useChartStyleEditorStore.getState().semanticOverrides['authoring.wheel.anglo.fills.termBand.fillPattern']).toBeUndefined();
+});
+
+test('styled wheel selection keeps theme truth intact and later edits stay above the saved design', () => {
+  const width = 'authoring.wheel.anglo.houses.inner.cusp.strokeWidth';
+  const store = useChartStyleEditorStore.getState();
+  store.replaceOverrides({[width]: 2});
+  store.setSyncedOverrides({[width]: 2});
+  const selected = wheelPresetFixture('anglo', {});
+  selected.drafts.anglo!.appearance = {[width]: 0.15};
+  store.acceptWheelPresets(selected, 'anglo');
+  expect(useChartStyleEditorStore.getState().semanticOverrides[width]).toBe(2);
+  expect(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo')).toEqual({});
+  store.beginGesture('style');
+  store.setOverride(width, 0.3);
+  store.endGesture('style');
+  expect(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo')).toEqual({[width]: 0.3});
+  store.setSyncedOverrides({[width]: 0.3});
+  expect(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo')).toEqual({[width]: 0.3});
+  store.undo();
+  expect(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo')).toEqual({});
+});
+
+test('a wheel save acknowledgement keeps style edits made while the save was in flight', () => {
+  const width = 'authoring.wheel.anglo.houses.inner.cusp.strokeWidth';
+  const store = useChartStyleEditorStore.getState();
+  store.replaceOverrides({[width]: 0.15});
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {}), 'anglo');
+  store.setOverride(width, 0.2);
+  const sent = {[width]: 0.2};
+  store.setOverride(width, 0.3);
+  const saved = wheelPresetFixture('anglo', {}, 2);
+  saved.drafts.anglo!.appearance = sent;
+  store.acceptWheelPresets(saved, 'anglo', {preserveLocalChanges: true, appearanceBaseline: sent});
+  expect(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo')).toEqual({[width]: 0.3});
+});
+
+test('wheel save normalizes literal colours while keeping authored palette roles and factory presentation tiers', () => {
+  const color = 'authoring.wheel.anglo.houses.inner.cusp.color';
+  const width = 'authoring.wheel.anglo.houses.inner.cusp.strokeWidth';
+  const values = {[color]: 'rgb(12 34 56 / 0.5)', [width]: 0.15};
+  const literal = captureWheelPresetAppearance(values, 'anglo', {});
+  expect(literal[color]).toEqual([12, 34, 56, 0.5]);
+  const linked = captureWheelPresetAppearance(values, 'anglo', {}, {}, {}, {[color]: '{chart.color.houses}'});
+  expect(linked[color]).toBe('{chart.color.houses}');
+  const inherited = captureWheelPresetAppearance({[width]: 4}, 'anglo', {}, {}, {}, {}, 'theorem');
+  expect(inherited[width]).toBe(WHEEL_FACTORY_SETTINGS.presentations.theorem.appearance[width]);
+  const edited = captureWheelPresetAppearance({[width]: 4}, 'anglo', {}, {}, {[width]: 0.15}, {}, 'theorem');
+  expect(edited[width]).toBe(0.15);
+  expect(Object.keys(inherited).some(key => key.endsWith('.tickLength'))).toBe(false);
+});
+
+test('changing a palette role to an equal-coloured role is still a savable wheel edit', () => {
+  const key = 'authoring.wheel.anglo.houses.inner.cusp.color';
+  const store = useChartStyleEditorStore.getState();
+  store.replaceOverrides({[key]: '{chart.color.houses}'});
+  store.acceptWheelPresets(wheelPresetFixture('anglo', {}), 'anglo');
+  store.setOverride(key, '{chart.color.signs}');
+  expect(Object.keys(wheelPresetAppearanceEdits(useChartStyleEditorStore.getState(), 'anglo'))).toContain(key);
 });

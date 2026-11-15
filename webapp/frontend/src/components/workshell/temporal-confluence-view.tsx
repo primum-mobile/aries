@@ -878,7 +878,6 @@ function CanonicalComparisonLane({
         source={sourcePath}
         documentId={documentId}
         cursorDocumentId={documentId}
-        focusDocumentId={documentId}
         focusDatetime={focusDatetime}
         initialTab="primary"
         initialPrimaryMode="radix"
@@ -894,7 +893,6 @@ function CanonicalComparisonLane({
         source={sourcePath}
         documentId={documentId}
         cursorDocumentId={documentId}
-        focusDocumentId={documentId}
         focusDatetime={focusDatetime}
         initialTab="circumambulation"
         initialPrimaryMode="radix"
@@ -920,7 +918,6 @@ function CanonicalComparisonLane({
         source={sourcePath}
         documentId={documentId}
         cursorDocumentId={documentId}
-        focusDocumentId={documentId}
         focusDatetime={focusDatetime}
         initialTab="secondary"
         secondaryMethod={secondaryMethod}

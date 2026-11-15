@@ -32,7 +32,7 @@ class Syzygy:
 	TOPICALOPPOSITIORADIX = 3
 	TOPICALMOON = 4
 
-	def __init__(self, chrt, previous_opposite=None):
+	def __init__(self, chrt, previous_opposite=None, previous_same_phase=None):
 		self.time = chrt.time
 		self.lon = chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]
 		# Stable semantic identity for consumers that follow the prenatal point
@@ -60,8 +60,14 @@ class Syzygy:
 
 			diff = lonmoon-lonsun
 			self.newmoon, self.ready = self.isNewMoon(diff)
+			same_phase_seed = self._validated_previous_same_phase(previous_same_phase, chrt.time.jd)
 
-			if not self.ready:
+			if same_phase_seed is not None:
+				# Only the event times are invariant. Horizon-dependent choices,
+				# current obliquity/specula, and topical longitudes are rebuilt below.
+				self.time = same_phase_seed.time
+				self.ready = same_phase_seed.ready
+			elif not self.ready:
 				ok, self.time, self.ready = self.getDateHour(self.time, chrt.place, self.newmoon)
 				if not self.ready:
 					ok, self.time, self.ready = self.getDateMinute(self.time, chrt.place, self.newmoon)
@@ -101,7 +107,10 @@ class Syzygy:
 		self.lon2 = chrt.planets.planets[astrology.SE_MOON].data[planets.Planet.LONG]
 		if not chrt.time.bc:
 			seed = self._validated_previous_opposite(previous_opposite)
-			if seed is not None:
+			if same_phase_seed is not None:
+				self.time2 = same_phase_seed.time2
+				self.ready2 = same_phase_seed.ready2
+			elif seed is not None:
 				# At a forward phase flip, the previous chart's canonical
 				# lunation is exactly this chart's secondary/opposite lunation.
 				# Reuse its exact Time result; all longitude, house, speculum,
@@ -184,6 +193,23 @@ class Syzygy:
 				self.lons.append(moonSyz.data[planets.Planet.LONG])
 			else:
 				self.lons.append(moonSyz2.data[planets.Planet.LONG])
+
+
+	def _validated_previous_same_phase(self, seed, chart_jd):
+		"""Reuse proven consecutive event times, never chart-dependent fields."""
+		try:
+			current_jd = float(chart_jd)
+			primary_jd = float(seed.time.jd)
+			secondary_jd = float(seed.time2.jd)
+			if not all(math.isfinite(jd) for jd in (current_jd, primary_jd, secondary_jd)):
+				return None
+			if self.ready or bool(seed.newmoon) != bool(self.newmoon):
+				return None
+			if not (0.0 < current_jd-primary_jd < 20.0 and 0.0 < primary_jd-secondary_jd < 20.0):
+				return None
+			return seed
+		except Exception:
+			return None
 
 
 	def _validated_previous_opposite(self, seed):

@@ -15,6 +15,8 @@ import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { SETTINGS_COLOR_PREVIEW, useColorSettingsPreviewStore, type SettingsColorPreviewEvent } from "@/stores/color-settings-preview-store";
 
 type Props = Pick<ComponentProps<typeof SettingsDialog>, "onOptionsPatched" | "onSemanticProfileSelect" | "onSemanticProfilesCommitted">;
+type Reply = { id: string; value?: unknown; error?: string };
+const handledRequests = new Map<string, Promise<Reply>>();
 
 /** The main workspace remains the owner of chart-local presentation and queues. */
 export function SettingsWindowBridge({ onOptionsPatched, onSemanticProfileSelect, onSemanticProfilesCommitted }: Props) {
@@ -42,28 +44,40 @@ export function SettingsWindowBridge({ onOptionsPatched, onSemanticProfileSelect
       const publish = () => {
         if (listening) void emitTo("settings", SETTINGS_STATE, readSettingsContext());
       };
-      const stop = await listen<SettingsRequest>(SETTINGS_REQUEST, async ({ payload: { id, action } }) => {
-        try {
-          let value: unknown;
-          switch (action.kind) {
-            case "prewarm": value = readSettingsContext(); break;
-            case "context": listening = true; await flushWheelGeometry(); value = readSettingsContext(); break;
-            case "inactive": listening = false; break;
-            case "flush-wheel": await flushWheelGeometry(); break;
-            case "options": onOptionsPatched?.(action.options); break;
-            case "profile": value = await onSemanticProfileSelect(action.profileId); break;
-            case "profiles-committed": onSemanticProfilesCommitted(action.payload); break;
-            case "lens": useWorkspaceStore.getState().setInspectorLens(action.lens); break;
-            case "dock": useFrameLayoutStore.getState().setPrimaryDirectionsSettingsDock(action.dock); break;
-            case "end-theme-preview":
-              await flushWheelGeometry();
-              useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
-              break;
-          }
-          await emitTo("settings", SETTINGS_REPLY, { id, value });
-        } catch (error) {
-          await emitTo("settings", SETTINGS_REPLY, { id, error: String(error) });
+      const stop = await listen<SettingsRequest>(SETTINGS_REQUEST, ({ payload: { id, action } }) => {
+        // A replay after this bridge remounts must restore its subscription.
+        if (action.kind === "context") listening = true;
+        if (action.kind === "inactive") listening = false;
+        let reply = handledRequests.get(id);
+        if (!reply) {
+          reply = (async (): Promise<Reply> => {
+            try {
+              let value: unknown;
+              switch (action.kind) {
+                case "prewarm": value = readSettingsContext(); break;
+                case "context": listening = true; await flushWheelGeometry(); value = readSettingsContext(); break;
+                case "inactive": listening = false; break;
+                case "flush-wheel": await flushWheelGeometry(); break;
+                case "options": onOptionsPatched?.(action.options); break;
+                case "profile": value = await onSemanticProfileSelect(action.profileId); break;
+                case "profiles-committed": onSemanticProfilesCommitted(action.payload); break;
+                case "lens": useWorkspaceStore.getState().setInspectorLens(action.lens); break;
+                case "dock": useFrameLayoutStore.getState().setPrimaryDirectionsSettingsDock(action.dock); break;
+                case "end-theme-preview":
+                  await flushWheelGeometry();
+                  useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
+                  break;
+              }
+              return { id, value };
+            } catch (error) {
+              return { id, error: String(error) };
+            }
+          })();
+          handledRequests.set(id, reply);
+          if (handledRequests.size > 256) handledRequests.delete(handledRequests.keys().next().value!);
         }
+        void reply.then((result) => emitTo("settings", SETTINGS_REPLY, result))
+          .catch(error => console.error("[settings-window-bridge]", error));
       });
       if (disposed) { stop(); return; }
       cleanup.push(stop);

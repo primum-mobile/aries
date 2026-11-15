@@ -11,6 +11,7 @@ import chart
 import os
 import mtexts
 import common
+from engine import moment
 import json
 
 # 안전 문자열 변환(내장 unicode 호출 없이)
@@ -53,7 +54,7 @@ def _load_fixstar_mags():
 
     for p in cat_candidates:
         try:
-            with open(p, "r") as f:
+            with open(p, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -270,53 +271,19 @@ def _fmt_time_chart_local(ch, jd_ut):
     - ZONE:         표준 타임존(동/서 표기) + DST
     - GREENWICH:    UT 그대로
     - LOCALMEAN:    경도 기반 오프셋(동경 +, 서경 −) + DST
-    - LOCALAPPARENT: LMT − EoT(방정시) + DST
+    - LOCALAPPARENT: LMT + EoT(방정시, E = LAT − LMT) + DST
     """
-    calflag = astrology.SE_GREG_CAL if ch.time.cal == ch.time.GREGORIAN else astrology.SE_JUL_CAL
-
-    # 기본 오프셋(일 단위)
     off_days = 0.0
     zt = ch.time.zt
-
-    if zt == chart.Time.GREENWICH:
-        off_days = 0.0
-
-    elif zt == chart.Time.ZONE:
-        ztime_h = float(getattr(ch.time, 'zh', 0.0) or 0.0) + float(getattr(ch.time, 'zm', 0.0) or 0.0)/60.0
-        off_days = ( ztime_h if getattr(ch.time, 'plus', False) else -ztime_h ) / 24.0
-
-    elif zt == chart.Time.LOCALMEAN:  # LMT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0  # 분
-        hours = long_min / 60.0
-        off_days = (hours if ch.place.east else -hours) / 24.0
-
-    elif zt == chart.Time.LOCALAPPARENT:  # LAT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0
-        hours = long_min / 60.0
-        lmt_days = (hours if ch.place.east else -hours) / 24.0
-        # 방정시(EoT): Morinus 내부 변환을 역으로 적용 → LMT - te
-        te_days = 0.0
-        try:
-            serr, te = astrology.swe_time_equ(jd_ut)
-            te_days = te
-            if abs(te_days) > 0.5:  # 혹시 분 단위로 오는 빌드 방어
-                te_days = te / 1440.0
-        except:
-            te_days = 0.0
-        off_days = lmt_days - te_days
-
-    # DST 되돌리기(입력 시 빼던 1h를 표시 시 더함)
+    if zt == chart.Time.ZONE:
+        ztime_h = float(getattr(ch.time, 'zh', 0.0) or 0.0) + float(getattr(ch.time, 'zm', 0.0) or 0.0) / 60.0
+        off_days = (ztime_h if getattr(ch.time, 'plus', False) else -ztime_h) / 24.0
+    elif zt in (chart.Time.LOCALMEAN, chart.Time.LOCALAPPARENT):
+        off_days = chart.Time.solar_clock_offset_days(jd_ut, ch.place.lon, zt)
     if getattr(ch.time, 'daylightsaving', False):
         off_days += 1.0 / 24.0
 
-    # 최종 포맷(점 구분)
-    y, m, d, ut = astrology.swe_revjul(jd_ut + off_days, calflag)
-    hh = int(ut)
-    mmf = (ut - hh) * 60.0
-    mm = int(mmf)
-    ss = int(round((mmf - mm) * 60.0))
-    if ss == 60: ss = 0; mm += 1
-    if mm == 60: mm = 0; hh += 1
+    _, _, _, hh, mm, ss = moment.jd_to_civil_tuple(jd_ut + off_days, calendar=ch.time.cal)
     return u"%02d.%02d.%02d" % (hh, mm, ss)
 
 def compute_contacts(horoscope, options, minutes_window=10):
@@ -339,7 +306,7 @@ def compute_contacts(horoscope, options, minutes_window=10):
         if (not hasattr(options, 'fixstarAliasMap')) or (not isinstance(options.fixstarAliasMap, dict)) or (len(options.fixstarAliasMap) == 0):
             alias_json = os.path.join(common.common.ephepath, 'fixstar_aliases.json')
             if os.path.isfile(alias_json):
-                with open(alias_json, 'r') as _f:
+                with open(alias_json, 'r', encoding='utf-8') as _f:
                     data = json.load(_f)
                 if isinstance(data, dict):
                     options.fixstarAliasMap = data

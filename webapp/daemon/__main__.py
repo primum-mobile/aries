@@ -4,8 +4,6 @@
 """Aries daemon executable entry point (used by the PyInstaller-built sidecar)."""
 import os
 import sys
-import threading
-import time
 from pathlib import Path
 
 def _daemon_base_dir() -> Path:
@@ -38,17 +36,33 @@ def _maybe_run_export_helper(argv: list[str]) -> None:
                 or "Native transit kernel is unavailable"
             )
         raise SystemExit(0)
+    if len(argv) == 2 and argv[1] == "--verify-platform-runtime":
+        from webapp.daemon.platform_selfcheck import main as platform_selfcheck
+
+        raise SystemExit(platform_selfcheck(REPO_ROOT))
     if len(argv) != 3:
         return
-    if argv[1] == "--export-chart-image":
-        from webapp.frontend.scripts.export_chart_image import main
-        raise SystemExit(main(["export_chart_image.py", argv[2]]))
     if argv[1] == "--export-table-pdf":
         from webapp.frontend.scripts.export_table_pdf import main
         raise SystemExit(main(["export_table_pdf.py", argv[2]]))
 
 
 _maybe_run_export_helper(sys.argv)
+
+if sys.platform == "win32":
+    # The shell pipes stderr into %LOCALAPPDATA%\Aries\logs; make hard
+    # crashes and uncaught exceptions land there with a traceback.
+    from webapp.daemon import crash_logging
+
+    crash_logging.install()
+
+from webapp.daemon import dev_reload, parent_watch  # noqa: E402
+
+DEV_RELOAD = dev_reload.enabled()
+if DEV_RELOAD:
+    from webapp.daemon.dev_runtime import ensure_native
+
+    ensure_native(REPO_ROOT)
 
 if getattr(sys, "frozen", False):
     from aries.astrology.transit_fast import api as transit_fast_api
@@ -87,76 +101,6 @@ def _daemon_port() -> int:
     return 8765
 
 
-def _parent_pid() -> int | None:
-    value = os.environ.get("ARIES_DAEMON_PARENT_PID", "").strip()
-    if not value:
-        return None
-    try:
-        pid = int(value)
-    except ValueError:
-        return None
-    return pid if pid > 1 else None
-
-
-def _pid_exists(pid: int) -> bool:
-    if os.name == "nt":
-        return _windows_pid_exists(pid)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def _windows_pid_exists(pid: int) -> bool:
-    """Probe a Windows PID without sending it a signal.
-
-    CPython implements most ``os.kill`` signals on Windows with
-    ``TerminateProcess``; even the POSIX-style signal 0 probe can therefore
-    terminate the Tauri parent. Query the process handle and exit code instead.
-    """
-    import ctypes
-    from ctypes import wintypes
-
-    process_query_limited_information = 0x1000
-    still_active = 259
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
-    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
-    if not handle:
-        # Access denied still proves that the process exists.
-        return ctypes.get_last_error() == 5
-    try:
-        exit_code = wintypes.DWORD()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-            return True
-        return exit_code.value == still_active
-    finally:
-        kernel32.CloseHandle(handle)
-
-
-def _start_parent_watchdog() -> None:
-    parent_pid = _parent_pid()
-    if parent_pid is None:
-        return
-
-    def watch() -> None:
-        while True:
-            time.sleep(2.0)
-            if not _pid_exists(parent_pid):
-                os._exit(0)
-
-    threading.Thread(target=watch, name="aries-parent-watchdog", daemon=True).start()
-
-
 def _start_astrocart_basemap_install() -> None:
     """Install the optional offline map without delaying daemon readiness."""
     try:
@@ -170,6 +114,28 @@ def _start_astrocart_basemap_install() -> None:
 
 
 if __name__ == "__main__":
-    _start_parent_watchdog()
+    parent_watch.start_parent_watchdog()
     _start_astrocart_basemap_install()
-    uvicorn.run(app, host="127.0.0.1", port=_daemon_port(), log_level="info")
+    server = uvicorn.Server(uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=_daemon_port(),
+        log_level="info",
+        # Windows serves every step over HTTP; per-request lines would rotate
+        # start-up errors out of the size-capped log. Errors still log.
+        access_log=sys.platform != "win32",
+    ))
+    reloader = dev_reload.start_reload_watcher(server, REPO_ROOT) if DEV_RELOAD else None
+    if DEV_RELOAD:
+        dev_reload.restore_workspace_before_serving()
+    try:
+        server.run()
+    finally:
+        if reloader is not None:
+            reloader.stopped.set()
+    if reloader is not None and reloader.requested.is_set():
+        from webapp.daemon.server import workspace_service
+
+        if object.__getattribute__(workspace_service, "_service") is not None:
+            dev_reload.save_chart_handoff(workspace_service.open_chart_handoff())
+        dev_reload.reexec()

@@ -189,8 +189,6 @@ test("the live inventory exposes the bounded chrome-layout authoring surface", (
     ["app.dialog.listMaxHeight", "--aries-dialog-list-max-height"],
     ["app.menu.padding", "--aries-menu-padding"],
     ["app.menu.quickOptionsWidth", "--aries-menu-quick-width"],
-    ["app.menu.quickOptionsMaxHeight", "--aries-menu-quick-max-height"],
-    ["app.menu.quickOptionsViewportMaxHeight", "--aries-menu-quick-viewport-max-height"],
     ["app.menu.commandListMaxHeight", "--aries-menu-command-max-height"],
     ["app.menu.contextPopupMinWidth", "--aries-menu-context-popup-min-width"],
     ["app.menu.dropdownMinWidth", "--aries-menu-dropdown-min-width"],
@@ -393,8 +391,6 @@ test("shared chrome primitives consume semantic layout variables", () => {
   ]);
   assertConsumes("src/components/workshell/titlebar-options-menu.tsx", [
     "--aries-menu-quick-width",
-    "--aries-menu-quick-max-height",
-    "--aries-menu-quick-viewport-max-height",
     "--aries-menu-label-padding-x",
     "--aries-menu-label-padding-y",
     "--aries-font-size-small",
@@ -576,6 +572,7 @@ test("mounted dialog form controls declare one appearance owner", () => {
   const paths = [
     "src/components/workshell/settings-dialog.tsx",
     "src/components/workshell/chart-editor-dialog.tsx",
+    "src/components/workshell/place-search-field.tsx",
     "src/components/workshell/save-to-collection-dialog.tsx",
     "src/components/workshell/surveil-studies-dialog.tsx",
   ];
@@ -583,7 +580,7 @@ test("mounted dialog form controls declare one appearance owner", () => {
     (total, path) => total + assertMountedFormControlsDeclareAppearance(path),
     0,
   );
-  assert.equal(count, 24, "the mounted ordinary-control inventory changed");
+  assert.equal(count, 23, "the mounted ordinary-control inventory changed");
 
   const editor = readSource(
     "src/components/workshell/chart-editor-dialog.tsx",
@@ -691,10 +688,14 @@ test("native titlebar alignment remains on the proven pre-tokenization geometry"
     content,
     /col-start-3[^"\n]*translate-y-\[var\(--titlebar-content-offset-y\)\][^"\n]*justify-end/,
   );
+  // Windows caption buttons: the startup estimate first, then DWM's measured
+  // width for this window as it is shown, maximized, re-scaled or re-themed.
   assert.match(
     content,
-    /captionActions\?\.style\.setProperty\(\s*"margin-right",\s*`\$\{resolveWindowsCaptionInset\(\)\}px`/,
+    /const setCaptionInset = \(inset: number\) =>\s*captionActions\?\.style\.setProperty\("margin-right", `\$\{inset\}px`\)/,
   );
+  assert.match(content, /setCaptionInset\(resolveWindowsCaptionInset\(\)\);/);
+  assert.match(content, /subscribeWindowsCaptionInset\(setCaptionInset\)/);
   assert.match(
     content,
     /h-\[var\(--morinus-header-btn-h\)\] w-\[var\(--morinus-header-btn-w\)\]/,
@@ -926,7 +927,7 @@ test("retained sidebar lists use the structural table facade, not token-only raw
 
   const listTokens = readSource("src/lib/list-tokens.ts");
   assert.match(listTokens, /root:\s*"[^"]*bg-background/);
-  assert.match(listTokens, /scroller:\s*"flex-1 min-h-0 overflow-auto"/);
+  assert.match(listTokens, /scroller:\s*"aries-list-scroller flex-1 min-h-0 overflow-auto"/);
   assert.match(listTokens, /stickyHeader:\s*"sticky top-0 z-10 bg-background"/);
   assert.match(listTokens, /date:\s*"aries-list-date-text"/);
   assert.match(listTokens, /secondary:\s*"aries-list-secondary-text"/);
@@ -999,7 +1000,7 @@ test("retained sidebar lists use the structural table facade, not token-only raw
   assert.doesNotMatch(tableBlock, /colSpan=\{5\}/);
   assert.match(
     tableBlock,
-    /<SidebarListCell className="text-right tabular-nums">[\s\S]*?row\.orbFormatted[\s\S]*?compactPhase[\s\S]*?<\/SidebarListCell>/,
+    /<SidebarListCell className="text-right tabular-nums">[\s\S]*?formatTableDegrees\(row\.orb, precision\)[\s\S]*?compactPhase[\s\S]*?<\/SidebarListCell>/,
   );
   assert.match(aspect, /aspectList\.applyingShort/);
   assert.match(aspect, /aspectList\.separatingShort/);
@@ -1017,7 +1018,7 @@ test("retained sidebar lists use the structural table facade, not token-only raw
   );
 
   const synodic = readSource("src/components/workshell/synodic-cycle-list-view.tsx");
-  assert.match(synodic, /<SidebarListTable profile="transit-cursor">/);
+  assert.match(synodic, /<SidebarListTable profile="transit-cursor"(?:\s|>)/);
   assert.doesNotMatch(synodic, /<table\b|LIST_ROLE_CLASSES/);
   assert.doesNotMatch(
     synodic,
@@ -1043,7 +1044,7 @@ test("retained sidebar lists use the structural table facade, not token-only raw
   assert.match(headerBlock, /LIST_PANE_CLASSES\.controlRow/);
   assert.match(headerBlock, /LIST_PANE_CLASSES\.labeledControl/);
   assert.match(headerBlock, /LIST_PANE_CLASSES\.controlLabel/);
-  assert.equal((headerBlock.match(/<PaneSelect/g) ?? []).length, 2);
+  assert.equal((headerBlock.match(/<PaneSelect/g) ?? []).length, 3);
   assert.doesNotMatch(headerBlock, /<(?:select|input)\b/);
 });
 
@@ -1128,7 +1129,9 @@ test("loading error and empty-state chrome retains the established inset and typ
   }
 
   const retained = readSource("src/components/workshell/retained-pane-shell.tsx");
-  assert.match(retained, /flex h-full min-h-0 flex-col bg-background/);
+  // min-w-0 w-full: the root is a flex item that must not grow to the table's
+  // min-content width, so the inner scroller owns horizontal scrolling.
+  assert.match(retained, /flex h-full w-full min-h-0 min-w-0 flex-col bg-background/);
   for (const file of [
     "decennials-view.tsx",
     "firdaria-view.tsx",
@@ -1349,10 +1352,50 @@ test("Search exposes independent compact motion filters for both object roles", 
   assert.match(client, /significatorMotion\?: TransitSearchMotionFilter/);
 });
 
+test("Transit focus jumps preserve the full first row and leave manual viewport offsets alone", () => {
+  const source = readSource("src/components/workshell/transit-list-view.tsx");
+  const ast = ts.createSourceFile("transits.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const focusScroll = ast.statements.find((node) =>
+    ts.isFunctionDeclaration(node) && node.name?.text === "scrollFocusedTransitRow",
+  );
+  assert.ok(focusScroll);
+  const javascript = ts.transpileModule(focusScroll.getText(ast), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const syncCalls = [];
+  const scroll = new Function("eventListBodyViewportHeight", "dispatchVirtualScrollSync",
+    `${javascript}; return scrollFocusedTransitRow;`)(
+    (element) => element?.clientHeight ?? 0,
+    (element, beforePaint) => syncCalls.push({ element, beforePaint }),
+  );
+  for (const rowHeight of [28, 37, 40, 52]) {
+    for (const clientHeight of [177, 233, 421, 609]) {
+      const scroller = { clientHeight, scrollTop: 0 };
+      let marked = false;
+      assert.equal(scroll(scroller, 200, 0.25, 75, rowHeight, () => { marked = true; }), true);
+      assert.equal(scroller.scrollTop % rowHeight, 0, "first row must keep its full top padding");
+      assert.ok(75 * rowHeight >= scroller.scrollTop);
+      assert.ok(76 * rowHeight <= scroller.scrollTop + clientHeight);
+      assert.equal(marked, true);
+      assert.equal(syncCalls.at(-1).beforePaint, true);
+
+      // At the physical end, keep the final event fully accessible even when
+      // the viewport contains a non-integral number of rows.
+      assert.equal(scroll(scroller, 200, 0.25, 199, rowHeight, () => {}), true);
+      assert.equal(scroller.scrollTop + clientHeight, 200 * rowHeight);
+    }
+  }
+  const manuallyScrolled = { clientHeight: 233, scrollTop: 123 };
+  const count = syncCalls.length;
+  assert.equal(scroll(manuallyScrolled, 200, 0.25, 6, 37, () => assert.fail()), true);
+  assert.equal(manuallyScrolled.scrollTop, 123);
+  assert.equal(syncCalls.length, count);
+});
+
 test("Search Rx projects event motion independently for both roles", () => {
   const source = readSource("src/components/workshell/transit-search-view.tsx");
   const ast = ts.createSourceFile("search.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "stringValue", "numberValue"]);
+  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "searchDatesValid", "stringValue", "numberValue"]);
   const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
   const javascript = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
@@ -1407,7 +1450,7 @@ test("Search Rx projects event motion independently for both roles", () => {
 test("Search retains Celestial Weather asteroid pairs in either catalog order", () => {
   const source = readSource("src/components/workshell/transit-search-view.tsx");
   const ast = ts.createSourceFile("search.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "stringValue", "numberValue"]);
+  const names = new Set(["projectTransitSearchRows", "searchRowMatchesMotion", "searchDatesValid", "stringValue", "numberValue"]);
   const functions = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && names.has(node.name?.text));
   const javascript = ts.transpileModule(functions.map((node) => node.getText(ast)).join("\n"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
@@ -1531,7 +1574,7 @@ test("retained pane chrome defaults to the app background and Profections opts i
   }
 });
 
-test("dialog roles preserve the established desktop cap and Manzil keeps its Arabic size", () => {
+test("dialog roles preserve the established desktop cap and Manzil keeps its Arabic size role", () => {
   const globals = readSource("src/app/globals.css");
   assert.match(globals, /--aries-dialog-width-sm:\s*384px;/);
   assert.match(globals, /--aries-font-size-arabic:\s*17px;/);
@@ -1547,7 +1590,7 @@ test("dialog roles preserve the established desktop cap and Manzil keeps its Ara
   }
 
   const manzil = readSource("src/components/workshell/inspector-panel.tsx");
-  assert.match(manzil, /text-\[length:var\(--aries-font-size-arabic\)\]/);
+  assert.match(manzil, /text-\[length:calc\(var\(--aries-font-size-arabic\)\*var\(--aries-inspector-text-scale,1\)\)\]/);
   assert.match(
     manzil,
     /className=\{cn\("justify-self-start leading-none", INSPECTOR_STRONG_COLOR, TEXT_ARABIC\)\}/,
@@ -1580,7 +1623,7 @@ test("inspector colours repaint from semantic roles without refetching the hover
   assert.doesNotMatch(hover, /lastRetainedDataOptionsChange/);
 
   assert.match(hover, /semanticChartColor\(payload\.accentRole, rgbCss\(payload\.accent\)\)/);
-  assert.match(hover, /semanticChartColor\(span\.colourRole, rgbCss\(span\.colour\)\)/);
+  assert.match(hover, /<InspectorValueSpans spans=\{spans\}/);
   assert.match(hover, /semanticChartColor\(colourRole, rgbCss\(colour\)\)/);
   assert.match(
     hover,
@@ -1589,9 +1632,14 @@ test("inspector colours repaint from semantic roles without refetching the hover
   );
 
   const inspector = readSource("src/components/workshell/inspector-panel.tsx");
+  assert.match(inspector, /<InspectorValueSpans spans=\{valueSpans\}/);
   assert.match(inspector, /semanticChartColor\(payload\.accentRole, rgb\(payload\.accent\)\)/);
   assert.match(inspector, /semanticChartColor\(item\.colour_role, rgb\(item\.colour\)\)/);
   assert.match(inspector, /semanticChartColor\(item\.aspect_colour_role, rgb\(item\.aspect_colour\)\)/);
+
+  const valueSpans = readSource("src/components/workshell/inspector-value-spans.tsx");
+  assert.match(valueSpans, /semanticChartColor\(\s*span\.colourRole,/);
+  assert.match(valueSpans, /span\.colour \? `rgb\(\$\{span\.colour\.join\(", "\)\}\)` : undefined/);
 
   const client = readSource("src/lib/daemon/client.ts");
   assert.match(client, /accentRole\?: string \| null/);
@@ -1606,7 +1654,7 @@ test("solar-condition doctrine setting is daemon-owned and localized", () => {
   assert.notEqual(sectionStart, -1, "combustion section label is missing");
   assert.notEqual(sectionEnd, -1, "solar-condition selector must precede Phasis controls");
   const section = settings.slice(sectionStart, sectionEnd);
-  assert.match(section, /<Row label=\{t\("settings\.doctrine"\)\}>/);
+  assert.match(section, /<Row\b[^>]*\blabel=\{t\("settings\.doctrine"\)\}/);
   assert.match(section, /value=\{d\.solarconditionmode\}/);
   assert.match(section, /setNum\("solarconditionmode", Number\(v\)\)/);
   assert.match(section, /cat\.solarConditionModes\.map/);
@@ -1726,9 +1774,12 @@ test("mounted informational dialogs consume semantic density roles", () => {
         "--aries-radius-dialog",
         "--aries-radius-md",
         "--aries-radius-control-compact",
-        "--aries-radius-ui-control-compact",
         "--aries-control-padding-y",
       ],
+    ],
+    [
+      "src/components/workshell/chart-search-multi-choice.tsx",
+      ["--aries-radius-ui-control-compact"],
     ],
   ]);
   for (const [path, tokens] of expectedByFile) {
@@ -1800,4 +1851,13 @@ test("mounted informational dialogs consume semantic density roles", () => {
     [],
     `mounted informational dialogs must use semantic density roles:\n${failures.join("\n")}`,
   );
+});
+
+
+test("Inspector narrative wrapping cannot collapse native speculum body words", () => {
+  const inspector = readSource("src/components/workshell/inspector-panel.tsx");
+  const globals = readSource("src/app/globals.css");
+  const aside = inspector.slice(inspector.indexOf("<aside"), inspector.indexOf("<Button", inspector.indexOf("<aside")));
+  assert.doesNotMatch(aside, /INSPECTOR_WRAP_STYLE|overflowWrap|wordBreak/);
+  assert.match(globals, /\.aries-inspector-speculum \{[^}]*overflow-wrap: normal;[^}]*word-break: normal;/);
 });

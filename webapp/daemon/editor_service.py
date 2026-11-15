@@ -19,7 +19,7 @@ reimplement chart math or hand-roll JSON. It:
   * save_chart(collection, record) -> chartfile.update_jsonl upsert by id.
   * list_collections() -> the .jsonl collections in the Hors dir, with counts.
 
-Spec: doc/migration/surfaces/chart-editor.md. Stays wx-free; constructs charts
+Stays wx-free; constructs charts
 via the ChartFactory (engine layer), never a direct Chart construction (wiring
 guard).
 """
@@ -42,6 +42,7 @@ import default_location as default_location_model
 import note_storage
 from engine import calendar_policy
 from engine import chart_factory  # engine layer, wx-free
+from engine.geo_coordinates import parse_coordinate_pair
 import geonames  # wx-free
 import mtexts  # canonical enum label lists (wx-free, see options_service)
 from webapp.daemon.chart_service import chart_snapshot_service
@@ -116,6 +117,59 @@ def _build_tz_string(plus: bool, zh: int, zm: int, dst: bool) -> str:
     return f"{sign}{total // 60:02d}:{total % 60:02d}"
 
 
+def _editor_coordinates(fields: dict[str, Any]) -> tuple[float, float]:
+    # Picks and loaded charts keep their exact decimals until manual DMS edits.
+    if fields.get("lat") is not None and fields.get("lon") is not None:
+        return round(float(fields["lon"]), 6), round(float(fields["lat"]), 6)
+    return (
+        _coord_signed(fields.get("lonDeg", 0), fields.get("lonMin", 0),
+                      fields.get("lonSec", 0), bool(fields.get("east", True))),
+        _coord_signed(fields.get("latDeg", 0), fields.get("latMin", 0),
+                      fields.get("latSec", 0), bool(fields.get("north", True))),
+    )
+
+
+def editor_timezone_fields(fields: dict[str, Any], lon: float, lat: float) -> dict[str, Any]:
+    """Resolve automatic editor zones from coordinates and the local civil date.
+
+    A stored tzid belongs to the previous location and must never override an
+    edited point. Use the normal Time constructor for Julian dates, historical
+    offsets and DST folds; manual offsets and non-zone clocks stay untouched.
+    """
+    zone = {
+        "tzid": str(fields.get("tzid") or ""),
+        "plus": bool(fields.get("plus", True)),
+        "zoneHour": int(fields.get("zoneHour", fields.get("zh", 0))),
+        "zoneMin": int(fields.get("zoneMin", fields.get("zm", 0))),
+        "daylightSaving": bool(fields.get("daylightSaving", fields.get("dst", False))),
+    }
+    if not bool(fields.get("tzauto", True)) or _norm_zt(fields.get("zt", "zone")) != "zone":
+        return zone
+    # BC dates have no IANA civil clock. Do not advertise the old location's ID.
+    zone["tzid"] = ""
+    if bool(fields.get("bc", False)):
+        return zone
+    lon_d, lon_m, lon_s = _dms_display(lon)
+    lat_d, lat_m, lat_s = _dms_display(lat)
+    place = chart.Place("", lon_d, lon_m, lon_s, lon >= 0,
+                        lat_d, lat_m, lat_s, lat >= 0, 0)
+    place.lon, place.lat = lon, lat
+    time = chart_factory.build_time(
+        fields.get("year", 2000), fields.get("month", 1), fields.get("day", 1),
+        fields.get("hour", 0), fields.get("minute", 0), fields.get("second", 0),
+        place=place, cal=chartfile._STR_TO_CAL[_norm_cal(fields.get("cal", "gregorian"))],
+        plus=zone["plus"], zh=zone["zoneHour"], zm=zone["zoneMin"],
+        daylight=zone["daylightSaving"], full=False, tzauto=True,
+    )
+    return {
+        "tzid": time.tzid,
+        "plus": time.plus,
+        "zoneHour": time.zh,
+        "zoneMin": time.zm,
+        "daylightSaving": time.daylightsaving,
+    }
+
+
 def editor_fields_to_record(fields: dict[str, Any]) -> dict[str, Any]:
     """Normalise the editor field set (personaldatadlg's apply() values) into a
     schema-v1 JSONL dict (chartfile.py:12). Accepts the dialog-natural shape:
@@ -126,19 +180,7 @@ def editor_fields_to_record(fields: dict[str, Any]) -> dict[str, Any]:
     """
     f = fields
 
-    # Coordinates: prefer explicit signed decimals; else reconstruct from DMS.
-    if "lat" in f and "lon" in f and f.get("lat") is not None and f.get("lon") is not None:
-        lat = round(float(f["lat"]), 6)
-        lon = round(float(f["lon"]), 6)
-    else:
-        lon = _coord_signed(
-            f.get("lonDeg", 0), f.get("lonMin", 0), f.get("lonSec", 0),
-            bool(f.get("east", True)),
-        )
-        lat = _coord_signed(
-            f.get("latDeg", 0), f.get("latMin", 0), f.get("latSec", 0),
-            bool(f.get("north", True)),
-        )
+    lon, lat = _editor_coordinates(f)
 
     bc = bool(f.get("bc", False))
     year = int(f.get("year", 2000))
@@ -151,10 +193,11 @@ def editor_fields_to_record(fields: dict[str, Any]) -> dict[str, Any]:
     date_str = (f"-{abs(year):04d}" if bc else f"{year:04d}") + f"-{month:02d}-{day:02d}"
     time_str = f"{hour:02d}:{minute:02d}:{second:02d}"
 
-    plus = bool(f.get("plus", True))
-    zh = int(f.get("zoneHour", f.get("zh", 0)))
-    zm = int(f.get("zoneMin", f.get("zm", 0)))
-    dst = bool(f.get("daylightSaving", f.get("dst", False)))
+    zone = editor_timezone_fields(f, lon, lat)
+    plus = zone["plus"]
+    zh = zone["zoneHour"]
+    zm = zone["zoneMin"]
+    dst = zone["daylightSaving"]
 
     male = f.get("male", True)  # True/False/None all preserved
 
@@ -168,13 +211,13 @@ def editor_fields_to_record(fields: dict[str, Any]) -> dict[str, Any]:
         "time": time_str,
         "tz": _build_tz_string(plus, zh, zm, dst),
         "tz_name": f.get("tzName", "") or "",
-        "tzid": f.get("tzid", "") or "",
+        "tzid": zone["tzid"],
         "tzauto": bool(f.get("tzauto", True)),
         "cal": _norm_cal(f.get("cal", "gregorian")),
         "zt": _norm_zt(f.get("zt", "zone")),
         "bc": bc,
         "dst": dst,
-        "place": f.get("place", "") or "",
+        "place": editor_service.resolve_place_name(f),
         "country": f.get("country", "") or "",
         "lat": lat,
         "lon": lon,
@@ -332,7 +375,7 @@ class EditorService:
             "north": lat >= 0.0,
             "lon": round(lon, 6),
             "lat": round(lat, 6),
-            "place": str(getattr(place, "place", "") or "")[:20],
+            "place": str(getattr(place, "place", "") or ""),
             "plus": bool(zone["plus"]),
             "zoneHour": int(zone["zh"]),
             "zoneMin": int(zone["zm"]),
@@ -379,6 +422,11 @@ class EditorService:
         return prepared
 
     # -- build / preview --------------------------------------------------
+    def resolve_timezone(self, fields: dict[str, Any]) -> dict:
+        """Lightweight form synchronization through the same save normalizer."""
+        lon, lat = _editor_coordinates(fields)
+        return editor_timezone_fields(fields, lon, lat)
+
     def build_chart(self, fields: dict[str, Any]) -> dict:
         """Normalise fields -> schema-v1 dict -> Chart via chartfile, then return
         the export snapshot (the same payload /api/chart returns)."""
@@ -437,13 +485,21 @@ class EditorService:
         return {"fields": fields, "collection": str(path)}
 
     # -- place resolution -------------------------------------------------
-    def resolve_place(self, query: str, max_rows: int = 10) -> list[dict]:
-        """Geonames city candidates, returned already in editor-form-field shape
-        — the daemon performs the split/clamp/cap personaldatadlg._applyGeoPlace
-        does (personaldatadlg.py:644) so the skin only assigns the fields.
+    def resolve_place_name(self, fields: dict[str, Any]) -> str:
+        """Manual coordinate edits infer a label; explicit names remain owned by the user."""
+        name = str(fields.get("place") or "")
+        if name.strip() or not fields.get("inferPlace"):
+            return name
+        lon, lat = _editor_coordinates(fields)
+        return self.place_at(lon, lat)["name"]
+
+    def resolve_place(self, query: str, max_rows: int = 10, *, coordinates_only: bool = False) -> list[dict]:
+        """Coordinate or Geonames candidates, returned already in editor-form-field shape
+        — the daemon splits coordinates and clamps altitude so the skin only
+        assigns the fields. Place names are preserved in full.
 
         Each candidate carries:
-          name (≤20, the persisted place value), lonDeg/lonMin/lonSec/east,
+          name (the full persisted place value), lonDeg/lonMin/lonSec/east,
           latDeg/latMin/latSec/north, the full-precision signed decimals lat/lon,
           altitude (≥0), plus/zoneHour/zoneMin (GMT offset), tzid, and
           display-only label/countryName for the picker list.
@@ -452,7 +508,13 @@ class EditorService:
         a search-pick reconstructs to the same chart as a map-pick.
         """
         query = (query or "").strip()
-        if len(query) < 3:
+        try:
+            point = parse_coordinate_pair(query)
+        except ValueError:
+            return []
+        if point is not None:
+            return [self.coordinate_place(query, point)]
+        if coordinates_only or len(query) < 3:
             return []
         langid = int(getattr(self._opts, "langid", 0) or 0)
         geo = geonames.Geonames(query, max_rows, langid)
@@ -463,10 +525,46 @@ class EditorService:
             out.append(self._candidate_from_geo(item))
         return out
 
+    def coordinate_place(self, query: str, point: tuple[float, float]) -> dict:
+        candidate = self.place_at(*point, query, normalize=False)
+        return {**candidate, "isCoordinate": True}
+
+    def place_at(self, lon: float, lat: float, name: str = "", *, normalize: bool = True) -> dict:
+        """One form-shaped candidate for an exact point (an address or map pick
+        from the type-ahead place search). Same shape and timezone path as
+        ``resolve_place``; the supplied name is kept in full. Country and
+        altitude come from the offline nearest city, altitude only when that
+        city lies within ~10 km of the point (else 0, like a map pick)."""
+        if normalize:
+            lon = ((float(lon) + 180.0) % 360.0) - 180.0
+            lat = max(-89.999, min(89.999, float(lat)))
+        try:
+            import localcities  # wx-free; offline DB
+            near = localcities.nearest(lon, lat)
+        except Exception:
+            near = None
+        country_code = ""
+        country_name = ""
+        altitude = None
+        fallback_name = ""
+        if near is not None:
+            fallback_name = str(near[geonames.Geonames.NAME] or "")
+            country_code = str(near[geonames.Geonames.COUNTRYCODE] or "")
+            country_name = str(near[geonames.Geonames.COUNTRYNAME] or "")
+            near_lon = float(near[geonames.Geonames.LON])
+            near_lat = float(near[geonames.Geonames.LAT])
+            if abs(near_lon - lon) <= 0.1 and abs(near_lat - lat) <= 0.1:
+                altitude = near[geonames.Geonames.ALTITUDE]
+        label = (name or "").strip() or fallback_name
+        if not label:
+            label = "%.4f°, %.4f°" % (lat, lon)
+        item = (label, lon, lat, country_code, country_name, altitude, None, "", "")
+        return self._candidate_from_geo(item)
+
     @staticmethod
     def _candidate_from_geo(item) -> dict:
         """Port of personaldatadlg._applyGeoPlace (:644): a single geonames row
-        → editor-form fields (DMS split + direction + capped name + alt≥0 + GMT
+        → editor-form fields (DMS split + direction + full name + alt≥0 + GMT
         offset). wx-free; no GUI widgets are touched."""
         raw_name = item[geonames.Geonames.NAME] or ""
 
@@ -519,7 +617,7 @@ class EditorService:
 
         return {
             # form fields — assigned verbatim by the skin
-            "name": raw_name[:20],
+            "name": raw_name,
             "lonDeg": lon_d,
             "lonMin": lon_m,
             "lonSec": lon_s,

@@ -25,6 +25,7 @@ export type WindowThemeAppearance = {
   styleRevision: number;
   styleHash: string;
   presentationCursor: boolean;
+  blendMinorDignities?: boolean;
   preview: boolean;
 };
 
@@ -40,6 +41,7 @@ export function resolveWindowThemeAppearance(theme: ThemeState, preview?: LiveTh
     styleRevision: theme.styleRevision,
     styleHash: theme.styleHash,
     presentationCursor: theme.presentationCursor === true,
+    blendMinorDignities: theme.profileOverrides.chartData.blendMinorDignities === true,
     preview: Boolean(preview),
   };
 }

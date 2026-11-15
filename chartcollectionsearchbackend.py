@@ -7,6 +7,8 @@ import math
 import os
 
 import astrology
+import asteroids
+import chart_bodies
 import chart
 import chartfile
 import common
@@ -16,6 +18,8 @@ import planets
 import radixsignals
 import searchcatalog
 import util
+from aries.astrology.ephemeris_context import EphemerisContext
+from engine import void_of_course
 
 import chartcollectionsearchquery
 
@@ -46,6 +50,7 @@ def _object_choices():
 		('planet:neptune', mtexts.txts.get('Neptune', 'Neptune')),
 		('planet:pluto', mtexts.txts.get('Pluto', 'Pluto')),
 		('planet:chiron', mtexts.txts.get('Chiron', 'Chiron')),
+		('planet:apogee', mtexts.txts['Apogee']),
 		('planet:asc_node', mtexts.txts.get('AscNode', 'North Node')),
 		('planet:desc_node', mtexts.txts.get('DescNode', 'South Node')),
 		('angle:asc', mtexts.txts.get('Asc', 'Asc')),
@@ -62,6 +67,7 @@ def _sign_choices():
 def _aspect_choices():
 	return (
 		(chartcollectionsearchquery.AspectClause.COPRESENCE, mtexts.txts.get('Copresence', 'Copresence')),
+		(chartcollectionsearchquery.AspectClause.MOON_VOID, mtexts.txts['VoidCourseActive']),
 		(chart.Chart.CONJUNCTIO, mtexts.txts.get('Conjunctio', 'Conjunction')),
 		(chart.Chart.SEXTIL, mtexts.txts.get('Sextil', 'Sextile')),
 		(chart.Chart.QUADRAT, mtexts.txts.get('Quadrat', 'Square')),
@@ -118,7 +124,7 @@ class ChartCollectionSearchSummary(object):
 		self.truncated = truncated
 
 
-def search_chart_infos(chart_infos, options, query, should_cancel=None, limit=1000):
+def search_chart_infos(chart_infos, options, query, should_cancel=None, limit=1000, catalog_factory=None):
 	active_placements = query.active_placement_clauses()
 	active_aspects = query.active_aspect_clauses()
 	if not active_placements and not active_aspects:
@@ -140,10 +146,12 @@ def search_chart_infos(chart_infos, options, query, should_cancel=None, limit=10
 				records = chartfile.read_jsonl(path)
 				record = records[record_index]
 			summary.scanned += 1
-			if compiled.fast_path:
+			if compiled.moon_void_path and _moon_void_fast_supported(record):
+				matches = _match_moon_void_record(record, options, active_aspects[0])
+			elif compiled.fast_path:
 				matches = _match_chart_fast(record, options, active_placements, active_aspects, query)
 			else:
-				matches = _match_chart_full(record, options, active_placements, active_aspects, query)
+				matches = _match_chart_full(record, options, active_placements, active_aspects, query, catalog_factory)
 			if matches is None:
 				continue
 			results.append(ChartCollectionSearchResult(chart_info, path, record_index, matches))
@@ -159,6 +167,10 @@ def search_chart_infos(chart_infos, options, query, should_cancel=None, limit=10
 
 class _CompiledCollectionQuery(object):
 	def __init__(self, placement_clauses, aspect_clauses):
+		self.moon_void_path = (not placement_clauses and len(aspect_clauses) == 1
+			and aspect_clauses[0].aspect_types == [chartcollectionsearchquery.AspectClause.MOON_VOID]
+			and aspect_clauses[0].object_a_ids == ['planet:moon']
+			and not aspect_clauses[0].object_b_ids)
 		self.fast_path = self._can_use_fast_path(placement_clauses, aspect_clauses)
 
 	def _can_use_fast_path(self, placement_clauses, aspect_clauses):
@@ -170,6 +182,8 @@ class _CompiledCollectionQuery(object):
 			if not _object_ids_fast_supported(clause.object_ids):
 				return False
 		for clause in aspect_clauses:
+			if chartcollectionsearchquery.AspectClause.MOON_VOID in clause.aspect_types:
+				return False
 			if not clause.object_a_ids or not clause.object_b_ids:
 				return False
 			if not _object_ids_fast_supported(clause.object_a_ids):
@@ -177,6 +191,36 @@ class _CompiledCollectionQuery(object):
 			if not _object_ids_fast_supported(clause.object_b_ids):
 				return False
 		return True
+
+
+def _moon_void_fast_supported(record):
+	# These saved charts use the record's actual sky. Other chart types and
+	# fractional-second records retain the full chart validation path.
+	return (record.get('type', 'radix') in ('radix', 'horary', 'transit', 'solar', 'lunar', 'revolution')
+		and not record.get('second_fraction'))
+
+
+def _match_moon_void_record(record, options, clause):
+	place = _record_place(record)
+	jd = float(_record_time(record, place).jd)
+	flags = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
+	ayanamsha = int(getattr(options, 'ayanamsha', 0) or 0)
+	sidereal_mode = astrology.ayanamsha_swe_mode(ayanamsha) if ayanamsha else None
+	if sidereal_mode is not None:
+		flags |= astrology.SEFLG_SIDEREAL
+	topocentric_position = None
+	if getattr(options, 'topocentric', False):
+		flags |= astrology.SEFLG_TOPOCTR
+		topocentric_position = (float(place.lon), float(place.lat), float(place.altitude))
+	context = EphemerisContext(flags, common.get_ephe_path(), sidereal_mode, topocentric_position)
+	policy = void_of_course.normalize_policy(getattr(options, 'voidcoursepolicy', void_of_course.HELLENISTIC))
+	try:
+		state = void_of_course.calculate(jd, policy, context)
+	except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+		return None if not clause.exclude else []
+	if clause.exclude:
+		return None if state.is_void else []
+	return ['%s %s' % (mtexts.txts.get('Moon', 'Moon'), mtexts.txts['VoidCourseActive'])] if state.is_void else None
 
 
 class _FastObject(object):
@@ -216,6 +260,8 @@ class _FastChartContext(object):
 		if spec is None:
 			return None
 		key, english, planet_id = spec
+		if object_id == 'planet:apogee':
+			planet_id = chart_bodies.apogee_id(self.options)
 		label = mtexts.txts.get(key, english)
 		lon, speed = self.planet_state(object_id)
 		return _FastObject(object_id, label, searchcatalog.SearchObject.FAMILY_PLANET, lon, planet_index=planet_id, speed_lon=speed)
@@ -244,6 +290,8 @@ class _FastChartContext(object):
 			raise KeyError(object_id)
 		_key, _english, planet_id = spec
 		swe_id = planet_id
+		if object_id == 'planet:apogee':
+			swe_id = chart_bodies.apogee_id(self.options)
 		if object_id == 'planet:asc_node':
 			swe_id = astrology.SE_MEAN_NODE if getattr(self.options, 'meannode', False) else astrology.SE_TRUE_NODE
 		_err, data = astrology.swe_calc_ut(self.jd, swe_id, self.pflag)
@@ -335,6 +383,7 @@ _FAST_PLANET_OBJECTS = {
 	'planet:neptune': ('Neptune', 'Neptune', astrology.SE_NEPTUNE),
 	'planet:pluto': ('Pluto', 'Pluto', astrology.SE_PLUTO),
 	'planet:chiron': ('Chiron', 'Chiron', astrology.SE_CHIRON),
+	'planet:apogee': ('Apogee', 'Apogee', astrology.SE_MEAN_APOG),
 	'planet:asc_node': ('AscNode', 'North Node', astrology.SE_PLUTO + 1),
 	'planet:desc_node': ('DescNode', 'South Node', astrology.SE_PLUTO + 2),
 }
@@ -378,9 +427,9 @@ def _match_chart_fast(record, options, placement_clauses, aspect_clauses, query)
 	return matches
 
 
-def _match_chart_full(record, options, placement_clauses, aspect_clauses, query):
+def _match_chart_full(record, options, placement_clauses, aspect_clauses, query, catalog_factory=None):
 	chrt = chartfile.dict_to_chart(record, options)
-	catalog = searchcatalog.SearchCatalog(chrt)
+	catalog = (catalog_factory or searchcatalog.SearchCatalog)(chrt)
 	return _match_chart(chrt, catalog, placement_clauses, aspect_clauses, query)
 
 
@@ -622,6 +671,15 @@ def _match_aspect_clause(chrt, catalog, clause, query=None):
 			if match is not None:
 				return match
 		return None
+	if clause.aspect_type == chartcollectionsearchquery.AspectClause.MOON_VOID:
+		# This is a lunar condition, not a pairwise aspect or an orb test.
+		if clause.object_a_ids != ['planet:moon'] or clause.object_b_ids:
+			return None
+		try:
+			state = void_of_course.for_chart(chrt, chrt.options)
+		except (AttributeError, IndexError, KeyError, TypeError, ValueError, RuntimeError):
+			return None
+		return '%s %s' % (mtexts.txts.get('Moon', 'Moon'), mtexts.txts['VoidCourseActive']) if state.is_void else None
 	a_objects = _objects_for_ids(catalog, clause.object_a_ids, query)
 	b_objects = _objects_for_ids(catalog, clause.object_b_ids, query)
 	orb = max(0.0, float(clause.orb))
@@ -674,8 +732,6 @@ def _objects_for_ids(catalog, object_ids, query=None):
 	if not object_ids:
 		return [obj for obj in catalog.objects if include_asteroids or not obj.id.startswith('asteroid:')]
 	for object_id in object_ids:
-		if object_id.startswith('asteroid:') and not include_asteroids:
-			continue
 		if object_id == OBJECT_FAMILY_PART:
 			objects.extend([obj for obj in catalog.objects if obj.family == searchcatalog.SearchObject.FAMILY_PART])
 			continue
@@ -736,11 +792,12 @@ def _object_house(chrt, obj):
 def _matches_motion(chrt, obj, motion, station_window_days):
 	if obj.planet_index is None:
 		return False
-	body = common.get_chart_planet(chrt, obj.planet_index)
+	is_asteroid = obj.id.startswith('asteroid:')
+	body = asteroids.chart_asteroid(chrt, obj.planet_index) if is_asteroid else common.get_chart_planet(chrt, obj.planet_index)
 	if body is None:
 		return False
 	try:
-		speed = float(body.data[planets.Planet.SPLON])
+		speed = float(body.speed if is_asteroid else body.data[planets.Planet.SPLON])
 	except Exception:
 		return False
 
@@ -748,6 +805,17 @@ def _matches_motion(chrt, obj, motion, station_window_days):
 		return speed > 0.0
 	if motion == chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_RETROGRADE:
 		return speed < 0.0
+
+	if is_asteroid:
+		signal = radixsignals._nearest_station_signal(
+			obj.planet_index, chrt.time.jd, float(station_window_days),
+			station_planets=(obj.planet_index,),
+		)
+		marker = signal.get('code') if signal else ''
+		if motion == chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_STATION_DIRECT:
+			return marker == 'SD'
+		if motion == chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_STATION_RETROGRADE:
+			return marker == 'SR'
 
 	if motion == chartcollectionsearchquery.ChartCollectionSearchQuery.MOTION_STATION_DIRECT:
 		return _station_marker(chrt, obj.planet_index, station_window_days) == 'SD'

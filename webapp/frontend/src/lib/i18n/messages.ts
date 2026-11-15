@@ -8,6 +8,8 @@ import it from "@/locales/it.json";
 import fr from "@/locales/fr.json";
 import es from "@/locales/es.json";
 import de from "@/locales/de.json";
+import ja from "@/locales/ja.json";
+import tr from "@/locales/tr.json";
 
 export type MessageBundle = Record<string, string>;
 
@@ -21,4 +23,6 @@ export const BUNDLES: Partial<Record<LocaleCode, MessageBundle>> = {
   fr: fr as MessageBundle,
   es: es as MessageBundle,
   de: de as MessageBundle,
+  ja: ja as MessageBundle,
+  tr: tr as MessageBundle,
 };

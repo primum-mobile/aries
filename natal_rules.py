@@ -18,7 +18,7 @@ Mirror of `horary_rules.py` but:
    authored rules simply returns ``[]``.
 
 Drop a manifest at ``corpus/<pack>/manifest.toml`` with
-``[themes.natal.<slug>]`` blocks (see ``doc/corpus-pack-authoring.md``),
+``[themes.natal.<slug>]`` blocks,
 or drop the pack into the community pack root, and Aries picks up the
 new natal theme automatically — no edits to this file required.
 """

@@ -7,6 +7,7 @@ import { WHEEL_ARROW_STYLES, type WheelArrowStyle } from "@/lib/chart/wheel-rend
 import { WheelCompositionInspector } from "./wheel-composition-inspector";
 import { WheelPresetControls } from "./wheel-preset-controls";
 import { enqueueWheelPresetWrite, flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+import { acceptWheelThemePresets, applyWheelTheme, checkedStyleLabSaveContext, flushStyleLabAppearance, synchronizeWheelTheme } from "@/lib/daemon/wheel-theme-transition";
 import { isWheelGeometryKey, wheelAppearanceOverrides } from "@/lib/chart/wheel-geometry-ownership";
 import { Combobox } from "@base-ui/react/combobox";
 import { NumberField } from "@base-ui/react/number-field";
@@ -16,17 +17,15 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardPaste,
-  Cloud,
-  CloudOff,
   Copy,
   CopyPlus,
   Download,
+  Ellipsis,
   LoaderCircle,
   MoveHorizontal,
   Redo2,
   RefreshCw,
   RotateCcw,
-  Trash2,
   Upload,
   Undo2,
   X,
@@ -61,13 +60,19 @@ import {
 import { STYLE_LAB_TOKEN_METADATA } from "@/lib/style-lab/token-metadata";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { AppThemeControls } from "@/components/workshell/app-theme-controls";
 import { StyleLabColorPicker } from "@/components/workshell/style-lab-color-picker";
-import { applyThemePreset, type ThemeState } from "@/lib/daemon/client";
 import { APP_MATERIAL_PATTERNS } from "@/lib/theme/app-material";
 import {
   AUTHORING_NUMERIC_PROPERTIES,
@@ -90,6 +95,8 @@ import {
 import {
   buildElementStylePastePatch,
   buildWheelVariantSyncPatch,
+  buildWholeWheelSyncPatch,
+  type WheelClassSyncScope,
   copyElementStyle,
   isWheelAuthoringFlatProperty,
   type ElementStyleClipboard,
@@ -99,6 +106,7 @@ import { WHEEL_BAND_SPAN_SCALE_RANGE, WHEEL_RULER_DEPTH_RANGE, WHEEL_SCALE_RANGE
 import {
   WHEEL_AUTHORING_OVERRIDE_PREFIX,
   WHEEL_CHART_CLASS_ID,
+  WHEEL_VINTAGE_AUTHORING_SCOPE,
   maskingVariantOverrideId,
   variantAuthoredOverrideIds,
   wheelAuthoringOverrideClassId,
@@ -106,9 +114,10 @@ import {
   type WheelAuthoringEditScope,
   type WheelAuthoringFlatProperty,
 } from "@/lib/style-lab/wheel-authoring-adapter";
+import { VINTAGE_PRESENTATION_TAG } from "@/lib/style-lab/wheel-style-scene";
+import { isVintageClass } from "@/lib/chart/vintage-magazine-wheel";
 
 import {
-  commitCurrentStyleLabDraft,
   createCurrentStyleLabDraft,
   createStyleLabDraftFromTheme,
   deleteStyleLabTheme,
@@ -118,6 +127,7 @@ import {
   fetchStyleLabThemeSources,
   importStyleLabTheme,
   patchCurrentStyleLabDraft,
+  renameStyleLabTheme,
   revertCurrentStyleLabDraft,
   saveCurrentStyleLabDraftAsTheme,
   StyleLabApiError,
@@ -125,7 +135,10 @@ import {
   type StyleLabThemeSource,
   type StyleLabTokenValue,
 } from "@/lib/style-lab/client";
-import { canPersistStyleDraft, refreshStyleDraftForSave } from "@/lib/style-lab/prepare-save";
+import { subscribeStyleDraftChanges } from "@/lib/style-lab/draft-events";
+import { persistedStyleOverrides, saveWorkingTheme, styleLabPatchIsSuperseded, syncDelta } from "@/lib/style-lab/theme-session";
+import { canPersistStyleDraft, fetchBoundStyleDraft, refreshStyleDraftForSave } from "@/lib/style-lab/prepare-save";
+import { StyleLabInputError, styleLabRequestErrorMessage } from "@/lib/style-lab/request-error";
 import type {
   StyleSceneElement,
   StyleSceneTokenBinding,
@@ -252,6 +265,15 @@ type FontChoice = InspectorChoice & Readonly<{
   asset?: StyleLabFontAsset;
 }>;
 
+// Text faces the app bundles in globals.css (the Appearance typeface choices),
+// so wheel text can use them directly instead of only through the UI font.
+const BUNDLED_TEXT_FONTS = [
+  { id: "bundled:free-sans", family: "FreeSans" },
+  { id: "bundled:kosugi-aries", family: "Kosugi Aries" },
+  { id: "bundled:dot-gothic16", family: "DotGothic16" },
+  { id: "bundled:m-plus-1-code", family: "M PLUS 1 Code" },
+] as const;
+
 type StyleSceneClassElement = StyleSceneElement & Readonly<{
   classId?: string;
 }>;
@@ -268,7 +290,10 @@ type LocalFontWindow = Window & {
 };
 
 const SYNC_DEBOUNCE_MS = 180;
-const POLL_INTERVAL_MS = 900;
+const WRITE_RETRY_MS = 1000;
+// A rejected write is re-read and retried this many times in a row before the
+// editor reports that it cannot write.
+const MAX_WRITE_REBASES = 3;
 const INSPECTOR_SECTION_ORDER: readonly InspectorSection[] = [
   "geometry",
   "typography",
@@ -286,10 +311,6 @@ const INSPECTOR_CONTROL_GROUP_ORDER: readonly InspectorControlGroup[] = [
   "filters",
   "shadow",
 ];
-
-function cloneValue(value: StyleLabTokenValue): StyleLabTokenValue {
-  return Array.isArray(value) ? [...value] : value;
-}
 
 function localFontLabel(font: BrowserLocalFontData, symbolRole: boolean): string {
   if (!symbolRole) return font.family.trim();
@@ -365,10 +386,16 @@ function styleElementProfile(
     : "classic";
 }
 
+/** Vintage magazine classes edit that wheel alone; Base never reaches it. */
+function isVintageStyleElement(element: StyleSceneElement): boolean {
+  return element.stateTags.includes(VINTAGE_PRESENTATION_TAG) && isVintageClass(styleClassId(element));
+}
+
 function styleElementEditScope(
   element: StyleSceneElement,
   editScope: ChartStyleAuthoringEditScope,
 ): WheelAuthoringEditScope {
+  if (isVintageStyleElement(element)) return WHEEL_VINTAGE_AUTHORING_SCOPE;
   return editScope === "base" ? "base" : styleElementProfile(element);
 }
 
@@ -571,26 +598,8 @@ function withColorAlpha(
   return [...rgb.slice(0, 3), Math.max(0, Math.min(1, alpha))];
 }
 
-function syncDelta(
-  previous: Readonly<ChartStyleSemanticOverrides>,
-  next: Readonly<ChartStyleSemanticOverrides>,
-): Record<string, StyleLabTokenValue | null> {
-  const result: Record<string, StyleLabTokenValue | null> = {};
-  for (const semanticId of new Set([...Object.keys(previous), ...Object.keys(next)])) {
-    if (JSON.stringify(previous[semanticId]) === JSON.stringify(next[semanticId])) continue;
-    result[semanticId] = next[semanticId] == null ? null : cloneValue(next[semanticId]);
-  }
-  return result;
-}
-
 function isWheelBandElement(element: StyleSceneElement): boolean {
   return styleClassId(element).startsWith('canvas.ring.') && element.authoringDefaults?.bandWidthPx != null;
-}
-
-function persistedStyleOverrides(
-  overrides: Readonly<ChartStyleSemanticOverrides>,
-): ChartStyleSemanticOverrides {
-  return cloneChartStyleOverrides(wheelAppearanceOverrides(overrides));
 }
 
 function isLayerEffect(token: ChartStyleTokenMetadata): boolean {
@@ -624,6 +633,26 @@ const MATERIAL_PROPERTY_ORDER = [
   "opacity",
 ] as const;
 
+const MATERIAL_PROPERTIES: ReadonlySet<string> = new Set(MATERIAL_PROPERTY_ORDER);
+
+/**
+ * The material property a surface control edits, or null.
+ *
+ * Material properties are grouped by what they paint (fill, texture, mask,
+ * shadow), never by their numeric binding: pattern spacing and dot size bind
+ * as `spacing` and the shadow offsets as `offset`, which on their own would
+ * file them under Geometry, away from the pattern or shadow they belong to.
+ */
+function surfaceMaterialProperty(
+  element: StyleSceneElement,
+  control: BoundControl,
+): string | null {
+  if (element.primitive !== "surface" || control.section === "effects") return null;
+  const { semanticId } = control.token;
+  const property = semanticId.slice(semanticId.lastIndexOf(".") + 1);
+  return MATERIAL_PROPERTIES.has(property) ? property : null;
+}
+
 function propertyOrder(element: StyleSceneElement, control: BoundControl): number {
   const { property } = control.binding;
   const id = control.token.semanticId.toLowerCase();
@@ -643,14 +672,12 @@ function propertyOrder(element: StyleSceneElement, control: BoundControl): numbe
     if (/shadowblur$/.test(id)) return 320;
     return 330;
   }
-  if (element.primitive === "surface") {
-    const materialProperty = control.token.semanticId.slice(
-      control.token.semanticId.lastIndexOf(".") + 1,
-    );
+  const materialProperty = surfaceMaterialProperty(element, control);
+  if (materialProperty) {
     const materialIndex = MATERIAL_PROPERTY_ORDER.indexOf(
       materialProperty as (typeof MATERIAL_PROPERTY_ORDER)[number],
     );
-    if (materialIndex >= 0) return 100 + materialIndex * 10;
+    return 100 + materialIndex * 10;
   }
   const sectionOffset = 0;
   const strokedPrimitive = element.primitive === "line" || element.primitive === "circle";
@@ -739,7 +766,11 @@ function controlsForElement(
     }}} : control);
   }
   if (authoring?.radiusPx != null) {
-    controls.push(authoringNumberControl(element, editScope, "radius", "radius", "radius", authoring.radiusPx));
+    const control = authoringNumberControl(element, editScope, "radius", "radius", "radius", authoring.radiusPx);
+    const binding = element.handles.find(handle => handle.binding?.semanticId.endsWith('.radius'))?.binding;
+    controls.push(binding?.min != null && binding.max != null ? {...control, token: {...control.token, bounds: {
+      step: control.token.bounds?.step ?? 1, min: binding.min, max: binding.max,
+    }}} : control);
   }
   if (authoring?.arrowStyle != null) {
     controls.push(authoringSelectControl(element, editScope, "arrowStyle", authoring.arrowStyle, "arrow-style"));
@@ -1365,9 +1396,59 @@ const INSPECTOR_GESTURE_OWNER = "inspector" as const;
  * therefore snaps the field to what the wheel did, which is the honest result
  * and what comparable editors do.
  */
+/** Which properties each target wheel style can take for one class. */
+function wheelClassSyncScope(
+  definition: (typeof WHEEL_SEMANTIC_CLASS_MANIFEST)[number],
+  targets: readonly WheelSemanticVariant[],
+): WheelClassSyncScope {
+  return {
+    classId: definition.id,
+    targets,
+    allowedProperties: Object.fromEntries(targets.map((target) => [
+      target,
+      new Set((definition.variantCapabilities?.[target] ?? definition.capabilities)
+        .filter(isWheelAuthoringFlatProperty)),
+    ] as const)),
+  };
+}
+
+/**
+ * The footer speaks plain language. A daemon refusal carries validator text
+ * with internal token ids; that goes to the console, the user gets one line.
+ */
+function userErrorMessage(error: unknown, t: TFunc): string {
+  console.warn("[style-lab]", error);
+  return styleLabRequestErrorMessage(error, t);
+}
+
 function currentValue(control: BoundControl): StyleLabTokenValue {
   if (control.binding.value != null) return control.binding.value;
   return control.token.defaultValue;
+}
+
+/**
+ * What Copy carries for a control: the stored edit when there is one (already
+ * valid), otherwise the displayed value in the form a write accepts. A colour
+ * is displayed as CSS text but stored as an RGB(A) array or a role alias, so
+ * pasting the display text was rejected by the daemon. Null when the value
+ * cannot be written at all.
+ */
+function transferValue(
+  control: BoundControl,
+  overrides: Readonly<ChartStyleSemanticOverrides>,
+): StyleLabTokenValue | null {
+  const stored = overrides[control.token.semanticId];
+  if (stored !== undefined) return stored;
+  const value = currentValue(control);
+  if (control.token.type === "color") {
+    if (typeof value === "string" && /^\{[^{}]+\}$/.test(value.trim())) return value.trim();
+    return colorArray(value);
+  }
+  if (control.token.type === "number") {
+    const number = typeof value === "number" ? value : Number.parseFloat(String(value));
+    return Number.isFinite(number) ? number : null;
+  }
+  return value;
 }
 
 function controlLabel(
@@ -1390,9 +1471,8 @@ function controlLabel(
   if (semanticId.endsWith(".tickLength")) return t("styleLab.control.tickLength");
   // The degree rulers' tick length reaches the inspector as a raw renderer
   // metric, so it read as "Chart wheel classic degree tick length" on the very
-  // rows a user clicks to change it. Max: "I can't even really access the tick
-  // marks on the outer ring […] I don't think we have the tick length exposed
-  // anywhere." It was exposed, under a name nobody would look for.
+  // rows a user clicks to change it, so the tick length seemed not to be
+  // exposed anywhere. It was exposed, under a name nobody would look for.
   if (/DegreeTickLength$/.test(semanticId)) return t("styleLab.control.tickLength");
   if (semanticId.endsWith(".fillPattern")) return t("styleLab.control.fillPattern");
   if (semanticId.endsWith(".shadowPattern")) return t("styleLab.control.shadowPattern");
@@ -1716,6 +1796,7 @@ function inspectorSectionFor(
   control: BoundControl,
 ): InspectorSection {
   if (control.section === "effects") return "effects";
+  if (surfaceMaterialProperty(element, control)) return "appearance";
   const { property } = control.binding;
   if (property === "radius" || property === "offset" || property === "spacing") {
     return "geometry";
@@ -2521,11 +2602,13 @@ function NumberControl({
     (state) => state.setFamilyOverrides,
   );
   const readFamilyBaselines = useFamilyNumericBaselines(control);
+  const restoreGestureProperty = useChartStyleEditorStore((state) => state.restoreGestureProperty);
   // Captured once per gesture. Recomputing per step would measure each move
   // against the previous one, so a drag would compound its own ratio.
   const familyBaselines = useRef<
     Readonly<Record<string, FamilyNumericBaseline>> | null
   >(null);
+  const gestureOrigin = useRef<number | null>(null);
   const radiusControl = control.binding.property === "radius" && !control.token.semanticId.endsWith(".bandWidth");
   const [radiusMode, setRadiusMode] = useState<"radius" | "diameter">("radius");
   const label = radiusControl ? t("styleLab.control.size") : controlLabel(control, t, tf);
@@ -2547,6 +2630,8 @@ function NumberControl({
     // Read straight from the store: this runs inside the same event as
     // beginGesture, before a subscription would see the change.
     if (useChartStyleEditorStore.getState().gestureStart == null) {
+      if (Math.abs(value - number) < 1e-8) return;
+      gestureOrigin.current = number;
       familyBaselines.current = readFamilyBaselines();
     }
     beginGesture(INSPECTOR_GESTURE_OWNER);
@@ -2557,8 +2642,12 @@ function NumberControl({
         value,
       )
       : null;
-    if (targets) setFamilyOverrides(targets, control.token.semanticId);
-    else setOverride(control.token.semanticId, value);
+    if (gestureOrigin.current != null && Math.abs(value - gestureOrigin.current) < 1e-8) {
+      for (const id of targets ? Object.keys(targets) : [control.token.semanticId]) {
+        restoreGestureProperty(id, INSPECTOR_GESTURE_OWNER);
+      }
+    } else if (targets) setFamilyOverrides(targets, control.token.semanticId);
+    else setOverride(control.token.semanticId, value, control.binding.radiusTarget);
   };
   const derivedMode = radiusMode === "radius" ? "diameter" : "radius";
   const derivedValue = radiusMode === "radius" ? number * 2 : number;
@@ -2574,7 +2663,7 @@ function NumberControl({
       allowWheelScrub={false}
       format={{ maximumFractionDigits: precision }}
       onValueChange={update}
-      onValueCommitted={() => endGesture(INSPECTOR_GESTURE_OWNER)}
+      onValueCommitted={() => { endGesture(INSPECTOR_GESTURE_OWNER); gestureOrigin.current = null; }}
       className={cn(
         "group grid min-h-8 grid-cols-[minmax(0,104px)_minmax(0,1fr)_20px] items-center gap-x-2 px-[var(--aries-inspector-padding-x)] hover:bg-[var(--aries-navbar-hover-bg)] focus-within:bg-[var(--aries-navbar-hover-bg)]",
         radiusControl && "py-0.5",
@@ -3057,13 +3146,16 @@ function FontControl({
           source: "bundled",
         }]
       : [
-          {
-            id: "bundled:free-sans",
-            label: "FreeSans",
-            cssFamily: quoteFontFamily("FreeSans"),
-            fontFamily: "FreeSans",
+          ...BUNDLED_TEXT_FONTS.map(({ id, family }): FontChoice => ({
+            id,
+            label: family,
+            // FreeSans backs the display faces for marks they lack (′ ″).
+            cssFamily: family === "FreeSans"
+              ? quoteFontFamily(family)
+              : `${quoteFontFamily(family)}, ${quoteFontFamily("FreeSans")}, sans-serif`,
+            fontFamily: family,
             source: "bundled",
-          },
+          })),
           { id: "generic:system-ui", label: "system-ui", cssFamily: "system-ui", fontFamily: "system-ui", source: "generic" },
           { id: "generic:sans-serif", label: "sans-serif", cssFamily: "sans-serif", fontFamily: "sans-serif", source: "generic" },
           { id: "generic:serif", label: "serif", cssFamily: "serif", fontFamily: "serif", source: "generic" },
@@ -3420,10 +3512,8 @@ function SyncWheelStylesDialog({
 
 export function ChartStylePanel({
   onClose,
-  applyThemeToApp = false,
 }: {
   onClose?: () => void;
-  applyThemeToApp?: boolean;
 }) {
   const t = useT();
   const compositionProfile = useSceneWheelProfile();
@@ -3443,6 +3533,7 @@ export function ChartStylePanel({
   );
   const wheelModifiedFromBaseline = useChartStyleEditorStore(themeWheelModified);
   const geometryTransition = useChartStyleEditorStore(state => state.geometryTransition);
+  const wheelContextSource = useChartStyleEditorStore(state => state.wheelPresetState?.context?.sourceThemeName);
   const geometryGesture = useChartStyleEditorStore(state => state.gestureStart);
   const remoteModifiedFromBaseline = useChartStyleEditorStore(
     (state) => state.remoteModifiedFromBaseline,
@@ -3466,7 +3557,8 @@ export function ChartStylePanel({
   const undo = useChartStyleEditorStore((state) => state.undo);
   const redo = useChartStyleEditorStore((state) => state.redo);
   const [themeSources, setThemeSources] = useState<readonly StyleLabThemeSource[]>([]);
-  const [saveAsOpen, setSaveAsOpen] = useState(false);
+  // Save as new and Rename share one name form; only one is open at a time.
+  const [nameForm, setNameForm] = useState<"saveAs" | "rename" | null>(null);
   const [newThemeName, setNewThemeName] = useState("");
   const [deleteThemeSource, setDeleteThemeSource] = useState<StyleLabThemeSource | null>(null);
   const [elementClipboard, setElementClipboard] = useState<ElementStyleClipboard | null>(null);
@@ -3491,6 +3583,22 @@ export function ChartStylePanel({
   const syncInFlightRef = useRef(false);
   const syncTimerRef = useRef<number | null>(null);
   const flushSyncRef = useRef<() => void>(() => undefined);
+  const remoteCheckRef = useRef<() => void>(() => undefined);
+  const remoteCheckPendingRef = useRef(false);
+  const rebaseCountRef = useRef(0);
+  // Retry repeats the failed operation; publishing an empty delta is not a
+  // retry of an unsuccessful connection, Save, import, or export.
+  const requestRetryRef = useRef<
+    | { action: "connect" | "save" | "saveAs" | "rename" | "delete" | "revert" | "restoreFactory" | "import" | "export" }
+    | { action: "sync"; draftId: string | null }
+    | { action: "selectTheme"; sourceThemeName: string }
+    | null
+  >(null);
+  const reconnectRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    if (syncStatus === "synced") requestRetryRef.current = null;
+  }, [syncStatus]);
 
   useEffect(() => {
     setTokenMetadata(STYLE_LAB_TOKEN_METADATA);
@@ -3513,21 +3621,49 @@ export function ChartStylePanel({
 
   useEffect(() => {
     setActive(true);
-    setLiveAppThemePreview(applyThemeToApp);
-    return () => {
-      // Closing the retained pane ends authoring interaction, not the working
-      // appearance. In-app drafts remain painted until the user selects or
-      // edits another app theme; the standalone Lab never owns app chrome.
-      if (!applyThemeToApp) setLiveAppThemePreview(false);
-      setActive(false);
-    };
-  }, [applyThemeToApp, setActive, setLiveAppThemePreview]);
+    setLiveAppThemePreview(true);
+    // Closing the retained pane ends authoring interaction, not the working
+    // appearance: drafts remain painted until the user selects or edits
+    // another app theme.
+    return () => setActive(false);
+  }, [setActive, setLiveAppThemePreview]);
+
+  useEffect(() => {
+    // Success notices ("Theme saved") fade; failures stay until resolved.
+    if (syncStatus !== "synced" || !syncDetail) return;
+    const timer = window.setTimeout(() => {
+      const state = useChartStyleEditorStore.getState();
+      if (state.syncStatus === "synced" && state.syncDetail === syncDetail) state.setSyncStatus("synced");
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [syncDetail, syncStatus]);
 
   useEffect(() => {
     if (!transferNotice) return;
     const timer = window.setTimeout(() => setTransferNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [transferNotice]);
+
+  const rebaseAndRetry = useCallback(async (draftId: string | null) => {
+    try {
+      if (!draftId) throw new StyleLabApiError(t("styleLab.status.conflictDetail"), 409);
+      const draft = await fetchBoundStyleDraft(draftId);
+      const current = useChartStyleEditorStore.getState();
+      // A theme switch replaced the draft meanwhile; its transition reconciles.
+      if (!draft || current.remoteDraftId !== draftId) return;
+      current.acceptRemoteDraft(draft, { preserveLocalChanges: true });
+      flushSyncRef.current();
+    } catch (error: unknown) {
+      if (useChartStyleEditorStore.getState().remoteDraftId !== draftId) return;
+      requestRetryRef.current = error instanceof StyleLabApiError && error.status === 404
+        ? { action: "connect" }
+        : { action: "sync", draftId };
+      useChartStyleEditorStore.getState().setSyncStatus(
+        "error",
+        userErrorMessage(error, t),
+      );
+    }
+  }, [t]);
 
   const flushSync = useCallback(() => {
     if (!initializedRef.current || !remoteAvailableRef.current) return;
@@ -3536,6 +3672,7 @@ export function ChartStylePanel({
       return;
     }
     const state = useChartStyleEditorStore.getState();
+    if (state.geometryTransition) return;
     if (state.gestureStart) {
       syncTimerRef.current = window.setTimeout(() => flushSyncRef.current(), 80);
       return;
@@ -3549,29 +3686,67 @@ export function ChartStylePanel({
     syncInFlightRef.current = true;
     state.setSyncStatus("saving");
     let retryDelay: number | null = 80;
+    let rebase = false;
     void patchCurrentStyleLabDraft(
-      { baseRevision: state.remoteRevision, overrides: delta },
+      { draftId: state.remoteDraftId ?? undefined, baseRevision: state.remoteRevision, overrides: delta },
       state.remoteEtag,
     )
       .then((draft) => {
-        useChartStyleEditorStore.getState().markSynced(draft, desired);
+        rebaseCountRef.current = 0;
+        const current = useChartStyleEditorStore.getState();
+        if (current.remoteDraftId === state.remoteDraftId) current.markSynced(draft, desired);
       })
       .catch((error: unknown) => {
         const current = useChartStyleEditorStore.getState();
-        if (error instanceof StyleLabApiError && (error.status === 409 || error.status === 412)) {
+        if (current.remoteDraftId !== state.remoteDraftId) return;
+        requestRetryRef.current = error instanceof StyleLabApiError && error.status === 404
+          ? { action: "connect" }
+          : { action: "sync", draftId: state.remoteDraftId };
+        if (error instanceof StyleLabApiError && [404, 409, 412].includes(error.status)) {
+          // Someone else (often this window's own theme or geometry write)
+          // moved the draft on, or a daemon restart dropped the unmodified
+          // draft. Re-read it, keep the unsent edits, try again.
           retryDelay = null;
-          current.setSyncStatus("conflict", t("styleLab.status.conflictDetail"));
+          rebaseCountRef.current += 1;
+          if (rebaseCountRef.current <= MAX_WRITE_REBASES) rebase = true;
+          else current.setSyncStatus("conflict", t("styleLab.status.conflictDetail"));
           return;
         }
-        retryDelay = error instanceof StyleLabApiError
-          && error.status >= 400
-          && error.status < 500
-          ? null
-          : POLL_INTERVAL_MS;
-        current.setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        if (styleLabPatchIsSuperseded(delta, current.semanticOverrides)) {
+          // The request failed for an earlier sample while the user kept
+          // editing. Drain the latest values before reporting or undoing it.
+          retryDelay = 80;
+          return;
+        }
+        if (error instanceof StyleLabApiError && error.status >= 400 && error.status < 500) {
+          // The daemon names every refused key. Undo just those edits and
+          // send the rest, so one bad value never blocks the others or the queue.
+          const named = new Set(error.rejectedIds);
+          const rejected = Object.keys(delta).filter((semanticId) =>
+            named.size ? named.has(semanticId) : error.message.includes(semanticId));
+          console.warn("[style-lab] write refused", error.message);
+          if (rejected.length) {
+            current.applyOverrides(Object.fromEntries(rejected.map((semanticId) => {
+              const previous = state.syncedOverrides[semanticId];
+              return [semanticId, previous === undefined ? null : previous];
+            })));
+            current.setSyncStatus("synced", t("styleLab.status.changeUndone"));
+            retryDelay = 80;
+            return;
+          }
+          retryDelay = null;
+        } else {
+          retryDelay = WRITE_RETRY_MS;
+        }
+        current.setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
+        if (rebase) {
+          void rebaseAndRetry(state.remoteDraftId);
+          return;
+        }
+        if (remoteCheckPendingRef.current) remoteCheckRef.current();
         const current = useChartStyleEditorStore.getState();
         if (
           retryDelay != null &&
@@ -3583,7 +3758,7 @@ export function ChartStylePanel({
           );
         }
       });
-  }, [t]);
+  }, [rebaseAndRetry, t]);
 
   useEffect(() => {
     flushSyncRef.current = flushSync;
@@ -3640,34 +3815,58 @@ export function ChartStylePanel({
       }
       return { draft, sources };
     };
-    setSyncStatus("connecting");
-    void loadDraft()
-      .then(({ draft, sources }) => {
-        if (controller.signal.aborted) return;
-        setThemeSources(sources);
-        acceptRemoteDraft(draft, { clearHistory: true });
-        const source = sources.find(
-          (candidate) => candidate.name === draft.sourceThemeName,
-        );
-        if (source) {
-          setStyleLabBaseTheme({
-            sourceThemeName: source.name,
-            mode: source.mode,
-            appTokens: source.appTokens,
-            chartPalette: source.chartPalette,
-            chartData: source.chartData,
-            appAuthoring: source.appAuthoring,
+    // The daemon may still be starting. Keep trying instead of silently
+    // editing a copy that is never written.
+    let retryTimer: number | null = null;
+    let attempt = 0;
+    const load = () => {
+      void loadDraft()
+        .then(({ draft, sources }) => {
+          if (controller.signal.aborted) return;
+          setThemeSources(sources);
+          const current = useChartStyleEditorStore.getState();
+          acceptRemoteDraft(draft, {
+            clearHistory: !initializedRef.current,
+            preserveLocalChanges: current.remoteSourceThemeName === draft.sourceThemeName
+              || current.remoteDraftId == null,
           });
-        }
-        initializedRef.current = true;
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        initializedRef.current = true;
-        remoteAvailableRef.current = false;
-        setSyncStatus("local", error instanceof Error ? error.message : String(error));
-      });
-    return () => controller.abort();
+          const source = sources.find(
+            (candidate) => candidate.name === draft.sourceThemeName,
+          );
+          if (source) {
+            setStyleLabBaseTheme({
+              sourceThemeName: source.name,
+              mode: source.mode,
+              appTokens: source.appTokens,
+              chartPalette: source.chartPalette,
+              chartData: source.chartData,
+              appAuthoring: source.appAuthoring,
+            });
+          }
+          remoteAvailableRef.current = true;
+          initializedRef.current = true;
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          remoteAvailableRef.current = false;
+          requestRetryRef.current = { action: "connect" };
+          setSyncStatus("error", userErrorMessage(error, t));
+          retryTimer = window.setTimeout(load, Math.min(15_000, 1000 * 2 ** attempt));
+          attempt += 1;
+        });
+    };
+    reconnectRef.current = () => {
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      setSyncStatus("connecting");
+      load();
+    };
+    setSyncStatus("connecting");
+    load();
+    return () => {
+      controller.abort();
+      reconnectRef.current = () => undefined;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+    };
   }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
 
   useEffect(() => {
@@ -3688,86 +3887,103 @@ export function ChartStylePanel({
   useEffect(() => {
     if (!initializedRef.current || !remoteAvailableRef.current) return;
     if (equalChartStyleOverrides(syncedOverrides, persistedStyleOverrides(semanticOverrides))) return;
-    if (applyThemeToApp) setLiveAppThemePreview(true);
+    if (wheelContextSource === remoteSourceThemeName) setLiveAppThemePreview(true);
     if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => flushSyncRef.current(), SYNC_DEBOUNCE_MS);
     return () => {
       if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
     };
-  }, [applyThemeToApp, revision, semanticOverrides, syncedOverrides, setLiveAppThemePreview]);
+  }, [revision, semanticOverrides, syncedOverrides, setLiveAppThemePreview, wheelContextSource, remoteSourceThemeName]);
+
+  useEffect(() => {
+    if (!initializedRef.current || geometryTransition || !wheelContextSource
+      || !remoteSourceThemeName || wheelContextSource === remoteSourceThemeName) return;
+    void synchronizeWheelTheme(wheelContextSource).catch(() => {
+      useChartStyleEditorStore.getState().setSyncStatus("conflict", t("styleLab.status.conflictDetail"));
+    });
+  }, [geometryTransition, remoteSourceThemeName, wheelContextSource, t]);
 
   useEffect(() => {
     let cancelled = false;
-    let polling = false;
-    const poll = async () => {
-      if (
-        cancelled ||
-        polling ||
-        !initializedRef.current ||
-        !remoteAvailableRef.current ||
-        syncInFlightRef.current
-      ) return;
-      polling = true;
+    let reading = false;
+    // Another writer (a second window, an import) changed the draft. Re-read it
+    // once, keeping local edits that have not been written yet. During our own
+    // write the read waits: the write's reply already carries the new revision.
+    const readRemote = async () => {
+      if (cancelled || !initializedRef.current || !remoteAvailableRef.current) return;
+      if (reading || syncInFlightRef.current) {
+        remoteCheckPendingRef.current = true;
+        return;
+      }
+      reading = true;
+      remoteCheckPendingRef.current = false;
       const startedFrom = useChartStyleEditorStore.getState();
       try {
         const draft = await fetchCurrentStyleLabDraft();
-        if (cancelled || syncInFlightRef.current) return;
+        if (cancelled) return;
+        if (syncInFlightRef.current) {
+          remoteCheckPendingRef.current = true;
+          return;
+        }
         const state = useChartStyleEditorStore.getState();
         // A read begun before a write must not roll its acknowledgement back.
         if (state.remoteDraftId !== startedFrom.remoteDraftId
           || state.remoteRevision !== startedFrom.remoteRevision) return;
-        const switchedDraft = draft.id !== state.remoteDraftId;
-        if (!switchedDraft && draft.revision <= (state.remoteRevision ?? -1)) return;
-        state.acceptRemoteDraft(draft, {
-          preserveLocalChanges: !switchedDraft,
-          clearHistory: switchedDraft,
-        });
+        // Source transitions reconcile appearance and all five wheels together.
+        if (draft.id !== state.remoteDraftId) return;
+        if (draft.revision <= (state.remoteRevision ?? -1)) return;
+        state.acceptRemoteDraft(draft, { preserveLocalChanges: true });
       } catch {
         // Keep the current chart paint stable through a transient daemon restart.
       } finally {
-        polling = false;
+        reading = false;
+        if (remoteCheckPendingRef.current && !cancelled && !syncInFlightRef.current) {
+          void readRemote();
+        }
       }
     };
-    const interval = window.setInterval(() => void poll(), POLL_INTERVAL_MS);
+    remoteCheckRef.current = () => void readRemote();
+    const unsubscribe = subscribeStyleDraftChanges((change) => {
+      const state = useChartStyleEditorStore.getState();
+      // Our own acknowledged write echoing back needs no read.
+      if (change?.revision != null && change.draftId === state.remoteDraftId
+        && change.revision <= (state.remoteRevision ?? -1)) return;
+      void readRemote();
+    });
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      remoteCheckRef.current = () => undefined;
+      unsubscribe();
     };
   }, []);
+
+  const conflictMessage = t("styleLab.status.conflictDetail");
+  const conflictMessageRef = useRef(conflictMessage);
+  useEffect(() => {
+    conflictMessageRef.current = conflictMessage;
+  }, [conflictMessage]);
 
   useEffect(() => () => {
     if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
-    // Pane close is not a discard action. Publish any final debounced edit to
-    // the daemon without waiting for it, then let the editor unmount instantly.
+    // Pane close is not a save: publish any final debounced edit to the
+    // working copy (parked per theme, kept across restart) and unmount.
     flushSyncRef.current();
   }, []);
 
-  const save = useCallback(() => {
-    const state = useChartStyleEditorStore.getState();
-    if (syncInFlightRef.current || state.remoteRevision == null) return;
+  const save = useCallback((): void => {
+    if (syncInFlightRef.current) return;
     if (syncTimerRef.current != null) {
       window.clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
     }
     syncInFlightRef.current = true;
-    state.setSyncStatus("saving");
-    void flushWheelGeometry().then(async () => {
-      const current = await refreshStyleDraftForSave(t("styleLab.status.conflictDetail"));
-      const desired = persistedStyleOverrides(current.semanticOverrides);
-      const delta = syncDelta(current.syncedOverrides, desired);
-      let revision = current.remoteRevision!;
-      current.setSyncStatus("saving");
-      if (Object.keys(delta).length) {
-        const patched = await patchCurrentStyleLabDraft(
-          { baseRevision: revision, overrides: delta }, current.remoteEtag,
-        );
-        useChartStyleEditorStore.getState().markSynced(patched, desired);
-        revision = patched.revision;
-      }
-      return commitCurrentStyleLabDraft({ baseRevision: revision, activate: false });
-    })
+    useChartStyleEditorStore.getState().setSyncStatus("saving");
+    void saveWorkingTheme(conflictMessageRef.current)
       .then(async (draft) => {
-        acceptRemoteDraft(draft, { preserveLocalChanges: true });
+        if (!draft) {
+          setSyncStatus("synced");
+          return;
+        }
         try {
           const sources = await fetchStyleLabThemeSources();
           setThemeSources(sources);
@@ -3785,21 +4001,22 @@ export function ChartStylePanel({
             });
           }
         } catch {
-          // The in-place save succeeded. Retain the current preview until the
-          // source catalogue reconnects.
+          // The save succeeded. Keep the current preview until the source
+          // catalogue reconnects.
         }
         setSyncStatus("synced", t("styleLab.status.committed"));
       })
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "save" };
+        setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
       });
-  }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
+  }, [setStyleLabBaseTheme, setSyncStatus, t]);
 
-  const saveAsTheme = useCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const saveAsTheme = useCallback((event?: FormEvent<HTMLFormElement>): void => {
+    event?.preventDefault();
     const name = newThemeName.trim();
     if (!name) return;
     const state = useChartStyleEditorStore.getState();
@@ -3811,7 +4028,7 @@ export function ChartStylePanel({
     syncInFlightRef.current = true;
     state.setSyncStatus("saving");
     let desired: ChartStyleSemanticOverrides = {};
-    void flushWheelGeometry().then(async () => {
+    void flushWheelGeometry().then(() => enqueueWheelPresetWrite(async () => {
       const current = await refreshStyleDraftForSave(t("styleLab.status.conflictDetail"));
       desired = persistedStyleOverrides(current.semanticOverrides);
       const delta = syncDelta(current.syncedOverrides, desired);
@@ -3819,10 +4036,11 @@ export function ChartStylePanel({
       return saveCurrentStyleLabDraftAsTheme(name, {
         baseRevision: current.remoteRevision ?? undefined,
         overrides: delta,
-        activate: applyThemeToApp,
-        promoteWorkingCopy: applyThemeToApp,
+        activate: true,
+        promoteWorkingCopy: true,
+        ...await checkedStyleLabSaveContext(t("styleLab.status.conflictDetail")),
       });
-    })
+    }))
       .then(async (draft) => {
         useChartStyleEditorStore.getState().markSynced(draft, desired);
         acceptRemoteDraft(draft, { clearHistory: true, preserveLocalChanges: true });
@@ -3846,32 +4064,58 @@ export function ChartStylePanel({
           // The theme itself is already saved; the retained source list will
           // refresh on the next Style Lab connection if the daemon restarted.
         }
-        setSaveAsOpen(false);
+        setNameForm(null);
         setNewThemeName("");
         setSyncStatus("synced", t("styleLab.status.themeSaved", { name }));
       })
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "saveAs" };
+        setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
       });
   }, [
     acceptRemoteDraft,
-    applyThemeToApp,
     newThemeName,
     setStyleLabBaseTheme,
     setSyncStatus,
     t,
   ]);
 
-  const deleteSavedTheme = useCallback(() => {
+  const renameTheme = useCallback((event?: FormEvent<HTMLFormElement>): void => {
+    event?.preventDefault();
+    const name = newThemeName.trim();
+    const target = themeSources.find(
+      (source) => source.name === useChartStyleEditorStore.getState().remoteSourceThemeName,
+    );
+    if (!name || !target?.deletable || !target.profileId || syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    void renameStyleLabTheme(target.profileId, name)
+      .then(async () => {
+        setThemeSources(await fetchStyleLabThemeSources());
+        // The rename carries into the open working copy under a new revision.
+        acceptRemoteDraft(await fetchCurrentStyleLabDraft());
+        setNameForm(null);
+        setNewThemeName("");
+        setSyncStatus("synced", t("styleLab.status.themeRenamed", { name }));
+      })
+      .catch((error: unknown) => {
+        requestRetryRef.current = { action: "rename" };
+        setSyncStatus("error", userErrorMessage(error, t));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
+      });
+  }, [acceptRemoteDraft, newThemeName, setSyncStatus, t, themeSources]);
+
+  const deleteSavedTheme = useCallback((): void => {
     const target = deleteThemeSource;
     if (!target?.deletable || !target.profileId) return;
     const state = useChartStyleEditorStore.getState();
     if (
       syncInFlightRef.current
-      || state.syncStatus !== "synced"
+      || !canPersistStyleDraft(state.syncStatus, state.remoteRevision)
       || target.name !== state.remoteSourceThemeName
       || !equalChartStyleOverrides(
         state.syncedOverrides,
@@ -3884,8 +4128,10 @@ export function ChartStylePanel({
     }
     syncInFlightRef.current = true;
     state.setSyncStatus("saving");
+    let deleted = false;
     void deleteStyleLabTheme(target.profileId)
       .then(async () => {
+        deleted = true;
         try {
           await discardCurrentStyleLabDraft({
             baseRevision: state.remoteRevision ?? undefined,
@@ -3915,7 +4161,7 @@ export function ChartStylePanel({
           });
         }
         setDeleteThemeSource(null);
-        setSaveAsOpen(false);
+        setNameForm(null);
         setNewThemeName("");
         setSyncStatus(
           "synced",
@@ -3923,7 +4169,8 @@ export function ChartStylePanel({
         );
       })
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: deleted ? "connect" : "delete" };
+        setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
@@ -3936,11 +4183,11 @@ export function ChartStylePanel({
     t,
   ]);
 
-  const revertWorkingDraft = useCallback(() => {
+  const revertWorkingDraft = useCallback((): void => {
     const state = useChartStyleEditorStore.getState();
     if (
       syncInFlightRef.current || state.geometryTransition || state.gestureStart
-      || state.syncStatus !== "synced"
+      || !canPersistStyleDraft(state.syncStatus, state.remoteRevision)
       || !equalChartStyleOverrides(state.syncedOverrides, persistedStyleOverrides(state.semanticOverrides))
     ) return;
     syncInFlightRef.current = true;
@@ -3950,17 +4197,16 @@ export function ChartStylePanel({
       const current = useChartStyleEditorStore.getState();
       const draft = await revertCurrentStyleLabDraft({
         baseRevision: current.remoteRevision ?? undefined,
+        ...await checkedStyleLabSaveContext(t("styleLab.status.conflictDetail")),
         factoryDefault: false,
       });
       acceptRemoteDraft(draft, { clearHistory: true });
-      if (draft.wheelPresets && current.geometryProfile) {
-        useChartStyleEditorStore.getState().acceptWheelPresets(draft.wheelPresets,
-          current.geometryProfile, {clearHistory: true});
-      }
+      if (draft.wheelPresets) acceptWheelThemePresets(draft.wheelPresets, current.geometryProfile);
       setSyncStatus("synced", t("styleLab.status.reverted"));
     }))
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "revert" };
+        setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
@@ -3968,21 +4214,24 @@ export function ChartStylePanel({
       });
   }, [acceptRemoteDraft, setSyncStatus, t]);
 
-  const restoreFactoryTheme = useCallback(() => {
+  const restoreFactoryTheme = useCallback((): void => {
     const state = useChartStyleEditorStore.getState();
     if (
       syncInFlightRef.current
-      || state.syncStatus !== "synced"
-      || state.remoteModifiedFromBaseline || themeWheelModified(state)
+      || !canPersistStyleDraft(state.syncStatus, state.remoteRevision)
       || !equalChartStyleOverrides(state.syncedOverrides, persistedStyleOverrides(state.semanticOverrides))
     ) return;
+    syncInFlightRef.current = true;
     state.setSyncStatus("saving");
-    void revertCurrentStyleLabDraft({
+    void flushWheelGeometry().then(() => enqueueWheelPresetWrite(async () => revertCurrentStyleLabDraft({
       baseRevision: state.remoteRevision ?? undefined,
+      ...await checkedStyleLabSaveContext(t("styleLab.status.conflictDetail")),
       factoryDefault: true,
-    })
+    })))
       .then(async (draft) => {
         acceptRemoteDraft(draft, { clearHistory: true });
+        const current = useChartStyleEditorStore.getState();
+        if (draft.wheelPresets) acceptWheelThemePresets(draft.wheelPresets, current.geometryProfile);
         const sources = await fetchStyleLabThemeSources();
         setThemeSources(sources);
         const restored = sources.find(
@@ -4001,7 +4250,11 @@ export function ChartStylePanel({
         setSyncStatus("synced", t("styleLab.status.factoryRestored"));
       })
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "restoreFactory" };
+        setSyncStatus("error", userErrorMessage(error, t));
+      })
+      .finally(() => {
+        syncInFlightRef.current = false;
       });
   }, [acceptRemoteDraft, setStyleLabBaseTheme, setSyncStatus, t]);
 
@@ -4020,20 +4273,20 @@ export function ChartStylePanel({
     syncInFlightRef.current = true;
     const run = async () => {
       if (file.size > MAX_THEME_IMPORT_BYTES) {
-        throw new Error(t("styleLab.import.tooLarge"));
+        throw new StyleLabInputError(t("styleLab.import.tooLarge"));
       }
       let profiles: unknown[];
       try {
         profiles = parseThemeExchangeFile(await file.text());
       } catch {
-        throw new Error(t("styleLab.import.invalidFile"));
+        throw new StyleLabInputError(t("styleLab.import.invalidFile"));
       }
       useChartStyleEditorStore.getState().setSyncStatus("saving");
       let importedDraft: StyleLabDraft | null = null;
       for (const profile of profiles) {
         importedDraft = await importStyleLabTheme(profile);
       }
-      if (!importedDraft) throw new Error(t("styleLab.import.invalidFile"));
+      if (!importedDraft) throw new StyleLabInputError(t("styleLab.import.invalidFile"));
       acceptRemoteDraft(importedDraft, { clearHistory: true });
       const sources = await fetchStyleLabThemeSources();
       setThemeSources(sources);
@@ -4041,12 +4294,7 @@ export function ChartStylePanel({
         (candidate) => candidate.name === importedDraft?.sourceThemeName,
       );
       if (source) {
-        let appliedThemeState: ThemeState | null = null;
-        if (applyThemeToApp) {
-          await flushWheelGeometry();
-        const options = await applyThemePreset(source.name);
-          appliedThemeState = options.themeState;
-        }
+        const { themeState: appliedThemeState } = await applyWheelTheme(source.name);
         setStyleLabBaseTheme({
           sourceThemeName: source.name,
           mode: source.mode,
@@ -4058,12 +4306,10 @@ export function ChartStylePanel({
         if (appliedThemeState) {
           useThemeStore.getState().applyThemeState(appliedThemeState);
         }
-        if (applyThemeToApp) {
-          setThemeSources((current) => current.map((candidate) => ({
-            ...candidate,
-            selected: candidate.name === source.name,
-          })));
-        }
+        setThemeSources((current) => current.map((candidate) => ({
+          ...candidate,
+          selected: candidate.name === source.name,
+        })));
       }
       setSyncStatus(
         "synced",
@@ -4074,7 +4320,8 @@ export function ChartStylePanel({
     };
     void run()
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "import" };
+        setSyncStatus("error", userErrorMessage(error, t));
       })
       .finally(() => {
         syncInFlightRef.current = false;
@@ -4082,15 +4329,18 @@ export function ChartStylePanel({
       });
   }, [
     acceptRemoteDraft,
-    applyThemeToApp,
     setStyleLabBaseTheme,
     setSyncStatus,
     t,
   ]);
 
-  const exportProfile = useCallback(() => {
+  const exportProfile = useCallback((): void => {
     setSyncStatus("saving");
-    void fetchStyleLabDraftExport()
+    void flushWheelGeometry().then(() => enqueueWheelPresetWrite(async () => {
+      await flushStyleLabAppearance();
+      const binding = await checkedStyleLabSaveContext(t("styleLab.status.conflictDetail"));
+      return fetchStyleLabDraftExport(binding.draftId, undefined, binding);
+    }))
       .then((profile) => {
         const blob = new Blob(
           [`${JSON.stringify(profile, null, 2)}\n`],
@@ -4105,17 +4355,18 @@ export function ChartStylePanel({
         setSyncStatus("synced");
       })
       .catch((error: unknown) => {
-        setSyncStatus("error", error instanceof Error ? error.message : String(error));
+        requestRetryRef.current = { action: "export" };
+        setSyncStatus("error", userErrorMessage(error, t));
       });
-  }, [setSyncStatus]);
+  }, [setSyncStatus, t]);
 
-  const selectThemeSource = useCallback((sourceThemeName: string) => {
+  const selectThemeSource = useCallback((sourceThemeName: string): void => {
     const source = themeSources.find((candidate) => candidate.name === sourceThemeName);
     if (!source) return;
     const state = useChartStyleEditorStore.getState();
     if (
       syncInFlightRef.current
-      || state.syncStatus !== "synced"
+      || !canPersistStyleDraft(state.syncStatus, state.remoteRevision)
       || !equalChartStyleOverrides(
         state.syncedOverrides,
         persistedStyleOverrides(state.semanticOverrides),
@@ -4128,13 +4379,8 @@ export function ChartStylePanel({
     )));
     state.setSyncStatus("connecting");
     void (async () => {
-      const draft = await createStyleLabDraftFromTheme(source.name);
-      let appliedThemeState: ThemeState | null = null;
-      if (applyThemeToApp) {
-        await flushWheelGeometry();
-        const options = await applyThemePreset(source.name);
-        appliedThemeState = options.themeState;
-      }
+      const { themeState: appliedThemeState } = await applyWheelTheme(source.name);
+      const draft = await fetchCurrentStyleLabDraft();
       setStyleLabBaseTheme({
         sourceThemeName: source.name,
         mode: source.mode,
@@ -4155,23 +4401,22 @@ export function ChartStylePanel({
       if (appliedThemeState) {
         useThemeStore.getState().applyThemeState(appliedThemeState);
       }
-      if (applyThemeToApp) {
-        setThemeSources((current) => current.map((candidate) => ({
-          ...candidate,
-          selected: candidate.name === source.name,
-        })));
-      }
+      setThemeSources((current) => current.map((candidate) => ({
+        ...candidate,
+        selected: candidate.name === source.name,
+      })));
     })()
       .then(() => {
         useChartStyleEditorStore.getState().setSyncStatus("synced");
       })
       .catch((error: unknown) => {
+        requestRetryRef.current = { action: "selectTheme", sourceThemeName };
         useChartStyleEditorStore.getState().setSyncStatus(
           "error",
-          error instanceof Error ? error.message : String(error),
+          userErrorMessage(error, t),
         );
       });
-  }, [applyThemeToApp, setStyleLabBaseTheme, themeSources]);
+  }, [setStyleLabBaseTheme, t, themeSources]);
 
   const selectedAppearanceElement = selectedElement?.appearanceClassId
     ? sceneElements.find(element => styleClassId(element) === selectedElement.appearanceClassId) ?? null
@@ -4188,12 +4433,16 @@ export function ChartStylePanel({
     [authoringEditScope, compositionProfile, selectedElement, selectedAppearanceElement, tokenMetadata],
   );
   const transferControls = useMemo<StyleTransferControl[]>(
-    () => controls.map((control) => ({
-      semanticId: control.token.semanticId,
-      property: control.binding.property,
-      value: currentValue(control),
-    })),
-    [controls],
+    () => controls.flatMap((control) => {
+      const value = transferValue(control, semanticOverrides);
+      return value == null ? [] : [{
+        semanticId: control.token.semanticId,
+        property: control.binding.property,
+        kind: control.token.type,
+        value,
+      }];
+    }),
+    [controls, semanticOverrides],
   );
   const visibleControls = useMemo(
     () => selectedElement
@@ -4214,18 +4463,19 @@ export function ChartStylePanel({
       ? t(selectedElement.labelKey)
       : "";
   const sourceVariant = selectedElement ? styleElementProfile(selectedElement) : "classic";
-  const syncTargetVariants = selectedClassDefinition
-    ? selectedClassDefinition.applicability.variants.filter(
+  // Sync addresses the class that paints the look: a ring band picked on the
+  // wheel is a layout instance whose material lives in its fill class.
+  const syncClassId = selectedElement?.appearanceClassId && isWheelSemanticClassId(selectedElement.appearanceClassId)
+    ? selectedElement.appearanceClassId
+    : selectedClassId;
+  const syncClassDefinition = syncClassId
+    ? WHEEL_SEMANTIC_CLASS_MANIFEST.find((definition) => definition.id === syncClassId) ?? null
+    : null;
+  const syncTargetVariants = syncClassDefinition
+    ? syncClassDefinition.applicability.variants.filter(
       (variant) => variant !== sourceVariant,
     )
     : [];
-  const sourceVariantOverrideCount = selectedClassId
-    ? Object.keys(semanticOverrides).filter((semanticId) =>
-      semanticId.startsWith(
-        `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${sourceVariant}.${selectedClassId}.`,
-      )
-    ).length
-    : 0;
   const classElements = useMemo(() => {
     const byClass = new Map<string, StyleSceneElement>();
     for (const element of sceneElements) {
@@ -4443,10 +4693,13 @@ export function ChartStylePanel({
     [selectableFamilies, selectedClassId, selectedElement?.appearanceClassId],
   );
   const copySelectedElementStyle = useCallback(() => {
-    if (!selectedElement || !selectedClassId || !selectedClassLabel) return;
+    if (!selectedElement) return;
+    // A ring band is a layout instance, not a style class: its look lives in
+    // its fill class, so that is what the clipboard names.
+    const sourceClassId = selectedElement.appearanceClassId ?? styleClassId(selectedElement);
     const clipboard = copyElementStyle(
       {
-        sourceClassId: selectedClassId,
+        sourceClassId,
         sourceLabel: selectedClassLabel,
         sourceProfile: sourceVariant,
       },
@@ -4459,7 +4712,6 @@ export function ChartStylePanel({
     setElementClipboard(clipboard);
     setTransferNotice(t("styleLab.transfer.copied", { name: selectedClassLabel }));
   }, [
-    selectedClassId,
     selectedClassLabel,
     selectedElement,
     sourceVariant,
@@ -4474,7 +4726,11 @@ export function ChartStylePanel({
       setTransferNotice(t("styleLab.transfer.alreadyMatched"));
       return;
     }
-    applyOverrides(patch);
+    // Pasting into a family edited together reaches every member, as a typed
+    // edit would.
+    const family = useChartStyleEditorStore.getState().selectedFamily;
+    applyOverrides(Object.fromEntries(Object.entries(patch).flatMap(([semanticId, value]) =>
+      expandFamilyOverrideIds(semanticId, family).map((target) => [target, value] as const))));
     setTransferNotice(t("styleLab.transfer.pasted", {
       count,
       name: elementClipboard.sourceLabel,
@@ -4483,22 +4739,10 @@ export function ChartStylePanel({
   const syncSelectedElementStyle = useCallback((
     targets: readonly WheelSemanticVariant[],
   ) => {
-    if (!selectedClassDefinition || !selectedClassId) return;
-    const allowedProperties = Object.fromEntries(
-      targets.map((target) => {
-        const capabilities = selectedClassDefinition.variantCapabilities?.[target]
-          ?? selectedClassDefinition.capabilities;
-        return [
-          target,
-          new Set(capabilities.filter(isWheelAuthoringFlatProperty)),
-        ] as const;
-      }),
-    );
+    if (!syncClassDefinition || !syncClassId) return;
     const patch = buildWheelVariantSyncPatch(wheelAppearanceOverrides(semanticOverrides), {
-      classId: selectedClassId,
+      ...wheelClassSyncScope(syncClassDefinition, targets),
       source: sourceVariant,
-      targets,
-      allowedProperties,
     });
     const count = Object.keys(patch).length;
     setSyncDialogOpen(false);
@@ -4513,17 +4757,36 @@ export function ChartStylePanel({
     }));
   }, [
     applyOverrides,
-    selectedClassDefinition,
-    selectedClassId,
+    syncClassDefinition,
+    syncClassId,
     semanticOverrides,
     sourceVariant,
     t,
   ]);
+  // The look of the wheel on screen, every element at once, onto the other
+  // wheel styles. Appearance only, one undo step.
+  const syncWholeWheel = useCallback(() => {
+    const classes = WHEEL_SEMANTIC_CLASS_MANIFEST.flatMap((definition) => {
+      if (!definition.applicability.variants.includes(compositionProfile)) return [];
+      const targets = definition.applicability.variants.filter((variant) => variant !== compositionProfile);
+      return targets.length ? [wheelClassSyncScope(definition, targets)] : [];
+    });
+    const patch = buildWholeWheelSyncPatch(
+      wheelAppearanceOverrides(semanticOverrides), compositionProfile, classes,
+    );
+    const count = Object.keys(patch).length;
+    if (!count) {
+      setSyncStatus("synced", t("styleLab.transfer.alreadyMatched"));
+      return;
+    }
+    applyOverrides(patch);
+    setSyncStatus("synced", t("styleLab.status.wheelSynced"));
+  }, [applyOverrides, compositionProfile, semanticOverrides, setSyncStatus, t]);
   const pending = !equalChartStyleOverrides(
     syncedOverrides,
     persistedStyleOverrides(semanticOverrides),
   );
-  const canSave = syncStatus === "synced" && !pending;
+  const canSave = syncStatus === "synced" && !pending && !geometryTransition && !geometryGesture;
   const canSaveAs = canPersistStyleDraft(syncStatus, remoteRevision)
     && !geometryTransition && !geometryGesture;
   const selectedThemeSource = themeSources.find(
@@ -4532,26 +4795,49 @@ export function ChartStylePanel({
   const modifiedFromBaseline = remoteModifiedFromBaseline || wheelModifiedFromBaseline;
   const canRevert = canSave && modifiedFromBaseline && !geometryTransition && !geometryGesture;
   const canRestoreFactory = canSave
-    && !modifiedFromBaseline
     && selectedThemeSource?.system === true
-    && selectedThemeSource.factoryModified === true;
+    && (selectedThemeSource.factoryModified === true || modifiedFromBaseline);
   const canSwitchTheme = canSave;
   const canDeleteTheme = canSave
     && selectedThemeSource?.deletable === true
     && Boolean(selectedThemeSource.profileId);
+  const canRenameTheme = canDeleteTheme && nameForm == null;
   const canCopyElement = editorDomain === "chart"
     && Boolean(selectedElement)
-    && transferControls.length > 0;
+    && transferControls.some((control) => !isWheelGeometryKey(control.semanticId));
   const canPasteElement = canCopyElement && Boolean(elementClipboard);
+  // The Vintage wheel's edits are its own scope; there is nothing to sync.
+  const selectedVintageElement = Boolean(selectedElement && isVintageStyleElement(selectedElement));
   const canSyncElement = canCopyElement
-    && authoringEditScope === "variant"
-    && sourceVariantOverrideCount > 0
+    && !selectedVintageElement
     && syncTargetVariants.length > 0;
-  const syncIcon = syncStatus === "saving" || syncStatus === "connecting"
-    ? <LoaderCircle size={13} className="animate-spin" />
-    : syncStatus === "synced"
-      ? <Cloud size={13} />
-      : <CloudOff size={13} />;
+  const writeFailed = syncStatus === "error" || syncStatus === "conflict";
+  // Writing to the daemon is not user information. The footer speaks only when
+  // a write failed, or briefly after an action such as "Theme saved".
+  const footerMessage = writeFailed
+    ? syncDetail ?? t(`styleLab.status.${syncStatus}`)
+    : syncStatus === "synced" ? syncDetail : null;
+  const retryWrite = () => {
+    rebaseCountRef.current = 0;
+    if (!initializedRef.current || !remoteAvailableRef.current) {
+      reconnectRef.current();
+      return;
+    }
+    const request = requestRetryRef.current;
+    switch (request?.action) {
+      case "connect": reconnectRef.current(); break;
+      case "save": save(); break;
+      case "saveAs": saveAsTheme(); break;
+      case "rename": renameTheme(); break;
+      case "delete": deleteSavedTheme(); break;
+      case "revert": revertWorkingDraft(); break;
+      case "restoreFactory": restoreFactoryTheme(); break;
+      case "import": importInputRef.current?.click(); break;
+      case "export": exportProfile(); break;
+      case "selectTheme": selectThemeSource(request.sourceThemeName); break;
+      default: void rebaseAndRetry(request?.draftId ?? useChartStyleEditorStore.getState().remoteDraftId);
+    }
+  };
 
   return (
     <aside
@@ -4583,20 +4869,48 @@ export function ChartStylePanel({
               </option>
             ))}
           </select>
-          <IconButton
-            label={t("styleLab.action.restoreFactoryTheme")}
-            disabled={!canRestoreFactory}
-            onClick={restoreFactoryTheme}
-          >
-            <RefreshCw size={14} />
-          </IconButton>
-          <IconButton
-            label={t("styleLab.action.deleteTheme")}
-            disabled={!canDeleteTheme}
-            onClick={() => setDeleteThemeSource(selectedThemeSource)}
-          >
-            <Trash2 size={14} />
-          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={t("styleLab.themeMenu.label")}
+                  title={t("styleLab.themeMenu.label")}
+                  className="grid size-7 shrink-0 place-items-center rounded-[var(--aries-radius-control-compact)] text-[color:var(--aries-inspector-interactive-color)] hover:bg-[var(--aries-navbar-hover-bg)] hover:text-[color:var(--aries-inspector-title-color)]"
+                />
+              }
+            >
+              <Ellipsis size={14} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto min-w-[var(--aries-menu-dropdown-min-width)]">
+              <DropdownMenuItem
+                disabled={!canRenameTheme}
+                onClick={() => {
+                  setNewThemeName(selectedThemeSource?.label ?? "");
+                  setNameForm("rename");
+                }}
+              >
+                {t("styleLab.action.renameTheme")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!canRevert} onClick={revertWorkingDraft}>
+                {t("styleLab.action.revert")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!sceneElements.length} onClick={syncWholeWheel}>
+                {t("styleLab.action.syncWholeWheel")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!canRestoreFactory} onClick={restoreFactoryTheme}>
+                {t("styleLab.action.restoreFactoryTheme")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={!canDeleteTheme}
+                onClick={() => setDeleteThemeSource(selectedThemeSource)}
+              >
+                {t("styleLab.action.deleteTheme")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div
           className="mb-2 grid grid-cols-2 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] p-0.5"
@@ -4620,10 +4934,19 @@ export function ChartStylePanel({
             </button>
           ))}
         </div>
-        {editorDomain === "chart" && <>
-          <WheelPresetControls profile={compositionProfile} />
-          <WheelCompositionInspector profile={compositionProfile} />
-        </>}
+        {editorDomain === "chart" && (
+          <details className="group mb-2">
+            <summary className="flex min-h-7 cursor-pointer list-none items-center gap-1.5 rounded-[var(--aries-radius-control-compact)] px-1 text-[length:var(--aries-font-size-small)] hover:bg-[var(--aries-navbar-hover-bg)]">
+              <ChevronDown aria-hidden="true" size={12} className="-rotate-90 group-open:rotate-0" />
+              <span>{t("wheelPreset.title")}</span>
+            </summary>
+            {/* Keep preset writers and ring selection mounted while folded. */}
+            <div className="max-h-[35vh] overflow-y-auto pt-1">
+              <WheelPresetControls profile={compositionProfile} />
+              <WheelCompositionInspector profile={compositionProfile} />
+            </div>
+          </details>
+        )}
         <div className="flex min-w-0 items-center gap-1">
           {editorDomain === "chart" ? (
             <>
@@ -4664,7 +4987,8 @@ export function ChartStylePanel({
                 data-aries-control-appearance="local"
                 aria-label={t("styleLab.authoringScope.label")}
                 title={t("styleLab.authoringScope.label")}
-                value={authoringEditScope}
+                value={selectedVintageElement ? "variant" : authoringEditScope}
+                disabled={selectedVintageElement}
                 className="h-7 w-[7.25rem] min-w-0 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] bg-[var(--aries-inspector-background)] px-1 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-value-color)] outline-none focus:border-[color:var(--aries-inspector-interactive-color)]"
                 onChange={(event) => {
                   setSyncDialogOpen(false);
@@ -4770,13 +5094,7 @@ export function ChartStylePanel({
               disabled={!canSyncElement}
               onClick={() => setSyncDialogOpen(true)}
               className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
-              title={authoringEditScope === "base"
-                ? t("styleLab.sync.sharedAlready")
-                : sourceVariantOverrideCount === 0
-                  ? t("styleLab.sync.noOverrides", {
-                    source: t(`styleLab.variant.${sourceVariant}`),
-                  })
-                  : t("styleLab.action.syncElement")}
+              title={t("styleLab.action.syncElement")}
             >
               <RefreshCw size={12} />
               {t("styleLab.action.syncElement")}
@@ -4872,10 +5190,10 @@ export function ChartStylePanel({
           })
         )}
       </div>
-      {saveAsOpen ? (
+      {nameForm ? (
         <form
           className="shrink-0 border-t border-[color:var(--aries-inspector-divider-color)] p-2"
-          onSubmit={saveAsTheme}
+          onSubmit={nameForm === "rename" ? renameTheme : saveAsTheme}
         >
           <label
             htmlFor="style-lab-new-theme-name"
@@ -4898,7 +5216,7 @@ export function ChartStylePanel({
               type="button"
               className="inline-flex h-7 items-center rounded-[var(--aries-radius-control-compact)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-muted-color)] hover:bg-[var(--aries-navbar-hover-bg)]"
               onClick={() => {
-                setSaveAsOpen(false);
+                setNameForm(null);
                 setNewThemeName("");
               }}
             >
@@ -4906,10 +5224,13 @@ export function ChartStylePanel({
             </button>
             <button
               type="submit"
-              disabled={!canSaveAs || !newThemeName.trim()}
+              disabled={
+                !newThemeName.trim()
+                || (nameForm === "rename" ? !canDeleteTheme : !canSaveAs)
+              }
               className="inline-flex h-7 items-center rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
             >
-              {t("styleLab.saveAs.save")}
+              {nameForm === "rename" ? t("styleLab.rename.save") : t("styleLab.saveAs.save")}
             </button>
           </div>
         </form>
@@ -4923,23 +5244,27 @@ export function ChartStylePanel({
           onChange={importThemeFile}
         />
         <div
+          role={writeFailed ? "alert" : "status"}
+          title={footerMessage ?? undefined}
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center",
-            syncStatus === "synced"
-              ? "text-[color:var(--aries-inspector-interactive-color)]"
-              : syncStatus === "error" || syncStatus === "conflict"
-                ? "text-[color:var(--aries-validation-error)]"
-                : "text-[color:var(--aries-inspector-muted-color)]",
+            "min-w-0 flex-1 truncate pl-1 text-[length:var(--aries-font-size-micro)]",
+            writeFailed
+              ? "text-[color:var(--aries-validation-error)]"
+              : "text-[color:var(--aries-inspector-muted-color)]",
           )}
-          title={[t(`styleLab.status.${syncStatus}`), syncDetail].filter(Boolean).join(": ")}
         >
-          {syncIcon}
+          {footerMessage}
         </div>
-        <div className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-micro)] text-[color:var(--aries-inspector-muted-color)]">
-          {(syncStatus === "error" || syncStatus === "conflict") && syncDetail
-            ? syncDetail
-            : t(`styleLab.status.${syncStatus}`)}
-        </div>
+        {writeFailed ? (
+          <button
+            type="button"
+            onClick={retryWrite}
+            className="inline-flex h-7 shrink-0 items-center rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)]"
+          >
+            {t("styleLab.action.retry")}
+          </button>
+        ) : null}
+        {/* Lights up on the first edit: the footer's instant "changed" cue. */}
         <IconButton
           label={t("styleLab.action.revert")}
           disabled={!canRevert}
@@ -4964,13 +5289,16 @@ export function ChartStylePanel({
         <IconButton
           label={t("styleLab.action.saveAsTheme")}
           disabled={!canSaveAs}
-          onClick={() => setSaveAsOpen((open) => !open)}
+          onClick={() => {
+            setNewThemeName("");
+            setNameForm((form) => (form === "saveAs" ? null : "saveAs"));
+          }}
         >
           <CopyPlus size={14} />
         </IconButton>
         <button
           type="button"
-          disabled={!canSaveAs}
+          disabled={!canSaveAs || nameForm != null || !(modifiedFromBaseline || pending)}
           onClick={save}
           className="ml-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--aries-radius-control-compact)] border border-[color:var(--aries-inspector-divider-color)] px-2 text-[length:var(--aries-font-size-small)] text-[color:var(--aries-inspector-title-color)] hover:bg-[var(--aries-navbar-hover-bg)] disabled:cursor-default disabled:opacity-30"
         >
@@ -4986,7 +5314,7 @@ export function ChartStylePanel({
           onConfirm={deleteSavedTheme}
         />
       ) : null}
-      {syncDialogOpen && selectedClassDefinition ? (
+      {syncDialogOpen && syncClassDefinition ? (
         <SyncWheelStylesDialog
           classLabel={selectedClassLabel}
           source={sourceVariant}

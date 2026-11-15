@@ -25,6 +25,20 @@ async function readSource(url) {
 }
 
 async function loadDrawChart() {
+  const wheelProjectionUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/wheel-projection.ts", import.meta.url),
+      ),
+    ),
+  );
+  const chartCoordinatesUrl = dataUrl(
+    transpile(
+      await readSource(
+        new URL("../src/lib/chart/chart-coordinates.ts", import.meta.url),
+      ),
+    ).replaceAll('"./wheel-projection"', `"${wheelProjectionUrl}"`),
+  );
   const overlayLinesUrl = dataUrl(transpile(
     await readSource(new URL("../src/lib/chart/chart-overlay-lines.ts", import.meta.url)),
   ));
@@ -33,10 +47,15 @@ async function loadDrawChart() {
       await readSource(new URL("../src/lib/chart/chart-fonts.ts", import.meta.url)),
     ),
   );
+  const textInkGapUrl = dataUrl(
+    transpile(
+      await readSource(new URL("../src/lib/chart/text-ink-gap.ts", import.meta.url)),
+    ),
+  );
   const canvasDrawUrl = dataUrl(
     transpile(
       await readSource(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url)),
-    ).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`),
+    ).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`),
   );
   const layoutModelUrl = dataUrl(
     transpile(
@@ -53,20 +72,6 @@ async function loadDrawChart() {
     ).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`),
   );
   const wheelStyle = await import(wheelStyleUrl);
-  const pdRingPresentationUrl = dataUrl(
-    transpile(
-      await readSource(
-        new URL("../src/lib/chart/pd-ring-presentation.ts", import.meta.url),
-      ),
-    ),
-  );
-  const pdEventPresentationUrl = dataUrl(
-    transpile(
-      await readSource(
-        new URL("../src/lib/chart/pd-event-presentation.ts", import.meta.url),
-      ),
-    ),
-  );
   const glyphsUrl = dataUrl(
     transpile(
       await readSource(new URL("../src/lib/chart/glyphs.ts", import.meta.url)),
@@ -86,30 +91,39 @@ async function loadDrawChart() {
       ),
     ),
   );
-  const wheelProjectionUrl = dataUrl(
-    transpile(
-      await readSource(
-        new URL("../src/lib/chart/wheel-projection.ts", import.meta.url),
-      ),
-    ),
-  );
+  const dignityPolicy = await readSource(new URL("../src/lib/chart/dignity-display-policy.json", import.meta.url));
+  const paletteUrl = dataUrl(transpile(
+    (await readSource(new URL("../src/lib/chart/palette.ts", import.meta.url)))
+      .replace('import dignityDisplayPolicy from "./dignity-display-policy.json";',
+        `const dignityDisplayPolicy = ${dignityPolicy};`),
+  ));
   const drawChartJavascript = transpile(
     await readSource(new URL("../src/lib/chart/draw-chart.ts", import.meta.url)),
   )
+    .replaceAll('"./chart-coordinates"', `"${chartCoordinatesUrl}"`)
+    .replaceAll('"./palette"', `"${paletteUrl}"`)
     .replaceAll('"./chart-overlay-lines"', `"${overlayLinesUrl}"`)
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./wheel-projection"', `"${wheelProjectionUrl}"`)
-    .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`)
+    .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`)
+    .replaceAll('"./vintage-magazine-wheel"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/chart/vintage-magazine-wheel.ts", import.meta.url),
+    )).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`).replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`))}"`)
     .replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`)
-    .replaceAll('"./pd-ring-presentation"', `"${pdRingPresentationUrl}"`)
-    .replaceAll('"./pd-event-presentation"', `"${pdEventPresentationUrl}"`)
     .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
+    .replaceAll('"./outer-label-names"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/chart/outer-label-names.ts", import.meta.url),
+    )))}"`)
     .replaceAll('"./outer-glyph-lane"', `"${outerGlyphLaneUrl}"`)
-    .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`);
+    .replaceAll('"../render/dither-pattern"', `"${ditherPatternUrl}"`)
+    .replaceAll('"../render/fill-texture-mipmap"', `"${dataUrl(transpile(await readSource(
+      new URL("../src/lib/render/fill-texture-mipmap.ts", import.meta.url),
+    )).replaceAll('"./dither-pattern"', `"${ditherPatternUrl}"`))}"`);
   const multiwheelJavascript = transpile(
     await readSource(new URL("../src/lib/chart/multiwheel-render-style.ts", import.meta.url)),
   )
+    .replaceAll('"./chart-coordinates"', `"${chartCoordinatesUrl}"`)
     .replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`)
     .replaceAll('"./glyphs"', `"${glyphsUrl}"`)
     .replaceAll('"./wheel-render-style"', `"${wheelStyleUrl}"`);
@@ -145,6 +159,71 @@ function chartFixture() {
     },
   };
 }
+
+test('all 60 bounds expose distinct full-band hover targets in the painted wheel', () => {
+  for (const variant of ['round-classic', 'round-compact', 'round-anglo']) {
+    const chart = chartFixture();
+    chart.options.showTerms = true;
+    chart.options.terms = Array.from({length: 12}, (_, sign) => [5, 3, 2, 4, 6].map((rulerSeId, index) => ({
+      rulerSeId, size: 6, rulerLon: sign * 30 + index * 6 + 3,
+      boundaryLon: sign * 30 + (index + 1) * 6,
+    })));
+    const compute = () => drawChart.computeHitRegions({primaryChart: chart, renderVariant: variant}, {
+      width: 800, height: 800, chartSize: 800,
+      renderStyle: drawChart.DEFAULT_WHEEL_RENDER_STYLE, textsize: () => [12, 12],
+    });
+    const regions = compute();
+    const terms = regions.filter(region => region.kind === 'term');
+    assert.equal(terms.length, 60, variant);
+    for (const region of terms) {
+      // Exercise the whole sector, away from the glyph and both boundaries.
+      const lon = region.startLon + 2;
+      const angle = (180 - region.asc.rotation + region.asc.projection.project(lon)) * Math.PI / 180;
+      const radius = (region.innerRadius + region.outerRadius) / 2;
+      const picked = drawChart.findHitRegion(regions,
+        region.cx + radius * Math.cos(angle), region.cy - radius * Math.sin(angle));
+      assert.equal(picked?.kind, 'term', JSON.stringify({variant, region, picked}));
+      assert.equal(picked.signIndex, region.signIndex);
+      assert.equal(picked.rulerSeId, region.rulerSeId);
+    }
+    chart.options.showTerms = false;
+    assert.equal(compute().some(region => region.kind === 'term'), false);
+  }
+});
+
+test('all 36 decans expose distinct full-band hover targets across wheel variants', () => {
+  for (const variant of ['round-classic', 'round-compact', 'round-anglo']) {
+    const chart = chartFixture();
+    chart.options.showTerms = true;
+    chart.options.showDecans = true;
+    chart.options.decans = Array.from({length: 12}, (_, sign) => ({
+      rulers: [4, 0, 3].map((rulerSeId, index) => ({
+        rulerSeId, rulerLon: sign * 30 + index * 10 + 5, rulerGlyph: '',
+      })),
+    }));
+    const compute = () => drawChart.computeHitRegions({primaryChart: chart, renderVariant: variant}, {
+      width: 800, height: 800, chartSize: 800,
+      renderStyle: drawChart.DEFAULT_WHEEL_RENDER_STYLE, textsize: () => [12, 12],
+    });
+    const regions = compute();
+    const decans = regions.filter(region => region.kind === 'decan');
+    assert.equal(decans.length, 36, variant);
+    for (const region of decans) {
+      for (const offset of [0.01, 2, 9.99]) {
+        const lon = region.startLon + offset;
+        const angle = (180 - region.asc.rotation + region.asc.projection.project(lon)) * Math.PI / 180;
+        const radius = (region.innerRadius + region.outerRadius) / 2;
+        const picked = drawChart.findHitRegion(regions,
+          region.cx + radius * Math.cos(angle), region.cy - radius * Math.sin(angle));
+        assert.equal(picked?.kind, 'decan', JSON.stringify({variant, region, picked}));
+        assert.equal(picked.signIndex, region.signIndex);
+        assert.equal(picked.decanIndex, region.decanIndex);
+      }
+    }
+    chart.options.showDecans = false;
+    assert.equal(compute().some(region => region.kind === 'decan'), false);
+  }
+});
 
 test("all four classic angles expose the painted ray and endpoint disc", () => {
   const snapshot = {
@@ -293,18 +372,6 @@ test('routed cusp targets follow painted segments and preserve angle priority', 
   assert.ok(axis);
   const coincidentCusp = {...axis, kind: 'cusp', houseIndex: 1, priority: cusps[0].priority};
   assert.equal(drawChart.findHitRegion([coincidentCusp, axis], (axis.x1 + axis.x2)/2, (axis.y1 + axis.y2)/2), axis);
-});
-
-test('traditional converse keeps cusp identity with the primary house framework', () => {
-  const primary = chartFixture();
-  primary.options.showHouses = true;
-  const snapshot = { primaryChart: primary, comparisonChart: structuredClone(primary),
-    renderVariant: 'round-classic', outerRingMode: 'none', overlayRenderMode: 'full',
-    document: {pdInChartFrame: 'traditional-converse'} };
-  const regions = drawChart.computeHitRegions(snapshot, { width:800, height:800, chartSize:800,
-    renderStyle:drawChart.DEFAULT_WHEEL_RENDER_STYLE, textsize:()=>[12,12] });
-  assert.equal(regions.filter(r => r.kind === 'cusp' && r.chartRole === 'primary').length, 12);
-  assert.equal(regions.filter(r => r.kind === 'cusp' && r.chartRole === 'outer').length, 0);
 });
 
 function positionLabelFixture(theme, showPositions) {

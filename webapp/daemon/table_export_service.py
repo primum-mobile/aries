@@ -15,7 +15,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-
 class TableExportService:
     """Daemon-owned selectable table/list/pane PDF backend.
 
@@ -86,7 +85,11 @@ class TableExportService:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
+            # The frozen helper is a console executable; never flash a window.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
     def export_table_bytes(

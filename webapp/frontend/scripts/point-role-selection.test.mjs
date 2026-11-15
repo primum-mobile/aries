@@ -10,14 +10,16 @@ async function load(path) {
   const js = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText;
   return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 }
-const {pointRoleSelectAllIds, setPointRoleIds, togglePointRoleIds} = await load('../src/lib/point-role-selection.ts');
-const {resolveSecondaryPointRoles, secondaryPointRolesMatch} = await load('../src/lib/secondary-progression-filters.ts');
+const {setPointRoleIds, togglePointRoleIds} = await load('../src/lib/point-role-selection.ts');
+const {resolveSecondaryPointRoles, sameRoleIds, secondaryDefaultPointRoles, secondaryPointRolesMatch} = await load('../src/lib/secondary-progression-filters.ts');
 const points = [
-  {id: 'planet:sun', from: true, to: true, planetId: 0, groupId: 'planet'},
-  {id: 'planet:moon', from: true, to: true, planetId: 1, groupId: 'planet'},
-  {id: 'asteroid:75100', from: true, to: true, planetId: 75100, groupId: 'asteroid'},
-  {id: 'angle:asc', from: true, to: true, planetId: null, groupId: 'angle'},
-  {id: 'point:lof', from: false, to: true, planetId: null, groupId: 'fortune'},
+  {id: 'planet:sun', from: true, to: true, defaultFrom: true, defaultTo: true, planetId: 0, groupId: 'planet'},
+  {id: 'planet:moon', from: true, to: true, defaultFrom: true, defaultTo: true, planetId: 1, groupId: 'planet'},
+  {id: 'asteroid:75100', from: true, to: true, defaultFrom: false, defaultTo: false, planetId: 75100, groupId: 'asteroid'},
+  {id: 'angle:asc', from: true, to: true, defaultFrom: true, defaultTo: true, planetId: null, groupId: 'angle'},
+  {id: 'angle:ic', from: false, to: true, defaultFrom: false, defaultTo: true, planetId: null, groupId: 'angle'},
+  {id: 'point:lof', from: false, to: true, defaultFrom: false, defaultTo: true, planetId: null, groupId: 'fortune'},
+  {id: 'house-cusp:2', from: false, to: true, defaultFrom: false, defaultTo: false, planetId: null, groupId: 'house_cusp'},
 ];
 
 test('the same object pill edits two independent selections without altering its other side', () => {
@@ -41,31 +43,13 @@ test('bulk edits only affect the exposed side and preserve unavailable choices',
   assert.deepEqual(setPointRoleIds(all, 'from', ids, false), {fromIds: ['asteroid:absent'], toIds: ['planet:moon']});
 });
 
-test('All skips Moon, Arabic Parts, fixed stars, and asteroids while preserving explicit choices', () => {
-  const allPoints = [...points,
-    {id: 'part:spirit', groupId: 'part', from: false, to: true},
-    {id: 'fixedstar:regulus', groupId: 'fixed_star', from: false, to: true},
-  ];
-  const explicitIds = ['planet:moon', 'part:spirit', 'fixedstar:regulus', 'asteroid:75100'];
-  for (const side of ['from', 'to']) {
-    const key = side === 'from' ? 'fromIds' : 'toIds';
-    const ids = pointRoleSelectAllIds(allPoints, side);
-    assert.ok(explicitIds.every(id => !ids.includes(id)));
-    assert.ok(ids.includes('planet:sun'));
-    assert.ok(ids.includes('angle:asc'), 'progressed angles remain selectable actors and targets');
-    assert.equal(ids.includes('point:lof'), side === 'to', 'Fortune remains a separate receiving point');
-    const empty = {fromIds: [], toIds: []};
-    const all = setPointRoleIds(empty, side, ids, true);
-    assert.ok(explicitIds.every(id => !all[key].includes(id)));
-    const explicit = togglePointRoleIds(empty, side, explicitIds);
-    assert.ok(explicitIds.every(id => setPointRoleIds(explicit, side, ids, true)[key].includes(id)));
-  }
-});
-
-test('progression defaults and legacy choices resolve against the complete catalog', () => {
+test('progression defaults come from the daemon flags and legacy choices resolve against the complete catalog', () => {
   const defaults = resolveSecondaryPointRoles(points, null);
+  assert.deepEqual(defaults, secondaryDefaultPointRoles(points));
   assert.deepEqual(defaults.fromIds, ['planet:sun', 'planet:moon', 'angle:asc']);
-  assert.deepEqual(defaults.toIds, ['planet:sun', 'planet:moon', 'angle:asc', 'point:lof']);
+  assert.deepEqual(defaults.toIds, ['planet:sun', 'planet:moon', 'angle:asc', 'angle:ic', 'point:lof']);
+  // Reset (pointRoles null) returns to the same defaults.
+  assert.deepEqual(resolveSecondaryPointRoles(points, {pointRoles: null, planetIds: null, angleIds: null}), defaults);
   const explicit = resolveSecondaryPointRoles(points, {planetIds: [75100], angleIds: []});
   assert.deepEqual(explicit.fromIds, ['asteroid:75100']);
   assert.deepEqual(explicit.toIds, defaults.toIds);
@@ -90,13 +74,36 @@ test('both endpoint selections filter rows regardless of which side is exposed',
   assert.deepEqual(rows.filter(row => secondaryPointRolesMatch(row, new Set(), new Set(['asteroid:75100']))), []);
 });
 
-test('the global side switch persists only editor state in both mounted lists', async () => {
+test('Transit keeps its side switch while progressions show both roles with one shared chooser', async () => {
   const transit = await readFile(new URL('../src/components/workshell/transit-list-view.tsx', import.meta.url), 'utf8');
   const progression = await readFile(new URL('../src/components/workshell/directions-view.tsx', import.meta.url), 'utf8');
   assert.ok(transit.includes('onSideChange={(pointFilterSide) => setTransitListPreferences(documentId, { pointFilterSide })}'));
-  assert.ok(progression.includes('onChange: (pointFilterSide) => persistSecondaryPreferences(documentId, { pointFilterSide })'));
+  assert.ok(!progression.includes('pointFilterSide'), 'progressions have no exposed-side mode');
+  assert.ok(progression.includes('(["from", "to"] as const).map((side: PointRoleSide)'));
+  assert.ok(progression.includes('onReset={resetSecondaryFilters}'));
+  const chooser = await readFile(new URL('../src/components/workshell/role-point-chooser.tsx', import.meta.url), 'utf8');
+  assert.ok(chooser.includes('disabled={!item[side]}'));
   const drawer = await readFile(new URL('../src/components/workshell/transit-list-filter-drawer.tsx', import.meta.url), 'utf8');
-  assert.ok(drawer.includes('disabled={!item[side]}'));
-  assert.ok(progression.includes('houseCuspItems.filter((cusp) => cusp[pointFilterSide]).map((cusp) => cusp.id)'));
-  assert.ok(progression.includes('disabled={ids.length === 0}'));
+  assert.ok(drawer.includes('renderChoices={() => <RolePointChooser items={items} side={side}'));
+});
+
+test('point drawers offer Deselect all and Default, never Select all', async () => {
+  const filters = await readFile(new URL('../src/components/workshell/point-aspect-filters.tsx', import.meta.url), 'utf8');
+  assert.ok(filters.includes('t("listFilters.default")'));
+  assert.ok(!filters.includes('listFilters.selectAll'));
+  const drawer = await readFile(new URL('../src/components/workshell/transit-list-filter-drawer.tsx', import.meta.url), 'utf8');
+  assert.ok(drawer.includes('onDefaultSection={onDefault}'));
+});
+
+test('default comparison ignores order and ids the side cannot take', () => {
+  const available = new Set(['planet:sun', 'planet:moon']);
+  assert.ok(sameRoleIds(['planet:moon', 'planet:sun', 'gone:x'], ['planet:sun', 'planet:moon'], available));
+  assert.ok(!sameRoleIds(['planet:sun'], ['planet:sun', 'planet:moon'], available));
+});
+
+test('progression fetch chunks follow the daemon chunk size', async () => {
+  const progression = await readFile(new URL('../src/components/workshell/directions-view.tsx', import.meta.url), 'utf8');
+  assert.ok(progression.includes('secondaryChunkYears(current.meta, method),\n        Math.max(current.coverage.end - current.coverage.start, 0.01),'), 'adjacent fetches double coverage up to the daemon chunk');
+  assert.ok(progression.includes('const half = secondaryChunkYears(store.meta, method) * 2;'), 'neighbourhood prefetch uses the daemon chunk');
+  assert.equal((progression.match(/SECONDARY_STITCH_CHUNK_YEARS\[method\]/g) ?? []).length, 1, 'the fixed table only seeds the first request');
 });

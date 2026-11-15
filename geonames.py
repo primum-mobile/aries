@@ -23,7 +23,8 @@ class Geonames:
 	_tz_cache = {}
 	_elevation_cache = {}
 	username='morinus'
-	langs = ("en", "hu", "it", "fr", "ru", "es","en","en","en")
+	# Indexed by mtexts langid; later release languages append their codes.
+	langs = ("en", "hu", "it", "fr", "ru", "es","en","en","en","de","ja","tr")
 
 	def __init__(self, city, maxnum, langid):
 		self.city = city
@@ -52,7 +53,7 @@ class Geonames:
 
 		params = {
 			"username" : self.username,
-			"lang" : Geonames.langs[self.langid],
+			"lang" : Geonames.langs[self.langid] if 0 <= self.langid < len(Geonames.langs) else "en",
 			"q" : city,
 			"featureClass" : "P",
 			"maxRows" : self.maxnum,

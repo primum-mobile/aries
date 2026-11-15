@@ -4,6 +4,11 @@
 "use client";
 
 import * as React from "react";
+import { paintTextMarker } from "@/lib/chart/canvas-draw";
+import { bundledGlyphInkBounds } from "@/lib/chart/chart-fonts";
+import { awaitFonts } from "@/lib/chart/draw-chart";
+import { resolveMinorDignityDecoration, triplicityColorRole } from "@/lib/chart/wheel-render-style";
+import { useThemeStore } from "@/stores/theme-store";
 
 import { useStyleRevision } from "@/hooks/use-style-revision";
 import {
@@ -171,6 +176,28 @@ function drawPlanetRow(
   const wsg = textWidth(ctx, p.signGlyph, fonts.morinusSmall);
   const color = resolveColor(p.colorRole, p.color) ?? p.color;
 
+  const appearance = useThemeStore.getState().theme?.profileOverrides?.chartData;
+  ctx.save(); ctx.font = fonts.morinusSmall; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const ink = ctx.measureText(p.glyph); ctx.restore();
+  const sourceInk = bundledGlyphInkBounds(p.glyph, style.typography.fontSymbols,
+    parseFloat(fonts.morinusSmall));
+  const outline = resolveMinorDignityDecoration(p,
+    { x: x + (sourceInk?.x ?? -ink.actualBoundingBoxLeft), y: y - ink.actualBoundingBoxAscent,
+      w: sourceInk?.w ?? ink.actualBoundingBoxLeft + ink.actualBoundingBoxRight,
+      h: sourceInk?.h ?? ink.actualBoundingBoxAscent + ink.actualBoundingBoxDescent }, fontSize,
+    { font: style.typography.fontUi,
+      dignityColor: resolveColor("--morinus-dignity-domicil", color) ?? color,
+      triplicityColor: resolveColor(triplicityColorRole(p.primaryTriplicityElement,
+        Boolean(appearance?.useZodiacElementColors)), color) ?? color,
+      measure: (text, size, font, weight) => {
+        const sourceInk = bundledGlyphInkBounds(text, font, size, weight);
+        if (sourceInk) return [sourceInk.w, sourceInk.h];
+        ctx.save(); ctx.font = `${weight ?? 400} ${Math.round(size)}px ${font}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        const metrics = ctx.measureText(text); ctx.restore();
+        return [metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent || size];
+      },
+      motionBounds: p.motion ? { x: x + wpl2, y: y + fontSize * style.layout.motionBaselineScale,
+        w: textWidth(ctx, p.motion, fonts.textSmaller), h: fontSize * 0.5 } : undefined }, appearance ?? {});
   drawText(ctx, p.glyph, x, y, fonts.morinusSmall, color);
   if (p.motion) {
     drawText(
@@ -182,9 +209,12 @@ function drawPlanetRow(
       color,
     );
   }
-  drawText(ctx, txtdeg, x + wpl + wr + wsp, y, fonts.textSmall, color);
-  drawText(ctx, p.signGlyph, x + wpl + wr + wsp + wdeg, y, fonts.morinusSmall, color);
-  drawText(ctx, txtmin, x + wpl + wr + wsp + wdeg + wsp + wsg, y, fonts.textSmaller, color);
+  outline?.markers.forEach(marker => paintTextMarker(ctx, marker));
+  const positionX = Math.max(x + wpl + wr + wsp,
+    outline ? outline.bounds.x + outline.bounds.w + wsp : 0);
+  drawText(ctx, txtdeg, positionX, y, fonts.textSmall, color);
+  drawText(ctx, p.signGlyph, positionX + wdeg, y, fonts.morinusSmall, color);
+  drawText(ctx, txtmin, positionX + wdeg + wsp + wsg, y, fonts.textSmaller, color);
 }
 
 function drawSquareChart(
@@ -346,6 +376,8 @@ export function SquareChartView({
       const css = getComputedStyle(canvas);
       const textFontFamily = css.getPropertyValue("--morinus-font-text").trim() || "'FreeSans', ui-sans-serif, system-ui, sans-serif";
       const symbolFontFamily = css.getPropertyValue("--aries-font-symbols").trim() || '"AriesMorinus"';
+      await awaitFonts(textFontFamily, symbolFontFamily);
+      if (cancelled || !canvasRef.current) return;
       const renderStyle = resolveSquareRenderStyle(canvas, {
         revision: styleRevision,
         palette: readSquarePalette(canvas),
@@ -372,6 +404,7 @@ export function SquareChartView({
   return (
     <div
       ref={wrapRef}
+      data-aries-true-color=""
       className="font-morinus-text relative flex flex-1 min-h-0 items-center justify-center overflow-hidden bg-background"
       style={data ? { backgroundColor: "var(--morinus-background)" } : undefined}
     >

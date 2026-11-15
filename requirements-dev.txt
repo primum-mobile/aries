@@ -6,3 +6,7 @@ fonttools>=4.0
 brotli>=1.1
 
 pytest>=7.0
+# fastapi.testclient (daemon endpoint tests); Starlette 1.x imports httpx2.
+httpx2
+# Updater-signature and licence tests (scripts/verify_tauri_updater_artifact.py).
+cryptography>=43

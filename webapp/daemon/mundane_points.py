@@ -10,8 +10,10 @@ import astrology
 import asteroids
 import ascensional_transits as at
 import common
+import chart_bodies
 import fixstars
 import fortune
+import houses
 import planets
 import placspec
 import primdirs
@@ -24,10 +26,21 @@ from webapp.frontend.scripts import export_chart_json
 _HIT_FILTERED_FAMILIES = {"asteroids", "fixstars", "midpoints", "hybrid_hits"}
 
 
+def mdo_hit_filtered(mode, opts) -> bool:
+    """Whether an MDO ring shows only display hits.
+
+    "All active asteroids" is an explicit request to draw every active
+    asteroid, exactly as in the zodiacal ring.
+    """
+    if mode == "asteroids" and bool(getattr(opts, "asteroid_outer_ring_all", False)):
+        return False
+    return mode in _HIT_FILTERED_FAMILIES
+
+
 def _unfiltered_ring_items(chrt, role, opts, mode):
     """Use the normal ring exporters, before any zodiacal hit selection."""
     if mode == "asteroids":
-        return export_chart_json.export_asteroid_items(chrt, role=role, filter_hits=False)
+        return export_chart_json.export_asteroid_items(chrt, role=role, filter_hits=False, display_options=opts)
     if mode == "fixstars":
         return export_chart_json.export_fixstar_items(chrt, opts, filter_hits=False)
     if mode == "midpoints":
@@ -46,11 +59,9 @@ def _mdo_display_targets(chrt, opts, *, event_frame=None):
     targets = []
     for endpoint in export_chart_json.technique_aspect_endpoints(chrt, opts):
         key = endpoint["key"]
-        body_id = point_registry._PLANET_BY_KEY.get(key)
+        body_id = _endpoint_body_id(chrt, key)
         if body_id is not None:
             if not common.is_planet_visible(opts, body_id):
-                continue
-            if body_id == astrology.SE_TRUE_NODE and not getattr(opts, "showfixstarsnodes", False):
                 continue
             ref = {"kind": "planet", "bodyId": body_id}
         elif endpoint["kind"] == "angle":
@@ -68,7 +79,10 @@ def _mdo_display_targets(chrt, opts, *, event_frame=None):
                 continue
             ref = {"kind": key}
         coords = _coordinates(chrt, {"longitude": endpoint["lon"], "metadata": {"motionRef": ref}})
-        _pmp, mdo, quadrant = _position(chrt, coords, event_frame=event_frame)
+        position = _position(chrt, coords, event_frame=event_frame)
+        if position is None:
+            continue  # A circumpolar point cannot be an MDO display trigger.
+        _pmp, mdo, quadrant = position
         targets.append((body_id, mdo, quadrant))
     if getattr(opts, "showfixstarshcs", False):
         targets.extend((None, mdo, quadrant) for mdo, quadrant in at._CUSP_MDO_Q.values())
@@ -84,12 +98,30 @@ def _mdo_display_orb(mode, item, opts):
     return float(getattr(opts, "ringorb_midpoints" if mode == "midpoints" else "ringorb_hybrid", 1.5))
 
 
+def is_mdo_display_hit(mdo, quadrant, orb, own_body, targets):
+    """Shared display eligibility for prepared and legacy outer points."""
+    return any((own_body is None or target_id != own_body)
+               and quadrant == target_quadrant and abs(mdo - target_mdo) <= orb
+               for target_id, target_mdo, target_quadrant in targets)
+
+
+def _endpoint_body_id(chrt, key):
+    """Ephemeris body id of a technique endpoint key, or None for non-bodies.
+
+    Both apogees share the key 'apogee'; its id follows the chart's
+    mean/true apogee choice.
+    """
+    if key == 'apogee':
+        return chart_bodies.apogee_id(chrt.options)
+    return point_registry._PLANET_BY_KEY.get(key)
+
+
 def _additional_endpoints(chrt, opts, represented_ids, chart_role):
     if not callable(getattr(chrt, "get_planet_body", None)):
         return  # Non-chart compatibility fixtures have no semantic registry.
     for endpoint in export_chart_json.technique_aspect_endpoints(chrt, opts):
         key = endpoint["key"]
-        body_id = point_registry._PLANET_BY_KEY.get(key)
+        body_id = _endpoint_body_id(chrt, key)
         if endpoint["kind"] == "angle" or key == "fortune" or body_id in represented_ids:
             continue
         yield {
@@ -111,7 +143,7 @@ def outer_ring(primary, comparison, opts, *, event_frame=None, position_mode="md
     chrt = comparison if uses_comparison else primary
     role = "outer" if uses_comparison else "primary"
     frame = event_frame if uses_comparison or comparison is None else None
-    filter_mdo = position_mode == "mdo" and mode in _HIT_FILTERED_FAMILIES
+    filter_mdo = position_mode == "mdo" and mdo_hit_filtered(mode, opts)
     if filter_mdo:
         items = _unfiltered_ring_items(chrt, role, opts, mode)
         targets = _mdo_display_targets(chrt, opts, event_frame=frame)
@@ -125,12 +157,16 @@ def outer_ring(primary, comparison, opts, *, event_frame=None, position_mode="md
                           "longitude": item["longitude"], "metadata": metadata,
                           "ringItem": item,
                           "displayOrb": _mdo_display_orb(mode, item, opts) if filter_mdo else None})
-    return {"mode": mode, "chartRole": role, "bodies": _project_bodies(
+    unavailable = []
+    bodies = _project_bodies(
         chrt, opts, endpoints, chart_role=role,
         event_frame=frame,
         position_mode=position_mode,
         display_targets=targets,
-    )}
+        unavailable=unavailable,
+    )
+    return {"mode": mode, "chartRole": role, "bodies": bodies,
+            "unavailablePoints": unavailable}
 
 
 def _coordinates(chrt, endpoint):
@@ -161,13 +197,14 @@ def _coordinates(chrt, endpoint):
 
 
 def _position(chrt, coords, *, event_frame=None, position_mode="mdo"):
+    """Return a projected position, or None when the semi-arc is undefined."""
     lon, lat, ra, decl = coords
     if event_frame is not None:
         mdo, quadrant, _above = at.compute_mdo(
             ra, decl, event_frame.event_ramc, event_frame.event_place.lat,
         )
         if mdo is None:
-            raise ValueError("Point has no ascensional position at this latitude")
+            return None
         return at._pmp_from_mdo_q(mdo, quadrant), mdo, quadrant
     pd = chrt.options.primarydir
     if position_mode == "mundane" and pd in (
@@ -180,6 +217,12 @@ def _position(chrt, coords, *, event_frame=None, position_mode="mdo"):
         slot = regiospec.RegiomontanianSpeculum.CMP if pd == primdirs.PrimDirs.CAMPANIAN else regiospec.RegiomontanianSpeculum.RMP
         pmp = spec[slot]
     else:
+        # PlacidianSpeculum supplies a display fallback for circumpolar
+        # coordinates. It is not a valid semi-arc/MDO position; apply the
+        # same eligibility rule as the event frame and the AT engine.
+        ramc = chrt.houses.ascmc2[houses.Houses.MC][houses.Houses.RA]
+        if at.compute_mdo(ra, decl, ramc, chrt.place.lat)[0] is None:
+            return None
         pmp = placspec.PlacidianSpeculum(
             chrt.place.lat, chrt.houses.ascmc2, lon, lat, ra, decl,
         ).speculum[placspec.PlacidianSpeculum.PMP]
@@ -200,7 +243,7 @@ def additional_bodies(chrt, opts, represented_ids, *, chart_role="primary",
 
 
 def _project_bodies(chrt, opts, endpoints, *, chart_role, event_frame=None, position_mode="mdo",
-                    display_targets=None):
+                    display_targets=None, unavailable=None):
     result = []
     planet_keys = {value: key for key, value in point_registry._PLANET_BY_KEY.items()}
     planet_paints = {}
@@ -219,19 +262,22 @@ def _project_bodies(chrt, opts, endpoints, *, chart_role, event_frame=None, posi
                 "eclipse": "showprenataleclipse"}.get(key)
         if flag and not getattr(opts, flag, False):
             continue
-        pmp, mdo, quadrant = _position(
+        position = _position(
             chrt, _coordinates(chrt, endpoint), event_frame=event_frame,
             position_mode=position_mode,
         )
+        if position is None:
+            # Undefined geometry is a per-point outcome, as in ATSnapshot;
+            # never fail the document or substitute a fabricated position.
+            if unavailable is not None:
+                unavailable.append({"key": key, "name": metadata["name"],
+                                    "reason": "no_ascensional_position"})
+            continue
+        pmp, mdo, quadrant = position
         if display_targets is not None:
             ref = metadata.get("motionRef") or {}
             own_body = ref.get("bodyId") if ref.get("kind") == "ephemerisBody" else None
-            if not any(
-                (own_body is None or target_id != own_body)
-                and quadrant == target_quadrant
-                and abs(mdo - target_mdo) <= endpoint["displayOrb"]
-                for target_id, target_mdo, target_quadrant in display_targets
-            ):
+            if not is_mdo_display_hit(mdo, quadrant, endpoint["displayOrb"], own_body, display_targets):
                 continue
         printed = pmp if position_mode == "mundane" else mdo
         d, m, _s = util.decToDeg(printed)

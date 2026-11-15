@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import astrology
+import chart_bodies
 import asteroids
 import fixstars
 import houses
@@ -28,6 +29,25 @@ SIGNS = (
 	mtexts.txts['Aqu'],
 	mtexts.txts['Pis'],
 )
+
+
+# Total technique/role decisions for this mathematical lunar-orbit point.
+# Apsides have coordinates and motion, but no luminosity, physical visibility,
+# planetary rulership, or independent luminary-event role.
+APOGEE_CAPABILITIES = {
+    technique: {'promittor': 'supported', 'significator': 'supported'}
+    for technique in ('transits', 'converse_transits', 'secondary_directions',
+                      'primary_directions', 'profections', 'mundane_weather',
+                      'ascensional_transits', 'comparisons', 'progressions',
+                      'solar_arc', 'harmonics', 'vargas', 'synodic_cycles')
+}
+APOGEE_CAPABILITIES.update({
+    'sign_changes': {'promittor': 'supported', 'significator': 'unsupported(event_has_no_receiver)'},
+    'lunations': {'promittor': 'unsupported(not_a_luminary)', 'significator': 'supported'},
+    'eclipses': {'promittor': 'unsupported(not_a_luminary)', 'significator': 'supported'},
+    'heliacal_phases': {'promittor': 'unsupported(non_luminous_mathematical_point)', 'significator': 'unsupported(event_has_no_receiver)'},
+    'essential_dignities': {'promittor': 'unsupported(no_planetary_rulership)', 'significator': 'unsupported(no_planetary_rulership)'},
+})
 
 
 # Explicit first-slice capability contract. Keep unimplemented roles visible
@@ -57,6 +77,22 @@ HOUSE_CUSP_SEARCH_ROLES = {
 	'profections': {'promittor': 'unsupported(fixed_reference_point)', 'significator': 'supported'},
 	'heliacal_phases': {'promittor': 'unsupported(visibility_model_pending)', 'significator': 'unsupported(event_has_no_receiver)'},
 }
+
+
+# Default points of the list filters (Transit List, progressions): the ten
+# planets, Chiron, the North Node, Asc and MC. Every other point stays an
+# explicit choice. Transits leave the fast transiting Moon out
+# (list_default_point_ids(..., moon=False)).
+LIST_DEFAULT_POINT_IDS = (
+	'planet:sun', 'planet:moon', 'planet:mercury', 'planet:venus', 'planet:mars',
+	'planet:jupiter', 'planet:saturn', 'planet:uranus', 'planet:neptune', 'planet:pluto',
+	'planet:chiron', 'planet:asc_node', 'angle:asc', 'angle:mc',
+)
+
+
+def list_default_point_ids(ids, moon=True):
+	"""The list-filter defaults among ``ids``, in ``ids`` order."""
+	return [oid for oid in ids if oid in LIST_DEFAULT_POINT_IDS and (moon or oid != 'planet:moon')]
 
 
 class SearchObject(object):
@@ -246,6 +282,15 @@ class SearchCatalog(object):
 				)
 			)
 
+		apogee = getattr(self.chart, 'apogee', None)
+		if apogee is not None:
+			self._add_object(SearchObject(
+				'planet:apogee', mtexts.txts['Apogee'],
+				SearchObject.FAMILY_PLANET, SearchObject.SOURCE_PLANET,
+				apogee.data[planets.Planet.LONG], planet_index=apogee.pId,
+				can_promittor=True, can_significator=True,
+			))
+
 
 	def _add_asteroid_objects(self):
 		seen = {obj.planet_index for obj in self.objects if obj.planet_index is not None}
@@ -347,6 +392,17 @@ class SearchCatalog(object):
 					)
 				)
 
+		try:
+			vertex_lon = self.chart.houses.ascmc[houses.Houses.VERTEX]
+		except (AttributeError, IndexError, TypeError):
+			vertex_lon = None
+		if vertex_lon is not None:
+			self._add_object(SearchObject(
+				'point:vertex', mtexts.txts['Vertex'],
+				SearchObject.FAMILY_ANGLE, SearchObject.SOURCE_ANGLE,
+				vertex_lon, can_significator=True,
+			))
+
 		if syzygy_lon is not None:
 			self._add_object(
 				SearchObject(
@@ -364,7 +420,7 @@ class SearchCatalog(object):
 			self._add_object(
 				SearchObject(
 					'point:eclipse',
-					eclipses.eclipse_event_label(eclipse_event),
+					eclipses.prenatal_eclipse_point_label(),
 					SearchObject.FAMILY_ECLIPSE,
 					SearchObject.SOURCE_ECLIPSE,
 					eclipse_lon,

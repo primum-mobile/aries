@@ -32,15 +32,27 @@ export function resolveTransitPointIds(catalog: TransitSearchCatalog | null, sel
   );
 }
 
+/** The daemon's list-filter default roles (Transit List Default and Reset). */
+export function transitListDefaultRoles(catalog: TransitSearchCatalog | null): { fromIds: string[]; toIds: string[] } {
+  return {
+    fromIds: resolveIds(catalog?.presets.promittors.listDefault, [], transitPointRoleIds(catalog, "promittor")),
+    toIds: resolveIds(catalog?.presets.significators.listDefault, [], transitPointRoleIds(catalog, "significator")),
+  };
+}
+
 /** The Search catalog owns eligibility; retained choices never rewrite it. */
 export function resolveTransitListFilters(catalog: TransitSearchCatalog | null, preferences: Partial<TransitListFilterPreferences>): TransitListFilters {
-  const points = resolveTransitPointIds(catalog, preferences.selectedPointIds);
-  // Resolve old single-set choices with their standard natal counterparts.
-  // Once edited, the two role selections are independent, including empty sets.
-  const targets = points.length ? [...(catalog?.presets.significators.standard ?? []), ...points] : [];
+  // Old single-set choices resolve with their standard natal counterparts;
+  // without any saved choice both roles start from the list default. Once
+  // edited, the two role selections are independent, including empty sets.
+  const legacy = preferences.selectedPointIds == null ? null : resolveTransitPointIds(catalog, preferences.selectedPointIds);
+  const defaults = transitListDefaultRoles(catalog);
+  const fromDefault = legacy ?? defaults.fromIds;
+  const toDefault = legacy == null ? defaults.toIds
+    : legacy.length ? [...(catalog?.presets.significators.standard ?? []), ...legacy] : [];
   return {
-    promittorIds: resolveIds(preferences.pointRoles?.fromIds ?? points, [], transitPointRoleIds(catalog, "promittor")),
-    significatorIds: resolveIds(preferences.pointRoles?.toIds ?? targets, [], transitPointRoleIds(catalog, "significator")),
+    promittorIds: resolveIds(preferences.pointRoles?.fromIds ?? fromDefault, [], transitPointRoleIds(catalog, "promittor")),
+    significatorIds: resolveIds(preferences.pointRoles?.toIds ?? toDefault, [], transitPointRoleIds(catalog, "significator")),
     aspects: resolveIds(preferences.selectedAspectIds, catalog?.presets.aspects.major ?? [], catalog?.aspects.map((aspect) => aspect.id) ?? []),
     promittorMotion: "",
     significatorMotion: "",

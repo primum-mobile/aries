@@ -16,9 +16,11 @@ from types import SimpleNamespace
 from typing import Any, Iterable
 
 import chart
+import astrology
 import default_location as default_location_model
 import geonames
 from engine import moment
+from engine import calendar_policy
 
 
 UtcTuple = tuple[int, int, int, int, int, int]
@@ -31,6 +33,7 @@ EVENT_TABLE_TIME_BASIS_VALUES = {EVENT_TABLE_TIME_DEFAULT_LOCATION, EVENT_TABLE_
 class EventDisplayTime:
     values: UtcTuple
     utc_offset_minutes: int
+    calendar: int = chart.Time.GREGORIAN
 
     @property
     def iso(self) -> str:
@@ -125,24 +128,33 @@ class DefaultLocationClock:
             "tzauto": self.automatic,
         }
 
-    def display(self, utc_values: Iterable[Any]) -> EventDisplayTime:
+    def display(self, utc_values: Iterable[Any], *, calendar=chart.Time.GREGORIAN) -> EventDisplayTime:
+        """Render in a fixed calendar or the local-date 1582 catalog convention."""
         utc_tuple = tuple(int(value) for value in tuple(utc_values)[:6])
         if len(utc_tuple) != 6:
             raise ValueError("event time requires six UTC fields")
-        if self.basis == EVENT_TABLE_TIME_UT:
-            return EventDisplayTime(
-                values=utc_tuple,  # type: ignore[arg-type]
-                utc_offset_minutes=0,
-            )
-        converted = moment.utc_to_chart_local(
-            self.time,
-            utc_tuple,
-            place=self.place,
+        converted = (
+            utc_tuple if self.basis == EVENT_TABLE_TIME_UT else
+            moment.utc_to_chart_local(self.time, utc_tuple, place=self.place)
         )
         local_tuple = tuple(int(value) for value in (converted or utc_tuple))
+        offset_minutes = 0 if self.basis == EVENT_TABLE_TIME_UT else self._offset_minutes(utc_tuple, local_tuple)
+        if calendar == "mixed_1582":
+            calendar = (
+                chart.Time.JULIAN
+                if calendar_policy.calendar_for_date(*local_tuple[:3]) == calendar_policy.CALENDAR_JULIAN
+                else chart.Time.GREGORIAN
+            )
+        if calendar == chart.Time.JULIAN:
+            # Convert the already shifted local date, keeping clock and UTC
+            # offset independent of the calendar used to write that date.
+            local_tuple = (*moment._calendar_date(
+                *local_tuple[:3], astrology.SE_GREG_CAL, astrology.SE_JUL_CAL,
+            ), *local_tuple[3:])
         return EventDisplayTime(
             values=local_tuple,  # type: ignore[arg-type]
-            utc_offset_minutes=self._offset_minutes(utc_tuple, local_tuple),
+            utc_offset_minutes=offset_minutes,
+            calendar=calendar,
         )
 
     def offsets_for_range(

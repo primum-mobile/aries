@@ -25,10 +25,13 @@ pulling in wxPython or ``morin.py``.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 from pathlib import Path
+
+import platform_compat
 
 DEFAULT_CHART_COLLECTION = "Charts.jsonl"
 LEGACY_DEFAULT_CHART_COLLECTION = "Morinus-import.jsonl"
@@ -38,9 +41,31 @@ LEGACY_DEFAULT_CHART_COLLECTION = "Morinus-import.jsonl"
 
 def documents_root():
     home = os.path.expanduser("~")
+    if platform_compat.IS_WINDOWS:
+        return _windows_documents_root(home)
     documents_dir = os.path.join(home, "Documents")
     if os.path.isdir(documents_dir):
         return os.path.join(documents_dir, "Aries")
+    return os.path.join(home, "Aries")
+
+
+def _windows_documents_root(home):
+    """``<Documents>\\Aries`` from the Known Folder (OneDrive Known Folder Move).
+
+    Earlier Windows builds guessed ``%USERPROFILE%\\Documents`` and fell back to
+    ``%USERPROFILE%\\Aries`` when that folder was missing. An existing Aries
+    folder in one of those places keeps being used until the Known Folder has
+    its own, so saved charts and notes never disappear.
+    """
+    documents_dir = platform_compat.documents_dir()
+    current = os.path.join(documents_dir, "Aries")
+    if os.path.isdir(current):
+        return current
+    for previous in (os.path.join(home, "Documents", "Aries"), os.path.join(home, "Aries")):
+        if os.path.normcase(previous) != os.path.normcase(current) and os.path.isdir(previous):
+            return previous
+    if os.path.isdir(documents_dir):
+        return current
     return os.path.join(home, "Aries")
 
 
@@ -92,11 +117,11 @@ def startup_chart_collection_path():
     user_collection = Path(default_chart_collection_path())
     if user_collection.is_file():
         return str(user_collection)
-    factory = _factory_chart_collection_path()
+    factory = factory_chart_collection_path()
     return str(factory if factory is not None else user_collection)
 
 
-def _factory_chart_collection_path():
+def factory_chart_collection_path():
     """Return the bundled Morinus-only starter collection, if available."""
     candidates = []
     daemon_base = os.environ.get("ARIES_DAEMON_BASE_DIR", "").strip()
@@ -129,7 +154,7 @@ def _seed_factory_chart_collection(target):
             return
     except OSError:
         return
-    source = _factory_chart_collection_path()
+    source = factory_chart_collection_path()
     if source is None or source == target.resolve():
         return
     temporary = target.with_name(target.name + ".factory-tmp")
@@ -142,6 +167,7 @@ def _seed_factory_chart_collection(target):
             temporary.unlink(missing_ok=True)
             return
         os.replace(temporary, target)
+        _seed_factory_event_notes(source.parent / "Notes.json", parent / "Notes")
     except OSError:
         try:
             temporary.unlink(missing_ok=True)
@@ -152,6 +178,25 @@ def _seed_factory_chart_collection(target):
                 parent.rmdir()
             except OSError:
                 pass
+
+
+def _seed_factory_event_notes(source, notes_root):
+    """Write the starter chart's shipped event notes into the fresh profile.
+
+    ``Hors/Notes.json`` maps chart id -> event id -> {title, content}. The
+    notes go through the note library so they have the same identity metadata
+    as notes written in the app.
+    """
+    source = Path(source)
+    if not source.is_file():
+        return
+    from webapp.daemon.research_library import NoteLibrary
+
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    library = NoteLibrary(notes_root)
+    for chart_id, chart in (payload.get("charts") or {}).items():
+        for event_id, note in (chart.get("events") or {}).items():
+            library.write(chart_id, str(note["content"]), title=str(note["title"]), event_id=event_id)
 
 
 def images_directory():
@@ -178,6 +223,12 @@ def sanitize_note_filename(name):
     cleaned = ''.join(('_' if c in _NOTE_FILENAME_BAD else c) for c in name)
     cleaned = ' '.join(cleaned.split())
     cleaned = cleaned.strip(' .')
+    if platform_compat.IS_WINDOWS:
+        # Windows reserves device names even with an extension ("CON.md").
+        cleaned = ''.join(('_' if ord(c) < 32 else c) for c in cleaned)
+        if platform_compat.is_windows_reserved_name(cleaned):
+            stem, dot, rest = cleaned.partition('.')
+            cleaned = stem + '_' + dot + rest
     return cleaned
 
 

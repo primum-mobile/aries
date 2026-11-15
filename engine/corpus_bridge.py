@@ -71,6 +71,7 @@ _CORPUS_PATH = os.path.join(_RESOURCE_ROOT, 'corpus', 'parsed', 'valens.json')
 
 _db = None
 _db_attempted = False
+_bounds_db = None
 _cache = {}          # region_key → (passages_list,)  — avoids re-query on hover
 _signification_cache = {}       # planet tag -> preview dict or None
 _sign_signification_cache = {}  # sign tag -> preview dict or None
@@ -98,15 +99,36 @@ def _get_db():
 
 
 def inspector_section(selector):
-	"""Resolve one pack-authored inspector selector against the Valens corpus.
+	"""Resolve a parsed-corpus selector or an attributed inline passage.
 
 	Selectors point to an existing parsed section and may narrow it to one
 	1-based paragraph. The returned text is always copied from CorpusDB; the
-	pack map never contains or synthesises source prose.
+	inline source imports carry their own verbatim prose and citations.
 	"""
-	if not isinstance(selector, dict) or selector.get('source') != 'valens':
+	if not isinstance(selector, dict):
 		return None
-	db = _get_db()
+	if selector.get('source') == 'inline':
+		return {
+			'source': selector['source_label'],
+			'citation': selector['citation'],
+			'citation_label': selector.get('citation_label'),
+			'heading': selector.get('heading'),
+			'text': selector['text'],
+			'tags': [], 'footnotes': [], 'editorial_notes': [],
+		}
+	if selector.get('source') != 'valens':
+		return None
+	if selector.get('asset') == 'valens-bounds':
+		global _bounds_db
+		if _bounds_db is None:
+			try:
+				from parsers.query_corpus import CorpusDB
+				_bounds_db = CorpusDB(os.path.join(_RESOURCE_ROOT, 'corpus', 'parsed', 'valens-bounds.json'))
+			except (OSError, ValueError):
+				return None
+		db = _bounds_db
+	else:
+		db = _get_db()
 	if db is None:
 		return None
 	try:

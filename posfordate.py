@@ -19,6 +19,7 @@ import copy
 import math
 
 import astrology
+import chart_bodies
 import chart
 import houses
 import planets
@@ -294,7 +295,8 @@ def _offset_body_longitudes(body, arc):
 
 def _offset_dynamic_chart_bodies(chrt, arc):
     """Apply a uniform solar-arc shift to chart-side dynamic bodies."""
-    _offset_body_longitudes(getattr(chrt, 'chiron', None), arc)
+    for _body_id, body in chart_bodies.iter_dynamic_bodies(chrt):
+        _offset_body_longitudes(body, arc)
     asteroid_rows = getattr(getattr(chrt, 'asteroids', None), 'asteroids', ())
     for body in tuple(asteroid_rows or ()):
         _offset_body_longitudes(body, arc)

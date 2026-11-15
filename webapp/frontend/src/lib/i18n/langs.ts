@@ -3,7 +3,7 @@
 
 // Keep the inherited mtexts langid positions. Only release languages map to a
 // frontend catalog; a saved legacy id resolves to English.
-export const RELEASE_LOCALE_CODES = ["en", "fr", "es", "it", "de"] as const;
+export const RELEASE_LOCALE_CODES = ["en", "fr", "es", "it", "de", "ja", "tr"] as const;
 export type LocaleCode = (typeof RELEASE_LOCALE_CODES)[number];
 
 export const LANGID_TO_CODE: readonly (LocaleCode | null)[] = [
@@ -17,6 +17,8 @@ export const LANGID_TO_CODE: readonly (LocaleCode | null)[] = [
   null, // 7 繁体中文
   null, // 8 한국어
   "de", // 9 Deutsch
+  "ja", // 10 日本語
+  "tr", // 11 Türkçe
 ];
 
 export const DEFAULT_LOCALE: LocaleCode = "en";

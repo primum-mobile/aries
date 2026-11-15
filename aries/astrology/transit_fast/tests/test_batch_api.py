@@ -283,7 +283,7 @@ def test_relative_batch_preserves_uranus_neptune_cycles():
 	]
 
 
-def test_relative_batch_falls_back_when_jump_validation_fails():
+def test_relative_batch_default_scan_matches_native_kernel():
 	if kernel is None:
 		return
 	body_codes = [astrology.SE_NEPTUNE, astrology.SE_SATURN]
@@ -298,12 +298,11 @@ def test_relative_batch_falls_back_when_jump_validation_fails():
 		flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED,
 		step_days=step,
 	)
-	with mock.patch.object(api, '_search_relative_aspect_jump_raw', side_effect=api._JumpSearchFallback('forced')):
-		actual = api.search_relative_aspects_batch_raw(
-			body_codes,
-			astrology.swe_julday(2000, 1, 1, 0.0, astrology.SE_GREG_CAL),
-			astrology.swe_julday(2026, 4, 23, 0.0, astrology.SE_GREG_CAL),
-			specs,
-			flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED,
-		)
+	actual = api.search_relative_aspects_batch_raw(
+		body_codes,
+		astrology.swe_julday(2000, 1, 1, 0.0, astrology.SE_GREG_CAL),
+		astrology.swe_julday(2026, 4, 23, 0.0, astrology.SE_GREG_CAL),
+		specs,
+		flags=astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED,
+	)
 	assert expected == actual

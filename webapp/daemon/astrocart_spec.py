@@ -30,12 +30,14 @@ from typing import Any
 
 import arabicparts
 import astrology
+import chart_bodies
 import astrocart
 import eclipses
 import fixstars
 import fortune
 import houses
 import planets
+import mtexts
 import util
 from antiscia import Antiscia, Antiscion
 
@@ -164,6 +166,8 @@ _OUTER_BODY_LABELS = {
     astrology.SE_MEAN_NODE: "N. Node",
     astrology.SE_TRUE_NODE: "S. Node",
     astrology.SE_CHIRON: "Chiron",
+    astrology.SE_MEAN_APOG: "Apogee",
+    astrology.SE_OSCU_APOG: "Apogee",
 }
 
 DEFAULT_SELECTED_POINT_IDS = tuple(sorted(
@@ -1065,6 +1069,7 @@ _POINT_LABEL_KEYS = {
         for body_id, label in _STANDARD_BODIES
     },
     f"ephemeris-body:{astrology.SE_CHIRON}": "astrocart.point.chiron",
+    "point:apogee": "astrocart.point.apogee",
     "logical-node:north": "astrocart.point.northNode",
     "logical-node:south": "astrocart.point.southNode",
     "angle:asc": "astrocart.point.ascendant",
@@ -1427,6 +1432,8 @@ def _finite_longitude(value: Any) -> float | None:
 
 
 def _outer_body_label(body_id: int) -> str:
+    if body_id in chart_bodies.APOGEE_IDS:
+        return mtexts.txts["Apogee"]
     label = _OUTER_BODY_LABELS.get(int(body_id))
     if label:
         return label
@@ -1693,102 +1700,101 @@ def _raw_projection_records(
         if record is not None:
             records.append(record)
 
-    chiron = getattr(chart_obj, "chiron", None)
-    chiron_data = getattr(chiron, "data", None)
-    if astrology.SE_CHIRON not in seen_body_ids and chiron_data:
-        try:
-            chiron_longitude = float(chiron_data[planets.Planet.LONG])
-            chiron_latitude = float(chiron_data[planets.Planet.LAT])
-        except (IndexError, TypeError, ValueError):
-            chiron_longitude = None
-            chiron_latitude = 0.0
-        if chiron_longitude is not None:
-            source_semantic_id = f"ephemeris-body:{astrology.SE_CHIRON}"
-            label = _outer_body_label(astrology.SE_CHIRON)
-            if family == FAMILY_OUTER_DODECATEMORIA:
-                projected = antiscia_obj.calcDodecatemoria(chiron_longitude)
-                record = _projection_record(
-                    chart_obj,
-                    family=family,
-                    projection=projection,
-                    semantic_id=f"{projection}:planet:{astrology.SE_CHIRON}",
-                    label=f"{label} (12th)",
-                    longitude=projected,
-                    source_kind="planet",
-                    source_semantic_id=source_semantic_id,
-                    kind=kind,
-                    body_id=astrology.SE_CHIRON,
-                )
-                if record is not None:
-                    records.append(record)
-            elif morin_planets:
-                branches = Antiscia.morin_projection_points(
-                    chiron_longitude,
-                    chiron_latitude,
-                    float(getattr(chart_obj, "obl", (0.0,))[0]),
-                    int(getattr(options_obj, "ayanamsha", 0) or 0),
-                    float(getattr(chart_obj, "ayanamsha_offset", 0.0) or 0.0),
-                    contra=family == FAMILY_OUTER_CONTRA_ANTISCION,
-                )
-                valid_branches = [
-                    (branch, point)
-                    for branch, point in branches.items()
-                    if point is not None and bool(point.get("valid", True))
-                ]
-                morin_projection = (
-                    "morin_antiscia"
-                    if family == FAMILY_OUTER_ANTISCION
-                    else "morin_contra_antiscia"
-                )
-                for branch, point in valid_branches:
+    for body_id, dynamic_body in chart_bodies.iter_dynamic_bodies(chart_obj):
+        dynamic_body_data = getattr(dynamic_body, "data", None)
+        if body_id not in seen_body_ids and dynamic_body_data:
+            try:
+                dynamic_body_longitude = float(dynamic_body_data[planets.Planet.LONG])
+                dynamic_body_latitude = float(dynamic_body_data[planets.Planet.LAT])
+            except (IndexError, TypeError, ValueError):
+                dynamic_body_longitude = None
+                dynamic_body_latitude = 0.0
+            if dynamic_body_longitude is not None:
+                source_semantic_id = "point:apogee" if body_id in chart_bodies.APOGEE_IDS else f"ephemeris-body:{body_id}"
+                label = _outer_body_label(body_id)
+                if family == FAMILY_OUTER_DODECATEMORIA:
+                    projected = antiscia_obj.calcDodecatemoria(dynamic_body_longitude)
                     record = _projection_record(
                         chart_obj,
                         family=family,
-                        projection=morin_projection,
-                        semantic_id=(
-                            f"{morin_projection}:planet:"
-                            f"{astrology.SE_CHIRON}:{branch}"
-                        ),
-                        label=label,
-                        longitude=point.get("lon"),
+                        projection=projection,
+                        semantic_id=f"{projection}:planet:{body_id}",
+                        label=f"{label} (12th)",
+                        longitude=projected,
                         source_kind="planet",
                         source_semantic_id=source_semantic_id,
                         kind=kind,
-                        body_id=astrology.SE_CHIRON,
-                        branch=branch,
-                        branch_count=len(valid_branches),
-                        branch_direction=_projection_direction_name(
-                            point.get("direction")
-                        ),
+                        body_id=body_id,
                     )
                     if record is not None:
                         records.append(record)
-            else:
-                tropical_longitude = util.to_tropical_lon(
-                    chiron_longitude,
-                    float(getattr(chart_obj, "ayanamsha_offset", 0.0) or 0.0),
-                )
-                antiscion, contra_antiscion = antiscia_obj.calc(tropical_longitude)
-                projected = (
-                    antiscion
-                    if family == FAMILY_OUTER_ANTISCION
-                    else contra_antiscion
-                )
-                record = _projection_record(
-                    chart_obj,
-                    family=family,
-                    projection=projection,
-                    semantic_id=f"{projection}:planet:{astrology.SE_CHIRON}",
-                    label=label,
-                    longitude=projected,
-                    source_kind="planet",
-                    source_semantic_id=source_semantic_id,
-                    kind=kind,
-                    body_id=astrology.SE_CHIRON,
-                )
-                if record is not None:
-                    records.append(record)
-
+                elif morin_planets:
+                    branches = Antiscia.morin_projection_points(
+                        dynamic_body_longitude,
+                        dynamic_body_latitude,
+                        float(getattr(chart_obj, "obl", (0.0,))[0]),
+                        int(getattr(options_obj, "ayanamsha", 0) or 0),
+                        float(getattr(chart_obj, "ayanamsha_offset", 0.0) or 0.0),
+                        contra=family == FAMILY_OUTER_CONTRA_ANTISCION,
+                    )
+                    valid_branches = [
+                        (branch, point)
+                        for branch, point in branches.items()
+                        if point is not None and bool(point.get("valid", True))
+                    ]
+                    morin_projection = (
+                        "morin_antiscia"
+                        if family == FAMILY_OUTER_ANTISCION
+                        else "morin_contra_antiscia"
+                    )
+                    for branch, point in valid_branches:
+                        record = _projection_record(
+                            chart_obj,
+                            family=family,
+                            projection=morin_projection,
+                            semantic_id=(
+                                f"{morin_projection}:planet:"
+                                f"{body_id}:{branch}"
+                            ),
+                            label=label,
+                            longitude=point.get("lon"),
+                            source_kind="planet",
+                            source_semantic_id=source_semantic_id,
+                            kind=kind,
+                            body_id=body_id,
+                            branch=branch,
+                            branch_count=len(valid_branches),
+                            branch_direction=_projection_direction_name(
+                                point.get("direction")
+                            ),
+                        )
+                        if record is not None:
+                            records.append(record)
+                else:
+                    tropical_longitude = util.to_tropical_lon(
+                        dynamic_body_longitude,
+                        float(getattr(chart_obj, "ayanamsha_offset", 0.0) or 0.0),
+                    )
+                    antiscion, contra_antiscion = antiscia_obj.calc(tropical_longitude)
+                    projected = (
+                        antiscion
+                        if family == FAMILY_OUTER_ANTISCION
+                        else contra_antiscion
+                    )
+                    record = _projection_record(
+                        chart_obj,
+                        family=family,
+                        projection=projection,
+                        semantic_id=f"{projection}:planet:{body_id}",
+                        label=label,
+                        longitude=projected,
+                        source_kind="planet",
+                        source_semantic_id=source_semantic_id,
+                        kind=kind,
+                        body_id=body_id,
+                    )
+                    if record is not None:
+                        records.append(record)
     fortune_point = getattr(antiscia_obj, fortune_attr_by_family[family], None)
     if fortune_point is not None and bool(getattr(fortune_point, "valid", True)):
         record = _projection_record(
@@ -2092,6 +2098,14 @@ def build_point_catalog(
         )
     )
 
+    apogee = getattr(chart_obj, "apogee", None)
+    if apogee is not None:
+        records.append(_point_record(
+            "point:apogee", FAMILY_STANDARD_BODY, mtexts.txts["Apogee"],
+            body_id=apogee.pId, kind=astrocart.KIND_PLANET, default_selected=True,
+            motion_reference={"kind": "ephemerisBody", "bodyId": apogee.pId},
+        ))
+
     node_body_id = (
         astrology.SE_MEAN_NODE
         if bool(getattr(options_obj, "meannode", False))
@@ -2267,7 +2281,7 @@ def build_point_catalog(
             _point_record(
                 "point:eclipse",
                 FAMILY_PRENATAL_ECLIPSE,
-                eclipses.eclipse_event_label(eclipse_event),
+                eclipses.prenatal_eclipse_point_label(),
                 ecliptic=_tropical_ecliptic(chart_obj, eclipse_lon),
                 default_selected=False,
                 motion_reference={"kind": "eclipse"},

@@ -34,6 +34,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 import {
@@ -46,8 +47,18 @@ import {
 import { applyImmediateWorkspaceCommandResult } from "@/stores/daemon-workspace-adapter";
 import { runWorkspaceDocumentSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import { findRadixSiblingLaunchParent } from "@/components/workshell/chart-launch-parent";
-import { useFrameLayoutStore } from "@/stores/frame-layout-store";
+import { useFrameLayoutStore, type LeftSidebarSize } from "@/stores/frame-layout-store";
+import { useThemeStore } from "@/stores/theme-store";
+import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { useT, useTFallback, type TFunc } from "@/lib/i18n/i18n";
+import {
+  chordAvailable,
+  formatChordOffApple,
+  parseAcceleratorChord,
+  useAppleShortcuts,
+  useShortcutModifierLabels,
+  type ShortcutModifierLabels,
+} from "@/lib/shortcut-display";
 import type {
   SidebarAction,
   SidebarGroup as ManifestGroup,
@@ -59,6 +70,15 @@ import {
   fetchWorkspaceDocumentContextMenu,
   setWorkspaceSidebarSectionCollapsed,
 } from "@/lib/daemon/client";
+import {
+  setSidebarLaunchersHidden,
+  useSidebarVisibilityStore,
+} from "@/stores/sidebar-visibility-store";
+import {
+  SidebarEditBar,
+  SidebarEditContent,
+  SidebarHiddenNotice,
+} from "./app-sidebar-edit";
 
 const LazySortableDocumentsGroup = React.lazy(() =>
   import("./app-sidebar-sortable").then((module) => ({
@@ -92,13 +112,69 @@ function isPrimaryMouseButton(event: React.MouseEvent): boolean {
 
 export type DropIndicatorPosition = "before" | "after";
 
+const LEFT_SIDEBAR_BASE_PX: Record<string, number> = {
+  "--aries-font-size-nav": 14,
+  "--aries-font-size-nav-section": 12,
+  "--aries-sidebar-row-height": 30,
+  "--aries-sidebar-row-padding-x": 12,
+  "--aries-sidebar-row-padding-y": 4,
+  "--aries-sidebar-row-line-box": 16,
+  "--aries-sidebar-section-line-box": 14,
+  "--aries-sidebar-section-header-height": 20,
+  "--aries-sidebar-group-padding-start": 7,
+  "--aries-sidebar-group-padding-end": 5,
+  "--aries-sidebar-tree-indent": 12,
+  "--aries-sidebar-trailing-inset": 8,
+  "--aries-sidebar-unsaved-indicator-size": 6,
+  "--aries-sidebar-close-inset": 6,
+  "--aries-sidebar-close-action-size": 20,
+  "--aries-sidebar-action-icon-size": 12,
+  "--aries-sidebar-drop-indicator-size": 2,
+  "--aries-sidebar-drop-indicator-overhang": 1,
+  "--aries-nav-side-margin": 12,
+  "--aries-control-gap-compact": 4,
+  "--aries-control-height": 32,
+};
+
+function scaledLeftSidebarStyle(
+  size: LeftSidebarSize,
+  appTokens: Record<string, string> | undefined,
+  mobile: boolean,
+): React.CSSProperties | undefined {
+  if (size === "normal") return undefined;
+  const scale = size === "larger" ? 15 / 13 : 17 / 13;
+  const values: Record<string, string> = {};
+  for (const [token, fallback] of Object.entries(LEFT_SIDEBAR_BASE_PX)) {
+    const authored = appTokens?.[token];
+    const base = authored && /^\d+(?:\.\d+)?px$/.test(authored)
+      ? Number.parseFloat(authored)
+      : fallback;
+    values[token] = `${base * scale}px`;
+  }
+  if (mobile) {
+    values["--aries-sidebar-row-height"] = `${44 * scale}px`;
+    values["--aries-sidebar-close-action-size"] = `${44 * scale}px`;
+    values["--aries-sidebar-close-inset"] = "0px";
+  }
+  values["--morinus-row-min-height"] = values["--aries-sidebar-row-height"];
+  values["--morinus-row-pad-x"] = values["--aries-sidebar-row-padding-x"];
+  values["--morinus-row-pad-y"] = values["--aries-sidebar-row-padding-y"];
+  values["--morinus-nav-side-margin"] = values["--aries-nav-side-margin"];
+  return values as React.CSSProperties;
+}
+
 function manifestGroupRenderKey(group: ManifestGroup): string {
   return [
     group.id,
     group.collapsed ? "1" : "0",
     group.actions
       .map((action) =>
-        [action.id, action.enabled ? "1" : "0", action.shortcut ?? ""].join(":"),
+        [
+          action.id,
+          action.enabled ? "1" : "0",
+          action.hidden ? "1" : "0",
+          action.shortcut ?? "",
+        ].join(":"),
       )
       .join("|"),
   ].join(":");
@@ -127,8 +203,23 @@ function AppSidebarComponent({
   const openEclipsesPane = useWorkspaceStore((s) => s.openEclipsesPane);
   const setInspectorOpen = useFrameLayoutStore((s) => s.setInspectorOpen);
   const setNotesPaneOpen = useFrameLayoutStore((s) => s.setNotesPaneOpen);
+  // Phone: every launcher choice closes the launcher sheet, so the chart,
+  // table or pane it opened is what the user sees next.
+  const mobile = useMobileLayout();
+  const { setOpenMobile } = useSidebar();
+  const closeLauncher = React.useCallback(() => {
+    if (mobile) setOpenMobile(false);
+  }, [mobile, setOpenMobile]);
+  const handleSolarAverageWindowSelect = React.useCallback(
+    (maxBirthday: number, returnKind: ReturnAverageKind) => {
+      closeLauncher();
+      onSolarAverageWindowSelect(maxBirthday, returnKind);
+    },
+    [closeLauncher, onSolarAverageWindowSelect],
+  );
   const handleSelect = React.useCallback(
     (id: string) => {
+      closeLauncher();
       if (id === "table:eclipses") {
         const launchParent = findRadixSiblingLaunchParent(documents, activeDocumentId);
         if (launchParent) {
@@ -143,51 +234,95 @@ function AppSidebarComponent({
       }
       onSelect(id);
     },
-    [activeDocumentId, documents, onSelect, openEclipsesPane, setInspectorOpen, setNotesPaneOpen],
+    [activeDocumentId, closeLauncher, documents, onSelect, openEclipsesPane, setInspectorOpen, setNotesPaneOpen],
   );
+
+  const editing = useSidebarVisibilityStore((s) => s.editing);
+  const leftSidebarSize = useFrameLayoutStore((s) => s.leftSidebarSize);
+  const appTokens = useThemeStore((s) => s.theme?.appTokens);
 
   return (
     <Sidebar collapsible="offcanvas" className="border-r-0">
-      {/* No sidebar header — the global UnifiedTitleBar spans the top across the
-          sidebar + content, and content is inset below it (globals.css), so the
-          first nav row sits directly under the title bar. */}
-      <div className="shrink-0 px-[var(--morinus-nav-side-margin)]">
-        <TopActionsGroup
-          actions={manifest?.topActions ?? []}
-          activeDocumentId={activeDocumentId}
-          onSelect={handleSelect}
-        />
-      </div>
-      <div
-        aria-hidden="true"
-        className="h-px shrink-0 bg-[color:var(--aries-sidebar-section-rule)]"
-      />
-      <SidebarContent className="gap-0 px-[var(--morinus-nav-side-margin)]">
-        <DocumentsGroup
-          documents={documents}
-          activeDocumentId={activeDocumentId}
-          dragReady={dragReady}
-          onSelect={handleSelect}
-          onClose={onCloseDocument}
-          onReorder={onReorder}
-        />
-        {(manifest?.groups ?? []).map((group) => (
-          <ActionsGroup
-            key={manifestGroupRenderKey(group)}
-            groupId={group.id}
-            label={group.label}
-            collapsed={group.collapsed}
-            actions={group.actions}
-            activeDocumentId={activeDocumentId}
-            dragReady={dragReady}
-            onSelect={handleSelect}
-            onSolarAverageWindowSelect={onSolarAverageWindowSelect}
-            harmonicChartMode={harmonicChartMode}
+      <ContextMenu>
+        <ContextMenuTrigger
+          className="flex size-full min-h-0 flex-col"
+          style={scaledLeftSidebarStyle(leftSidebarSize, appTokens, mobile)}
+        >
+          {/* No sidebar header — the global UnifiedTitleBar spans the top across the
+              sidebar + content, and content is inset below it (globals.css), so the
+              first nav row sits directly under the title bar. */}
+          {editing ? <SidebarEditBar /> : null}
+          <div className="shrink-0 px-[var(--morinus-nav-side-margin)]">
+            <TopActionsGroup
+              actions={manifest?.topActions ?? []}
+              activeDocumentId={activeDocumentId}
+              onSelect={handleSelect}
+            />
+          </div>
+          <div
+            aria-hidden="true"
+            className="h-px shrink-0 bg-[color:var(--aries-sidebar-section-rule)]"
           />
-        ))}
-      </SidebarContent>
+          <SidebarContent className="gap-0 px-[var(--morinus-nav-side-margin)]">
+            <DocumentsGroup
+              documents={documents}
+              activeDocumentId={activeDocumentId}
+              dragReady={dragReady}
+              onSelect={handleSelect}
+              onClose={onCloseDocument}
+              onReorder={onReorder}
+            />
+            {editing ? (
+              <SidebarEditContent groups={manifest?.groups ?? []} />
+            ) : (
+              (manifest?.groups ?? []).map((group) => (
+                <ActionsGroup
+                  key={manifestGroupRenderKey(group)}
+                  groupId={group.id}
+                  label={group.label}
+                  collapsed={group.collapsed}
+                  // Hidden launchers are gone in normal use; a section with
+                  // nothing left loses its header too (ActionsGroup returns null).
+                  actions={group.actions.filter((action) => !action.hidden)}
+                  activeDocumentId={activeDocumentId}
+                  dragReady={dragReady}
+                  onSelect={handleSelect}
+                  onSolarAverageWindowSelect={handleSolarAverageWindowSelect}
+                  harmonicChartMode={harmonicChartMode}
+                />
+              ))
+            )}
+          </SidebarContent>
+          {editing ? null : <SidebarHiddenNotice />}
+        </ContextMenuTrigger>
+        <ContextMenuContent align="start" className="min-w-44">
+          <LeftSidebarSizeChoices />
+        </ContextMenuContent>
+      </ContextMenu>
     </Sidebar>
   );
+}
+
+function LeftSidebarSizeChoices({ submenu = false }: { submenu?: boolean }) {
+  const t = useT();
+  const size = useFrameLayoutStore((s) => s.leftSidebarSize);
+  const setSize = useFrameLayoutStore((s) => s.setLeftSidebarSize);
+  const choices = (
+    <ContextMenuRadioGroup value={size} onValueChange={(value) => setSize(value as LeftSidebarSize)}>
+      <ContextMenuRadioItem value="normal">{t("inspector.textSize.normal")}</ContextMenuRadioItem>
+      <ContextMenuRadioItem value="larger">{t("inspector.textSize.larger")}</ContextMenuRadioItem>
+      <ContextMenuRadioItem value="extra-large">{t("inspector.textSize.extraLarge")}</ContextMenuRadioItem>
+    </ContextMenuRadioGroup>
+  );
+  return submenu ? (
+    <>
+      <ContextMenuSeparator />
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>{t("sidebar.textSize")}</ContextMenuSubTrigger>
+        <ContextMenuSubContent className="min-w-44">{choices}</ContextMenuSubContent>
+      </ContextMenuSub>
+    </>
+  ) : choices;
 }
 
 // Time stepping changes the active chart snapshot, not the workspace tree or
@@ -303,6 +438,7 @@ function StaticDocumentsGroup({
                   <NavRow
                     label={documentRowLabel(node.doc, dirty, t)}
                     isActive={node.doc.id === activeDocumentId}
+                    documentRow
                     depth={depth}
                     dirty={dirty}
                     onClick={() => onSelect(node.doc.id)}
@@ -419,6 +555,7 @@ export function DocumentRowContextMenu({
         ) : (
           <DocumentMenuNodes items={items} onAction={runAction} />
         )}
+        <LeftSidebarSizeChoices submenu />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -619,6 +756,7 @@ function ActionsGroup({
             <React.Suspense
               fallback={
                 <StaticActionsContent
+                  sectionLabel={label}
                   orderedActions={orderedActions}
                   activeDocumentId={activeDocumentId}
                   onSelect={onSelect}
@@ -641,6 +779,7 @@ function ActionsGroup({
             </React.Suspense>
           ) : (
             <StaticActionsContent
+              sectionLabel={label}
               orderedActions={orderedActions}
               activeDocumentId={activeDocumentId}
               onSelect={onSelect}
@@ -655,12 +794,14 @@ function ActionsGroup({
 }
 
 function StaticActionsContent({
+  sectionLabel,
   orderedActions,
   activeDocumentId,
   onSelect,
   onSolarAverageWindowSelect,
   harmonicChartMode,
 }: {
+  sectionLabel: string;
   orderedActions: SidebarAction[];
   activeDocumentId: string | null;
   onSelect: (id: string) => void;
@@ -683,20 +824,15 @@ function StaticActionsContent({
         );
         return (
           <SidebarMenuItem key={action.id}>
-            {action.id === "solar-average" && action.enabled ? (
-              <SolarAverageLauncherContextMenu onSelectWindow={onSolarAverageWindowSelect}>
-                {row}
-              </SolarAverageLauncherContextMenu>
-            ) : action.id === "harmonic" && action.enabled ? (
-              <HarmonicLauncherContextMenu
-                initialMode={harmonicChartMode}
-                onSelectNumber={(mode, number) => onSelect(`harmonic:${mode}:${number}`)}
-              >
-                {row}
-              </HarmonicLauncherContextMenu>
-            ) : (
-              row
-            )}
+            <LauncherRowMenu
+              sectionLabel={sectionLabel}
+              action={action}
+              onSelect={onSelect}
+              onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+              harmonicChartMode={harmonicChartMode}
+            >
+              {row}
+            </LauncherRowMenu>
           </SidebarMenuItem>
         );
       })}
@@ -704,12 +840,121 @@ function StaticActionsContent({
   );
 }
 
+/** Right-click menu for one section launcher. Harmonic chart and Average
+ * Returns keep their own options on top; every launcher ends with the
+ * Hide · Edit Sidebar… group (design A2). */
+export function LauncherRowMenu({
+  sectionLabel,
+  action,
+  onSelect,
+  onSolarAverageWindowSelect,
+  harmonicChartMode,
+  children,
+}: {
+  sectionLabel: string;
+  action: SidebarAction;
+  onSelect: (id: string) => void;
+  onSolarAverageWindowSelect: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  harmonicChartMode: "harmonic" | "varga";
+  children: React.ReactElement;
+}) {
+  const visibility = <LauncherVisibilityItems sectionLabel={sectionLabel} actionId={action.id} />;
+  if (action.id === "solar-average" && action.enabled) {
+    return (
+      <SolarAverageLauncherContextMenu
+        onSelectWindow={onSolarAverageWindowSelect}
+        trailingItems={visibility}
+      >
+        {children}
+      </SolarAverageLauncherContextMenu>
+    );
+  }
+  if (action.id === "harmonic" && action.enabled) {
+    return (
+      <HarmonicLauncherContextMenu
+        initialMode={harmonicChartMode}
+        onSelectNumber={(mode, number) => onSelect(`harmonic:${mode}:${number}`)}
+        trailingItems={visibility}
+      >
+        {children}
+      </HarmonicLauncherContextMenu>
+    );
+  }
+  return (
+    <PlainLauncherContextMenu
+      enabled={action.enabled}
+      onOpen={() => onSelect(action.id)}
+      trailingItems={visibility}
+    >
+      {children}
+    </PlainLauncherContextMenu>
+  );
+}
+
+function PlainLauncherContextMenu({
+  enabled,
+  onOpen,
+  trailingItems,
+  children,
+}: {
+  enabled: boolean;
+  onOpen: () => void;
+  trailingItems: React.ReactNode;
+  children: React.ReactElement;
+}) {
+  const tf = useTFallback();
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">{children}</ContextMenuTrigger>
+      <ContextMenuContent align="start" className="min-w-40">
+        <ContextMenuItem disabled={!enabled} onClick={onOpen}>
+          {tf("sidebar.openLauncher", "Open")}
+        </ContextMenuItem>
+        {trailingItems}
+        <LeftSidebarSizeChoices submenu />
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function LauncherVisibilityItems({
+  sectionLabel,
+  actionId,
+}: {
+  sectionLabel: string;
+  actionId: string;
+}) {
+  const tf = useTFallback();
+  const setEditing = useSidebarVisibilityStore((s) => s.setEditing);
+  const setSidebarOpen = useFrameLayoutStore((s) => s.setSidebarOpen);
+  return (
+    <>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onClick={() => void setSidebarLaunchersHidden(sectionLabel, [actionId], true, { notice: true })}
+      >
+        {tf("sidebar.hideLauncher", "Hide")}
+      </ContextMenuItem>
+      <ContextMenuItem
+        onClick={() => {
+          setSidebarOpen(true);
+          setEditing(true);
+        }}
+      >
+        {tf("sidebar.editSidebar", "Edit Sidebar…")}
+      </ContextMenuItem>
+    </>
+  );
+}
+
 export function SolarAverageLauncherContextMenu({
   children,
   onSelectWindow,
+  trailingItems,
 }: {
   children: React.ReactElement;
   onSelectWindow: (maxBirthday: number, returnKind: ReturnAverageKind) => void;
+  trailingItems?: React.ReactNode;
 }) {
   const tf = useTFallback();
   const chooseWindow = React.useCallback(
@@ -757,6 +1002,8 @@ export function SolarAverageLauncherContextMenu({
       <ContextMenuContent align="start" className="min-w-44">
         {renderWindowGroup("solar", tf("sidebar.solarAverage", "Solar Average"))}
         {renderWindowGroup("lunar", tf("sidebar.lunarAverage", "Lunar Average"))}
+        {trailingItems}
+        <LeftSidebarSizeChoices submenu />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -766,10 +1013,12 @@ export function HarmonicLauncherContextMenu({
   children,
   initialMode,
   onSelectNumber,
+  trailingItems,
 }: {
   children: React.ReactElement;
   initialMode: "harmonic" | "varga";
   onSelectNumber: (mode: "harmonic" | "varga", number: number) => void;
+  trailingItems?: React.ReactNode;
 }) {
   const t = useT();
   const [modeChoice, setModeChoice] = React.useState<{
@@ -809,6 +1058,8 @@ export function HarmonicLauncherContextMenu({
             {number}
           </ContextMenuItem>
         ))}
+        {trailingItems}
+        <LeftSidebarSizeChoices submenu />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -819,6 +1070,8 @@ type NavRowProps = {
   actionId?: string;
   shortcut?: string | null;
   isActive?: boolean;
+  /** Open chart/tab row: its active fill is the tinted selected-chart token. */
+  documentRow?: boolean;
   depth?: number;
   dirty?: boolean;
   disabled?: boolean;
@@ -839,6 +1092,7 @@ export function NavRow({
   actionId,
   shortcut,
   isActive,
+  documentRow,
   depth = 0,
   dirty,
   disabled,
@@ -853,16 +1107,24 @@ export function NavRow({
 }: NavRowProps) {
   const tf = useTFallback();
   const shortcutHint = shortcut?.trim();
-  const shortcutChords = shortcutHint ? shortcutDisplayChords(shortcutHint) : [];
+  const appleShortcuts = useAppleShortcuts();
+  const modifierLabels = useShortcutModifierLabels();
+  const shortcutChords = shortcutHint
+    ? shortcutDisplayChords(shortcutHint, appleShortcuts, modifierLabels)
+    : [];
   const shortcutDisplay = shortcutChords.map((chord) => chord.join("")).join("/");
-  const showShortcutHint = shortcutChords.length > 0 && !disabled && !onClose;
+  // Phones have no keyboard to use the hint with.
+  const mobile = useMobileLayout();
+  const showShortcutHint = shortcutChords.length > 0 && !disabled && !onClose && !mobile;
   const shortcutOverlayWidth = showShortcutHint
-    ? shortcutDisplayWidth(shortcutChords)
+    ? shortcutDisplayWidth(shortcutChords, appleShortcuts)
     : null;
   const shortcutMaskImage = shortcutOverlayWidth
     ? shortcutFadeMask(shortcutOverlayWidth)
     : undefined;
-  const ariaKeyShortcuts = disabled ? undefined : normalizeAriaKeyShortcuts(shortcut);
+  const ariaKeyShortcuts = disabled || shortcutChords.length === 0
+    ? undefined
+    : normalizeAriaKeyShortcuts(shortcut, appleShortcuts);
   // The shortcut is hover/focus information, not a permanent layout column.
   // Give the idle label the full row; CSS fades only the part beneath the
   // overlaid hint while it is visible. Document close buttons remain reserved.
@@ -913,10 +1175,15 @@ export function NavRow({
           "h-[var(--morinus-row-min-height)] rounded-[var(--morinus-row-radius)]",
           "py-[var(--morinus-row-pad-y)]",
           "text-[length:var(--aries-font-size-nav)] font-normal leading-none",
-          "min-w-0 justify-start text-sidebar-foreground touch-none",
+          "min-w-0 justify-start text-sidebar-foreground",
+          // Only a live drag handle owns touch; a disabled sortable scrolls.
+          dragListeners && "touch-none",
           "transition-colors duration-75",
           "hover:bg-[color:var(--aries-sidebar-row-hover)] hover:text-sidebar-accent-foreground",
-          "data-[active=true]:bg-[color:var(--aries-sidebar-row-active)] data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-normal",
+          documentRow
+            ? "data-active:bg-[color:var(--aries-sidebar-row-selected-chart)]"
+            : "data-[active=true]:bg-[color:var(--aries-sidebar-row-active)]",
+          "data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-normal",
           // Not-yet-built launchers (manifest enabled:false): greyed, inert.
           disabled &&
             "cursor-default text-sidebar-foreground/35 hover:bg-transparent hover:text-sidebar-foreground/35",
@@ -928,7 +1195,7 @@ export function NavRow({
             : "var(--morinus-row-pad-x)",
         }}
       >
-        <span className="relative block h-[var(--aries-sidebar-row-line-box)] min-w-0 flex-1 leading-[var(--aries-sidebar-row-line-box)]">
+        <span className="aries-sidebar-navrow-text relative block h-[var(--aries-sidebar-row-line-box)] min-w-0 flex-1 leading-[var(--aries-sidebar-row-line-box)]">
           <span className="aries-sidebar-navrow-label block h-full truncate leading-[var(--aries-sidebar-row-line-box)]">
             {label}
           </span>
@@ -964,7 +1231,12 @@ export function NavRow({
         <span
           aria-hidden="true"
           className="aries-sidebar-shortcut-hint pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 h-[var(--aries-sidebar-row-line-box)] -translate-y-1/2 whitespace-nowrap text-right text-[length:var(--aries-font-size-nav)] leading-[var(--aries-sidebar-row-line-box)] text-sidebar-foreground/38 opacity-0 transition-opacity duration-75"
-          style={{ width: shortcutOverlayWidth ?? undefined }}
+          // Spelled-out chords ("Strg+Umschalt+S") grow leftwards rather than
+          // overflowing the row edge.
+          style={{
+            width: shortcutOverlayWidth ?? undefined,
+            minWidth: appleShortcuts ? undefined : "max-content",
+          }}
         >
           {shortcutDisplay}
         </span>
@@ -975,7 +1247,7 @@ export function NavRow({
       {dirty ? (
         <span
           aria-label={tf("sidebar.unsavedChanges", "Unsaved changes")}
-          className="pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 size-[var(--aries-sidebar-unsaved-indicator-size)] -translate-y-1/2 rounded-full bg-[color:var(--aries-unsaved-indicator)] transition-opacity group-hover/navrow:opacity-0"
+          className="aries-sidebar-unsaved-dot pointer-events-none absolute right-[var(--aries-sidebar-trailing-inset)] top-1/2 size-[var(--aries-sidebar-unsaved-indicator-size)] -translate-y-1/2 rounded-full bg-[color:var(--aries-unsaved-indicator)] transition-opacity group-hover/navrow:opacity-0"
         />
       ) : null}
       {onClose ? (
@@ -987,7 +1259,7 @@ export function NavRow({
             e.stopPropagation();
             onClose();
           }}
-          className="absolute right-[var(--aries-sidebar-close-inset)] top-1/2 flex size-[var(--aries-sidebar-close-action-size)] -translate-y-1/2 items-center justify-center rounded-[var(--aries-radius-control-compact)] text-sidebar-foreground/40 opacity-0 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground group-hover/navrow:opacity-100"
+          className="aries-sidebar-close-action absolute right-[var(--aries-sidebar-close-inset)] top-1/2 flex size-[var(--aries-sidebar-close-action-size)] -translate-y-1/2 items-center justify-center rounded-[var(--aries-radius-control-compact)] text-sidebar-foreground/40 opacity-0 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground group-hover/navrow:opacity-100"
         >
           <X className="size-[var(--aries-sidebar-action-icon-size)]" />
         </button>
@@ -1021,21 +1293,36 @@ function sidebarRowPaddingLeft(depth: number): string {
   return `calc(var(--morinus-row-pad-x)${" + var(--aries-sidebar-tree-indent)".repeat(safeDepth)})`;
 }
 
-function shortcutDisplayChords(shortcut: string): string[][] {
+function shortcutDisplayChords(
+  shortcut: string,
+  apple: boolean,
+  labels: ShortcutModifierLabels,
+): string[][] {
   return shortcut
     .split("/")
     .map((chord) => chord.trim())
     .filter(Boolean)
-    .map(shortcutDisplayChord)
+    .map((chord) => shortcutDisplayChord(chord, apple, labels))
     .filter((chord) => chord.length > 0);
 }
 
-function shortcutDisplayChord(chord: string): string[] {
+function shortcutDisplayChord(
+  chord: string,
+  apple: boolean,
+  labels: ShortcutModifierLabels,
+): string[] {
   const rawParts = chord
     .split("+")
     .map((part) => part.trim())
     .filter(Boolean);
   if (rawParts.length === 0) return [];
+  if (!apple) {
+    // Windows/Linux: localized modifier names ("Ctrl+O"); reserved chords
+    // (AltGr, Redo) are not offered there.
+    const parsed = parseAcceleratorChord(chord);
+    if (!parsed) return rawParts;
+    return chordAvailable(parsed, false) ? [formatChordOffApple(parsed, labels)] : [];
+  }
 
   const primaryKey = rawParts[rawParts.length - 1] ?? "";
   const ctrlIsMacCommand = isCommandStyleShortcut(primaryKey);
@@ -1095,27 +1382,35 @@ function isCommandStyleShortcut(primaryKey: string): boolean {
   return true;
 }
 
-function shortcutDisplayWidth(chords: string[][]): string {
+function shortcutDisplayWidth(chords: string[][], apple: boolean): string {
   const widest = Math.max(...chords.map((chord) => chord.join("").length));
-  return `${Math.min(3.4, Math.max(1.75, widest * 0.52 + 0.5)).toFixed(2)}rem`;
+  if (apple) return `${Math.min(3.4, Math.max(1.75, widest * 0.52 + 0.5)).toFixed(2)}rem`;
+  // Windows/Linux spell modifiers out ("Ctrl+Shift+S"); size the label fade
+  // in the row's own em so it clears the whole hint at every text size.
+  return `${Math.max(2, widest * 0.58 + 0.4).toFixed(2)}em`;
 }
 
 function shortcutFadeMask(shortcutWidth: string): string {
   return `linear-gradient(to right, #000 0, #000 calc(100% - ${shortcutWidth} - var(--aries-control-gap-compact)), transparent calc(100% - ${shortcutWidth} + var(--aries-control-gap-compact)))`;
 }
 
-function normalizeAriaKeyShortcuts(shortcut?: string | null): string | undefined {
+function normalizeAriaKeyShortcuts(
+  shortcut: string | null | undefined,
+  apple: boolean,
+): string | undefined {
   const normalized = shortcut
     ?.trim()
     .split("/")
     .map((chord) => chord.trim())
     .filter(Boolean)
+    // Chords the platform does not offer (AltGr, Redo) are not announced.
+    .filter((chord) => apple || chordAvailable(parseAcceleratorChord(chord), false))
     .map((chord) =>
       chord
         .split("+")
         .map((part) => part.trim())
         .filter(Boolean)
-        .map(normalizeAriaShortcutKey)
+        .map((part) => normalizeAriaShortcutKey(part, apple))
         .join("+"),
     )
     .filter(Boolean)
@@ -1123,15 +1418,12 @@ function normalizeAriaKeyShortcuts(shortcut?: string | null): string | undefined
   return normalized || undefined;
 }
 
-function normalizeAriaShortcutKey(rawKey: string): string {
+function normalizeAriaShortcutKey(rawKey: string, apple: boolean): string {
   const normalized = rawKey.toLowerCase();
-  if (
-    normalized === "cmd" ||
-    normalized === "command" ||
-    normalized === "meta" ||
-    normalized === "cmdorctrl" ||
-    normalized === "ctrlorcmd"
-  ) {
+  if (normalized === "cmdorctrl" || normalized === "ctrlorcmd") {
+    return apple ? "Meta" : "Control";
+  }
+  if (normalized === "cmd" || normalized === "command" || normalized === "meta") {
     return "Meta";
   }
   if (normalized === "ctrl" || normalized === "control") {

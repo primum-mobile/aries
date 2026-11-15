@@ -21,7 +21,7 @@
  * non-proportional wheel RELOCATES each planet into its house wedge, so the
  * glyph is no longer at its true angle; the projection here REMAPS the whole
  * plane continuously, so every body, aspect chord, tick and cusp stays exact
- * in the mapped space. See `doc/ui-specs/wheel-style-conventions-research.md`.
+ * in the mapped space.
  *
  * Consumers pass a `WheelFrame` (rotation + projection) wherever the renderer
  * used to pass a bare ascendant rotation; `polar()` in `canvas-draw.ts` still

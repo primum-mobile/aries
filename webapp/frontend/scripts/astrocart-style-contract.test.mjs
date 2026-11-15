@@ -365,6 +365,37 @@ test("the bundled iframe script remains syntactically valid", async () => {
 
 });
 
+test("a live style repaints while map sources are still loading", async () => {
+  const html = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
+  const start = html.indexOf("setDisplayStyle(payload) {");
+  const end = html.indexOf("    setUiLabels(", start);
+  assert.ok(start >= 0 && end > start);
+  let appliedStyle = null;
+  let paintCount = 0;
+  const createApi = new Function(
+    "map", "mapReady", "normalizeAstrocartStyle", "applyAstrocartChrome",
+    "applyDisplayStyle", "applyDevColors",
+    `let ACTIVE_ASTROCART_STYLE = null;
+     return { setTheme() {}, ${html.slice(start, end)} };`,
+  );
+  const api = createApi(
+    { isStyleLoaded: () => false },
+    true,
+    parseAstrocartStyle,
+    () => {},
+    (style) => { appliedStyle = style; },
+    () => { paintCount += 1; },
+  );
+  const style = fixture();
+  style.renderer.eclipseCenterColor = "#dbf6d9";
+  assert.equal(api.setDisplayStyle(style), true);
+  assert.equal(appliedStyle?.renderer.eclipseCenterColor, "#dbf6d9");
+  assert.equal(paintCount, 1);
+  // Receiving the same hash again must remain a no-op, after its paint landed.
+  api.setDisplayStyle(style);
+  assert.equal(paintCount, 1);
+});
+
 test("the globe overlay clips source lines into both polar caps", async () => {
   const html = await readFile(new URL("../../../Res/astrocart/map.html", import.meta.url), "utf8");
   const source = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]

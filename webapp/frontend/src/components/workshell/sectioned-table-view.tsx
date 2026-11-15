@@ -5,44 +5,46 @@
 
 import * as React from "react";
 
-import type { GenericTableColumn, GenericTablePayload, GenericTableSection } from "@/lib/daemon/client";
+import type { GenericTableColumn, GenericTablePayload, GenericTableSection, InspectorSpeculumPrecision } from "@/lib/daemon/client";
+import { observeInspectorSpeculumFit } from "@/lib/inspector-speculum-layout";
 import { LIST_ROLE_CLASSES } from "@/lib/list-tokens";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/i18n";
 import { CellView, alignClass } from "./generic-table-view";
+import { InspectorSpeculumAngle, InspectorSpeculumSpeed } from "./speculum-table-cells";
+import { tableCellText } from "./table-text-export";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 
-// Channel 4 of the custom-table migration contract
-// (doc/migration/parity-catalogue/custom-table-layouts.md): multi-section wx
+// Channel 4 of the custom-table migration contract: multi-section wx
 // pages (midpointswnd.py:44-87 panel array; almutens, positions, misc, munpos,
 // phasis) render as stacked panels, each with its own column header row. Panels
 // flow left-to-right and wrap, mirroring the wx multi-column panel arrangement
 // at wide widths while remaining responsive.
 export function SectionedTableView({
   payload,
+  precision,
+  speculum,
   onBindingChange,
 }: {
   payload: GenericTablePayload;
+  precision: InspectorSpeculumPrecision;
+  speculum: boolean;
   onBindingChange?: (binding: Record<string, unknown>) => Promise<void>;
 }) {
   const sections = payload.sections ?? [];
   const topical = asTopicalCapability(payload.capabilities);
-  const preserveAngleSeconds = payload.capabilities?.anglePrecision === "seconds";
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {topical && onBindingChange ? (
         <TopicSelector topical={topical} onBindingChange={onBindingChange} />
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto p-[var(--aries-pane-content-padding)]">
-        <div className="flex flex-wrap items-start gap-[var(--aries-pane-content-padding)]">
-          {sections.map((section) => (
-            <SectionPanel
-              key={section.id}
-              section={section}
-              unavailable={payload.unavailable}
-              preserveAngleSeconds={preserveAngleSeconds}
-            />
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-[var(--aries-pane-content-padding)]">
+        <div className={cn("gap-[var(--aries-pane-content-padding)]", speculum ? "flex w-full max-w-full flex-col" : "flex flex-wrap items-start")}>
+          {sections.map((section) => speculum ? (
+            <SpeculumSection key={section.id} section={section} precision={precision} />
+          ) : (
+            <SectionPanel key={section.id} section={section} unavailable={payload.unavailable} precision={precision} />
           ))}
         </div>
         {payload.notes?.length ? (
@@ -103,11 +105,11 @@ function TopicSelector({
 function SectionPanel({
   section,
   unavailable,
-  preserveAngleSeconds,
+  precision,
 }: {
   section: GenericTableSection;
   unavailable?: boolean;
-  preserveAngleSeconds: boolean;
+  precision: InspectorSpeculumPrecision;
 }) {
   // wx draws every panel's header box even when its rows are all filtered
   // out (midpointswnd.py:179-186), so an empty section still shows headers.
@@ -174,12 +176,117 @@ function SectionPanel({
                 >
                   <CellView
                     cell={row.cells[index]}
-                    preserveAngleSeconds={preserveAngleSeconds}
+                    precision={precision}
                   />
                 </td>
               ))}
             </tr>
           ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// After exhausting the usual fit steps, continue a dense full Speculum in
+// consecutive column bands. The body column identifies the same rows in each.
+function SpeculumSection({ section, precision }: {
+  section: GenericTableSection;
+  precision: InspectorSpeculumPrecision;
+}) {
+  const [breaks, setBreaks] = React.useState<ReadonlyMap<number, number>>(() => new Map());
+  const columnCount = section.columns.length;
+  const fullSize = Math.max(1, columnCount - 1);
+  let bandSize = fullSize;
+  while (bandSize > 1 && breaks.has(bandSize)) bandSize = Math.ceil(bandSize / 2);
+
+  const handleFit = React.useCallback((available: number, required: number) => {
+    if (available <= 0) return;
+    const split = bandSize > 1 && required > available + 0.5;
+    if (!split && bandSize === fullSize) return;
+    setBreaks((current) => {
+      const restore = [...current].filter(([, width]) => available + 0.5 >= width);
+      const update = split && required > (current.get(bandSize) ?? 0);
+      if (!restore.length && !update) return current;
+      const next = new Map(current);
+      for (const [size] of restore) next.delete(size);
+      if (update) next.set(bandSize, required);
+      return next;
+    });
+  }, [bandSize, fullSize]);
+
+  const bands = [];
+  for (let start = 1; start < columnCount; start += bandSize) {
+    const indexes = [0, ...Array.from({ length: Math.min(bandSize, columnCount - start) }, (_, offset) => start + offset)];
+    bands.push(<SpeculumBand key={indexes.join(":")} section={section} indexes={indexes} precision={precision}
+      onFit={handleFit} continued={bandSize < columnCount - 1} />);
+  }
+  return (
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-[var(--aries-pane-content-padding)]">
+      {section.title ? <div className="text-[length:var(--aries-font-size-small)] font-medium text-muted-foreground">{section.title}</div> : null}
+      {bands}
+    </div>
+  );
+}
+
+function SpeculumBand({ section, indexes, precision, onFit, continued }: {
+  section: GenericTableSection;
+  indexes: readonly number[];
+  precision: InspectorSpeculumPrecision;
+  onFit: (available: number, required: number) => void;
+  continued: boolean;
+}) {
+  const container = React.useRef<HTMLDivElement>(null);
+  const table = React.useRef<HTMLTableElement>(null);
+  const columnIds = indexes.map((index) => section.columns[index].id);
+  const columnSignature = columnIds.join(":");
+  const tableResize = useResizableTableColumns({
+    storageKey: `sectioned:${section.id}${continued ? `:${columnSignature}` : ""}`,
+    columnIds,
+    fitWidth: true,
+  });
+  React.useLayoutEffect(() => {
+    if (!container.current || !table.current) return;
+    // Preserve the most frequently read coordinate, longitude, until last.
+    const angleColumns = columnSignature.split(":").filter((id) => !["body", "house", "speed", "lon"].includes(id)).reverse();
+    if (columnSignature.split(":").includes("lon")) angleColumns.push("lon");
+    return observeInspectorSpeculumFit(container.current, table.current, { angleColumns, onFit });
+  }, [columnSignature, onFit, precision]);
+  return (
+    <div ref={container} data-speculum-dynamic className="aries-inspector-speculum w-full min-w-0 max-w-full">
+      <table ref={table} className={cn(LIST_ROLE_CLASSES.standard, "w-full max-w-full table-auto border-collapse")}>
+        {tableResize.colGroup}
+        <thead>
+          <tr>
+            {indexes.map((index) => {
+              const column = section.columns[index];
+              return <th key={column.id} title={column.label}
+                className={cn("aries-list-head-cell relative border-b bg-background font-medium", alignClass(column.align))}>
+                <span className="aries-inspector-speculum-heading"><ColumnHeader column={column} /></span>
+                <ColumnResizeHandle columnId={column.id} getResizeHandleProps={tableResize.getResizeHandleProps} />
+              </th>;
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {section.rows.map((row) => <tr key={row.id} className="aries-list-row border-b">
+            {indexes.map((index) => {
+              const column = section.columns[index];
+              const cell = row.cells[index];
+              const full = tableCellText(cell, { preserveAngleSeconds: true });
+              const longName = column.id === "body" && /\p{L}{8,}|[\p{sc=Han}\p{sc=Hira}\p{sc=Kana}ー]{6,}/u.test(full);
+              return <td key={column.id} title={full || undefined} aria-label={full || undefined}
+                className={cn("aries-list-cell align-middle", alignClass(cell?.align ?? column.align), column.id !== "body" && "whitespace-nowrap tabular-nums")}>
+                {column.id === "body" ? (
+                  <span className="aries-inspector-speculum-body-label" data-long-word={longName || undefined}>
+                    <CellView cell={cell} />
+                  </span>
+                ) : column.id === "house" ? <CellView cell={cell} />
+                  : column.id === "speed" ? <InspectorSpeculumSpeed cell={cell} precision={precision} />
+                    : <InspectorSpeculumAngle cell={cell} column={column.id} precision={precision} dynamicFit />}
+              </td>;
+            })}
+          </tr>)}
         </tbody>
       </table>
     </div>

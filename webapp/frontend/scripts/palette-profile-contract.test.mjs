@@ -10,7 +10,10 @@ const source = await readFile(
   new URL("../src/lib/chart/palette.ts", import.meta.url),
   "utf8",
 );
-const javascript = ts.transpileModule(source, {
+const javascript = ts.transpileModule(source.replace(
+  'import dignityDisplayPolicy from "./dignity-display-policy.json";',
+  `const dignityDisplayPolicy = ${await readFile(new URL("../src/lib/chart/dignity-display-policy.json", import.meta.url), "utf8")};`,
+), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const {
@@ -18,6 +21,8 @@ const {
   readPaletteFromTheme,
   readPaletteProfileOverrides,
   withSettingsColorPreview,
+  withMinorDignityColors,
+  minorDignityPaletteColor,
   settingsColorPreviewMatchesTheme,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`
@@ -259,4 +264,70 @@ test("element profile colors do not override a disabled Settings glyph switch", 
     },
   );
   assert.deepEqual(resolved.primaryChart.options.signColors, Array(12).fill("plain-sign"));
+});
+
+test("minor dignity colors follow the live role pair and switch in every retained ring", () => {
+  const minorChart = {
+    ...chart(),
+    palette: { peregrin: 'rgb(100 100 100)', domicil: 'rgb(0 200 0)' },
+    planets: [0, 1, 2, 3].map(count => ({
+      id: 'mercury', seId: 2, dignity: 'peregrin', minorDignityCount: count,
+      color: count ? 'old-color' : 'rgb(100 100 100)',
+    })),
+  };
+  const snapshot = { primaryChart: minorChart, comparisonChart: minorChart, rings: [minorChart] };
+  const enabledTheme = {
+    chartPalette: { "--morinus-peregrin": "rgb(100 100 100)", "--morinus-dignity-domicil": "rgb(0 200 0)" },
+    profileOverrides: { chartPalette: {}, chartData: { blendMinorDignities: true } },
+  };
+  const enabled = applyProfileColorsToSnapshot(snapshot, enabledTheme);
+  const expected = ['rgb(100 100 100)', 'rgb(70 130 70)', 'rgb(40 160 40)', 'rgb(20 180 20)'];
+  for (const c of [enabled.primaryChart, enabled.comparisonChart, ...enabled.rings]) {
+    assert.deepEqual(c.planets.map(p => p.color), expected);
+  }
+  const disabled = applyProfileColorsToSnapshot(enabled, {
+    ...enabledTheme,
+    profileOverrides: { chartPalette: {}, chartData: { blendMinorDignities: false } },
+  });
+  assert.deepEqual(disabled.primaryChart.planets.map(p => p.color), Array(4).fill('rgb(100 100 100)'));
+  const changedRole = applyProfileColorsToSnapshot(enabled, {
+    ...enabledTheme,
+    profileOverrides: {
+      chartPalette: { '--morinus-dignity-domicil': 'rgb(200 0 0)' },
+      chartData: { blendMinorDignities: true },
+    },
+  });
+  assert.equal(changedRole.primaryChart.planets[1].color, 'rgb(130 70 70)');
+  assert.equal(minorChart.planets[1].color, 'old-color');
+  const roles = withMinorDignityColors({
+    '--morinus-peregrin': 'rgb(100 100 100)', '--morinus-dignity-domicil': 'rgb(0 200 0)',
+  }, true);
+  assert.equal(roles['--morinus-minor-dignity-2'], 'rgb(40 160 40)');
+  const preview = withMinorDignityColors({
+    ...roles, '--morinus-dignity-domicil': 'rgb(200 0 0)',
+  }, true);
+  assert.equal(preview['--morinus-minor-dignity-2'], 'rgb(160 40 40)');
+  assert.equal(withMinorDignityColors(preview, false)['--morinus-minor-dignity-2'], 'rgb(100 100 100)');
+});
+
+
+test("minor planet consumers select resolved global colors without blending again", () => {
+  const palette = { peregrin: "neutral", domicil: "positive", minorDignities: ["global-one", "global-two", "global-three"] };
+  assert.equal(minorDignityPaletteColor(palette, 1, true), "global-one");
+  assert.equal(minorDignityPaletteColor(palette, 2, true), "global-two");
+  assert.equal(minorDignityPaletteColor(palette, 3, true), "global-three");
+  assert.equal(minorDignityPaletteColor(palette, 3, false), "neutral");
+});
+
+
+test("retained wheel options adopt the subdivision color switch immediately", () => {
+  const snapshot = { primaryChart: chart(), comparisonChart: chart() };
+  for (const enabled of [false, true]) {
+    const resolved = applyProfileColorsToSnapshot(snapshot, {
+      profileOverrides: { chartPalette: {}, chartData: { usePlanetColorsForSubdivisions: enabled } },
+    });
+    assert.equal(resolved.primaryChart.options.usePlanetColorsForSubdivisions, enabled);
+    assert.equal(resolved.comparisonChart.options.usePlanetColorsForSubdivisions, enabled);
+    assert.equal(snapshot.primaryChart.options.usePlanetColorsForSubdivisions, undefined);
+  }
 });

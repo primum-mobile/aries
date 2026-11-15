@@ -7,7 +7,7 @@
 
 import type React from "react";
 import { setSideBySideView } from "./side-by-side-charts";
-import { Fragment, useCallback, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   ContextMenu,
@@ -29,27 +29,35 @@ import {
   workspaceSynastryComposite,
   type DirectionCustomSignificator,
   type WorkspaceContextMenuNode,
+  type WorkspaceContextMenuTrailingToggle,
   type WorkspaceOpenResult,
 } from "@/lib/daemon/client";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
+import { createContextMenuRefresh } from "@/lib/context-menu-refresh";
 import { runImmediateWorkspaceCommand, useDaemonWorkspaceView } from "@/stores/daemon-workspace-adapter";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
 import { runWorkspaceDocumentSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
-import { useWorkspaceStore, type WorkspaceDocument } from "@/stores/workspace-store";
+import { useWorkspaceStore, type HoverRegion, type WorkspaceDocument } from "@/stores/workspace-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useSurveilStore } from "@/stores/surveil-store";
 import { useT, useTFallback } from "@/lib/i18n/i18n";
+import { DashboardAppearanceMenu } from "./dashboard-appearance-menu";
 
 type ChartContextMenuProps = {
   chart: ChartRenderSnapshot;
   children: React.ReactElement;
+  dashboardAtPoint?: (clientX: number, clientY: number) => boolean;
+  regionAtPoint?: (clientX: number, clientY: number) => HoverRegion | null;
 };
 
-export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
+export function ChartContextMenu({ chart, children, dashboardAtPoint, regionAtPoint }: ChartContextMenuProps) {
   const t = useT();
-  const { activeDocument, documents } = useDaemonWorkspaceView();
-  const activeDocumentId = activeDocument?.id ?? null;
-  const hoveredRegion = useWorkspaceStore((s) => s.hoveredRegion);
+  const { activeDocument: focusedDocument, documents } = useDaemonWorkspaceView();
+  const activeDocumentId = chart.document?.documentId ?? focusedDocument?.id ?? null;
+  const activeDocument = documents.find(doc => doc.id === activeDocumentId) ?? null;
+  const globalRegion = useWorkspaceStore((s) => s.hoveredRegion);
+  const hoveredRegion = globalRegion?.viewDocumentId && globalRegion.viewDocumentId !== activeDocumentId
+    ? null : globalRegion;
   const openTransitSearchPane = useWorkspaceStore((s) => s.openTransitSearchPane);
   const openDirectionsPane = useWorkspaceStore((s) => s.openDirectionsPane);
   const showRadix = useWorkspaceStore((s) => s.timedChartShowRadix);
@@ -60,6 +68,11 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
   const setNotesPaneOpen = useFrameLayoutStore((s) => s.setNotesPaneOpen);
   const openSurveilStudies = useSurveilStore((s) => s.openStudiesDialog);
   const [items, setItems] = useState<WorkspaceContextMenuNode[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [dashboardMenu, setDashboardMenu] = useState(false);
+  const [clickedRegion, setClickedRegion] = useState<HoverRegion | null>(null);
+  const menuRegion = menuOpen ? clickedRegion : hoveredRegion;
+  const optionsSeq = useDaemonWorkspaceStore((s) => s.lastOptionsChange?.seq ?? 0);
   const isRelationshipChart =
     activeDocument?.supplementaryFeatureKind === "synastry" || Boolean(activeDocument?.compoundKind);
   const showRadixMenuItem =
@@ -68,18 +81,30 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
     !isRelationshipChart;
   const showRadixChecked = Boolean(chart.document?.showRadixComparison ?? showRadix);
 
-  const refresh = useCallback(
-    (signal?: AbortSignal) => {
-      return fetchWorkspaceContextMenu(
-        { docId: activeDocumentId, region: hoveredRegion },
-        signal,
-      ).then((payload) => {
-        setItems(payload.items);
-        return payload;
-      });
-    },
-    [activeDocumentId, hoveredRegion],
+  const menuRefresh = useMemo(
+    () => createContextMenuRefresh(
+      (signal) => fetchWorkspaceContextMenu(
+        { docId: activeDocumentId, region: menuRegion }, signal,
+      ),
+      (payload) => setItems(payload.items),
+    ),
+    [activeDocumentId, menuRegion, setItems],
   );
+  const refresh = menuRefresh.refresh;
+  useEffect(() => {
+    menuRefresh.activate();
+    return () => menuRefresh.dispose();
+  }, [menuRefresh]);
+  useEffect(() => {
+    if (!menuOpen || dashboardMenu) return;
+    const controller = new AbortController();
+    void refresh(controller.signal).catch((err) => {
+      if ((err as { name?: string }).name === "AbortError") return;
+      console.error("[chart-context-menu]", err);
+      setItems((current) => current ?? []);
+    });
+    return () => controller.abort();
+  }, [menuOpen, dashboardMenu, optionsSeq, refresh]);
 
   const setShowRadixComparison = useCallback(
     async (checked: boolean) => {
@@ -162,7 +187,15 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
         return;
       }
       try {
-        if (actionId === "workspace.open_supplementary") {
+        if (actionId.startsWith("options.")) {
+          menuRefresh.cancel();
+          await executeWorkspaceContextMenuAction(actionId, payload);
+          // options.changed owns chart invalidation. A second snapshot GET
+          // here can race that refresh and restore an older asteroid ring.
+          await refresh();
+          return;
+        }
+        if (actionId === "workspace.open_supplementary" || actionId === "workspace.open_ascensional_view") {
           // Hold activation events until the returned child snapshot is cached.
           // Otherwise a reused child's old split layout can remount the canvas
           // before the authoritative open response replaces it.
@@ -225,7 +258,8 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
         if (documentId) {
           const isHarmonicProjectionAction =
             actionId === "workspace.set_harmonic_projection_mode" ||
-            actionId === "workspace.set_harmonic_number";
+            actionId === "workspace.set_harmonic_number" ||
+            actionId === "workspace.set_chart_presentation";
           const commandResult = isHarmonicProjectionAction
             ? await runWorkspaceDocumentSnapshotCommand(
                 documentId,
@@ -255,6 +289,7 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
         }
         await refresh();
       } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return;
         console.error("[chart-context-action]", err);
       }
     },
@@ -267,6 +302,7 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
       openSurveilStudies,
       pushCommandSnapshot,
       pushSteppedSnapshot,
+      menuRefresh,
       refresh,
       setInspectorOpen,
       setNotesPaneOpen,
@@ -274,40 +310,39 @@ export function ChartContextMenu({ chart, children }: ChartContextMenuProps) {
   );
 
   return (
-    <ContextMenu
-      onOpenChange={(open) => {
-        if (!open) return;
-        const controller = new AbortController();
-        void refresh(controller.signal).catch((err) => {
-          if ((err as { name?: string }).name === "AbortError") return;
-          console.error("[chart-context-menu]", err);
-          setItems([]);
-        });
-      }}
-    >
-      <ContextMenuTrigger render={children} />
+    <ContextMenu onOpenChange={setMenuOpen}>
+      <ContextMenuTrigger render={children} onContextMenuCapture={(event) => {
+        setDashboardMenu(Boolean(chart.dashboard?.enabled && dashboardAtPoint?.(event.clientX, event.clientY)));
+        setClickedRegion(regionAtPoint?.(event.clientX, event.clientY) ?? null);
+      }} />
       <ContextMenuContent
         align="start"
         className="min-w-[var(--aries-menu-context-min-width)]"
       >
-        {showRadixMenuItem ? (
-          <>
-            <ContextMenuCheckboxItem
-              checked={showRadixChecked}
-              closeOnClick={false}
-              onCheckedChange={(checked) => {
-                void setShowRadixComparison(Boolean(checked));
-              }}
-            >
-              {t("chartmenu.showRadix")}
-            </ContextMenuCheckboxItem>
-            <ContextMenuSeparator />
-          </>
-        ) : null}
-        {items === null ? (
-          <ContextMenuItem disabled>{t("chartmenu.loading")}</ContextMenuItem>
+        {dashboardMenu && chart.dashboard ? (
+          <DashboardAppearanceMenu dashboard={chart.dashboard} />
         ) : (
-          <MenuNodes items={items} onAction={runAction} />
+          <>
+            {showRadixMenuItem ? (
+              <>
+                <ContextMenuCheckboxItem
+                  checked={showRadixChecked}
+                  closeOnClick={false}
+                  onCheckedChange={(checked) => {
+                    void setShowRadixComparison(Boolean(checked));
+                  }}
+                >
+                  {t("chartmenu.showRadix")}
+                </ContextMenuCheckboxItem>
+                <ContextMenuSeparator />
+              </>
+            ) : null}
+            {items === null ? (
+              <ContextMenuItem disabled>{t("chartmenu.loading")}</ContextMenuItem>
+            ) : (
+              <MenuNodes items={items} onAction={runAction} />
+            )}
+          </>
         )}
       </ContextMenuContent>
     </ContextMenu>
@@ -443,23 +478,9 @@ function MenuNode({
             </ContextMenuRadioItem>
           );
           return radio.trailingToggle ? (
-            <div key={`${radio.value}-${radio.label}`} className="relative" data-asteroid-menu-row>
+            <div key={`${radio.value}-${radio.label}`} className="relative" data-asteroid-menu-row data-context-menu-toggle-row>
               {choice}
-              <button
-                type="button"
-                data-asteroid-menu-all
-                aria-pressed={radio.trailingToggle.checked}
-                className={`absolute top-1/2 -translate-y-1/2 rounded-[var(--aries-radius-menu-item)] px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] leading-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none ${radio.trailingToggle.checked ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                style={{ right: "calc(var(--aries-menu-indicator-inset) + var(--aries-menu-icon-size) + 20px)" }}
-                aria-label={tf(radio.trailingToggle.labelKey, "All active asteroids")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onAction(radio.trailingToggle?.actionId, radio.trailingToggle?.payload);
-                }}
-              >
-                {tf("chartmenu.allAsteroidsCompact", "all")}
-              </button>
+              <InlineMenuToggle toggle={radio.trailingToggle} onAction={onAction} />
             </div>
           ) : <Fragment key={`${radio.value}-${radio.label}`}>{choice}</Fragment>;
         })}
@@ -468,7 +489,7 @@ function MenuNode({
   }
 
   if (item.type === "checkbox") {
-    return (
+    const choice = (
       <ContextMenuCheckboxItem
         checked={item.checked}
         disabled={item.disabled}
@@ -482,6 +503,12 @@ function MenuNode({
         {label(item)}
       </ContextMenuCheckboxItem>
     );
+    return item.trailingToggle ? (
+      <div className="relative" data-context-menu-toggle-row>
+        {choice}
+        <InlineMenuToggle toggle={item.trailingToggle} onAction={onAction} />
+      </div>
+    ) : choice;
   }
 
   if (item.type === "item") {
@@ -496,4 +523,31 @@ function MenuNode({
   }
 
   return null;
+}
+
+function InlineMenuToggle({
+  toggle,
+  onAction,
+}: {
+  toggle: WorkspaceContextMenuTrailingToggle;
+  onAction: (actionId?: string, payload?: Record<string, unknown>) => void;
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      data-context-menu-inline-toggle
+      aria-pressed={toggle.checked}
+      aria-label={t(toggle.labelKey)}
+      className={`absolute top-1/2 -translate-y-1/2 rounded-[var(--aries-radius-menu-item)] px-1.5 py-0.5 text-[length:var(--aries-font-size-small)] leading-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none ${toggle.checked ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+      style={{ right: "calc(var(--aries-menu-indicator-inset) + var(--aries-menu-icon-size) + 20px)" }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onAction(toggle.actionId, toggle.payload);
+      }}
+    >
+      {t(toggle.compactLabelKey)}
+    </button>
+  );
 }

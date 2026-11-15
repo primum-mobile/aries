@@ -158,6 +158,32 @@ def payload_to_place(payload, fallback=None):
 	return place
 
 
+def base_chart_at_bound_place(base_chart, retained):
+	"""Independent location context for symbolic transforms, at the same instant.
+
+	The branch radix and its birth clock stay authoritative for age/cursor math.
+	Only the transform's local reference geometry uses the captured place.
+	"""
+	place = payload_to_place((retained or {}).get('place_payload'))
+	if place is None:
+		return base_chart
+	if (place.lon, place.lat, place.altitude) == (
+		base_chart.place.lon, base_chart.place.lat, base_chart.place.altitude,
+	):
+		if place.place == base_chart.place.place:
+			return base_chart
+		clone = copy.copy(base_chart)
+		clone.place = place
+		return clone
+	time_obj = copy.copy(base_chart.time)
+	time_obj.calcPHs(place)
+	return chart_factory.build_chart(
+		base_chart.name, base_chart.male, time_obj, place, base_chart.htype,
+		base_chart.notes, base_chart.options, base_chart.full,
+		base_chart.proftype, base_chart.nolat,
+	)
+
+
 def _display_datetime_to_datetime(display_dt):
 	if display_dt is None:
 		return None
@@ -527,7 +553,7 @@ class LegacySupplementaryAdapter(BaseSupplementaryAdapter):
 			frame,
 			session,
 			current_chart,
-			driver_state.base_chart,
+			base_chart_at_bound_place(driver_state.base_chart, binding.retained_state),
 			driver_state.source_datetime,
 		)
 		return SupplementaryBuildResult(chart_obj, display_dt, binding)
@@ -539,6 +565,7 @@ class HarmonicSupplementaryAdapter(BaseSupplementaryAdapter):
 
 	def build(self, frame, driver_state, binding, current_chart=None, session=None):
 		retained = dict(binding.retained_state or {})
+		base_chart = base_chart_at_bound_place(driver_state.base_chart, retained)
 		default_mode = harmonic_chart.normalize_projection_mode(
 			getattr(frame.options, 'harmonic_chart_mode', harmonic_chart.PROJECTION_MODE_HARMONIC)
 		)
@@ -560,7 +587,7 @@ class HarmonicSupplementaryAdapter(BaseSupplementaryAdapter):
 		# The projection changes radix longitudes, never its event time.  Keep
 		# the chart identity anchored to the radix birth data even when launched
 		# from a transit/current-date document.
-		source_time = getattr(driver_state.base_chart, 'time', None)
+		source_time = getattr(base_chart, 'time', None)
 		try:
 			display_dt = (
 				int(getattr(source_time, 'origyear', None) or getattr(source_time, 'year')),
@@ -573,9 +600,9 @@ class HarmonicSupplementaryAdapter(BaseSupplementaryAdapter):
 		except (AttributeError, TypeError, ValueError):
 			display_dt = None
 		chart_obj = (
-			harmonic_chart.build_varga_chart(driver_state.base_chart, division_number)
+			harmonic_chart.build_varga_chart(base_chart, division_number)
 			if projection_mode == harmonic_chart.PROJECTION_MODE_VARGA
-			else harmonic_chart.build_harmonic_chart(driver_state.base_chart, division_number)
+			else harmonic_chart.build_harmonic_chart(base_chart, division_number)
 		)
 		return SupplementaryBuildResult(
 			chart_obj,
@@ -681,7 +708,7 @@ class SecondarySupplementaryAdapter(BaseSupplementaryAdapter):
 		if self._direction(retained) == 'converse':
 			age = -age
 		_age_int, _age_years, _progressed_tuple, progression_chart = posfordate.make_progressed_chart_by_symbolic_age(
-			driver_state.base_chart,
+			base_chart_at_bound_place(driver_state.base_chart, retained),
 			frame.options,
 			age,
 			method=method,
@@ -770,7 +797,7 @@ class SolarArcSupplementaryAdapter(BaseSupplementaryAdapter):
 		)
 		age = symbolic_time.solar_arc_age_for_real_datetime(driver_state.base_chart, target_dt)
 		_age_int, _age_years, _progressed_tuple, solar_arc_chart = posfordate.make_progressed_chart_by_symbolic_age(
-			driver_state.base_chart,
+			base_chart_at_bound_place(driver_state.base_chart, retained),
 			frame.options,
 			age,
 			method=posfordate.SOLAR_ARC,
@@ -794,10 +821,9 @@ class SolarReturnSupplementaryAdapter(BaseSupplementaryAdapter):
 		revolution, _label, display_dt, _stepper_ctx = frame._build_solar_revolution_chart_for_year(base_chart, candidate_year)
 		if revolution is None or display_dt is None:
 			return None
-		candidate_dt = frame._display_datetime_to_datetime(display_dt)
-		if candidate_dt is None:
-			return candidate_year
-		if target_source_dt >= candidate_dt:
+		# Civil tuple comparison also covers BC and Julian-only leap dates.
+		target_fields = tuple(int(getattr(target_source_dt, key)) for key in ('year', 'month', 'day', 'hour', 'minute', 'second'))
+		if target_fields >= tuple(display_dt):
 			return candidate_year
 		return candidate_year - 1
 
@@ -1375,7 +1401,7 @@ class ProfectionsSupplementaryAdapter(BaseSupplementaryAdapter):
 			# the completed solar-return boundary.
 			snap_override = False
 		pchart, display_dt, t = frame._build_profections_chart(
-			driver_state.base_chart,
+			base_chart_at_bound_place(driver_state.base_chart, retained),
 			driver_state.source_datetime,
 			current_chart=current_chart,
 			proftype=retained.get('proftype', chart.Chart.YEAR),

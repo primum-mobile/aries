@@ -9,22 +9,27 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import type { DateConvention } from "@/lib/date-display";
 import { AppSidebar } from "@/components/workshell/app-sidebar";
 import { SidebarSash } from "@/components/workshell/sidebar-sash";
+import { UraniaWalkthrough } from "@/components/workshell/urania-walkthrough";
 import {
   StatusBar,
   UnifiedTitleBar,
   type KeyHintPlacement,
 } from "@/components/workshell/workspace-content";
-import { activeRightPaneModule } from "@/components/workshell/right-pane-layout";
 import { cn } from "@/lib/utils";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
-import type { WorkspaceManifest } from "@/lib/daemon/client";
-import { rightPanePriorityLayout, useFrameLayoutStore } from "@/stores/frame-layout-store";
-import { useWorkspaceStore, type WorkspaceDocument } from "@/stores/workspace-store";
+import type { RecentChartItem, WorkspaceManifest } from "@/lib/daemon/client";
+import { useFrameLayoutStore } from "@/stores/frame-layout-store";
+import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
+import { MOBILE_LAYOUT_ATTR, useMobileLayout } from "@/hooks/use-mobile-layout";
+import { MobileWorkspaceNav } from "./mobile-workspace-nav";
+import type { WorkspaceDocument } from "@/stores/workspace-store";
 import type { SettingsTabId } from "./settings-dialog";
 import {
   pointIsInsideChartNavbarHoverZone,
   readChartNavbarHoverZone,
 } from "./chart-navbar-hover-zone";
+
+const NO_RECENT_CHARTS: RecentChartItem[] = [];
 
 type WorkspaceFrameProps = {
   chart: ChartRenderSnapshot | null;
@@ -37,9 +42,10 @@ type WorkspaceFrameProps = {
   onSolarAverageWindowSelect: (maxBirthday: number, returnKind: "solar" | "lunar") => void;
   harmonicChartMode: "harmonic" | "varga";
   onOpenSettings: (tab?: SettingsTabId) => void;
-  onOpenStyleLab: () => void;
   onMenuCommand: (command: string) => void | Promise<boolean>;
   isMenuCommandEnabled: (command: string) => boolean;
+  /** Runtime recent-chart entries for the browser-host application menu. */
+  recentCharts?: RecentChartItem[];
   onRevealKeyHints?: (placement: KeyHintPlacement) => void;
   dateConvention?: DateConvention;
   children: React.ReactNode;
@@ -56,9 +62,9 @@ export function WorkspaceFrame({
   onSolarAverageWindowSelect,
   harmonicChartMode,
   onOpenSettings,
-  onOpenStyleLab,
   onMenuCommand,
   isMenuCommandEnabled,
+  recentCharts,
   onRevealKeyHints,
   dateConvention,
   children,
@@ -99,38 +105,27 @@ export function WorkspaceFrame({
       root.removeAttribute("data-initial-settle");
     };
   }, []);
+  const mobile = useMobileLayout();
+  const daemonReady = useDaemonWorkspaceStore((state) => state.connection === "open");
+  React.useLayoutEffect(() => {
+    if (!mobile) return;
+    const root = document.documentElement;
+    root.setAttribute(MOBILE_LAYOUT_ATTR, "");
+    return () => root.removeAttribute(MOBILE_LAYOUT_ATTR);
+  }, [mobile]);
   const sidebarOpen = useFrameLayoutStore((s) => s.sidebarOpen);
   const setSidebarOpen = useFrameLayoutStore((s) => s.setSidebarOpen);
   const sidebarWidth = useFrameLayoutStore((s) => s.sidebarWidth);
   const sidebarDragging = useFrameLayoutStore((s) => s.sidebarDragging);
-  const rightPaneWidth = useFrameLayoutStore((s) => s.rightPaneWidth);
-  const inspectorOpen = useFrameLayoutStore((s) => s.inspectorOpen);
-  const notesOpen = useFrameLayoutStore((s) => s.notesPaneOpen);
-  const styleEditorOpen = useFrameLayoutStore((s) => s.styleEditorOpen);
-  const transitSearchPane = useWorkspaceStore((s) => s.transitSearchPane);
-  const transitListPane = useWorkspaceStore((s) => s.transitListPane);
-  const directionsPane = useWorkspaceStore((s) => s.directionsPane);
-  const timeLordPane = useWorkspaceStore((s) => s.timeLordPane);
-  const zodiacalReleasingPane = useWorkspaceStore((s) => s.zodiacalReleasingPane);
-  const firdariaPane = useWorkspaceStore((s) => s.firdariaPane);
-  const decennialsPane = useWorkspaceStore((s) => s.decennialsPane);
-  const profectionsPane = useWorkspaceStore((s) => s.profectionsPane);
-  const eclipsesPane = useWorkspaceStore((s) => s.eclipsesPane);
-  const lunarMansionsPane = useWorkspaceStore((s) => s.lunarMansionsPane);
-  const synodicCyclesPane = useWorkspaceStore((s) => s.synodicCyclesPane);
-  const chartEventsPane = useWorkspaceStore((s) => s.chartEventsPane);
-  const aspectListPane = useWorkspaceStore((s) => s.aspectListPane);
-  const ascensionalTransitsPane = useWorkspaceStore((s) => s.ascensionalTransitsPane);
-  const calendarPane = useWorkspaceStore((s) => s.calendarPane);
-  const astrocartControlsPane = useWorkspaceStore((s) => s.astrocartControlsPane);
-  const featureCatalogPane = useWorkspaceStore((s) => s.featureCatalogPane);
   const activeAstrocartDocumentId = activeDocument?.kind === "astrocart"
     ? activeDocument.id
     : documents.find((document) =>
         document.id === activeDocument?.parentDocumentId &&
         document.kind === "astrocart"
       )?.id ?? null;
-  const fullBleed = activeAstrocartDocumentId !== null;
+  // The map and the astrolabe fill the frame under the floating title bar,
+  // with no opaque bar above and no status bar below.
+  const fullBleed = activeAstrocartDocumentId !== null || activeDocument?.kind === "astrolabe";
   const canCopyChart = Boolean(
     activeDocument &&
       activeDocument.kind !== "directions" &&
@@ -142,42 +137,13 @@ export function WorkspaceFrame({
     () => onMenuCommand("menu.copy-chart-png"),
     [onMenuCommand],
   );
-  const activeRightPane = activeRightPaneModule({
-    inspectorOpen,
-    notesOpen,
-    styleEditorOpen,
-    transitSearchPane,
-    transitListPane,
-    directionsPane,
-    timeLordPane,
-    zodiacalReleasingPane,
-    firdariaPane,
-    decennialsPane,
-    profectionsPane,
-    eclipsesPane,
-    lunarMansionsPane,
-    synodicCyclesPane,
-    chartEventsPane,
-    aspectListPane,
-    ascensionalTransitsPane,
-    calendarPane,
-    astrocartControlsPane,
-    activeAstrocartDocumentId,
-    featureCatalogPane,
-  });
-  const effectiveSidebarWidth = activeRightPane
-    ? rightPanePriorityLayout(
-        sidebarOpen,
-        sidebarWidth,
-        rightPaneWidth,
-        activeRightPane,
-      ).sidebarWidth
-    : sidebarWidth;
   const lastKeyHintEdgeRevealRef = React.useRef(0);
   const lastKeyHintEdgePlacementRef = React.useRef<KeyHintPlacement | null>(null);
   const handleShellPointerMove = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!onRevealKeyHints) return;
+      // Edge key hints answer a hovering mouse; touch and pen moves skip the
+      // per-move layout reads entirely.
+      if (!onRevealKeyHints || event.pointerType !== "mouse") return;
       const navbarHoverZone = readChartNavbarHoverZone();
       if (navbarHoverZone?.moved) {
         if (!pointIsInsideChartNavbarHoverZone(
@@ -219,7 +185,7 @@ export function WorkspaceFrame({
   );
 
   const sidebarVars = {
-    "--sidebar-width": `${effectiveSidebarWidth}px`,
+    "--sidebar-width": `${sidebarWidth}px`,
   } as React.CSSProperties;
 
   // The wx shell has fused titlebar controls: they float over the workspace and
@@ -230,9 +196,11 @@ export function WorkspaceFrame({
     <div
       className={cn(
         "app-shell relative grid h-dvh overflow-hidden bg-background text-foreground",
-        fullBleed
-          ? "app-shell-full-bleed grid-rows-[minmax(0,1fr)]"
-          : "grid-rows-[minmax(0,1fr)_var(--morinus-status-height)]",
+        mobile
+          ? "app-shell-mobile grid-rows-[minmax(0,1fr)]"
+          : fullBleed
+            ? "app-shell-full-bleed grid-rows-[minmax(0,1fr)]"
+            : "grid-rows-[minmax(0,1fr)_var(--morinus-status-height)]",
       )}
       style={sidebarVars}
       onPointerMove={handleShellPointerMove}
@@ -243,9 +211,9 @@ export function WorkspaceFrame({
         manifest={manifest}
         overlay={fullBleed}
         onOpenSettings={onOpenSettings}
-        onOpenStyleLab={onOpenStyleLab}
         onMenuCommand={onMenuCommand}
         isMenuCommandEnabled={isMenuCommandEnabled}
+        recentCharts={recentCharts}
         canCopyChart={canCopyChart}
         onCopyChart={handleCopyChart}
         dateConvention={dateConvention}
@@ -255,6 +223,7 @@ export function WorkspaceFrame({
         onOpenChange={setSidebarOpen}
         className={
           "h-full min-h-0 overflow-hidden" +
+          (mobile ? " flex-col" : "") +
           (sidebarDragging
             ? " [&_[data-slot=sidebar-gap]]:transition-none [&_[data-slot=sidebar-container]]:transition-none"
             : "")
@@ -271,13 +240,27 @@ export function WorkspaceFrame({
           onSolarAverageWindowSelect={onSolarAverageWindowSelect}
           harmonicChartMode={harmonicChartMode}
         />
-        <SidebarSash activeAstrocartDocumentId={activeAstrocartDocumentId} />
-        <SidebarInset className="flex min-w-0 flex-col bg-[var(--aries-background)]">
+        {mobile ? null : <SidebarSash />}
+        <SidebarInset className={cn("flex min-w-0 flex-col bg-[var(--aries-background)]", mobile && "min-h-0")}>
           {children}
+          <UraniaWalkthrough
+            ready={daemonReady && manifest !== null}
+            manifest={manifest}
+            docked={!mobile}
+          />
         </SidebarInset>
+        {mobile ? (
+          <MobileWorkspaceNav
+            manifest={manifest}
+            recentCharts={recentCharts ?? NO_RECENT_CHARTS}
+            activeDocumentId={activeDocument?.id ?? null}
+            onMenuCommand={onMenuCommand}
+            isMenuCommandEnabled={isMenuCommandEnabled}
+          />
+        ) : null}
       </SidebarProvider>
-      {fullBleed ? null : (
-        <StatusBar chart={chart} onOpenSettings={() => onOpenSettings("appearance")} />
+      {fullBleed || mobile ? null : (
+        <StatusBar chart={chart} />
       )}
     </div>
   );

@@ -5,6 +5,8 @@
 
 import * as React from "react";
 
+import { wheelPinchScale } from "@/lib/wheel-pinch";
+
 import styles from "./temporal-chronomap.module.css";
 
 export const TEMPORAL_CHRONOMAP_PRESETS = [
@@ -313,7 +315,10 @@ export function TemporalChronomap({
       const anchorJdUt = temporalChronomapJdAtRatio(current, pointerRatio);
       const modeScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
       const delta = clamp(event.deltaY * modeScale, -240, 240);
-      const factor = Math.exp(delta * 0.0025);
+      // A Windows touchpad pinch arrives as Ctrl + wheel; the span shrinks by
+      // the pinch scale so the timeline follows the fingers.
+      const pinch = wheelPinchScale(event);
+      const factor = pinch ? 1 / pinch : Math.exp(delta * 0.0025);
       const nextViewport = zoomTemporalChronomapViewport(
         current,
         world,
@@ -564,11 +569,11 @@ export function TemporalChronomap({
         </div>
         <div className={styles.coverageLegend} role="group" aria-label={labels.coverage}>
           <span className={styles.legendItem}>
-            <span className={styles.pendingSwatch} aria-hidden="true" />
+            <span className={styles.pendingSwatch} data-aries-true-color="" aria-hidden="true" />
             <span>{labels.pendingCoverage}</span>
           </span>
           <span className={styles.legendItem}>
-            <span className={styles.unknownSwatch} aria-hidden="true" />
+            <span className={styles.unknownSwatch} data-aries-true-color="" aria-hidden="true" />
             <span>{labels.unknownCoverage}</span>
           </span>
         </div>
@@ -588,6 +593,7 @@ export function TemporalChronomap({
       <div
         ref={bodyRef}
         className={styles.mapBody}
+        data-aries-true-color=""
         role="group"
         tabIndex={0}
         aria-keyshortcuts="Enter"

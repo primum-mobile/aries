@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -21,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuCheckboxItem,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuSub,
@@ -30,7 +30,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
-  DropdownMenu, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,7 +55,6 @@ import {
   workspaceOpenSynastry,
   workspaceOpenSynastryPair,
   type ChartPickerAspectClause,
-  type ChartPickerChoice,
   type ChartCollection,
   type ChartPickerMatchRun,
   type ChartPickerPlacementClause,
@@ -78,7 +76,7 @@ import { resolveShellHost } from "@/lib/shell-host";
 import { safeShellUnlisten } from "@/lib/shell/unlisten";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
-import { useT } from "@/lib/i18n/i18n";
+import { useLocale, useT, type TFunc } from "@/lib/i18n/i18n";
 import {
   requestMainWorkspaceCommand,
   runBroadcastWorkspaceCommand,
@@ -86,9 +84,11 @@ import {
   type WorkspaceCommandRequestPayload,
   type WorkspaceCommandResult,
 } from "@/stores/workspace-command-bus";
+import { runImmediateWorkspaceCommand } from "@/stores/daemon-workspace-adapter";
 import { useThemeStore } from "@/stores/theme-store";
 import { useChartPickerWorkbenchStore, usePickerPreference, usePickerSession } from "@/stores/chart-picker-workbench-store";
 
+import { ChartSearchMultiChoice } from "./chart-search-multi-choice";
 import { ColumnResizeHandle, useResizableTableColumns } from "./resizable-table-columns";
 import { ListToggleDrawer } from "./list-controls";
 import { LIST_BUTTON_PROPS } from "@/lib/list-tokens";
@@ -101,6 +101,8 @@ type Props = {
   excludeNames?: string[];
   onPickRow?: (row: ChartPickerRow) => Promise<void>;
   onCancel?: () => void;
+  /** Hosted in the main window (browser): commands run here, keys stay scoped. */
+  embedded?: boolean;
 };
 
 type SortState = {
@@ -135,6 +137,32 @@ const COLUMN_DEFS: Array<{
   { key: "lastOpened", labelKey: "picker.colLastOpened" },
 ];
 const CHART_PICKER_COLUMN_IDS = COLUMN_DEFS.map((column) => column.key);
+
+// Daemon rows carry the canonical chart type and gender flag; the visible words
+// come from the active catalog so a retained picker re-localizes without a refetch.
+const CHART_TYPE_LABEL_KEYS: Readonly<Record<string, string>> = {
+  radix: "picker.chartType.radix",
+  solar: "picker.chartType.solar",
+  lunar: "picker.chartType.lunar",
+  revolution: "picker.chartType.revolution",
+  transit: "picker.chartType.transit",
+  horary: "picker.chartType.horary",
+  profection: "picker.chartType.profection",
+  pdinchart: "picker.chartType.pdinchart",
+  composite: "picker.chartType.composite",
+  relationship: "picker.chartType.relationship",
+};
+
+function chartTypeLabel(t: TFunc, row: { chartType?: string; type: string }): string {
+  const key = row.chartType ? CHART_TYPE_LABEL_KEYS[row.chartType] : undefined;
+  return key ? t(key) : row.type;
+}
+
+function genderLabel(t: TFunc, row: ChartPickerRow): string {
+  if (row.male === true) return t("editor.male");
+  if (row.male === false) return t("editor.female");
+  return row.male === null ? "" : row.gender;
+}
 
 const SEARCH_COLUMNS = [
   { key: "name", labelKey: "picker.colName" },
@@ -206,7 +234,9 @@ async function requestOrRunWorkspaceCommand<T extends WorkspaceCommandResult>(
   payload: WorkspaceCommandRequestPayload,
   runLocal: () => Promise<T>,
   fallbackDocumentId?: string | null,
+  embedded = false,
 ): Promise<T> {
+  if (embedded) return runImmediateWorkspaceCommand(runLocal(), fallbackDocumentId);
   const startedAt = perfNow();
   const shellHost = resolveShellHost();
   const requiresMainAck = !shellHost.capabilities.crossWindowCommandAckOptional;
@@ -245,12 +275,16 @@ async function requestOrRunWorkspaceCommand<T extends WorkspaceCommandResult>(
 async function activateIfNeeded(opened: {
   documentId?: string | null;
   activeDocumentId?: string | null;
-}): Promise<void> {
+}, embedded = false): Promise<void> {
   if (
     !opened.documentId ||
     opened.activeDocumentId == null ||
     opened.activeDocumentId === opened.documentId
   ) {
+    return;
+  }
+  if (embedded) {
+    await runImmediateWorkspaceCommand(workspaceActivate(opened.documentId), opened.documentId);
     return;
   }
   await runBroadcastWorkspaceCommand(
@@ -265,8 +299,17 @@ export function SystemChartPicker({
   excludeNames = [],
   onPickRow,
   onCancel,
+  embedded = false,
 }: Props) {
   const t = useT();
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  // An embedded picker shares the window with the workspace: it only answers
+  // keys aimed at itself, never Enter/Delete typed into the chart behind it.
+  const ownsKeyEvent = React.useCallback(
+    (event: KeyboardEvent) =>
+      !embedded || (event.target instanceof Node && Boolean(rootRef.current?.contains(event.target))),
+    [embedded],
+  );
   const [view, setView] = usePickerPreference("view");
   const persistenceError = useChartPickerWorkbenchStore((state) => state.persistenceError);
   React.useEffect(() => {
@@ -279,7 +322,7 @@ export function SystemChartPicker({
   const [directory, setDirectory] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [filter, setFilter] = usePickerPreference("filter");
+  const [filter, setFilter] = React.useState("");
   const [sort, setSort] = usePickerPreference("listSort");
   const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(() => new Set());
   const [anchorKey, setAnchorKey] = React.useState<string | null>(null);
@@ -423,9 +466,9 @@ export function SystemChartPicker({
         row.name,
         row.date,
         row.time,
-        row.type,
+        chartTypeLabel(t, row),
         row.place,
-        row.gender,
+        genderLabel(t, row),
         row.collection,
         row.modified,
         row.lastOpened,
@@ -435,7 +478,7 @@ export function SystemChartPicker({
         .includes(q);
     });
     return sortRows(base, sort);
-  }, [rows, deferredFilter, sort, excludeNames, activeCollectionPaths]);
+  }, [rows, deferredFilter, sort, excludeNames, activeCollectionPaths, t]);
 
   const controlHeight = useThemeStore(
     (state) => state.theme?.appTokens["--aries-control-height"] ?? "",
@@ -601,6 +644,7 @@ export function SystemChartPicker({
     shellHost
       .listenChartPickerWindowEvents((payload) => {
         if (payload.phase === "open" && payload.visible === true) {
+          setFilter("");
           dismissPickerDialogs();
           void refreshCollections().catch((err) => {
             console.warn("[chart-picker-collections-open]", err);
@@ -662,8 +706,10 @@ export function SystemChartPicker({
               commandRow.source,
               commandRow.recordIndex,
             ),
+            undefined,
+            embedded,
           );
-          await activateIfNeeded(opened);
+          await activateIfNeeded(opened, embedded);
           succeeded = true;
           return;
         }
@@ -685,8 +731,10 @@ export function SystemChartPicker({
               partnerRow.source,
               partnerRow.recordIndex,
             ),
+            undefined,
+            embedded,
           );
-          await activateIfNeeded(opened);
+          await activateIfNeeded(opened, embedded);
           succeeded = true;
           return;
         }
@@ -700,6 +748,8 @@ export function SystemChartPicker({
                 source: commandRow.source,
                 recordIndex: commandRow.recordIndex,
               }),
+            undefined,
+            embedded,
           );
         }
         succeeded = true;
@@ -713,11 +763,12 @@ export function SystemChartPicker({
         openingRef.current = false;
         const hiddenBeforeCommand = await hidePromise.catch(() => false);
         if (succeeded && !keepOpen && !hiddenBeforeCommand) {
-          await closePickerWindow();
+          if (embedded && onCancel) onCancel();
+          else await closePickerWindow();
         }
       }
     },
-    [mode, onPickRow, parentRadixId],
+    [embedded, mode, onCancel, onPickRow, parentRadixId],
   );
 
   const openSelected = React.useCallback(
@@ -883,7 +934,7 @@ export function SystemChartPicker({
 
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || !ownsKeyEvent(event)) return;
       const target = event.target as HTMLElement | null;
       const editing =
         target?.tagName === "INPUT" ||
@@ -934,6 +985,7 @@ export function SystemChartPicker({
     deleteSelected,
     selectedRows.length,
     closePicker,
+    ownsKeyEvent,
     renameDialog,
     deleteDialog,
     collectionDialog,
@@ -943,11 +995,19 @@ export function SystemChartPicker({
   const canSynastry = !onPickRow && mode === "open-radix" && selectedRows.length === 2;
 
   return (
-    <div data-aries-surface="popover" className="flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] text-[color:var(--aries-popover-text)]">
+    <div
+      ref={rootRef}
+      tabIndex={embedded ? -1 : undefined}
+      data-aries-surface="popover"
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] text-[color:var(--aries-popover-text)]",
+        embedded ? "h-full outline-none" : "h-screen",
+      )}
+    >
       {persistenceError ? <div role="alert" className="px-[var(--aries-pane-content-padding)] text-destructive">{t("picker.preferencesFailed")}</div> : null}
       {view === "list" ? (
         <>
-          <header data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
+          <header data-slot="dialog-header" data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-control-gap-x)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
             <h1 data-tauri-drag-region="" className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-large)] font-medium tracking-tight">
               {directory || t("picker.chartCollections")}
             </h1>
@@ -1224,6 +1284,7 @@ export function SystemChartPicker({
         </>
       ) : (
         <ChartSearchPanel
+          ownsKeyEvent={ownsKeyEvent}
           onBack={() => setView("list")}
           onClose={closePicker}
           onOpenRows={(targets) => openRows(targets, false, true)}
@@ -1496,6 +1557,7 @@ function PickerRow({
   onOpen: () => void;
   onContext: () => void;
 }) {
+  const t = useT();
   return (
     <TableRow
       aria-selected={selected}
@@ -1511,9 +1573,9 @@ function PickerRow({
       <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.name}</TableCell>
       <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.date}</TableCell>
       <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.time}</TableCell>
-      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.type}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{chartTypeLabel(t, row)}</TableCell>
       <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.place}</TableCell>
-      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.gender}</TableCell>
+      <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{genderLabel(t, row)}</TableCell>
       <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.collection}</TableCell>
       <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.modified}</TableCell>
       <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.lastOpened}</TableCell>
@@ -1522,15 +1584,18 @@ function PickerRow({
 }
 
 function ChartSearchPanel({
+  ownsKeyEvent,
   onBack,
   onClose,
   onOpenRows,
 }: {
+  ownsKeyEvent: (event: KeyboardEvent) => boolean;
   onBack: () => void;
   onClose: () => void;
   onOpenRows: (targets: ChartPickerRow[]) => Promise<void>;
 }) {
   const t = useT();
+  const lang = useLocale();
   const [catalog, setCatalog] = usePickerSession("catalog");
   const hydrated = useChartPickerWorkbenchStore((state) => state.hydrated);
   const [stationWindowDays, setStationWindowDays] = usePickerPreference("stationWindowDays");
@@ -1542,22 +1607,32 @@ function ChartSearchPanel({
   const [resultSummary, setResultSummary] = usePickerSession("summary");
   const [searching, setSearching] = usePickerSession("searching");
   const [error, setError] = usePickerSession("error");
-  const [includeAsteroids, setIncludeAsteroids] = usePickerPreference("includeAsteroids");
   const [placementDrawerOpen, setPlacementDrawerOpen] = usePickerPreference("placementDrawerOpen");
   const [aspectDrawerOpen, setAspectDrawerOpen] = usePickerPreference("aspectDrawerOpen");
 
+  // The catalog's option labels are daemon vocabulary in the active language.
+  // Refetch on a language switch; the current options stay until it lands.
   React.useEffect(() => {
     const controller = new AbortController();
-    fetchChartPickerSearchCatalog(controller.signal)
-      .then((payload) => {
-        setCatalog(payload);
-      })
-      .catch((err) => {
-        if ((err as { name?: string }).name === "AbortError") return;
-        setError((err as Error).message);
-      });
-    return () => controller.abort();
-  }, [setCatalog, setError]);
+    let generation = 0;
+    const refresh = () => {
+      const requested = ++generation;
+      fetchChartPickerSearchCatalog(controller.signal)
+        .then((payload) => {
+          if (requested === generation) setCatalog(payload);
+        })
+        .catch((err) => {
+          if ((err as { name?: string }).name === "AbortError" || requested !== generation) return;
+          setError((err as Error).message);
+        });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", refresh);
+    };
+  }, [lang, setCatalog, setError]);
 
   const summary = searching ? t("picker.searching") : resultSummary
     ? t("picker.matchesSummary", { matched: resultSummary.matched, scanned: resultSummary.scanned })
@@ -1581,26 +1656,54 @@ function ChartSearchPanel({
     storageKey: "chart-picker:search",
     columnIds: CHART_SEARCH_COLUMN_IDS,
   });
+  const searchGenerationRef = React.useRef(0);
+  const searchControllerRef = React.useRef<AbortController | null>(null);
 
   const runSearch = React.useCallback(async () => {
+    const generation = ++searchGenerationRef.current;
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
     setSearching(true);
     setError(null);
     try {
       const result = await searchChartPickerRows({
-        includeAsteroids,
         stationWindowDays,
         placements: activePlacements(placements),
         aspects: activeAspects(aspects),
-      });
+      }, controller.signal);
+      if (generation !== searchGenerationRef.current) return;
       setRows(result.rows);
       setSelectedKey(null);
       setResultSummary(result.summary);
     } catch (err) {
-      setError((err as Error).message);
+      if (generation === searchGenerationRef.current && (err as { name?: string }).name !== "AbortError") setError((err as Error).message);
     } finally {
-      setSearching(false);
+      if (generation === searchGenerationRef.current) {
+        searchControllerRef.current = null;
+        setSearching(false);
+      }
     }
-  }, [stationWindowDays, placements, aspects, includeAsteroids, setRows, setSelectedKey, setResultSummary, setSearching, setError]);
+  }, [stationWindowDays, placements, aspects, setRows, setSelectedKey, setResultSummary, setSearching, setError]);
+
+  const resetSearch = React.useCallback(() => {
+    searchGenerationRef.current += 1;
+    searchControllerRef.current?.abort();
+    searchControllerRef.current = null;
+    useChartPickerWorkbenchStore.getState().update({
+      stationWindowDays: "2",
+      placements: [emptyPlacement()],
+      aspects: [emptyAspect()],
+      searchSort: null,
+      placementDrawerOpen: true,
+      aspectDrawerOpen: true,
+    });
+    useChartPickerWorkbenchStore.setState((state) => ({ session: {
+      ...state.session, rows: [], selectedKey: null, summary: null,
+      searching: false, error: null, searchScrollTop: 0,
+    } }));
+    if (resultScrollerRef.current) resultScrollerRef.current.scrollTop = 0;
+  }, []);
 
   const openingRef = React.useRef(false);
   const openResult = React.useCallback(async (row = selectedRow) => {
@@ -1615,6 +1718,7 @@ function ChartSearchPanel({
       date: row.date,
       time: row.time,
       type: row.type,
+      chartType: row.chartType,
       place: row.place,
       gender: "",
       collection: row.collection,
@@ -1633,7 +1737,7 @@ function ChartSearchPanel({
 
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || (event.target as HTMLElement | null)?.closest("input, button, [role=menu], textarea, select")) return;
+      if (event.defaultPrevented || !ownsKeyEvent(event) || (event.target as HTMLElement | null)?.closest("input, button, [role=menu], textarea, select")) return;
       if (event.key === "Enter" && selectedRow) {
         void openResult();
         event.preventDefault();
@@ -1641,11 +1745,11 @@ function ChartSearchPanel({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openResult, selectedRow]);
+  }, [openResult, ownsKeyEvent, selectedRow]);
 
   return (
     <>
-      <header data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
+      <header data-slot="dialog-header" data-tauri-drag-region="" className="flex shrink-0 items-center gap-[var(--aries-pane-title-gap)] border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)] select-none">
         <Button variant="outline" size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width-medium)]" onClick={onBack}>
           <ArrowLeft className="mr-[var(--aries-control-gap-compact)] size-[var(--aries-control-icon-size)]" />
           {t("picker.back")}
@@ -1661,6 +1765,10 @@ function ChartSearchPanel({
               : ""}
           </p>
         </div>
+        <Button variant="ghost" size="icon-sm" onClick={resetSearch} disabled={!hydrated}
+          aria-label={t("listFilters.resetFilters")} title={t("listFilters.resetFilters")}>
+          <RotateCcw className="size-[var(--aries-control-icon-size)]" />
+        </Button>
         <Button size="sm" className="h-[var(--aries-control-height)] min-w-[var(--aries-control-min-width)]" onClick={() => void runSearch()} disabled={searching || !catalog || !hydrated}>
           {t("picker.search")}
         </Button>
@@ -1686,10 +1794,6 @@ function ChartSearchPanel({
             className="h-[var(--aries-control-height-small)] w-[var(--aries-form-label-width)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
           />
         </label>
-        <Button size="sm" variant={includeAsteroids ? "default" : "outline"}
-          aria-pressed={includeAsteroids} onClick={() => setIncludeAsteroids((enabled) => !enabled)}>
-          {t("chartmenu.asteroids")}
-        </Button>
       </div>
 
       <section className="grid shrink-0 gap-[var(--aries-form-field-gap)] border-b border-border bg-muted/10 px-[var(--aries-pane-content-padding)] py-[var(--aries-pane-header-padding-y)]">
@@ -1751,6 +1855,7 @@ function ChartSearchPanel({
 
       <main ref={resultScrollerRef} className="min-h-0 flex-1 overflow-auto">
         <Table
+          wrapperless
           className={cn("text-[length:var(--aries-font-size-small)]", searchResize.tableClassName)}
           style={searchResize.tableStyle}
         >
@@ -1804,7 +1909,7 @@ function ChartSearchPanel({
                 <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.name}</TableCell>
                 <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.date}</TableCell>
                 <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)] tabular-nums">{row.time}</TableCell>
-                <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{row.type}</TableCell>
+                <TableCell className="whitespace-nowrap px-[var(--aries-control-padding-x-compact)]">{chartTypeLabel(t, row)}</TableCell>
                 <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.collection}</TableCell>
                 <TableCell className="px-[var(--aries-control-padding-x-compact)]">{row.place}</TableCell>
                 <TableCell className="px-[var(--aries-control-padding-x-compact)]">
@@ -1906,12 +2011,12 @@ function PlacementRow({
   const t = useT();
   return (
     <div className="grid grid-cols-[minmax(112px,1.25fr)_minmax(92px,1fr)_52px_52px_70px_minmax(118px,1.1fr)_28px] gap-[var(--aries-control-gap-compact)]">
-      <MultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectIds} choices={catalog?.objects} ariaLabel={t("picker.ariaPlacementObject")} onChange={(next) => onChange({ ...value, objectIds: next })} />
-      <MultiChoice values={value.signIndices} choices={catalog?.signs} ariaLabel={t("picker.ariaPlacementSign")} onChange={(next) => onChange({ ...value, signIndices: next })} />
+      <ChartSearchMultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectIds} choices={catalog?.objects} ariaLabel={t("picker.ariaPlacementObject")} onChange={(next) => onChange({ ...value, objectIds: next })} />
+      <ChartSearchMultiChoice values={value.signIndices} choices={catalog?.signs} ariaLabel={t("picker.ariaPlacementSign")} onChange={(next) => onChange({ ...value, signIndices: next })} />
       <Input value={value.degree} aria-label={t("picker.ariaPlacementDegree")} placeholder={t("picker.deg")} onChange={(event) => onChange({ ...value, degree: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
       <Input value={value.degreeOrb} aria-label={t("picker.ariaPlacementOrb")} placeholder={t("picker.orb")} onChange={(event) => onChange({ ...value, degreeOrb: event.target.value })} className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums" />
-      <MultiChoice values={value.houseNumbers} choices={catalog?.houses} ariaLabel={t("picker.ariaPlacementHouse")} onChange={(next) => onChange({ ...value, houseNumbers: next })} />
-      <MultiChoice values={value.motions ?? (value.motion ? [value.motion] : [])} choices={catalog?.motions} ariaLabel={t("picker.ariaPlacementMotion")} onChange={(next) => onChange({ ...value, motions: next, motion: "" })} />
+      <ChartSearchMultiChoice values={value.houseNumbers} choices={catalog?.houses} ariaLabel={t("picker.ariaPlacementHouse")} onChange={(next) => onChange({ ...value, houseNumbers: next })} />
+      <ChartSearchMultiChoice values={value.motions ?? (value.motion ? [value.motion] : [])} choices={catalog?.motions} ariaLabel={t("picker.ariaPlacementMotion")} onChange={(next) => onChange({ ...value, motions: next, motion: "" })} />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemovePlacement")}>
         <Trash2 className="size-3" />
       </Button>
@@ -1933,17 +2038,22 @@ function AspectRow({
   onRemove: () => void;
 }) {
   const t = useT();
+  const moonVoid = "-3";
+  const selectedAspects = value.aspectTypes ?? (value.aspectType !== "-1" ? [value.aspectType] : []);
+  const isMoonVoid = selectedAspects.includes(moonVoid);
+  const moonOnly = value.objectAIds.length === 1 && value.objectAIds[0] === "planet:moon";
+  const aspectChoices = moonOnly ? catalog?.aspects : catalog?.aspects.filter((choice) => choice.value !== moonVoid);
   return (
     <div className="grid grid-cols-[minmax(126px,1.25fr)_minmax(100px,0.9fr)_minmax(126px,1.25fr)_52px_28px] gap-[var(--aries-control-gap-compact)]">
-      <MultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectAIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectFirstBody")} onChange={(next) => onChange({ ...value, objectAIds: next })} />
-      <MultiChoice values={value.aspectTypes ?? (value.aspectType !== "-1" ? [value.aspectType] : [])} choices={catalog?.aspects} ariaLabel={t("picker.ariaAspectType")} onChange={(next) => onChange({ ...value, aspectTypes: next, aspectType: "-1" })} />
-      <MultiChoice values={value.objectBIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectSecondBody")} onChange={(next) => onChange({ ...value, objectBIds: next })} />
+      <ChartSearchMultiChoice exclude={value.exclude} onExcludeChange={(exclude) => onChange({ ...value, exclude })} values={value.objectAIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectFirstBody")} onChange={(next) => onChange({ ...value, objectAIds: next, aspectTypes: next.length === 1 && next[0] === "planet:moon" ? selectedAspects : selectedAspects.filter((aspect) => aspect !== moonVoid), aspectType: "-1" })} />
+      <ChartSearchMultiChoice values={selectedAspects} choices={aspectChoices} ariaLabel={t("picker.ariaAspectType")} onChange={(next) => onChange({ ...value, aspectTypes: next.includes(moonVoid) ? (selectedAspects.includes(moonVoid) ? next.filter((aspect) => aspect !== moonVoid) : [moonVoid]) : next, aspectType: "-1", objectBIds: next.includes(moonVoid) && !selectedAspects.includes(moonVoid) ? [] : value.objectBIds })} />
+      <ChartSearchMultiChoice disabled={isMoonVoid} values={value.objectBIds} choices={catalog?.objects} ariaLabel={t("picker.ariaAspectSecondBody")} onChange={(next) => onChange({ ...value, objectBIds: next })} />
       <Input
         value={value.orb}
         aria-label={t("picker.ariaAspectOrb")}
         placeholder={t("picker.orb")}
         onChange={(event) => onChange({ ...value, orb: event.target.value })}
-        disabled={value.aspectTypes?.length === 1 ? value.aspectTypes[0] === "-2" : value.aspectType === "-2"}
+        disabled={isMoonVoid || (value.aspectTypes?.length === 1 ? value.aspectTypes[0] === "-2" : value.aspectType === "-2")}
         className="h-[var(--aries-control-height-small)] text-center text-[length:var(--aries-font-size-base)] tabular-nums"
       />
       <Button variant="ghost" size="icon-xs" onClick={onRemove} disabled={!canRemove} aria-label={t("picker.ariaRemoveAspect")}>
@@ -1953,62 +2063,6 @@ function AspectRow({
   );
 }
 
-function MultiChoice({
-  values,
-  choices = [],
-  ariaLabel,
-  onChange,
-  exclude,
-  onExcludeChange,
-}: {
-  values: string[];
-  choices?: ChartPickerChoice[];
-  ariaLabel: string;
-  onChange: (values: string[]) => void;
-  exclude?: boolean;
-  onExcludeChange?: (exclude: boolean) => void;
-}) {
-  const t = useT();
-  const options = choices.filter((choice) => choice.value !== "" && choice.value !== "-1");
-  const selected = options.filter((choice) => values.includes(choice.value)).map((choice) => choice.label).join(", ") || t("picker.any");
-  const label = exclude ? `${t("picker.exclude")}: ${selected}` : selected;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<button type="button" data-aries-control-appearance="local" />}
-        aria-label={ariaLabel}
-        title={label}
-        className="flex h-[var(--aries-control-height-small)] min-w-0 items-center justify-between gap-[var(--aries-control-gap-compact)] rounded-[var(--aries-radius-ui-control-compact)] border border-input bg-background px-[var(--aries-control-padding-x-compact)] text-left text-[length:var(--aries-font-size-base)]"
-      >
-        <span className="truncate">{label}</span>
-        <ChevronDown className="size-[var(--aries-control-icon-size-xs)] shrink-0" />
-      </DropdownMenuTrigger>
-      <ContextMenuContent side="bottom" align="start">
-        <ContextMenuCheckboxItem checked={!values.length} closeOnClick={false} onCheckedChange={() => onChange([])}>
-          {t("picker.any")}
-        </ContextMenuCheckboxItem>
-        {options.map((choice) => (
-          <ContextMenuCheckboxItem
-            key={choice.value}
-            checked={values.includes(choice.value)}
-            closeOnClick={false}
-            onCheckedChange={(checked) => onChange(checked ? [...values, choice.value] : values.filter((value) => value !== choice.value))}
-          >
-            {choice.label}
-          </ContextMenuCheckboxItem>
-        ))}
-        {onExcludeChange ? (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuCheckboxItem checked={!!exclude} closeOnClick={false} onCheckedChange={onExcludeChange}>
-              {t("picker.exclude")}
-            </ContextMenuCheckboxItem>
-          </>
-        ) : null}
-      </ContextMenuContent>
-    </DropdownMenu>
-  );
-}
 
 function ChartMatchRuns({
   matches,

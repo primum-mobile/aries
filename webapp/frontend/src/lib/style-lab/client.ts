@@ -4,11 +4,9 @@
 import type { WheelComposition } from "@/lib/chart/wheel-composition";
 import type { WheelTypographyProfile } from "@/lib/chart/wheel-render-style";
 import type { WheelPresetsState } from "@/lib/daemon/wheel-presets-client";
-import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import {
   daemonBaseUrl,
   daemonFetch,
-  type ChartPickerRow,
   type ThemeState,
 } from "@/lib/daemon/client";
 import type {
@@ -18,12 +16,13 @@ import type {
 import { WHEEL_AUTHORING_OVERRIDE_PREFIX } from "@/lib/style-lab/wheel-authoring-adapter";
 
 export type StyleLabScalarValue = string | number | readonly number[];
-export type StyleLabTokenValue = StyleLabScalarValue | ChartStyleFontRef;
+export type StyleLabTokenValue = StyleLabScalarValue | boolean | ChartStyleFontRef;
 export const APP_AUTHORING_OVERRIDE_PREFIX = "authoring.app." as const;
 
 export type StyleLabWheelBaseline = {
   geometry?: {schemaVersion: 1; layout: WheelTypographyProfile | null;
-    designs: Partial<Record<WheelTypographyProfile, {overrides: Record<string, StyleLabTokenValue>; composition: WheelComposition}>>};
+    designs: Partial<Record<WheelTypographyProfile, {overrides: Record<string, StyleLabTokenValue>;
+      appearance?: Record<string, StyleLabTokenValue>; composition: WheelComposition}>>};
   visibility?: Partial<Record<WheelTypographyProfile, Record<string, boolean>>>;
 };
 
@@ -89,9 +88,22 @@ export type AppAuthoringSchema = Readonly<{
 
 export type StyleLabPatch = {
   baseRevision: number | null;
+  draftId?: string;
   /** Combined editor delta; the client routes profile-v2 keys separately. */
   overrides: Record<string, StyleLabTokenValue | null>;
 };
+
+let styleDraftWrites: Promise<unknown> = Promise.resolve();
+function enqueueStyleDraftWrite<T>(write: () => Promise<T>): Promise<T> {
+  const request = styleDraftWrites.then(write, write);
+  styleDraftWrites = request;
+  return request;
+}
+
+export async function waitForStyleDraftWrites(): Promise<void> {
+  let current;
+  do { current = styleDraftWrites; await current.catch(() => undefined); } while (current !== styleDraftWrites);
+}
 
 export function styleLabDraftEditorOverrides(
   draft: Pick<
@@ -132,110 +144,30 @@ export function splitStyleLabEditorPatch(
   };
 }
 
-export type StyleLabPreviewValue = string | number | boolean;
-
-export type StyleLabPreviewChoice = Readonly<{
-  value: StyleLabPreviewValue;
-  label: string;
-  labelKey?: string;
-}>;
-
-export type StyleLabPreviewDependency = Readonly<{
-  fieldId: string;
-  equals?: StyleLabPreviewValue;
-  in?: readonly StyleLabPreviewValue[];
-}>;
-
-export type StyleLabPreviewField = Readonly<{
-  id: string;
-  group: string;
-  type: "boolean" | "enum";
-  label: string;
-  labelKey?: string;
-  defaultValue: StyleLabPreviewValue;
-  choices?: readonly StyleLabPreviewChoice[];
-  dependsOn?: StyleLabPreviewDependency;
-  applicability: readonly ("single" | "comparison")[];
-}>;
-
-export type StyleLabPreviewManifest = Readonly<{
-  schemaVersion: number;
-  groups: readonly Readonly<{
-    id: string;
-    label: string;
-    labelKey?: string;
-  }>[];
-  fields: readonly StyleLabPreviewField[];
-  fixtureState: readonly Readonly<{
-    id: "surveilStudyId" | "eventFixtureId" | "parallelTransitFixtureId";
-    type: "reference";
-    label: string;
-    applicability: "unavailable" | "available";
-    available: boolean;
-    reason?: string;
-  }>[];
-}>;
-
-export type StyleLabChartSources = Readonly<{
-  primaryId: string;
-  comparisonId?: string;
-}>;
-
-export type StyleLabFixtureState = Readonly<{
-  surveilStudyId?: string;
-  eventFixtureId?: string;
-  parallelTransitFixtureId?: string;
-}>;
-
-export type StyleLabPreviewRequest = Readonly<{
-  chartSources: StyleLabChartSources;
-  previewOptions: Readonly<Record<string, StyleLabPreviewValue>>;
-  fixtureState: StyleLabFixtureState;
-}>;
-
 export class StyleLabApiError extends Error {
   readonly status: number;
+  /** Every edit the daemon refused by id; nothing else in the request applied. */
+  readonly rejectedIds: readonly string[];
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, rejectedIds: readonly string[] = []) {
     super(message);
     this.name = "StyleLabApiError";
     this.status = status;
+    this.rejectedIds = rejectedIds;
   }
 }
 
 const CURRENT_DRAFT_PATH = "/api/style-lab/drafts/current";
 
-export function styleLabChartSourceId(row: ChartPickerRow): string {
-  return row.key;
-}
-
-export function styleLabPreviewDefaults(
-  manifest: StyleLabPreviewManifest,
-): Record<string, StyleLabPreviewValue> {
-  return Object.fromEntries(
-    manifest.fields.map((field) => [field.id, field.defaultValue]),
-  );
-}
-
-export function styleLabPreviewRequestKey(request: StyleLabPreviewRequest): string {
-  const previewOptions = Object.fromEntries(
-    Object.entries(request.previewOptions).sort(([left], [right]) => left.localeCompare(right)),
-  );
-  return JSON.stringify({
-    chartSources: request.chartSources,
-    previewOptions,
-    fixtureState: request.fixtureState,
-  });
-}
-
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const rawDetail = (await response.text()).trim();
     let detail = rawDetail;
+    let rejectedIds: readonly string[] = [];
     if (rawDetail) {
       try {
         const payload = JSON.parse(rawDetail) as {
-          detail?: string | readonly { msg?: string }[];
+          detail?: string | { message?: string; rejectedIds?: unknown } | readonly { msg?: string }[];
         };
         if (typeof payload.detail === "string") {
           detail = payload.detail;
@@ -244,6 +176,10 @@ async function readJson<T>(response: Response): Promise<T> {
             .map((entry) => entry.msg)
             .filter((message): message is string => Boolean(message))
             .join("; ");
+        } else if (payload.detail && "message" in payload.detail && typeof payload.detail.message === "string") {
+          detail = payload.detail.message;
+          const ids = payload.detail.rejectedIds;
+          if (Array.isArray(ids)) rejectedIds = ids.filter((id): id is string => typeof id === "string");
         }
       } catch {
         // Preserve a non-JSON daemon error verbatim.
@@ -252,40 +188,20 @@ async function readJson<T>(response: Response): Promise<T> {
     throw new StyleLabApiError(
       detail || `Style Lab request failed (${response.status})`,
       response.status,
+      rejectedIds,
     );
   }
   return (await response.json()) as T;
 }
 
-export async function fetchStyleLabPreviewManifest(
-  signal?: AbortSignal,
-): Promise<StyleLabPreviewManifest> {
-  const response = await daemonFetch(`${daemonBaseUrl()}/api/style-lab/preview-schema`, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  return readJson<StyleLabPreviewManifest>(response);
-}
-
-export async function fetchStyleLabPreviewSnapshot(
-  request: StyleLabPreviewRequest,
-  signal?: AbortSignal,
-): Promise<ChartRenderSnapshot> {
-  const response = await daemonFetch(`${daemonBaseUrl()}/api/style-lab/preview-snapshot`, {
-    method: "POST",
-    cache: "no-store",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-    signal,
-  });
-  return readJson<ChartRenderSnapshot>(response);
-}
-
 export async function fetchCurrentStyleLabDraft(
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {
-  const response = await daemonFetch(`${daemonBaseUrl()}${CURRENT_DRAFT_PATH}`, {
+  return fetchStyleLabDraft('current', signal);
+}
+
+export async function fetchStyleLabDraft(draftId: string, signal?: AbortSignal): Promise<StyleLabDraft> {
+  const response = await daemonFetch(`${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}`, {
     cache: "no-store",
     headers: { Accept: "application/json" },
     signal,
@@ -321,9 +237,12 @@ export type StyleLabPortableProfile = Readonly<{
 export async function fetchStyleLabDraftExport(
   draftId = "current",
   signal?: AbortSignal,
+  context?: {sourceThemeName: string; expectedWheelRevision: number},
 ): Promise<StyleLabPortableProfile> {
+  const query = context ? `?${new URLSearchParams({sourceThemeName: context.sourceThemeName,
+    expectedWheelRevision: String(context.expectedWheelRevision)})}` : '';
   const response = await daemonFetch(
-    `${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}/export`,
+    `${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}/export${query}`,
     {
       cache: "no-store",
       headers: { Accept: "application/json" },
@@ -395,7 +314,8 @@ export async function patchCurrentStyleLabDraft(
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {
   const channels = splitStyleLabEditorPatch(patch.overrides);
-  const response = await daemonFetch(`${daemonBaseUrl()}${CURRENT_DRAFT_PATH}`, {
+  return enqueueStyleDraftWrite(async () => {
+    const response = await daemonFetch(`${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(patch.draftId ?? 'current')}`, {
     method: "PATCH",
     headers: {
       Accept: "application/json",
@@ -405,19 +325,22 @@ export async function patchCurrentStyleLabDraft(
     body: JSON.stringify({ baseRevision: patch.baseRevision, ...channels }),
     signal,
   });
-  return readJson<StyleLabDraft>(response);
+    return readJson<StyleLabDraft>(response);
+  });
 }
 
 export async function commitCurrentStyleLabDraft(
-  options: { baseRevision?: number; activate?: false; discard?: boolean } = {},
+  options: { draftId?: string; baseRevision?: number; activate?: false; discard?: boolean;
+    sourceThemeName?: string; expectedWheelRevision?: number } = {},
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {
+  const {draftId = 'current', ...payload} = options;
   const response = await daemonFetch(
-    `${daemonBaseUrl()}${CURRENT_DRAFT_PATH}/commit`,
+    `${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}/commit`,
     {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify(options),
+      body: JSON.stringify(payload),
       signal,
     },
   );
@@ -427,17 +350,20 @@ export async function commitCurrentStyleLabDraft(
 export async function saveCurrentStyleLabDraftAsTheme(
   name: string,
   options: {
+    draftId?: string;
     baseRevision?: number;
     overrides?: Readonly<Record<string, StyleLabTokenValue | null>>;
     activate?: boolean;
     promoteWorkingCopy?: boolean;
+    sourceThemeName?: string;
+    expectedWheelRevision?: number;
   } = {},
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {
-  const { overrides = {}, ...requestOptions } = options;
+  const { draftId = 'current', overrides = {}, ...requestOptions } = options;
   const channels = splitStyleLabEditorPatch(overrides);
   const response = await daemonFetch(
-    `${daemonBaseUrl()}${CURRENT_DRAFT_PATH}/save-as`,
+    `${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}/save-as`,
     {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -449,15 +375,17 @@ export async function saveCurrentStyleLabDraftAsTheme(
 }
 
 export async function revertCurrentStyleLabDraft(
-  options: { baseRevision?: number; factoryDefault?: boolean } = {},
+  options: { draftId?: string; baseRevision?: number; factoryDefault?: boolean;
+    sourceThemeName?: string; expectedWheelRevision?: number } = {},
   signal?: AbortSignal,
 ): Promise<StyleLabDraft> {
+  const {draftId = 'current', ...payload} = options;
   const response = await daemonFetch(
-    `${daemonBaseUrl()}${CURRENT_DRAFT_PATH}/revert`,
+    `${daemonBaseUrl()}/api/style-lab/drafts/${encodeURIComponent(draftId)}/revert`,
     {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify(options),
+      body: JSON.stringify(payload),
       signal,
     },
   );
@@ -501,6 +429,24 @@ export async function importStyleLabTheme(
     },
   );
   return readJson<StyleLabDraft>(response);
+}
+
+export async function renameStyleLabTheme(
+  profileId: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<Readonly<{ renamed: true; profileId: string; themeName: string; label: string }>> {
+  const response = await daemonFetch(
+    `${daemonBaseUrl()}/api/style-lab/themes/${encodeURIComponent(profileId)}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+      signal,
+    },
+  );
+  return readJson<Readonly<{ renamed: true; profileId: string; themeName: string; label: string }>>(response);
 }
 
 export async function deleteStyleLabTheme(

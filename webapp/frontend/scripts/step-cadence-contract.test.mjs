@@ -4,6 +4,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 
 import { createStepCadenceCollector } from "../src/lib/chart/step-cadence.mjs";
 
@@ -291,7 +293,7 @@ test("native wiring defers summary I/O and preserves IDs through the boundary", 
   ]);
 
   assert.match(perf, /speedlogBurstActive \|\| speedlogBoundaryProbes > 0/);
-  assert.match(perf, /window\.requestAnimationFrame\(\(timestamp\) => \{[\s\S]*window\.setTimeout\([\s\S]*window\.requestAnimationFrame\(\(nextTimestamp\)/);
+  assert.match(perf, /window\.requestAnimationFrame\(\(timestamp\) => \{[\s\S]*window\.setTimeout\([\s\S]*window\.requestAnimationFrame\(awaitDistinctFrame\)/);
   for (const summaryField of ["minimumMs:", "p05Ms:", "p50Ms:", "p95Ms,"]) {
     assert.ok(perf.includes(summaryField), `missing speedlog summary field ${summaryField}`);
   }
@@ -302,4 +304,50 @@ test("native wiring defers summary I/O and preserves IDs through the boundary", 
   assert.match(home, /recordChartStepInput\([\s\S]*inputIds: stepInputIds/);
   assert.match(home, /pending\.inputIds\.splice\(0, take\)/);
   assert.match(workspace, /event\.changeReason === "step"[\s\S]*recordChartPerf\("chart-step-session-change"/);
+});
+
+
+test("boundary probe waits for a distinct frame timestamp and still times out on a stalled clock", async () => {
+  const source = await readFile(new URL("../src/lib/chart/perf.ts", import.meta.url), "utf8");
+  const start = source.indexOf("function scheduleStepRenderBoundary(");
+  const end = source.indexOf("function collectSpeedlogSample(", start);
+  const js = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+  function probe() {
+    const frames = [], timers = new Map(), events = [];
+    let now = 10, nextTimer = 0;
+    const context = vm.createContext({
+      window: {
+        requestAnimationFrame: (fn) => frames.push(fn),
+        setTimeout: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, delay }); return id; },
+        clearTimeout: (id) => timers.delete(id),
+      },
+      numericArrayDetail: (detail, key) => detail[key],
+      numericDetail: (detail, key) => detail[key],
+      perfNow: () => ++now,
+      speedlogEnabled: () => false,
+      STEP_BOUNDARY_TIMEOUT_MS: 2000,
+      recordChartPerf: (name, detail) => events.push({ name, detail }),
+    });
+    vm.runInContext(js, context);
+    context.scheduleStepRenderBoundary({ at: 10, detail: { stepInputIds: [1], stepIntentAt: 5, stepAppliedInputs: 1, docId: "doc" } });
+    return { frames, timers, events };
+  }
+  const live = probe();
+  live.frames.shift()(20);
+  [...live.timers.values()].find((timer) => timer.delay === 0).fn();
+  live.frames.shift()(20);
+  assert.equal(live.events.length, 0, "a repeated timestamp is not a second frame");
+  live.frames.shift()(36);
+  assert.equal(live.events.length, 1);
+  assert.equal(live.events[0].detail.secondFrameTimestamp, 36);
+  assert.equal(live.events[0].detail.repeatedFrameCallbacks, 1);
+  assert.equal(live.events[0].detail.timedOut, false);
+  const stalled = probe();
+  stalled.frames.shift()(20);
+  stalled.frames.shift()(20);
+  [...stalled.timers.values()].find((timer) => timer.delay === 2000).fn();
+  assert.equal(stalled.events[0].detail.timedOut, true);
+  assert.equal(stalled.events[0].detail.secondFrameTimestamp, null);
+  stalled.frames.shift()(36);
+  assert.equal(stalled.events.length, 1, "late callbacks cannot repair a timed-out probe");
 });

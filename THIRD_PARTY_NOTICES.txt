@@ -223,6 +223,17 @@ Res/OFL.txt. Noto Naskh Arabic is also under SIL Open Font License 1.1; its
 complete notice is in webapp/frontend/public/fonts/NotoNaskhArabic-OFL.txt.
 
 
+M PLUS 1 CODE FONT
+
+Res/font-sources/MPLUS1Code[wght].ttf is the unmodified M PLUS 1 Code variable
+font, Copyright 2021 The M+ FONTS Project Authors
+(https://github.com/coz-m/MPLUS_FONTS), as distributed by Google Fonts. It is
+licensed under SIL Open Font License 1.1; the complete terms are in
+webapp/frontend/public/fonts/MPLUS1Code-OFL.txt.
+webapp/frontend/public/fonts/MPLUS1Code.woff2 is the same font recompressed to
+WOFF2 without subsetting or outline changes.
+
+
 MAPLIBRE GL JS 5.7.2
 
 Copyright (c) 2023, MapLibre contributors

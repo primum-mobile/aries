@@ -1,23 +1,13 @@
 # Copyright (C) 2026 Max Lange
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Agent-facing UI tokens for wxPython GUI work.
+"""Aries UI design tokens (sizes, colors, typography) read by the daemon.
 
-New or changed widget code should take sizes, colors, and fonts from this
-module instead of inventing literals inline.
-
-Two layers, by design:
-
-- **Runtime palette** — owned by :mod:`theme`. Materialized from the live
-  ``options.clr*`` values; what the user actually sees. Custom-painted
-  widgets read tokens from ``theme.current_palette()`` inside their
-  ``EVT_PAINT`` handler.
 - **Snapshot palette** — :data:`THEME_DARK` / :data:`THEME_FLAT` constants
-  in this file. Static hex strings used by ``scripts/ui_snapshot.py`` to
-  render reference scenes for design specs. *Not* used at app runtime.
+  in this file: static hex strings for reference scenes and design specs.
 
 Spacing / typography / dimension tokens (``SPACE_*``, ``FONT_SIZE_*``,
-``RADIUS_*``, ``SIDEBAR_*_W``, etc.) apply to both layers.
+``RADIUS_*``, ``SIDEBAR_*_W``, etc.) also live here.
 
 Runtime mutability (added 2026-05-04 for the Design Panel)
 -----------------------------------------------------------
@@ -307,55 +297,6 @@ def hex_to_rgb(value: str) -> RGB:
 	if len(value) != 6:
 		raise ValueError("bad hex color: %r" % value)
 	return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
-
-
-def wx_color(hex_str: str):
-	import wx
-	return wx.Colour(*hex_to_rgb(hex_str))
-
-
-def _default_face(weight: str) -> str:
-	try:
-		import common
-		c = getattr(common, "common", None)
-		if c is None:
-			# common.common is constructed lazily inside MFrame.__init__;
-			# during snapshot scenes / tests the instance may not exist yet.
-			return "FreeSans"
-		if weight == FONT_WEIGHT_BOLD:
-			return getattr(c, "abc_bold_face", "FreeSans")
-		return getattr(c, "abc_face", "FreeSans")
-	except Exception:
-		return "FreeSans"
-
-
-def wx_font(size=None, weight=None, family=None, italic=False):
-	"""Build a wx.Font from token values.
-
-	Reads ``FONT_SIZE_M`` / ``FONT_WEIGHT_REGULAR`` as defaults via the
-	live module attributes so a Design Panel override of those tokens
-	immediately changes every font this factory produces.
-	"""
-	import wx
-	_mod = sys.modules[__name__]
-	if size is None:
-		size = _mod.FONT_SIZE_M
-	if weight is None:
-		weight = _mod.FONT_WEIGHT_REGULAR
-	wx_weight = {
-		FONT_WEIGHT_REGULAR: wx.FONTWEIGHT_NORMAL,
-		FONT_WEIGHT_MEDIUM: getattr(wx, "FONTWEIGHT_MEDIUM", wx.FONTWEIGHT_NORMAL),
-		FONT_WEIGHT_BOLD: wx.FONTWEIGHT_BOLD,
-	}[weight]
-	wx_style = wx.FONTSTYLE_ITALIC if italic else wx.FONTSTYLE_NORMAL
-	return wx.Font(
-		size,
-		wx.FONTFAMILY_DEFAULT,
-		wx_style,
-		wx_weight,
-		False,
-		family if family is not None else _default_face(weight),
-	)
 
 
 # ---------------------------------------------------------------------------

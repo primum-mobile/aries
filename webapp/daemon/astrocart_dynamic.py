@@ -34,6 +34,7 @@ from math import isfinite
 from typing import Any, Iterable
 
 import astrology
+import chart_bodies
 import astrocart
 import chart as chart_mod
 import planets
@@ -285,12 +286,9 @@ def _ephemeris_body(derived_chart: Any, body_id: int) -> Any | None:
     body = _body_from_planet_container(derived_chart, body_id)
     if body is not None:
         return body
-    chiron = getattr(derived_chart, "chiron", None)
-    try:
-        if chiron is not None and int(getattr(chiron, "pId")) == int(body_id):
-            return chiron
-    except (AttributeError, TypeError, ValueError):
-        pass
+    body = chart_bodies.dynamic_body(derived_chart, body_id)
+    if body is not None:
+        return body
     return _body_from_asteroid_container(derived_chart, body_id)
 
 

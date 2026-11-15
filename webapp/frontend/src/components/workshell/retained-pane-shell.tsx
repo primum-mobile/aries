@@ -72,73 +72,78 @@ export function RetainedPaneShell({
     </button>
   ) : null;
 
-  return (
-    <section
-      className="font-morinus-text flex h-full min-h-0 flex-col bg-background"
-      aria-label={title}
+  const header = (
+    <div
+      className={cn(
+        "flex shrink-0 items-center",
+        "border-b border-[color:var(--aries-border-subtle)]",
+        headerDensity === "compact"
+          ? "gap-x-[var(--aries-pane-control-compact-gap-x)] gap-y-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-compact-padding-y)]"
+          : "gap-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]",
+        headerSurface === "surface"
+          ? "bg-[color:var(--aries-surface)]"
+          : "bg-background",
+        wrapHeader && "flex-wrap",
+      )}
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center border-b border-[color:var(--aries-border-subtle)]",
-          headerDensity === "compact"
-            ? "gap-x-[var(--aries-pane-control-compact-gap-x)] gap-y-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-compact-padding-y)]"
-            : "gap-[var(--aries-pane-control-gap-y)] px-[var(--aries-pane-header-compact-padding-x)] py-[var(--aries-pane-header-padding-y)]",
-          headerSurface === "surface"
-            ? "bg-[color:var(--aries-surface)]"
-            : "bg-background",
-          wrapHeader && "flex-wrap",
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-[var(--aries-control-gap)]">
-          {closePosition === "leading" ? closeButton : null}
-          <div className="min-w-0">
-            <div
-              className={cn(
-                "truncate font-medium text-[color:var(--aries-text-primary)]",
-                titleSize === "large"
-                  ? "text-[length:var(--aries-font-size-large)]"
-                  : "text-[length:var(--aries-font-size-small)]",
-                titleWeight === "semibold" ? "font-semibold" : "font-medium",
-              )}
-            >
-              {title}
-              {sourceName ? (
-                <span
-                  className={cn(
-                    "font-normal text-[color:var(--aries-text-muted)]",
-                    sourceGap === "standard"
-                      ? "ml-[var(--aries-pane-control-gap-y)]"
-                      : "ml-[var(--aries-control-gap-compact)]",
-                  )}
-                >
-                  {sourceName}
-                </span>
-              ) : null}
-            </div>
-            {subtitle ? (
-              <div
+      <div className="flex min-w-0 items-center gap-[var(--aries-control-gap)]">
+        {closePosition === "leading" ? closeButton : null}
+        <div className="min-w-0">
+          <div
+            className={cn(
+              "truncate font-medium text-[color:var(--aries-text-primary)]",
+              titleSize === "large"
+                ? "text-[length:var(--aries-font-size-large)]"
+                : "text-[length:var(--aries-font-size-small)]",
+              titleWeight === "semibold" ? "font-semibold" : "font-medium",
+            )}
+          >
+            {title}
+            {sourceName ? (
+              <span
                 className={cn(
-                  "truncate text-[color:var(--aries-text-muted)]",
-                  subtitleSize === "small"
-                    ? "text-[length:var(--aries-font-size-small)]"
-                    : "text-[length:var(--aries-font-size-section)]",
+                  "font-normal text-[color:var(--aries-text-muted)]",
+                  sourceGap === "standard"
+                    ? "ml-[var(--aries-pane-control-gap-y)]"
+                    : "ml-[var(--aries-control-gap-compact)]",
                 )}
               >
-                {subtitle}
-              </div>
+                {sourceName}
+              </span>
             ) : null}
           </div>
-        </div>
-        <div
-          className={cn(
-            "ml-auto flex items-center gap-[var(--aries-control-gap-compact)]",
-            wrapHeader && "flex-wrap justify-end",
-          )}
-        >
-          {toolbar}
-          {closePosition === "trailing" ? closeButton : null}
+          {subtitle ? (
+            <div
+              className={cn(
+                "truncate text-[color:var(--aries-text-muted)]",
+                subtitleSize === "small"
+                  ? "text-[length:var(--aries-font-size-small)]"
+                  : "text-[length:var(--aries-font-size-section)]",
+              )}
+            >
+              {subtitle}
+            </div>
+          ) : null}
         </div>
       </div>
+      <div
+        className={cn(
+          "ml-auto flex items-center gap-[var(--aries-control-gap-compact)]",
+          wrapHeader && "flex-wrap justify-end",
+        )}
+      >
+        {toolbar}
+        {closePosition === "trailing" ? closeButton : null}
+      </div>
+    </div>
+  );
+
+  return (
+    <section
+      className="font-morinus-text flex h-full w-full min-h-0 min-w-0 flex-col bg-background"
+      aria-label={title}
+    >
+      {header}
       {children}
     </section>
   );

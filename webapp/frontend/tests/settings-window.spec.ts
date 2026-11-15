@@ -56,3 +56,17 @@ test("host failures reject the settings action instead of confirming an uncommit
     await expect(requestSettingsAction({ kind: "profile", profileId: "quadrant" })).rejects.toThrow("write rejected");
   } finally { stop(); }
 });
+
+test("a request missed during host reload is retried with its original ID", async () => {
+  const requests: SettingsRequest[] = [];
+  const stop = await listen<SettingsRequest>(SETTINGS_REQUEST, ({ payload }) => {
+    requests.push(payload);
+    if (requests.length === 2) void emit(SETTINGS_REPLY, { id: payload.id, value: "recovered" });
+  });
+  try {
+    await expect(requestSettingsAction<string>({ kind: "prewarm" })).resolves.toBe("recovered");
+    expect(requests).toHaveLength(2);
+    expect(requests[1].id).toBe(requests[0].id);
+    expect(requests[1].action).toEqual(requests[0].action);
+  } finally { stop(); }
+});

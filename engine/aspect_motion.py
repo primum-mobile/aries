@@ -38,6 +38,24 @@ from aries.astrology.transit_fast import api as transit_fast_api
 _SAMPLE_EPSILON_DAYS = 1.0 / 1440.0
 
 
+def equatorial_declination(
+    longitude: float,
+    latitude: float,
+    obliquity: float,
+    ayanamsha_offset: float,
+) -> float:
+    """Declination of a chart-frame ecliptic position.
+
+    Derived points (Lots, angles' projections, midpoints) carry no latitude and
+    sit on the ecliptic; bodies and fixed stars pass their own latitude.
+    """
+    tropical = util.to_tropical_lon(float(longitude), float(ayanamsha_offset))
+    _ra, decl, _dist = astrology.swe_cotrans(
+        tropical, float(latitude), 1.0, -float(obliquity)
+    )
+    return float(decl)
+
+
 def _signed_arc(start: float, end: float) -> float:
     return (float(end) - float(start) + 540.0) % 360.0 - 180.0
 
@@ -156,6 +174,7 @@ class ChartMotionEvaluator:
                 return None
             return {
                 "longitude": util.normalize(float(data[0])),
+                "latitude": float(data[1]),
                 "speed": float(data[3]),
                 "regime": ("fixedStar", code),
                 # A star is a semantic target.  Its tiny epoch motion is used
@@ -680,6 +699,21 @@ class ChartMotionEvaluator:
             ),
             "valid": bool(source.get("valid", True)),
         }
+
+    def declination(self, sample: dict[str, Any], jd: float) -> float | None:
+        """Declination of one sample in the true equator of ``jd``."""
+        if sample.get("declination") is not None:
+            return float(sample["declination"])
+        frame = self._ecliptic_frame(jd)
+        if frame is None:
+            return None
+        obl, ayan = frame
+        return equatorial_declination(
+            float(sample["longitude"]),
+            float(sample.get("latitude", 0.0) or 0.0),
+            obl,
+            ayan,
+        )
 
     def sample(self, ref: dict[str, Any], jd: float) -> dict[str, Any] | None:
         kind = str(ref.get("kind") or "")

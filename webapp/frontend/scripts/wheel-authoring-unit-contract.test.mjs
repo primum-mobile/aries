@@ -14,7 +14,7 @@ async function transpile(url) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
+  }).outputText.replaceAll('"colorjs.io"', JSON.stringify(import.meta.resolve("colorjs.io"))).replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -53,6 +53,74 @@ const schema = await import(schemaUrl);
 const wheel = await import(wheelUrl);
 const adapter = await import(adapterUrl);
 const manifest = await import(manifestUrl);
+
+test('outer-degree radius target survives portable compilation without extra pins', () => {
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps'])
+  for (const target of ['degree', 'cuspLabels']) {
+    const bindingId = `authoring.wheel.${profile}.canvas.chart.outerDegreeBinding`;
+    const overrides = {[bindingId]: target,
+      [`authoring.wheel.${profile}.rings.outerDegree.radius`]: 330};
+    const portable = adapter.createChartStyleProfileV2FromFlatOverrides(overrides);
+    assert.equal(portable.variants[profile]['canvas.chart'].outerDegreeBinding, target);
+    const authored = adapter.compileFlatWheelAuthoringOverrides(overrides);
+    assert.equal(authored.outerDegreeBinding[profile], target);
+    assert.deepEqual(authored.recipeRadii[profile], {outerDegreeRing: 330});
+    assert.equal(authored.ringRadii[profile], undefined);
+  }
+  assert.deepEqual(adapter.compileFlatWheelAuthoringOverrides({
+    'authoring.wheel.anglo.canvas.chart.outerDegreeBinding': 'terms',
+  }).outerDegreeBinding, {});
+});
+
+test('radius priority is sparse geometry intent that survives portable compilation and release', () => {
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
+    const priorityId = `authoring.wheel.${profile}.canvas.chart.radiusPriority`;
+    const overrides = {
+      [`authoring.wheel.${profile}.rings.zodiacOuter.radius`]: 300,
+      [`authoring.wheel.${profile}.rings.innerBoundary.radius`]: 320,
+      [priorityId]: 'innerBoundaryRing',
+    };
+    const portable = adapter.createChartStyleProfileV2FromFlatOverrides(overrides);
+    assert.equal(portable.variants[profile]['canvas.chart'].radiusPriority, 'innerBoundaryRing');
+    const authored = adapter.compileFlatWheelAuthoringOverrides(overrides);
+    assert.equal(authored.radiusPriority[profile], 'innerBoundaryRing');
+    assert.deepEqual(authored.ringRadii[profile], {innerBoundaryRing: 320});
+    assert.deepEqual(authored.recipeRadii[profile], {zodiacOuterRing: 300});
+    for (const maxRadius of [200, 400, 800]) {
+      const input = geometry(maxRadius, profile);
+      const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: authored};
+      assert.deepEqual(wheel.resolveWheelRingSet(style, input),
+        wheel.resolveWheelRingSet(style, {...input, pushBoundaryRole: 'innerBoundaryRing'}),
+        `${profile}/${maxRadius}: releasing a pushed boundary must preserve its geometry`);
+    }
+  }
+  assert.deepEqual(adapter.compileFlatWheelAuthoringOverrides({
+    'authoring.wheel.anglo.canvas.chart.radiusPriority': 'rInner',
+  }).radiusPriority, {});
+});
+
+test('portable recipes preserve inherited dimensions separately from every explicit radius', () => {
+  const overrides = {
+    'authoring.wheel.anglo.canvas.chart.recipeVersion': 1,
+    'authoring.wheel.anglo.canvas.chart.radiusPriority': 'innerBoundaryRing',
+    'authoring.wheel.anglo.rings.term.recipeRadius': 335.1,
+    'authoring.wheel.anglo.rings.term.radius': 335.1,
+    'authoring.wheel.anglo.rings.term.radiusAuthored': true,
+    'authoring.wheel.anglo.rings.innerBoundary.recipeRadius': 299.1,
+    'authoring.wheel.anglo.rings.innerBoundary.radius': 295,
+    'authoring.wheel.anglo.rings.innerBoundary.radiusAuthored': true,
+    'authoring.wheel.anglo.rings.base.radius': 190.6,
+    'authoring.wheel.anglo.rings.base.recipeRadius': 190.6,
+  };
+  const portable = JSON.parse(JSON.stringify(adapter.createChartStyleProfileV2FromFlatOverrides(overrides)));
+  assert.equal(portable.variants.anglo['canvas.chart'].recipeVersion, 1);
+  assert.equal(portable.variants.anglo['rings.term'].radiusAuthored, true);
+  assert.equal(portable.variants.anglo['rings.term'].recipeRadius.value, 335.1);
+  const compiled = adapter.compileWheelAuthoringOverrides(portable);
+  assert.deepEqual(compiled.recipeRadii.anglo,
+    {termRing: 335.1, innerBoundaryRing: 299.1, baseRing: 190.6});
+  assert.deepEqual(compiled.ringRadii.anglo, {termRing: 335.1, innerBoundaryRing: 295});
+});
 
 function geometry(maxRadius = 400, profile = "classic") {
   return {
@@ -187,10 +255,10 @@ test("every advertised text and line class has a frontend Profile V2 compiler ta
       assert.equal(typography.has(definition.id), false, definition.id);
       continue;
     }
-    if (definition.primitive === "text") {
+    if (definition.primitive === "text" && !definition.capabilities.includes("strokeWidth")) {
       assert.equal(typography.has(definition.id), true, definition.id);
     }
-    if (definition.primitive === "line" || definition.primitive === "circle") {
+    if (definition.capabilities.includes("strokeWidth") || definition.primitive === "line" || definition.primitive === "circle") {
       assert.equal(lines.has(definition.id), true, definition.id);
     }
   }
@@ -236,7 +304,7 @@ test("profile compiler preserves class granularity and sparse variant overrides"
     compiled.typography.classic["subdivisions.term.glyph"].fontSizePx,
     14,
   );
-  assert.equal(compiled.ringRadii.classic.zodiacOuterRing, 382);
+  assert.equal(compiled.recipeRadii.classic.zodiacOuterRing, 382);
   assert.deepEqual(
     compiled.linePaint.classic["zodiac.tick.inner.1deg"],
     {
@@ -1000,5 +1068,48 @@ test('legacy arrow sizing retains original Morinus triangle and explicit size ov
       const custom = wheel.resolveWheelArrowGeometry(style, 302, 318, 0.5, width, classId, 'butt', 'outlined', false);
       assert.equal(custom.halfWidth, geometry.halfWidth * 2);
     }
+  }
+});
+
+test('paint and hit sizing share a bounded recipe cache with complete geometry invalidation', async () => {
+  const source = await readFile(new URL('../src/lib/chart/draw-chart.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const wheelSizingReferenceCache =');
+  const end = source.indexOf('let cachedStyleRevision:', start);
+  const boundedStart = source.indexOf('function boundedMapSet<');
+  const boundedEnd = source.indexOf('function fallbackTextsize(', boundedStart);
+  const js = ts.transpileModule(source.slice(start, end) + source.slice(boundedStart, boundedEnd), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  let calls = 0;
+  const cached = new Function('resolveWheelContentSizingReference', `${js}; return wheelSizingReference;`)(
+    (style, input) => { calls += 1; return wheel.resolveWheelContentSizingReference(style, input); },
+  );
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
+    const style = wheel.createTokenizedWheelRenderStyle();
+    const input = geometry(400, profile);
+    const resolve = (value, owner = style) => cached(owner,
+      wheel.projectWheelAuthoringStyle(owner, value.maxRadius, value.profile), value);
+    const first = resolve(input);
+    const before = calls;
+    assert.equal(resolve({ ...input }), first, 'fresh input objects reuse identical geometry');
+    assert.equal(calls, before);
+    for (const changed of [
+      { ...input, maxRadius: 300 }, { ...input, showHouses: !input.showHouses },
+      { ...input, showTerms: !input.showTerms }, { ...input, showDecans: !input.showDecans },
+      { ...input, mode: 'comparison', hasOuterRing: true, showOuterHouses: true },
+    ]) {
+      assert.deepEqual(resolve(changed), wheel.resolveWheelContentSizingReference(
+        wheel.projectWheelAuthoringStyle(style, changed.maxRadius, changed.profile), changed));
+    }
+    assert.equal(resolve(input), first, 'returning to previous geometry preserves exact sizing');
+    const changedStyle = wheel.createTokenizedWheelRenderStyle({ authoringOverrides:
+      adapter.compileFlatWheelAuthoringOverrides({ [`authoring.wheel.${profile}.rings.zodiacOuter.radius`]: 280 }) });
+    assert.deepEqual(resolve(input, changedStyle), wheel.resolveWheelContentSizingReference(
+      wheel.projectWheelAuthoringStyle(changedStyle, input.maxRadius, profile), input));
+    for (let radius = 100; radius < 120; radius += 1) resolve({ ...input, maxRadius: radius });
+    assert.notEqual(resolve(input), first, 'old size entries are evicted');
+    assert.deepEqual(resolve(input), first, 'eviction never changes geometry');
+    const mutable = { ...style };
+    assert.notEqual(resolve(input, mutable), resolve(input, mutable), 'mutable callers are not cached');
   }
 });

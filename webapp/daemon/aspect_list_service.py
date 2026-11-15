@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import astrology
+import chart_bodies
 import arabicparts
 import chart
 import common
@@ -29,11 +30,13 @@ import util
 import fortune
 import houses
 import mtexts
+import node_mirror
 import planets
 
 from aries.astrology.transit_fast import api as transit_fast_api
-from engine import aspect_motion, moment, synodic_cycle
+from engine import aspect_motion, moment, orb_policy, synodic_cycle
 from webapp.daemon.primdir_points import PRIMDIR_ANGLE_LABEL_KEYS
+from engine.dignity_display import chart_dignity_color, minor_dignity_count
 from webapp.daemon.display_palette import (
     aspect_color_role,
     chart_body_color_role,
@@ -81,7 +84,7 @@ _ENDPOINT_SORT_ORDER = {
         (
             "sun", "moon", "mercury", "venus", "mars", "jupiter",
             "saturn", "uranus", "neptune", "pluto", "nnode", "snode",
-            "chiron",
+            "chiron", "apogee",
         )
     )
 }
@@ -174,6 +177,26 @@ _ASPECT_ROWS_CACHE: OrderedDict[
 ] = OrderedDict()
 
 
+_MINOR_ASPECT_TYPES = frozenset((
+    chart.Chart.SEMISEXTIL,
+    chart.Chart.SEMIQUADRAT,
+    chart.Chart.QUINTILE,
+    chart.Chart.SESQUIQUADRAT,
+    chart.Chart.BIQUINTILE,
+    chart.Chart.QUINQUNX,
+    chart.Chart.SEPTILE,
+))
+
+
+def _aspect_class(aspect_type: int) -> str:
+    """Include-pill family: major rows always show, minor/declination opt in."""
+    if int(aspect_type) in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL):
+        return "declination"
+    if int(aspect_type) in _MINOR_ASPECT_TYPES:
+        return "minor"
+    return "major"
+
+
 def _rgb_hex(value: Any) -> str | None:
     try:
         if len(value) < 3:
@@ -195,6 +218,7 @@ def _aspect_metadata(display_options, aspect_type: int) -> dict[str, Any]:
     name_key = _ASPECT_NAME_KEYS[aspect_type] if 0 <= aspect_type < len(_ASPECT_NAME_KEYS) else None
     return {
         "type": int(aspect_type),
+        "class": _aspect_class(aspect_type),
         "glyph": glyph,
         "glyphFont": glyph_font,
         "name": str(mtexts.txts.get(name_key, name_key or aspect_type)),
@@ -227,7 +251,7 @@ def _body_motion_marker(chrt, body_id: int, speed_lon: Any) -> str:
 
 
 def _planet_metadata(chrt, key: str, role: str, display_options) -> dict[str, Any]:
-    planet_id = _PLANET_BY_KEY[key]
+    planet_id = chart_bodies.apogee_id(chrt.options) if key == "apogee" else _PLANET_BY_KEY[key]
     body = chrt.get_planet_body(planet_id)
     if body is None:
         raise ValueError(f"Missing aspect-list planet body: {planet_id}")
@@ -242,6 +266,7 @@ def _planet_metadata(chrt, key: str, role: str, display_options) -> dict[str, An
         display_options,
         obj,
         dignity,
+        minor_count=minor_dignity_count(chrt, planet_id),
         fallback=fallback,
     )
     color = _rgb_hex(color_value)
@@ -259,6 +284,7 @@ def _planet_metadata(chrt, key: str, role: str, display_options) -> dict[str, An
             display_options,
             obj,
             dignity,
+            minor_count=minor_dignity_count(chrt, planet_id),
             resolved_color=color_value,
         ),
         "filterIds": [f"planet:{key}"],
@@ -355,8 +381,8 @@ def _point_metadata(chrt, key: str, role: str, display_options) -> dict[str, Any
         )
         color_value = getattr(display_options, "clrsigns", color_value)
         color_role = "--morinus-text-bright"
-        glyph = "Ec"
-        name = eclipses.eclipse_event_label(event)
+        glyph = mtexts.txts["EclipseAbbrev"]
+        name = eclipses.prenatal_eclipse_point_label()
         object_type = "eclipse"
         motion_ref = {"kind": "eclipse"}
     else:
@@ -504,7 +530,7 @@ def _motion_body(chrt, key: str, role: str) -> dict[str, Any] | None:
     if key == "dc":
         key = "dsc"
     if key in _PLANET_BY_KEY:
-        planet_id = _PLANET_BY_KEY[key]
+        planet_id = chart_bodies.apogee_id(chrt.options) if key == "apogee" else _PLANET_BY_KEY[key]
         body = chrt.get_planet_body(planet_id)
         if body is None:
             return None
@@ -620,12 +646,15 @@ def _frozen_sample(endpoint: dict[str, Any]) -> dict[str, Any] | None:
         longitude = float(endpoint["longitude"])
     except (KeyError, TypeError, ValueError):
         return None
-    return {
+    sample = {
         "longitude": util.normalize(longitude),
         "regime": ("frozen", str(endpoint.get("key") or "point")),
         "canAct": False,
         "valid": True,
     }
+    if endpoint.get("declination") is not None:
+        sample["declination"] = float(endpoint["declination"])
+    return sample
 
 
 def _snapshot_motion_sample(chrt, ref: dict[str, Any]) -> dict[str, Any] | None:
@@ -881,6 +910,22 @@ class _RebuiltChartMotionEvaluator:
             return None
         return _snapshot_motion_sample(chrt, ref)
 
+    def declination(self, sample: dict[str, Any], jd: float) -> float | None:
+        if sample.get("declination") is not None:
+            return float(sample["declination"])
+        chrt = self._chart(jd)
+        if chrt is None:
+            return None
+        try:
+            return aspect_motion.equatorial_declination(
+                float(sample["longitude"]),
+                float(sample.get("latitude", 0.0) or 0.0),
+                float(chrt.obl[0]),
+                float(getattr(chrt, "ayanamsha_offset", 0.0) or 0.0),
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return None
+
 
 def _role_motion_context(
     role_contexts: dict[str, Any] | None,
@@ -1011,6 +1056,66 @@ def _sample_relation_endpoint(
     return sample
 
 
+_DECLINATION_ASPECT_TYPES = (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL)
+
+
+def _is_declination_aspect(aspect_type: int) -> bool:
+    return int(aspect_type) in _DECLINATION_ASPECT_TYPES
+
+
+def _relation_coordinate(
+    evaluator,
+    sample: dict[str, Any],
+    jd: float,
+    aspect_type: int,
+) -> float | None:
+    """The coordinate a relationship perfects in: longitude or declination."""
+    if not _is_declination_aspect(aspect_type):
+        return float(sample["longitude"])
+    if sample.get("declination") is not None:
+        return float(sample["declination"])
+    if evaluator is None:
+        return None
+    return evaluator.declination(sample, jd)
+
+
+def _relation_error(
+    aspect_type: int,
+    offset: float,
+    left_value: float,
+    right_value: float,
+) -> float:
+    """Signed residual from perfection; declination never wraps."""
+    if int(aspect_type) == chart.Chart.PARALLEL:
+        return float(left_value) - float(right_value)
+    if int(aspect_type) == chart.Chart.CONTRAPARALLEL:
+        return float(left_value) + float(right_value)
+    return searchbackend._dynamic_weather_delta(left_value, right_value, float(offset))
+
+
+def _relation_offset(aspect_type: int, left_value: float, right_value: float) -> float:
+    if _is_declination_aspect(aspect_type):
+        return 0.0
+    offsets = searchbackend._dynamic_aspect_offsets(int(aspect_type))
+    return float(min(
+        offsets,
+        key=lambda value: abs(searchbackend._dynamic_weather_delta(
+            left_value, right_value, float(value)
+        )),
+    ))
+
+
+def _coordinate_rate(
+    before: float,
+    after: float,
+    epsilon: float,
+    aspect_type: int,
+) -> float:
+    if _is_declination_aspect(aspect_type):
+        return (float(after) - float(before)) / (2.0 * epsilon)
+    return ((float(after) - float(before) + 540.0) % 360.0 - 180.0) / (2.0 * epsilon)
+
+
 def _relationship_state(
     *,
     left_chart,
@@ -1081,15 +1186,17 @@ def _relationship_state(
         or not current_right.get("valid", True)
     ):
         return unavailable()
-    offsets = searchbackend._dynamic_aspect_offsets(int(aspect_type))
-    offset = min(
-        offsets,
-        key=lambda value: abs(searchbackend._dynamic_weather_delta(
-            current_left["longitude"], current_right["longitude"], float(value)
-        )),
+    current_left_value = _relation_coordinate(
+        left_eval, current_left, anchor_jd, aspect_type
     )
-    current_error = searchbackend._dynamic_weather_delta(
-        current_left["longitude"], current_right["longitude"], float(offset)
+    current_right_value = _relation_coordinate(
+        right_eval, current_right, anchor_jd, aspect_type
+    )
+    if current_left_value is None or current_right_value is None:
+        return unavailable()
+    offset = _relation_offset(aspect_type, current_left_value, current_right_value)
+    current_error = _relation_error(
+        aspect_type, offset, current_left_value, current_right_value
     )
 
     def sample_pair(jd: float):
@@ -1121,9 +1228,11 @@ def _relationship_state(
         if pair is None:
             return None
         left_sample, right_sample = pair
-        return searchbackend._dynamic_weather_delta(
-            left_sample["longitude"], right_sample["longitude"], float(offset)
-        )
+        left_value = _relation_coordinate(left_eval, left_sample, jd, aspect_type)
+        right_value = _relation_coordinate(right_eval, right_sample, jd, aspect_type)
+        if left_value is None or right_value is None:
+            return None
+        return _relation_error(aspect_type, offset, left_value, right_value)
 
     minimum_probe_days = max(
         (
@@ -1156,12 +1265,23 @@ def _relationship_state(
     left_before, right_before = before_pair
     left_after, right_after = after_pair
 
+    def endpoint_speed(evaluator_, before, after) -> float:
+        before_value = _relation_coordinate(
+            evaluator_, before, float(anchor_jd) - float(epsilon), aspect_type
+        )
+        after_value = _relation_coordinate(
+            evaluator_, after, float(anchor_jd) + float(epsilon), aspect_type
+        )
+        if before_value is None or after_value is None:
+            return 0.0
+        return _coordinate_rate(before_value, after_value, epsilon, aspect_type)
+
     left_speed = (
-        (float(left_after["longitude"]) - float(left_before["longitude"]) + 540.0) % 360.0 - 180.0
-    ) / (2.0 * epsilon) if left_evolves else 0.0
+        endpoint_speed(left_eval, left_before, left_after) if left_evolves else 0.0
+    )
     right_speed = (
-        (float(right_after["longitude"]) - float(right_before["longitude"]) + 540.0) % 360.0 - 180.0
-    ) / (2.0 * epsilon) if right_evolves else 0.0
+        endpoint_speed(right_eval, right_before, right_after) if right_evolves else 0.0
+    )
     actor_candidates = []
     for speed, side, evolves, sample in (
         (left_speed, "left", left_evolves, current_left),
@@ -1683,7 +1803,7 @@ def _angle_sources(chrt) -> list[dict[str, Any]]:
     rows = []
     try:
         planet_ids = chrt.get_visible_aspect_planet_ids(
-            include_chiron=getattr(chrt.options, "showchiron", True)
+            include_chiron=True
         )
         for pid in planet_ids:
             if pid in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE) and not getattr(chrt.options, "aspectstonodes", False):
@@ -1693,20 +1813,20 @@ def _angle_sources(chrt) -> list[dict[str, Any]]:
                 continue
             lon = float(body.data[planets.Planet.LONG])
             for angle_key, angle_lon in export_chart_json._angle_longitudes(chrt):
-                asp = export_chart_json._angle_aspect(chrt, pid, angle_key, angle_lon)
+                asp = export_chart_json.shown_aspect(
+                    chrt, export_chart_json._angle_aspect(chrt, pid, angle_key, angle_lon), lon, angle_lon)
                 if asp is None or not _keeps_canonical_angle_contact(
                     _PLANET_BY_KEY_INV[pid], angle_key, int(asp.typ)
                 ):
                     continue
-                if export_chart_json.should_show_aspect(chrt, asp, lon, angle_lon):
-                    canonical_key = "dsc" if angle_key == "dc" else angle_key
-                    rows.append(export_chart_json.aspect_payload(_PLANET_BY_KEY_INV[pid], canonical_key, asp))
+                canonical_key = "dsc" if angle_key == "dc" else angle_key
+                rows.append(export_chart_json.aspect_payload(_PLANET_BY_KEY_INV[pid], canonical_key, asp))
     except Exception:
         return []
     return rows
 
 
-_PLANET_BY_KEY_INV = {planet_id: key for key, planet_id in _PLANET_BY_KEY.items()}
+_PLANET_BY_KEY_INV = dict(export_chart_json.PLANET_ID_MAP)
 
 _OUTER_RING_LABELS = {
     "fixstars": ("FixStars", "Fixed Stars"),
@@ -1769,13 +1889,13 @@ def _active_outer_ring_items(
     mode = _active_outer_ring_mode(option_source)
     try:
         if mode == "fixstars":
-            items = export_chart_json.export_fixstar_items(chrt)
+            items = export_chart_json.export_fixstar_items(chrt, option_source)
         elif mode == "asteroids":
-            items = export_chart_json.export_asteroid_items(chrt, role=role)
+            items = export_chart_json.export_asteroid_items(chrt, role=role, display_options=display_options)
         elif mode == "midpoints":
-            items = export_chart_json.export_midpoint_ring_items(chrt)
+            items = export_chart_json.export_midpoint_ring_items(chrt, display_options=option_source)
         elif mode == "hybrid_hits":
-            items = export_chart_json.export_hybrid_items(chrt, role=role)
+            items = export_chart_json.export_hybrid_items(chrt, role=role, display_options=option_source)
         elif mode in ("antiscia", "dodecatemoria", "contra_antiscia"):
             items = export_chart_json.export_overlay_family_items(chrt, mode, role=role)
         elif mode == "arabic_parts":
@@ -1853,6 +1973,7 @@ def _technique_ring_items(
         for key, planet_id in _PLANET_BY_KEY.items()
         if key in _ENDPOINT_SORT_ORDER
     }
+    standard_body_ids.update(chart_bodies.APOGEE_IDS)
     seen: set[tuple[str, str]] = set()
     items: list[dict[str, Any]] = []
     for raw_item in candidates:
@@ -1889,7 +2010,7 @@ def _ring_item_orbs(chrt, item: dict[str, Any]) -> list[float]:
         try:
             body_id = int(ref["bodyId"])
             orb_index = int(chrt.get_planet_orb_index(body_id))
-            return [float(value) for value in chrt.options.orbis[orb_index]]
+            return [float(value) for value in orb_policy.contributions(chrt.options)[orb_index]]
         except (AttributeError, IndexError, KeyError, TypeError, ValueError):
             pass
     return [0.0] * chart.Chart.ASPECT_NUM
@@ -1929,7 +2050,13 @@ def _technique_endpoints(
         except (KeyError, TypeError, ValueError):
             continue
 
-    for key, longitude in export_chart_json._cusp_longitudes(chrt):
+    # Harmonic charts retain transformed cusp data for provenance, but have no
+    # house positions. Their angles remain valid semantic points.
+    cusp_longitudes = (
+        () if bool(getattr(chrt, "_suppress_house_positions", False))
+        else export_chart_json._cusp_longitudes(chrt)
+    )
+    for key, longitude in cusp_longitudes:
         if int(key[4:]) in (1, 4, 7, 10):
             continue
         metadata = _point_metadata(chrt, key, role, display_options)
@@ -1989,7 +2116,38 @@ def _technique_pair_aspect(
     comparison_endpoint: dict[str, Any],
     options,
 ):
-    aspect_mask = _configured_aspect_mask(options)
+    """Closest Settings-enabled major aspect of one endpoint pair."""
+    aspect_mask = [
+        enabled and index not in _MINOR_ASPECT_TYPES
+        for index, enabled in enumerate(_configured_aspect_mask(options))
+    ]
+    return _pair_aspect_for_mask(
+        primary, comparison, primary_endpoint, comparison_endpoint, options, aspect_mask,
+    )
+
+
+def _technique_pair_minor_aspect(
+    primary,
+    comparison,
+    primary_endpoint: dict[str, Any],
+    comparison_endpoint: dict[str, Any],
+    options,
+):
+    """Closest minor aspect; always calculated, shown by the list's Minor pill."""
+    aspect_mask = [index in _MINOR_ASPECT_TYPES for index in range(chart.Chart.ASPECT_NUM)]
+    return _pair_aspect_for_mask(
+        primary, comparison, primary_endpoint, comparison_endpoint, options, aspect_mask,
+    )
+
+
+def _pair_aspect_for_mask(
+    primary,
+    comparison,
+    primary_endpoint: dict[str, Any],
+    comparison_endpoint: dict[str, Any],
+    options,
+    aspect_mask: list[bool],
+):
     if (
         not bool(getattr(options, "showaspectsforderivedpoints", False))
         and (
@@ -2001,6 +2159,8 @@ def _technique_pair_aspect(
             enabled and index == chart.Chart.CONJUNCTIO
             for index, enabled in enumerate(aspect_mask)
         ]
+    if not any(aspect_mask):
+        return None
     return export_chart_json._interchart_point_aspect(
         primary,
         comparison,
@@ -2012,6 +2172,171 @@ def _technique_pair_aspect(
         aspect_mask,
         bool(getattr(options, "traditionalaspects", False)),
     )
+
+
+_STRUCTURAL_ENDPOINT_KINDS = ("angle", "houseCusp")
+
+
+def _endpoint_body_ref(endpoint: dict[str, Any]) -> dict[str, Any] | None:
+    """The physical body behind an endpoint, following projections."""
+    metadata = endpoint.get("metadata") or {}
+    ref = dict(metadata.get("motionRef") or {})
+    while str(ref.get("kind") or "") == "projection":
+        ref = dict(ref.get("source") or {})
+    if str(ref.get("kind") or "") in ("planet", "ephemerisBody"):
+        return ref
+    if metadata.get("planetId") is not None:
+        return {"kind": "planet", "bodyId": int(metadata["planetId"])}
+    return None
+
+
+def _endpoint_declination(
+    chrt,
+    endpoint: dict[str, Any],
+    evaluators: dict[int, aspect_motion.ChartMotionEvaluator],
+) -> float | None:
+    """True declination of one Aspect List endpoint in its own chart.
+
+    Bodies, angles, Fortune and cusps read the chart's own equatorial values
+    (the ones the engine's parallel matrix uses).  Every other point is its
+    ecliptic longitude projected with its own latitude when it has one
+    (asteroids, fixed stars), else on the ecliptic.
+    """
+    if "declination" in endpoint:
+        return endpoint["declination"]
+    key = str(endpoint.get("key") or "")
+    kind = str(endpoint.get("kind") or "")
+    metadata = endpoint.get("metadata") or {}
+    value = None
+    try:
+        if kind == "planet" and metadata.get("planetId") is not None:
+            body = chrt.get_planet_body(int(metadata["planetId"]))
+            if body is not None:
+                value = float(body.dataEqu[planets.Planet.DECLEQU])
+        elif kind == "angle" and key in ("asc", "dsc", "mc", "ic"):
+            angle = houses.Houses.ASC if key in ("asc", "dsc") else houses.Houses.MC
+            value = float(chrt.houses.ascmc2[angle][houses.Houses.DECL])
+            if key in ("dsc", "ic"):
+                value = -value
+        elif kind == "fortune":
+            value = float(chrt.fortune.fortune[fortune.Fortune.DECL])
+        elif kind == "houseCusp" and key.startswith("cusp"):
+            value = float(chrt.houses.cusps2[int(key[4:]) - 1][1])
+        if value is None:
+            latitude = 0.0
+            ref = dict(metadata.get("motionRef") or {})
+            ref_kind = str(ref.get("kind") or "")
+            if ref_kind in ("planet", "ephemerisBody", "fixedStar"):
+                evaluator = evaluators.get(id(chrt))
+                if evaluator is None:
+                    evaluator = aspect_motion.ChartMotionEvaluator(chrt)
+                    evaluators[id(chrt)] = evaluator
+                sample = evaluator.sample(ref, float(chrt.time.jd))
+                if sample is not None:
+                    latitude = float(sample.get("latitude", 0.0) or 0.0)
+            value = aspect_motion.equatorial_declination(
+                float(endpoint["longitude"]),
+                latitude,
+                float(chrt.obl[0]),
+                float(getattr(chrt, "ayanamsha_offset", 0.0) or 0.0),
+            )
+    except Exception:
+        value = None
+    endpoint["declination"] = value
+    return value
+
+
+def _endpoint_parallel_orbs(chrt, endpoint: dict[str, Any]) -> tuple[float, float]:
+    """Settings › Orbs › Declination contribution: (parallel, contraparallel)."""
+    kind = str(endpoint.get("kind") or "")
+    options = chrt.options
+    try:
+        if kind == "angle":
+            values = options.orbisparAscMC
+        elif kind == "houseCusp":
+            values = options.orbisparH
+        else:
+            ref = _endpoint_body_ref(endpoint)
+            if ref is None:
+                return (0.0, 0.0)
+            values = options.orbisplanetspar[int(chrt.get_planet_orb_index(int(ref["bodyId"])))]
+        return (float(values[0]), float(values[1]))
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return (0.0, 0.0)
+
+
+def _technique_pair_parallel(
+    left_chart,
+    right_chart,
+    left: dict[str, Any],
+    right: dict[str, Any],
+    options,
+    evaluators: dict[int, aspect_motion.ChartMotionEvaluator],
+):
+    """The engine's parallel/contraparallel test for one endpoint pair.
+
+    Calculated for charts with physical equatorial coordinates; the list's
+    Decl. pill decides whether those rows show.
+    """
+    # Harmonic and Varga longitudes are symbolic projections. Their retained
+    # equatorial coordinates still describe the radix, so a declination test
+    # here would combine two different coordinate frames.
+    if bool(getattr(left_chart, "_symbolic_longitudes", False)) or bool(
+        getattr(right_chart, "_symbolic_longitudes", False)
+    ):
+        return None
+    contra_on = True
+    if left_chart is right_chart and (
+        str(left.get("kind")) in _STRUCTURAL_ENDPOINT_KINDS
+        and str(right.get("kind")) in _STRUCTURAL_ENDPOINT_KINDS
+    ):
+        return None
+    for endpoint in (left, right):
+        # DSC/IC declinations mirror ASC/MC; one row per axis contact.
+        if str(endpoint.get("key")) in ("dsc", "dc", "ic"):
+            return None
+    if (
+        not bool(getattr(options, "showaspectsforderivedpoints", False))
+        and (
+            _uses_derived_point_aspect_policy(left)
+            or _uses_derived_point_aspect_policy(right)
+        )
+    ):
+        # Derived points keep conjunction-only contacts; parallel is its
+        # declination counterpart.
+        contra_on = False
+    left_decl = _endpoint_declination(left_chart, left, evaluators)
+    right_decl = _endpoint_declination(right_chart, right, evaluators)
+    if left_decl is None or right_decl is None:
+        return None
+    left_orbs = _endpoint_parallel_orbs(left_chart, left)
+    right_orbs = _endpoint_parallel_orbs(right_chart, right)
+    parallel_orb = left_orbs[0] + right_orbs[0]
+    contra_orb = left_orbs[1] + right_orbs[1]
+    aspect_type = chart.Chart._calc_parallel_type(
+        left_chart, float(left_decl), float(right_decl), parallel_orb, contra_orb
+    )
+    if aspect_type == chart.Chart.PARALLEL:
+        distance = abs(float(left_decl) - float(right_decl))
+        max_orb = parallel_orb
+    elif aspect_type == chart.Chart.CONTRAPARALLEL and contra_on:
+        distance = abs(abs(float(left_decl)) - abs(float(right_decl)))
+        max_orb = contra_orb
+    else:
+        return None
+    asp = chart.Asp()
+    asp.typ = aspect_type
+    asp.aspdif = distance
+    asp.max_orb = max_orb
+    asp.dif = distance
+    asp.exact = distance <= float(getattr(options, "exact", 0.0) or 0.0)
+    asp.appl = False
+    return asp
+
+
+def _with_declination(endpoint: dict[str, Any]) -> dict[str, Any]:
+    """Row endpoint payload that also carries its anchor declination."""
+    return {**endpoint["metadata"], "declination": endpoint.get("declination")}
 
 
 def _endpoint_node_key(endpoint: Any) -> str | None:
@@ -2083,47 +2408,60 @@ def _technique_internal_rows(
     motion_context = _role_motion_context(role_contexts, role, chrt)
     evolving_roles = {role} if _role_evolves(motion_context) else set()
     anchor_jd = _motion_anchor_jd(motion_context, chrt)
+    declination_evaluators: dict[int, aspect_motion.ChartMotionEvaluator] = {}
     for index, left in enumerate(endpoints):
         for right in endpoints[index + 1:]:
             if _same_node_axis(left, right) or _trivial_same_chart_cusp_axis(left, right):
                 continue
+            contacts = []
             asp = _technique_pair_aspect(chrt, chrt, left, right, chrt.options)
-            if asp is None or not _keeps_canonical_angle_contact(
+            if asp is not None and _keeps_canonical_angle_contact(
                 str(left["key"]), str(right["key"]), int(asp.typ)
             ):
-                continue
-            source = export_chart_json.aspect_payload(left["key"], right["key"], asp)
-            exact = float(source.get("orb", 0.0)) <= _EXACT_CALC_ORB_DEGREES
-            relationship = _relationship_state(
-                left_chart=chrt,
-                left_endpoint=left["metadata"],
-                right_chart=chrt,
-                right_endpoint=right["metadata"],
-                aspect_type=int(source["type"]),
-                exact=exact,
-                anchor_jd=anchor_jd,
-                evolving_roles=evolving_roles,
-                evaluator_cache=evaluator_cache,
-                role_contexts=role_contexts,
+                contacts.append((asp, left["metadata"], right["metadata"]))
+            minor = _technique_pair_minor_aspect(chrt, chrt, left, right, chrt.options)
+            if minor is not None and _keeps_canonical_angle_contact(
+                str(left["key"]), str(right["key"]), int(minor.typ)
+            ):
+                contacts.append((minor, left["metadata"], right["metadata"]))
+            parallel = _technique_pair_parallel(
+                chrt, chrt, left, right, chrt.options, declination_evaluators
             )
-            rows.append(_orient_within_chart_row(_row(
-                mode=mode,
-                left_chart=chrt,
-                left_key=str(left["key"]),
-                left_role=role,
-                right_chart=chrt,
-                right_key=str(right["key"]),
-                right_role=role,
-                source=source,
-                display_options=display_options,
-                phase=str(relationship["phase"]),
-                moving_role=None,
-                left_metadata=left["metadata"],
-                right_metadata=right["metadata"],
-                actor_side=relationship.get("actorSide"),
-                actor_source=relationship.get("actorSource"),
-                role_contexts=role_contexts,
-            )))
+            if parallel is not None:
+                contacts.append((parallel, _with_declination(left), _with_declination(right)))
+            for asp, left_metadata, right_metadata in contacts:
+                source = export_chart_json.aspect_payload(left["key"], right["key"], asp)
+                exact = float(source.get("orb", 0.0)) <= _EXACT_CALC_ORB_DEGREES
+                relationship = _relationship_state(
+                    left_chart=chrt,
+                    left_endpoint=left_metadata,
+                    right_chart=chrt,
+                    right_endpoint=right_metadata,
+                    aspect_type=int(source["type"]),
+                    exact=exact,
+                    anchor_jd=anchor_jd,
+                    evolving_roles=evolving_roles,
+                    evaluator_cache=evaluator_cache,
+                    role_contexts=role_contexts,
+                )
+                rows.append(_orient_within_chart_row(_row(
+                    mode=mode,
+                    left_chart=chrt,
+                    left_key=str(left["key"]),
+                    left_role=role,
+                    right_chart=chrt,
+                    right_key=str(right["key"]),
+                    right_role=role,
+                    source=source,
+                    display_options=display_options,
+                    phase=str(relationship["phase"]),
+                    moving_role=None,
+                    left_metadata=left_metadata,
+                    right_metadata=right_metadata,
+                    actor_side=relationship.get("actorSide"),
+                    actor_source=relationship.get("actorSource"),
+                    role_contexts=role_contexts,
+                )))
     return rows
 
 
@@ -2173,11 +2511,13 @@ def _technique_cross_rows(
     evaluator_cache: dict[int, aspect_motion.ChartMotionEvaluator] = {}
     evolving_roles = {"outer"} if _role_evolves(outer_context) else set()
     anchor_jd = _motion_anchor_jd(outer_context, outer)
+    declination_evaluators: dict[int, aspect_motion.ChartMotionEvaluator] = {}
     for outer_endpoint in outer_endpoints:
         for primary_endpoint in primary_endpoints:
             # North/South are one axis only within the same chart. Across two
             # wheels they belong to distinct chart epochs, so every configured
             # nodal contact remains a real interchart relationship.
+            contacts = []
             asp = _technique_pair_aspect(
                 primary,
                 outer,
@@ -2185,56 +2525,118 @@ def _technique_cross_rows(
                 outer_endpoint,
                 primary.options,
             )
-            if asp is None or not _keeps_canonical_angle_contact(
-                str(outer_endpoint["key"]),
-                str(primary_endpoint["key"]),
-                int(asp.typ),
-            ):
-                continue
-            source = {
-                "outer": str(outer_endpoint["key"]),
-                "inner": str(primary_endpoint["key"]),
-                **export_chart_json.aspect_payload(
+            minor = _technique_pair_minor_aspect(
+                primary,
+                outer,
+                primary_endpoint,
+                outer_endpoint,
+                primary.options,
+            )
+            for candidate in (asp, minor):
+                if candidate is not None and _keeps_canonical_angle_contact(
                     str(outer_endpoint["key"]),
                     str(primary_endpoint["key"]),
+                    int(candidate.typ),
+                ):
+                    contacts.append((
+                        candidate,
+                        outer_endpoint["metadata"],
+                        primary_endpoint["metadata"],
+                    ))
+            parallel = _technique_pair_parallel(
+                outer,
+                primary,
+                outer_endpoint,
+                primary_endpoint,
+                primary.options,
+                declination_evaluators,
+            )
+            if parallel is not None:
+                contacts.append((
+                    parallel,
+                    _with_declination(outer_endpoint),
+                    _with_declination(primary_endpoint),
+                ))
+            for asp, outer_metadata, primary_metadata in contacts:
+                rows.append(_technique_cross_row(
+                    primary,
+                    outer,
                     asp,
-                ),
-            }
-            exact = float(source.get("orb", 0.0)) <= _EXACT_CALC_ORB_DEGREES
-            relationship = _relationship_state(
-                left_chart=outer,
-                left_endpoint=outer_endpoint["metadata"],
-                right_chart=primary,
-                right_endpoint=primary_endpoint["metadata"],
-                aspect_type=int(source["type"]),
-                exact=exact,
-                anchor_jd=anchor_jd,
-                evolving_roles=evolving_roles,
-                evaluator_cache=evaluator_cache,
-                role_contexts=role_contexts,
-            )
-            row = _row(
-                mode=mode,
-                left_chart=outer,
-                left_key=str(outer_endpoint["key"]),
-                left_role="outer",
-                right_chart=primary,
-                right_key=str(primary_endpoint["key"]),
-                right_role="primary",
-                source=source,
-                display_options=display_options,
-                phase=str(relationship["phase"]),
-                moving_role="outer",
-                left_metadata=outer_endpoint["metadata"],
-                right_metadata=primary_endpoint["metadata"],
-                actor_side=relationship.get("actorSide"),
-                actor_source=relationship.get("actorSource"),
-                role_contexts=role_contexts,
-            )
-            if reverse:
-                _swap_display_endpoints(row)
-            rows.append(row)
+                    outer_endpoint,
+                    primary_endpoint,
+                    outer_metadata,
+                    primary_metadata,
+                    mode=mode,
+                    reverse=reverse,
+                    display_options=display_options,
+                    anchor_jd=anchor_jd,
+                    evolving_roles=evolving_roles,
+                    evaluator_cache=evaluator_cache,
+                    role_contexts=role_contexts,
+                ))
     return rows
+
+
+def _technique_cross_row(
+    primary,
+    outer,
+    asp,
+    outer_endpoint: dict[str, Any],
+    primary_endpoint: dict[str, Any],
+    outer_metadata: dict[str, Any],
+    primary_metadata: dict[str, Any],
+    *,
+    mode: str,
+    reverse: bool,
+    display_options,
+    anchor_jd: float,
+    evolving_roles: set[str],
+    evaluator_cache: dict[int, aspect_motion.ChartMotionEvaluator],
+    role_contexts: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source = {
+        "outer": str(outer_endpoint["key"]),
+        "inner": str(primary_endpoint["key"]),
+        **export_chart_json.aspect_payload(
+            str(outer_endpoint["key"]),
+            str(primary_endpoint["key"]),
+            asp,
+        ),
+    }
+    exact = float(source.get("orb", 0.0)) <= _EXACT_CALC_ORB_DEGREES
+    relationship = _relationship_state(
+        left_chart=outer,
+        left_endpoint=outer_metadata,
+        right_chart=primary,
+        right_endpoint=primary_metadata,
+        aspect_type=int(source["type"]),
+        exact=exact,
+        anchor_jd=anchor_jd,
+        evolving_roles=evolving_roles,
+        evaluator_cache=evaluator_cache,
+        role_contexts=role_contexts,
+    )
+    row = _row(
+        mode=mode,
+        left_chart=outer,
+        left_key=str(outer_endpoint["key"]),
+        left_role="outer",
+        right_chart=primary,
+        right_key=str(primary_endpoint["key"]),
+        right_role="primary",
+        source=source,
+        display_options=display_options,
+        phase=str(relationship["phase"]),
+        moving_role="outer",
+        left_metadata=outer_metadata,
+        right_metadata=primary_metadata,
+        actor_side=relationship.get("actorSide"),
+        actor_source=relationship.get("actorSource"),
+        role_contexts=role_contexts,
+    )
+    if reverse:
+        _swap_display_endpoints(row)
+    return row
 
 
 def _ring_point_rows(
@@ -2284,15 +2686,16 @@ def _ring_point_rows(
         )
         point_lon = float(point["longitude"])
         for pid in planet_chart.get_visible_aspect_planet_ids(
-            include_chiron=getattr(planet_chart.options, "showchiron", True)
+            include_chiron=True
         ):
             key = _PLANET_BY_KEY_INV.get(pid)
             body = planet_chart.get_planet_body(pid)
             if key is None or body is None:
                 continue
             lon = float(body.data[planets.Planet.LONG])
-            asp = export_chart_json._point_aspect(planet_chart, pid, point_lon)
-            if not export_chart_json.should_show_aspect(planet_chart, asp, lon, point_lon):
+            asp = export_chart_json.shown_aspect(
+                planet_chart, export_chart_json._point_aspect(planet_chart, pid, point_lon), lon, point_lon)
+            if asp is None:
                 continue
             if (
                 not bool(
@@ -2625,6 +3028,240 @@ def _mode_options(
     return [{"id": mode, "label": labels[mode]} for mode in available_modes]
 
 
+# Ascensional contact kinds -> the shared chart aspect type (14/15 = antiscia/contra-antiscia,
+# as on the ascensional wheel).
+_ASCENSIONAL_ASPECT_TYPES = {
+    "conjunction": int(chart.Chart.CONJUNCTIO),
+    "opposition": int(chart.Chart.OPPOSITIO),
+    "antiscia": 14,
+    "contra_antiscia": 15,
+}
+
+
+def _ascensional_aspect_metadata(display_options, aspect: str) -> dict[str, Any]:
+    aspect_type = _ASCENSIONAL_ASPECT_TYPES[aspect]
+    if aspect not in ("antiscia", "contra_antiscia"):
+        return _aspect_metadata(display_options, aspect_type)
+    abbreviation = str(mtexts.txts["AntisciaAbbrev" if aspect == "antiscia" else "ContraAntisciaAbbrev"])
+    return {
+        "type": aspect_type,
+        "glyph": abbreviation,
+        "glyphFont": "text",
+        "name": str(mtexts.txts["Antiscia" if aspect == "antiscia" else "ContraAntiscia"]),
+        "exportSymbolText": abbreviation,
+        "color": _rgb_hex(getattr(display_options, "clrtexts", None)),
+        "colorRole": "--morinus-text-bright",
+    }
+
+
+def _ascensional_endpoint(point: dict[str, Any], list_role: str, ring_points: dict[str, Any]) -> dict[str, Any]:
+    """The scene point's own list metadata, under the list's chart role."""
+    key = str(point["semanticKey"])
+    metadata = dict(point.get("metadata") or {})
+    if key.startswith("reference:"):
+        # AT single-wheel reference rays carry only a label; they present as
+        # the fixed radix point they stand for.
+        base = (ring_points.get(key.removeprefix("reference:")) or {}).get("metadata") or {}
+        metadata = {
+            **base,
+            "name": str(metadata.get("label") or base.get("name") or key),
+            "motionRef": None,
+            "motionMarker": "",
+        }
+        metadata.setdefault("glyph", "")
+        metadata.setdefault("glyphFont", "text")
+        metadata.setdefault("sortOrder", 999)
+        metadata.setdefault("filterIds", [])
+        metadata.setdefault("objectType", "outerPoint")
+        if point.get("longitude") is not None:
+            metadata["longitude"] = float(point["longitude"])
+    metadata["key"] = key
+    ring_role = str(metadata.get("role") or point.get("chartRole") or list_role)
+    if ring_role not in ("primary", "outer") and ring_role != list_role:
+        # Rings beyond the second keep their own role in the scene.
+        metadata["key"] = key.replace(f"point:{ring_role}:", f"point:{list_role}:", 1)
+        metadata["filterIds"] = [
+            value.replace(f"outer:{ring_role}:", f"outer:{list_role}:", 1)
+            for value in metadata.get("filterIds") or []
+        ]
+    metadata["role"] = list_role
+    return metadata
+
+
+_AT_PHASE_SAMPLE_MINUTES = 2.0
+
+
+def _ascensional_list_contacts(scene: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every contact out to the widest list orb; the orb chooser filters."""
+    return (scene.get("listGraph") or scene["graph"])["contacts"]
+
+
+def _at_contact_phases(scene: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """Applying/separating per Ascensional Transits contact.
+
+    The transit moves against the fixed radix table, so the engine's own
+    near-miss rule applies: re-evaluate the event frame a moment later and
+    compare orbs. Returns ``{contact id: (phase, transit point id)}``.
+    """
+    import ascensional_transits as at
+    from webapp.daemon.ascensional_scene import at_point_key
+    from webapp.daemon.ascensional_service import _orb_for_aspect
+
+    frame = scene.get("atFrame")
+    if frame is None:
+        return {}
+    later = at.ATSnapshot(
+        frame.radix, frame.event_jd + _AT_PHASE_SAMPLE_MINUTES / 1440.0, frame.event_place,
+        include_parallels=True, apply_precession=frame.apply_precession,
+        direction=frame.direction, precession_measure=frame.precession_measure,
+    )
+    later_transit = {at_point_key(point): point for point in later.transit_points}
+    later_radix = {at_point_key(point): point for point in later.radix_points}
+    single = len(scene["rings"]) == 1
+    located = {
+        point["id"]: (index, point)
+        for index, ring in enumerate(scene["rings"])
+        for point in ring["points"]
+    }
+    phases = {}
+    for contact in _ascensional_list_contacts(scene):
+        ends = [located[contact["fromId"]], located[contact["toId"]]]
+        # Biwheel: ring 0 is the radix; single AT wheel: radix rays are references.
+        radix_end = next(
+            point for index, point in ends
+            if (point["semanticKey"].startswith("reference:") if single else index == 0)
+        )
+        transit_end = next(point for _index, point in ends if point is not radix_end)
+        moving = later_transit.get(transit_end["semanticKey"])
+        fixed = later_radix.get(radix_end["semanticKey"].removeprefix("reference:"))
+        orb = float(contact["orbArcmin"])
+        if orb <= _EXACT_CALC_ORB_DEGREES * 60.0:
+            phase = "exact"
+        elif moving is None or fixed is None:
+            phase = "none"
+        else:
+            aspect = contact["aspect"]
+            later_orb = _orb_for_aspect(
+                at._pmp_from_mdo_q(moving.mdo, moving.quadrant),
+                at._pmp_from_mdo_q(fixed.mdo, fixed.quadrant),
+                aspect,
+            ) if moving.mdo is not None and fixed.mdo is not None else None
+            phase = (
+                "none" if later_orb is None or later_orb == orb
+                else "applying" if later_orb < orb else "separating"
+            )
+        phases[contact["id"]] = (phase, transit_end["id"])
+    return phases
+
+
+def _ascensional_rows(
+    ascensional: dict[str, Any],
+    selected_mode: str,
+    display_options,
+) -> list[dict[str, Any]]:
+    """Rows from the ascensional wheel's contact detector, without prefiltering.
+
+    The ecliptic aspect engine is not consulted: in the ascensional view the
+    wheel's contacts (MDO, or Ascensional Transits on an AT document) are the
+    aspects. The list reads the same detector out to its widest orb choice;
+    the list's orb chooser, not the technique orb, decides what shows. Each
+    mundane axis fact is listed once, as in the Inspector.
+    """
+    from webapp.daemon.ascensional_inspector import _collapse_axis_mirrors
+
+    scene = ascensional["scene"]
+    ring_by_role = ascensional["rings"]
+    primary_ring = ring_by_role.get("primary")
+    outer_ring = ring_by_role.get("outer")
+    if selected_mode == "primary":
+        wanted = {(primary_ring, primary_ring)}
+    elif selected_mode == "outer":
+        wanted = {(outer_ring, outer_ring)}
+    else:
+        wanted = {(primary_ring, outer_ring), (outer_ring, primary_ring)}
+    role_by_ring = {primary_ring: "primary"}
+    if outer_ring is not None:
+        role_by_ring[outer_ring] = "outer"
+    located = {
+        point["id"]: (index, point)
+        for index, ring in enumerate(scene["rings"])
+        for point in ring["points"]
+    }
+    ring_points = [
+        {point["semanticKey"]: point for point in ring["points"]}
+        for ring in scene["rings"]
+    ]
+    method = str(scene.get("contactMethod") or "mdo")
+    # MDO contacts compare static chart frames; only transits move.
+    phases = _at_contact_phases(scene) if method == "ascensional-transits" else {}
+    entries = []
+    for contact in _ascensional_list_contacts(scene):
+        left_index, left_point = located[contact["fromId"]]
+        right_index, right_point = located[contact["toId"]]
+        if (left_index, right_index) not in wanted:
+            continue
+        aspect = str(contact["aspect"])
+        left = _ascensional_endpoint(left_point, role_by_ring[left_index], ring_points[left_index])
+        right = _ascensional_endpoint(right_point, role_by_ring[right_index], ring_points[right_index])
+        cross = left_index != right_index
+        if cross and (left["role"] == "outer") != (selected_mode == "outerToPrimary"):
+            left, right = right, left
+        orb = float(contact["orbArcmin"]) / 60.0
+        phase, actor_id = phases.get(contact["id"], (
+            "exact" if float(contact["orbArcmin"]) <= 1e-9 else "none", None,
+        ))
+        actor_key = located[actor_id][1]["semanticKey"] if actor_id else None
+        aspect_metadata = _ascensional_aspect_metadata(display_options, aspect)
+        row = {
+            "id": f"{selected_mode}:{method}:{left['role']}:{left['key']}:{aspect_metadata['type']}:{right['role']}:{right['key']}",
+            "trajectoryKey": f"{method}:{contact['id']}",
+            "left": left,
+            "aspect": aspect_metadata,
+            "right": right,
+            "orb": orb,
+            "orbFormatted": _format_orb(orb),
+            "phase": phase,
+            "movingRole": None,
+            "actorSide": None,
+            "actorSource": None,
+            "method": method,
+            "contactId": contact["id"],
+            "filterIds": list(dict.fromkeys(left.get("filterIds", []) + right.get("filterIds", []))),
+        }
+        if actor_key is not None:
+            row["actorSide"] = "left" if left["key"] == actor_key else "right"
+        if not cross:
+            row = _orient_within_chart_row(row)
+        entries.append((
+            str(left_point["semanticKey"]), str(right_point["semanticKey"]),
+            aspect, float(contact["orbArcmin"]), row,
+        ))
+    return _collapse_axis_mirrors(entries)
+
+
+def _ascensional_endpoint_catalog(ascensional: dict[str, Any], selected_mode: str) -> list[dict[str, Any]]:
+    rings = ascensional["rings"]
+    roles = (
+        ("primary",) if selected_mode == "primary"
+        else ("outer",) if selected_mode == "outer"
+        else ("primary", "outer")
+    )
+    scene_rings = ascensional["scene"]["rings"]
+    catalog = []
+    for role in roles:
+        index = rings.get(role)
+        if index is None:
+            continue
+        ring = scene_rings[index]
+        ring_points = {point["semanticKey"]: point for point in ring["points"]}
+        catalog.extend(
+            _ascensional_endpoint(point, role, ring_points)
+            for point in ring["points"]
+            if point.get("status") == "available"
+        )
+    return catalog
+
+
 def _rows_for_mode(
     context: dict[str, Any],
     mode: str | None,
@@ -2641,6 +3278,10 @@ def _rows_for_mode(
         raise ValueError(f"Aspect List mode is not available: {selected_mode}")
 
     display_options = effective_display_options(primary.options)
+    ascensional = context.get("ascensional")
+    if ascensional is not None:
+        rows = _ascensional_rows(ascensional, selected_mode, display_options)
+        return primary, outer, available_modes, selected_mode, rows
     active_ring_role = _active_ring_target_role(selected_mode, outer)
     if selected_mode == "primary":
         rows = _internal_rows(
@@ -2670,7 +3311,32 @@ def _rows_for_mode(
             role_contexts=role_contexts,
         )
 
-    return primary, outer, available_modes, selected_mode, rows
+    return primary, outer, available_modes, selected_mode, _drop_mirrored_node_rows(rows)
+
+
+_NODE_IDS = {"nnode": astrology.SE_MEAN_NODE, "snode": astrology.SE_TRUE_NODE}
+
+
+def _drop_mirrored_node_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per body for an aspect both lunar nodes share (node_mirror).
+
+    The partner carries both chart roles, so a radix node and a transit node
+    of the same body are never confused."""
+
+    def contacts():
+        for index, row in enumerate(rows):
+            left, right = row.get("left") or {}, row.get("right") or {}
+            left_node, right_node = _endpoint_node_key(left), _endpoint_node_key(right)
+            if bool(left_node) == bool(right_node):
+                continue
+            node, node_side, other = (
+                (left_node, left, right) if left_node else (right_node, right, left)
+            )
+            partner = (other.get("role"), other.get("key"), node_side.get("role"))
+            yield index, partner, _NODE_IDS[node], (row.get("aspect") or {}).get("type")
+
+    drop = node_mirror.redundant_keys(contacts())
+    return [row for index, row in enumerate(rows) if index not in drop] if drop else rows
 
 
 def _context_key(
@@ -2729,6 +3395,7 @@ def _context_key(
                 "aspect",
                 "orbis",
                 "orbisAscMC",
+                "orbisparH",
                 "orbisparAscMC",
                 "orbisplanetspar",
                 "exact",
@@ -2979,12 +3646,18 @@ def aspect_list_payload(context: dict[str, Any], mode: str | None = None) -> dic
         context.get("role_contexts") or {}, exact_role, exact_chart,
     )
     perfection_anchor_jd = _motion_anchor_jd(exact_motion_context, exact_chart)
+    has_symbolic_projection = any(
+        bool(getattr(chrt, "_symbolic_longitudes", False))
+        for chrt in (primary, outer)
+    )
 
     return {
         "rows": rows,
         "filters": _filter_items(
             rows,
-            _filter_endpoint_catalog(primary, outer, selected_mode),
+            _ascensional_endpoint_catalog(context["ascensional"], selected_mode)
+            if context.get("ascensional") is not None
+            else _filter_endpoint_catalog(primary, outer, selected_mode),
         ),
         "modes": _mode_options(context, available_modes, primary, outer),
         "activeMode": selected_mode,
@@ -2997,6 +3670,17 @@ def aspect_list_payload(context: dict[str, Any], mode: str | None = None) -> dic
         ),
         "contextKey": context_key,
         "perfectionAnchorJd": float(perfection_anchor_jd),
+        # Include-pill families this view calculates. The ascensional view
+        # lists only its own mundane contacts (topocentric school), so it
+        # offers neither minor aspects nor declination contacts.
+        "aspectFamilies": (
+            [] if context.get("ascensional") is not None
+            else ["minor"] if has_symbolic_projection
+            else ["minor", "declination"]
+        ),
+        # Ascensional contacts are minutes of arc wide; the list offers its own
+        # orb scale there (see ascensional_scene.LIST_MAX_ORB_ARCMIN).
+        "orbScale": "ascensional" if context.get("ascensional") is not None else "ecliptic",
     }
 
 
@@ -3251,15 +3935,17 @@ def _semantic_perfection_search(
         return finish(None, "trajectory-sample-unavailable")
     if not current_left.get("valid", True) or not current_right.get("valid", True):
         return finish(None, "trajectory-sample-unavailable")
-    offsets = searchbackend._dynamic_aspect_offsets(int(aspect_type))
-    offset = min(
-        offsets,
-        key=lambda value: abs(searchbackend._dynamic_weather_delta(
-            current_left["longitude"], current_right["longitude"], float(value)
-        )),
+    current_left_value = _relation_coordinate(
+        left_eval, current_left, anchor_jd, aspect_type
     )
-    current_error = searchbackend._dynamic_weather_delta(
-        current_left["longitude"], current_right["longitude"], float(offset)
+    current_right_value = _relation_coordinate(
+        right_eval, current_right, anchor_jd, aspect_type
+    )
+    if current_left_value is None or current_right_value is None:
+        return finish(None, "trajectory-sample-unavailable")
+    offset = _relation_offset(aspect_type, current_left_value, current_right_value)
+    current_error = _relation_error(
+        aspect_type, offset, current_left_value, current_right_value
     )
     if abs(current_error) <= 1.0e-8:
         return finish(float(anchor_jd))
@@ -3285,9 +3971,12 @@ def _semantic_perfection_search(
         if right_evolves and right_sample.get("regime") != anchor_regimes[1]:
             sample_failure[0] = "regime-change-before-perfection"
             return None
-        return searchbackend._dynamic_weather_delta(
-            left_sample["longitude"], right_sample["longitude"], float(offset)
-        )
+        left_value = _relation_coordinate(left_eval, left_sample, jd, aspect_type)
+        right_value = _relation_coordinate(right_eval, right_sample, jd, aspect_type)
+        if left_value is None or right_value is None:
+            sample_failure[0] = "trajectory-sample-unavailable"
+            return None
+        return _relation_error(aspect_type, offset, left_value, right_value)
 
     minimum_probe_days = max(
         (
@@ -3339,9 +4028,16 @@ def _semantic_perfection_search(
             motion_context=left_motion_context,
         )
         if before_left and after_left:
-            left_speed = (
-                (float(after_left["longitude"]) - float(before_left["longitude"]) + 540.0) % 360.0 - 180.0
-            ) / (2.0 * epsilon)
+            before_value = _relation_coordinate(
+                left_eval, before_left, anchor_jd - epsilon, aspect_type
+            )
+            after_value = _relation_coordinate(
+                left_eval, after_left, anchor_jd + epsilon, aspect_type
+            )
+            if before_value is not None and after_value is not None:
+                left_speed = _coordinate_rate(
+                    before_value, after_value, epsilon, aspect_type
+                )
     if right_evolves:
         before_right = _sample_relation_endpoint(
             right_eval,
@@ -3358,9 +4054,16 @@ def _semantic_perfection_search(
             motion_context=right_motion_context,
         )
         if before_right and after_right:
-            right_speed = (
-                (float(after_right["longitude"]) - float(before_right["longitude"]) + 540.0) % 360.0 - 180.0
-            ) / (2.0 * epsilon)
+            before_value = _relation_coordinate(
+                right_eval, before_right, anchor_jd - epsilon, aspect_type
+            )
+            after_value = _relation_coordinate(
+                right_eval, after_right, anchor_jd + epsilon, aspect_type
+            )
+            if before_value is not None and after_value is not None:
+                right_speed = _coordinate_rate(
+                    before_value, after_value, epsilon, aspect_type
+                )
     endpoint_motion_budget = max(
         abs(left_speed) + abs(right_speed), abs(rate), 0.001
     )
@@ -3701,6 +4404,9 @@ def _perfection_for_row(
             "reason": str(reason),
         }
 
+    if row.get("method"):
+        # Ascensional contacts have no ecliptic trajectory to perfect.
+        return unavailable("ascensional-contact")
     chart_by_role = {"primary": primary, "outer": outer}
     left = row["left"]
     right = row["right"]
@@ -3787,7 +4493,11 @@ def _perfection_for_row(
         )
         fast_search_used = False
         exact_jd = None
-        if trajectory_kind == "physical":
+        # The Swiss fast kernels solve longitude targets only; declination
+        # contacts always take the semantic evaluator.
+        if trajectory_kind == "physical" and not _is_declination_aspect(
+            int(row["aspect"]["type"])
+        ):
             try:
                 if (
                     left_evolves

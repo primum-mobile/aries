@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "ac340a28d",
+  "beta": "1.0.0b11",
+  "referenceRadius": 400,
+  "rings": {
+    "r30": 379.1,
+    "r0": 348.1,
+    "rSign": 363.6,
+    "rTerms": 348.1,
+    "rTermsPlanet": 341.6,
+    "rDecans": 335.1,
+    "rDecansPlanet": 328.25,
+    "rCuspOuter": 321.4,
+    "rCuspLabelOuter": 310.65999999999997,
+    "rCuspLabel": 306.19363636363636,
+    "rInner": 299.1,
+    "rPlanet": 280.5526315789474,
+    "rAsp": 190.6,
+    "rHouse": 211,
+    "rBase": 190.6,
+    "rHouseName": 200.8,
+    "rLLine": 289.79200000000003
+  }
+}

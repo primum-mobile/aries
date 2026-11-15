@@ -12,7 +12,7 @@ const directKey = /^authoring\.wheel\.(base|classic|compact|anglo|houses|cusps)\
 
 /** Accepts semantic IDs and legacy renderer CSS variables. Paint stays with themes. */
 export function isWheelGeometryKey(key: string): boolean {
-  if (legacyKeys.has(key)) return true;
+  if (legacyKeys.has(key) || ownership.presentationKeys.includes(key)) return true;
   const match = directKey.exec(key);
   return !!match && (properties.has(match[3]) || (match[3] === "scale" && scaleClasses.has(match[2])));
 }

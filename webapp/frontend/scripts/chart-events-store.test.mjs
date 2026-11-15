@@ -212,3 +212,44 @@ test("sort retains visible rows until replacement and rejects old paging respons
   calls[3].resolve(page("next", 300));
   await next;
 });
+
+test("menu Add event saves, opens the events pane and hands the new row to inline rename", async () => {
+  const patches = [];
+  const invalidated = [];
+  const opened = [];
+  const compiledModule = { exports: {} };
+  const code = ts.transpileModule(readFileSync(new URL("../src/components/workshell/chart-events-actions.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const fakeRequire = (id) => {
+    if (id === "@/lib/daemon/client") return {
+      executeWorkspaceContextMenuAction: async () => ({ ok: true, ownerDocumentId: "radix", eventId: "evt-1" }),
+    };
+    if (id === "@/stores/daemon-workspace-adapter") return { applyImmediateWorkspaceCommandResult() {} };
+    if (id === "@/stores/chart-events-store") return { useChartEventsStore: { getState: () => ({
+      patch: (docId, patch) => patches.push({ docId, patch }), invalidate: (ids) => invalidated.push(...ids),
+    }) } };
+    if (id === "@/stores/chart-event-search-store") return { useChartEventSearchStore: { getState: () => ({ patch() {} }) } };
+    if (id === "@/stores/workspace-store") return { useWorkspaceStore: { getState: () => ({
+      openChartEventsPane: (state) => opened.push(state),
+    }) } };
+    return require(id);
+  };
+  new Function("require", "module", "exports", code)(fakeRequire, compiledModule, compiledModule.exports);
+  const handled = await compiledModule.exports.handleChartEventsMenuAction("workspace.save_event",
+    { documentId: "transit", ownerDocumentId: "radix" });
+  assert.equal(handled, true);
+  assert.deepEqual(patches, [{ docId: "radix", patch: { error: null, renameEventId: "evt-1" } }]);
+  assert.deepEqual(invalidated, ["radix"]);
+  assert.deepEqual(opened, [{ documentId: "radix" }]);
+});
+
+test("a reload of the events page keeps the pending rename hint", async () => {
+  const { store, calls } = harness();
+  store.getState().patch("a", { renameEventId: "evt-1" });
+  const loading = store.getState().load("a");
+  calls[0].resolve(page("evt-1"));
+  await loading;
+  assert.equal(store.getState().views.a.renameEventId, "evt-1");
+  assert.equal(store.getState().views.a.rows[0].id, "evt-1");
+});

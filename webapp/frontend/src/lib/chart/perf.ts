@@ -36,6 +36,15 @@ type PendingChartStep = {
   key: string | null;
   inputIds: number[];
   appliedInputs: number;
+  // Frontend split of key → paint: request sent, response received, snapshot
+  // handed to the store (the chart-step-intent event time).
+  requestStartAt: number | null;
+  responseAt: number | null;
+  publishedAt: number;
+  // Daemon handler timing returned with the step (navigation, live surfaces, total).
+  daemonNavigateMs: number | null;
+  daemonLiveSurfacesMs: number | null;
+  daemonHandlerMs: number | null;
 };
 
 const SPEEDLOG_FLUSH_MS = 10_000;
@@ -80,6 +89,14 @@ const speedlogDescriptions: Record<string, string> = {
   "time-step.post-render-gap-delta": "Absolute post-render-task versus input gap delta",
   "time-step.session-change-after-canvas": "Pure-step session notification delay after Canvas",
   "time-step.session-change-before-canvas": "Canvas delay after an early pure-step session notification",
+  "time-step.split.queue-wait": "Step queued behind the previous step",
+  "time-step.split.command": "Step daemon command, request to response",
+  "time-step.split.daemon-navigate": "Step daemon navigation and snapshot",
+  "time-step.split.daemon-live-surfaces": "Step daemon live-surface payloads",
+  "time-step.split.transport": "Step command outside the daemon handler",
+  "time-step.split.presentation-hold": "Step response held for the previous presentation",
+  "time-step.split.publish-to-schedule": "Step store/React publish to paint start",
+  "time-step.split.raf-wait": "Step paint scheduled to animation frame",
   "browser.long-task": "Browser main-thread long task during held stepping",
 };
 
@@ -372,6 +389,7 @@ function scheduleStepRenderBoundary(event: ChartPerfEvent): void {
   let callbackOrder = 0;
   let postRenderOrder: number | null = null;
   let secondFrameOrder: number | null = null;
+  let repeatedFrameCallbacks = 0;
   let finished = false;
   if (speedlogEnabled()) speedlogBoundaryProbes += 1;
 
@@ -393,6 +411,7 @@ function scheduleStepRenderBoundary(event: ChartPerfEvent): void {
       secondFrameTimestamp,
       postRenderOrder,
       secondFrameOrder,
+      repeatedFrameCallbacks,
       postRenderTaskLate:
         postRenderOrder != null &&
         secondFrameOrder != null &&
@@ -417,15 +436,67 @@ function scheduleStepRenderBoundary(event: ChartPerfEvent): void {
       postRenderAt = perfNow();
       finish();
     }, 0);
-    window.requestAnimationFrame((nextTimestamp) => {
+    const awaitDistinctFrame = (nextTimestamp: number) => {
       if (finished) return;
+      // A nested callback is not necessarily a distinct render opportunity.
+      // Chromium can deliver another callback with this same frame timestamp.
+      // Observe the next distinct frame; keep the original watchdog so a
+      // stalled frame clock remains a failed probe, never fabricated evidence.
+      if (nextTimestamp <= timestamp) {
+        repeatedFrameCallbacks += 1;
+        window.requestAnimationFrame(awaitDistinctFrame);
+        return;
+      }
       callbackOrder += 1;
       secondFrameOrder = callbackOrder;
       secondFrameTimestamp = nextTimestamp;
       secondFrameAt = perfNow();
       finish();
-    });
+    };
+    window.requestAnimationFrame(awaitDistinctFrame);
   });
+}
+
+/** Key → paint stages of one step paint; the same split the step harness reports. */
+function stepSplitSamples(
+  detail: Record<string, unknown>,
+  at: number,
+  totalMs: number | null,
+): [string, number][] {
+  const intentAt = numericDetail(detail, "stepIntentAt");
+  const requestAt = numericDetail(detail, "stepRequestStartAt");
+  const responseAt = numericDetail(detail, "stepResponseAt");
+  const publishedAt = numericDetail(detail, "stepPublishedAt");
+  const scheduledAt = numericDetail(detail, "scheduledAt");
+  if (
+    intentAt == null ||
+    requestAt == null ||
+    responseAt == null ||
+    publishedAt == null ||
+    scheduledAt == null ||
+    totalMs == null
+  ) {
+    return [];
+  }
+  const daemonNavigateMs = numericDetail(detail, "stepDaemonNavigateMs");
+  const daemonLiveSurfacesMs = numericDetail(detail, "stepDaemonLiveSurfacesMs");
+  const daemonHandlerMs = numericDetail(detail, "stepDaemonHandlerMs");
+  const daemonSamples: [string, number][] =
+    daemonNavigateMs == null || daemonLiveSurfacesMs == null || daemonHandlerMs == null
+      ? []
+      : [
+          ["time-step.split.daemon-navigate", daemonNavigateMs],
+          ["time-step.split.daemon-live-surfaces", daemonLiveSurfacesMs],
+          ["time-step.split.transport", responseAt - requestAt - daemonHandlerMs],
+        ];
+  return [
+    ...daemonSamples,
+    ["time-step.split.queue-wait", requestAt - intentAt],
+    ["time-step.split.command", responseAt - requestAt],
+    ["time-step.split.presentation-hold", publishedAt - responseAt],
+    ["time-step.split.publish-to-schedule", scheduledAt - publishedAt],
+    ["time-step.split.raf-wait", at - totalMs - scheduledAt],
+  ];
 }
 
 function collectSpeedlogSample(event: ChartPerfEvent): void {
@@ -465,6 +536,9 @@ function collectSpeedlogSample(event: ChartPerfEvent): void {
     const stepFirstPaintMs = numericDetail(event.detail, "stepIntentToPaintMs");
     if (stepFirstPaintMs != null) {
       addSpeedlogSample("time-step.first-useful-paint", stepFirstPaintMs, event.at);
+    }
+    for (const [metric, value] of stepSplitSamples(event.detail, event.at, totalMs)) {
+      addSpeedlogSample(metric, value, event.at);
     }
     const stepInputIds = numericArrayDetail(event.detail, "stepInputIds");
     if (stepInputIds.length > 0 && numericDetail(event.detail, "stepIntentAt") != null) {
@@ -596,6 +670,12 @@ function recordChartPerfAt(
       key: stringDetail(detail, "key"),
       inputIds: numericArrayDetail(detail, "inputIds"),
       appliedInputs: numericDetail(detail, "repeat") ?? 1,
+      requestStartAt: numericDetail(detail, "requestStartAt"),
+      responseAt: numericDetail(detail, "responseAt"),
+      publishedAt: at,
+      daemonNavigateMs: numericDetail(detail, "daemonNavigateMs"),
+      daemonLiveSurfacesMs: numericDetail(detail, "daemonLiveSurfacesMs"),
+      daemonHandlerMs: numericDetail(detail, "daemonHandlerMs"),
     });
     if (pendingChartSteps.length > 8) {
       droppedPendingInputIds = pendingChartSteps
@@ -618,6 +698,12 @@ function recordChartPerfAt(
         stepInputIds: pendingChartStep.inputIds,
         stepInputId: pendingChartStep.inputIds[0] ?? null,
         stepAppliedInputs: pendingChartStep.appliedInputs,
+        stepRequestStartAt: pendingChartStep.requestStartAt,
+        stepResponseAt: pendingChartStep.responseAt,
+        stepPublishedAt: pendingChartStep.publishedAt,
+        stepDaemonNavigateMs: pendingChartStep.daemonNavigateMs,
+        stepDaemonLiveSurfacesMs: pendingChartStep.daemonLiveSurfacesMs,
+        stepDaemonHandlerMs: pendingChartStep.daemonHandlerMs,
       };
     }
   }

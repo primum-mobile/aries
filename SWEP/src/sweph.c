@@ -2358,7 +2358,33 @@ again:
 }
 
 /*
- * Alois 2.12.98: inserted error message generation for file not found 
+ * Aries (2026): Python hands Swiss Ephemeris UTF-8 paths (PyArg "s",
+ * str.encode("utf-8")), but the Windows C runtime reads a narrow fopen()
+ * path in the ANSI code page. A user profile name with umlauts or Japanese
+ * characters then misses every .se1 file and Swiss silently falls
+ * back to Moshier. On Windows, open valid UTF-8 through the wide API and
+ * keep the narrow call as the fallback; other platforms are unchanged.
+ */
+static FILE *swi_fopen_native(const char *path, const char *mode)
+{
+#ifdef _WIN32
+  wchar_t wpath[2 * AS_MAXCH];
+  wchar_t wmode[8];
+  FILE *fp;
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath,
+                          (int) (sizeof(wpath) / sizeof(wpath[0]))) > 0
+      && MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode,
+                             (int) (sizeof(wmode) / sizeof(wmode[0]))) > 0) {
+    fp = _wfopen(wpath, wmode);
+    if (fp != NULL)
+      return fp;
+  }
+#endif
+  return fopen(path, mode);
+}
+
+/*
+ * Alois 2.12.98: inserted error message generation for file not found
  */
 FILE *swi_fopen(int ifno, char *fname, char *ephepath, char *serr)
 {
@@ -2393,7 +2419,7 @@ FILE *swi_fopen(int ifno, char *fname, char *ephepath, char *serr)
       return NULL;
     }
     strcpy(fnamp, s);
-    fp = fopen(fnamp, BFILE_R_ACCESS);
+    fp = swi_fopen_native(fnamp, BFILE_R_ACCESS);
     if (fp != NULL) 
       return fp;
   }

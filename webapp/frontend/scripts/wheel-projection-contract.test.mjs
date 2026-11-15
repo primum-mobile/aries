@@ -42,10 +42,13 @@ const {
 const chartFontsUrl = dataUrl(
   await transpileFile("../src/lib/chart/chart-fonts.ts"),
 );
+const textInkGapUrl = dataUrl(
+  await transpileFile("../src/lib/chart/text-ink-gap.ts"),
+);
 const { polar } = await import(
   dataUrl(
     (await transpileFile("../src/lib/chart/canvas-draw.ts"))
-      .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`),
+      .replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`),
   )
 );
 

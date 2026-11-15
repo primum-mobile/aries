@@ -13,10 +13,6 @@ const frontendRoot = resolve(scriptDir, "..");
 const repoRoot = resolve(frontendRoot, "../..");
 const generatorPath = resolve(scriptDir, "generate-style-profile-catalog.mjs");
 const catalogPath = resolve(repoRoot, "webapp/daemon/style_profile_catalog_generated.py");
-const client = readFileSync(
-  resolve(frontendRoot, "src/app/style-lab/style-lab-client.tsx"),
-  "utf8",
-);
 const chartCanvas = readFileSync(
   resolve(frontendRoot, "src/components/workshell/chart-canvas.tsx"),
   "utf8",
@@ -57,10 +53,6 @@ const tauriLib = readFileSync(
   resolve(frontendRoot, "src-tauri/src/lib.rs"),
   "utf8",
 );
-const appThemePreview = readFileSync(
-  resolve(frontendRoot, "src/components/workshell/app-theme-preview.tsx"),
-  "utf8",
-);
 const workspaceContent = readFileSync(
   resolve(frontendRoot, "src/components/workshell/workspace-content.tsx"),
   "utf8",
@@ -75,6 +67,10 @@ const titlebarOptionsMenu = readFileSync(
 );
 const homeClient = readFileSync(
   resolve(frontendRoot, "src/components/workshell/home-client.tsx"),
+  "utf8",
+);
+const manifestService = readFileSync(
+  resolve(frontendRoot, "../daemon/manifest_service.py"),
   "utf8",
 );
 const manifestShortcuts = readFileSync(
@@ -121,8 +117,8 @@ const commandPrimitive = readFileSync(
   resolve(frontendRoot, "src/components/ui/command.tsx"),
   "utf8",
 );
-const daemonClient = readFileSync(
-  resolve(frontendRoot, "src/lib/daemon/client.ts"),
+const themeSession = readFileSync(
+  resolve(frontendRoot, "src/lib/style-lab/theme-session.ts"),
   "utf8",
 );
 const styleLabClient = readFileSync(
@@ -137,11 +133,6 @@ const themeProvider = readFileSync(
   resolve(frontendRoot, "src/components/workshell/theme-provider.tsx"),
   "utf8",
 );
-const launcher = readFileSync(
-  resolve(frontendRoot, "scripts/style-lab-up.sh"),
-  "utf8",
-);
-const nextConfig = readFileSync(resolve(frontendRoot, "next.config.ts"), "utf8");
 const globalStyles = readFileSync(
   resolve(frontendRoot, "src/app/globals.css"),
   "utf8",
@@ -314,6 +305,26 @@ test("material controls follow the retained paint composition order", () => {
   }
 });
 
+test("pattern and shadow parameters stay in their material group, not Geometry", () => {
+  // Pattern spacing and dot size bind as `spacing`, the shadow offsets as
+  // `offset`; the section is chosen from the material property first so they
+  // sit with the pattern or shadow they shape, on both tabs, in one order.
+  const sectionStart = chartStylePanel.indexOf("function inspectorSectionFor(");
+  const sectionSource = chartStylePanel.slice(
+    sectionStart,
+    chartStylePanel.indexOf("\n}\n", sectionStart),
+  );
+  const materialFirst = sectionSource.indexOf("surfaceMaterialProperty(element, control)");
+  assert.ok(materialFirst >= 0, "material properties must be classified before numeric bindings");
+  assert.ok(materialFirst < sectionSource.indexOf('property === "spacing"'));
+  let previous = -1;
+  for (const property of ["cellSize", "dotSize", "density", "angle", "seed"]) {
+    const current = appThemeControls.indexOf(`label={t("styleLab.app.material.${property}")}`);
+    assert.ok(current > previous, `${property} must follow its predecessor on the Application tab`);
+    previous = current;
+  }
+});
+
 test("material inspectors disclose the paint stack and make shadows explicit", () => {
   for (const group of [
     "fill",
@@ -373,40 +384,10 @@ test("the inspector switcher is exhaustive without exposing scene hierarchy ids"
   assert.match(chartStylePanel, /isManifestPlaceholderElement/);
 });
 
-test("the sidecar owns a chart picker selection instead of following the app document", () => {
-  assert.match(client, /<SystemChartPicker[\s\S]*onPickRow=\{openPickedChart\}/);
-  assert.match(client, /styleLabChartSourceId\(row\)/);
-  assert.match(client, /primarySourceId/);
-  assert.match(client, /comparisonSourceId/);
-  assert.doesNotMatch(client, /activeDocumentId/);
-  assert.doesNotMatch(client, /workspaceOpen/);
-});
-
-test("the sidecar previews wheel variants and chart layers without mutating Aries options", () => {
-  assert.match(client, /round-classic/);
-  assert.match(client, /round-compact/);
-  assert.match(client, /round-anglo/);
-  assert.match(client, /round-houses/);
-  assert.match(client, /round-cusps/);
-  assert.match(client, /fetchStyleLabPreviewManifest/);
-  assert.match(client, /fetchStyleLabPreviewSnapshot\(previewRequest/);
-  assert.match(client, /styleGestureActive/);
-  assert.match(client, /gestureStart !== null/);
-  assert.match(client, /fixtureState: \{\}/);
-  assert.match(styleLabClient, /\/api\/style-lab\/preview-schema/);
-  assert.match(styleLabClient, /\/api\/style-lab\/preview-snapshot/);
-  assert.doesNotMatch(client, /patchOptions|TitlebarOptionsMenu|SettingsDialog/);
-  assert.doesNotMatch(styleLabClient, /\/api\/options/);
-  assert.doesNotMatch(daemonClient, /style-lab\/preview-snapshot/);
-});
-
-test("the sidecar remains independent while titlebar options opens the workspace editor", () => {
-  assert.doesNotMatch(client, /ThemeProvider|TitlebarOptionsMenu|SettingsDialog/);
-  assert.match(client, /appControlsEnabled=\{false\}/);
-  assert.match(client, /inheritAppTheme=\{false\}/);
-  assert.match(titlebarOptionsMenu, /t\("styleLab\.title"\)/);
-  assert.match(titlebarOptionsMenu, /onOpenStyleLab/);
-  assert.match(workspaceFrame, /onOpenStyleLab/);
+test("titlebar options opens the workspace style editor", () => {
+  // The shared Options tree carries the item; the drawer renders that tree.
+  assert.match(manifestService, /"id": "open-style-lab",\s*"label": "Chart Style Lab",\s*"labelKey": "styleLab\.title"/);
+  assert.match(titlebarOptionsMenu, /ManifestMenuItems/);
   assert.match(homeClient, /command === "open-style-lab"/);
   assert.match(manifestShortcuts, /Boolean\(parsed\.requireShift\) !== gesture\.shiftKey/);
   assert.match(workspaceContent, /styleEditorOpen/);
@@ -414,17 +395,91 @@ test("the sidecar remains independent while titlebar options opens the workspace
   assert.doesNotMatch(settingsDialog, /value === "stylelab"/);
 });
 
-test("sidecar drafts stay agent-live without activating the Aries app profile", () => {
+test("editor drafts stay live without activating the Aries app profile", () => {
   assert.match(chartStylePanel, /fetchCurrentStyleLabDraft/);
   assert.match(chartStylePanel, /patchCurrentStyleLabDraft/);
-  assert.match(chartStylePanel, /commitCurrentStyleLabDraft/);
-  assert.match(chartStylePanel, /activate:\s*false/);
-  assert.doesNotMatch(chartStylePanel, /activate:\s*true/);
+  assert.match(themeSession, /commitCurrentStyleLabDraft\(\{[^}]*activate:\s*false/);
+});
+
+test("a chart-scale drag scales the painted layers and writes once on release", () => {
+  // Each move only transforms the retained canvases; no store write, no repaint.
+  assert.match(chartCanvas, /drag\.handle\.elementId === WHEEL_STYLE_SCENE_ELEMENT_IDS\.chartScale\) \{\s*previewChartScale\(patch, drag\.handle\);/);
+  assert.doesNotMatch(chartCanvas, /const previewChartScale[\s\S]{0,1200}setStyleOverride/);
+  // Release records the on-screen transform and writes the value once.
+  assert.match(chartCanvas, /retainedPaintTransformRef\.current = scalePreview\.transform;[\s\S]{0,120}applyStyleHandlePatch\(scalePreview\.patch\)/);
+  // Escape drops the preview before cancelling the gesture.
+  assert.match(chartCanvas, /clearChartScalePreview\(\);\s*cancelStyleGesture\(CANVAS_GESTURE_OWNER\)/);
+});
+
+test("every handle drag paints a local preview and writes the store once on release", () => {
+  // Moves preview through the store's own pure edit, never through setOverride.
+  assert.match(chartCanvas, /\} else if \(patch\) \{\s*previewStyleHandlePatch\(patch, drag\.handle, point\);/);
+  assert.match(chartCanvas, /const previewStyleHandlePatch[\s\S]{0,1600}applyOverrideEdit\(state, patch\.semanticId/);
+  assert.doesNotMatch(chartCanvas, /const previewStyleHandlePatch[\s\S]{0,1600}setStyleOverride\(/);
+  assert.match(chartCanvas, /if \(handlePatch\) applyStyleHandlePatch\(handlePatch\);\s*setStyleDragPreview\(null\);/);
+  // Pointing aids wait for the paint after release.
+  assert.match(chartCanvas, /const refreshHitRegions = !handleDragActive && \(/);
+  assert.match(editorStore, /setOverride: \(semanticId, value, radiusTarget\) => set\(\(state\) => applyOverrideEdit\(state, semanticId, value, radiusTarget\)\)/);
+});
+
+test("the app theme follows style values, not the editor revision", () => {
+  assert.match(themeProvider, /useShallow\(\(state\) => state\.cssOverrides\)/);
+  assert.doesNotMatch(themeProvider, /state\.revision/);
+});
+
+test("the theme menu holds Rename, Revert, Restore factory and Delete", () => {
+  const menu = chartStylePanel.match(/<DropdownMenu>[\s\S]*?<\/DropdownMenu>/)?.[0] ?? "";
+  assert.match(menu, /styleLab\.themeMenu\.label/);
+  for (const action of ["renameTheme", "revert", "restoreFactoryTheme", "deleteTheme"]) {
+    assert.match(menu, new RegExp(`styleLab\\.action\\.${action}"`));
+  }
+  // Factory reset and Delete live only in the menu.
+  for (const action of ["restoreFactoryTheme", "deleteTheme"]) {
+    assert.equal(chartStylePanel.split(`styleLab.action.${action}`).length - 1, 1, action);
+  }
+  assert.match(chartStylePanel, /onSubmit=\{nameForm === "rename" \? renameTheme : saveAsTheme\}/);
+});
+
+test("the footer saves on request and lights Revert on the first edit", () => {
+  const footer = chartStylePanel.match(/<footer[\s\S]*?<\/footer>/)?.[0] ?? "";
+  assert.match(footer, /disabled=\{!canRevert\}\s*onClick=\{revertWorkingDraft\}/);
+  assert.match(footer, /disabled=\{!canSaveAs \|\| nameForm != null \|\| !\(modifiedFromBaseline \|\| pending\)\}\s*onClick=\{save\}/);
+  for (const action of ["revert", "saveAsTheme", "import", "export", "commit"]) {
+    assert.match(footer, new RegExp(`styleLab\\.action\\.${action}"`));
+  }
+  // Only Save writes the theme: closing, switching or importing keeps the
+  // working copy parked instead.
+  assert.equal(chartStylePanel.split("saveWorkingTheme(").length - 1, 1);
+  assert.match(chartStylePanel, /const save = useCallback[\s\S]{0,400}saveWorkingTheme\(conflictMessageRef\.current\)/);
+  assert.match(chartStylePanel, /useEffect\(\(\) => \(\) => \{[\s\S]{0,300}flushSyncRef\.current\(\);\s*\}, \[\]\);/);
+  // Nothing changed means nothing is written.
+  assert.match(themeSession, /return null;\s*\}\s*let revision/);
+});
+
+test("the editor follows the daemon's draft pushes instead of polling", () => {
+  const draftEvents = readFileSync(resolve(frontendRoot, "src/lib/style-lab/draft-events.ts"), "utf8");
+  const workspaceStore = readFileSync(resolve(frontendRoot, "src/stores/daemon-workspace-store.ts"), "utf8");
+  assert.match(draftEvents, /export function subscribeStyleDraftChanges/);
+  assert.match(workspaceStore, /case "style\.draft\.changed":\s*publishStyleDraftChange\(/);
+  // A reconnect may have dropped events, so it asks the editor to re-read once.
+  assert.match(workspaceStore, /void syncState\("socket-open"\);\s*publishStyleDraftChange\(null\)/);
+  assert.match(chartStylePanel, /subscribeStyleDraftChanges\(/);
+  assert.doesNotMatch(chartStylePanel, /setInterval/);
+  // A rejected write re-reads the draft and retries instead of stopping.
+  assert.match(chartStylePanel, /rebaseAndRetry\(state\.remoteDraftId\)/);
+  // A failed first load retries; there is no silent local-only mode.
+  assert.doesNotMatch(editorStore, /\| "local"/);
+});
+
+test("the editor footer speaks only about failures and finished actions", () => {
+  assert.doesNotMatch(chartStylePanel, /<CloudOff|<Cloud /);
+  assert.match(chartStylePanel, /const footerMessage = writeFailed/);
+  assert.match(chartStylePanel, /styleLab\.action\.retry/);
 });
 
 test("the editor saves the current revision as a separately named theme", () => {
   assert.match(styleLabClient, /saveCurrentStyleLabDraftAsTheme/);
-  assert.match(styleLabClient, /CURRENT_DRAFT_PATH\}\/save-as/);
+  assert.match(styleLabClient, /encodeURIComponent\(draftId\)\}\/save-as/);
   assert.match(chartStylePanel, /styleLab\.action\.saveAsTheme/);
   assert.match(chartStylePanel, /style-lab-new-theme-name/);
   assert.match(chartStylePanel, /saveCurrentStyleLabDraftAsTheme\(name/);
@@ -437,19 +492,6 @@ test("the editor authors one portable full-app theme across semantic materials",
   assert.match(chartStylePanel, /\(\["chart", "app"\]\s+as const\)/);
   assert.match(chartStylePanel, /t\(`styleLab\.domain\.\$\{domain\}`\)/);
   assert.match(chartStylePanel, /<AppThemeControls/);
-  assert.match(client, /<AppThemePreview/);
-  assert.match(appThemePreview, /compileThemeAppMaterials/);
-  assert.match(appThemePreview, /resolvedTheme=\{previewTheme\}/);
-  assert.match(appThemePreview, /exportRegistrationEnabled=\{false\}/);
-  assert.equal(
-    appThemePreview.match(/data-aries-surface="canvas"/g)?.length,
-    1,
-    "the app preview must have exactly one Canvas material paint boundary",
-  );
-  assert.match(appThemePreview, /data-aries-surface="sidebar"/);
-  assert.match(appThemePreview, /data-aries-surface="dataHeader"/);
-  assert.match(appThemePreview, /data-aries-surface="overlay"/);
-  assert.match(appThemePreview, /\.\.\.baseTheme\.appAuthoring/);
   assert.match(appThemeControls, /deriveLinkedPalette/);
   assert.match(appThemeControls, /UI_TYPEFACE_TOKEN\s*=\s*"app\.type\.familyUi"/);
   assert.match(appThemeControls, /"'FreeSans', ui-sans-serif, system-ui, sans-serif"/);
@@ -468,10 +510,6 @@ test("the editor authors one portable full-app theme across semantic materials",
   assert.match(
     appThemeControls,
     /app\.sidebar\.accentForeground/,
-  );
-  assert.match(
-    appThemePreview,
-    /var\(--aries-sidebar-accent-foreground\)/,
   );
   assert.match(workspaceContent, /resolvedTheme\?: ThemeState \| null/);
   assert.match(workspaceContent, /if \(!exportRegistrationEnabled\) return/);
@@ -506,7 +544,7 @@ test("the editor authors one portable full-app theme across semantic materials",
     styleLabClient,
     /\/api\/style-lab\/drafts\/\$\{encodeURIComponent\(draftId\)\}\/export/,
   );
-  assert.match(chartStylePanel, /fetchStyleLabDraftExport\(\)/);
+  assert.match(chartStylePanel, /fetchStyleLabDraftExport\(binding\.draftId, undefined, binding\)/);
   assert.match(chartStylePanel, /\.aries-theme\.json/);
 });
 
@@ -576,7 +614,7 @@ test("retained floating chrome reaches the active overlay and popover material p
 
 test("revert restores the saved draft baseline and exchange files import as themes", () => {
   assert.match(styleLabClient, /revertCurrentStyleLabDraft/);
-  assert.match(styleLabClient, /CURRENT_DRAFT_PATH\}\/revert/);
+  assert.match(styleLabClient, /encodeURIComponent\(draftId\)\}\/revert/);
   assert.match(chartStylePanel, /revertCurrentStyleLabDraft/);
   assert.match(chartStylePanel, /remoteModifiedFromBaseline/);
   assert.match(styleLabClient, /importStyleLabTheme/);
@@ -585,16 +623,16 @@ test("revert restores the saved draft baseline and exchange files import as them
   assert.match(chartStylePanel, /parseThemeExchangeFile/);
   assert.match(
     chartStylePanel,
-    /const importThemeFile[\s\S]*if \(applyThemeToApp\)[\s\S]*applyThemePreset\(source\.name\)[\s\S]*candidate\.name === source\.name[\s\S]*const exportProfile/,
+    /const importThemeFile[\s\S]*applyWheelTheme\(source\.name\)[\s\S]*candidate\.name === source\.name[\s\S]*const exportProfile/,
   );
   assert.doesNotMatch(chartStylePanel, /onClick=\{resetAll\}/);
 });
 
 test("ordinary save updates the selected theme while system revert restores factory paint", () => {
-  assert.match(chartStylePanel, /commitCurrentStyleLabDraft/);
+  assert.match(themeSession, /commitCurrentStyleLabDraft/);
   assert.match(chartStylePanel, /candidate\.name === draft\.sourceThemeName/);
   assert.match(chartStylePanel, /selectedThemeSource\?\.system === true/);
-  assert.match(chartStylePanel, /selectedThemeSource\.factoryModified === true/);
+  assert.match(chartStylePanel, /selectedThemeSource\.factoryModified === true \|\| modifiedFromBaseline/);
   assert.match(chartStylePanel, /factoryDefault/);
   assert.match(styleLabClient, /factoryDefault\?: boolean/);
 });
@@ -619,11 +657,9 @@ test("the editor opens actual Aries theme presets as retained safe drafts", () =
   assert.match(chartStylePanel, /createStyleLabDraftFromTheme/);
   assert.match(chartStylePanel, /quickopt\.themePresets/);
   assert.match(chartCanvas, /styleLabBaseTheme\.chartPalette/);
-  assert.match(client, /styleLabBaseTheme\.appTokens/);
-  assert.match(chartStylePanel, /applyThemeToApp/);
-  assert.match(chartStylePanel, /applyThemePreset\(source\.name\)/);
-  assert.match(workspaceContent, /<ChartStylePanel[\s\S]*applyThemeToApp/);
-  assert.doesNotMatch(client, /applyThemeToApp/);
+  assert.match(chartStylePanel, /setLiveAppThemePreview\(true\)/);
+  assert.doesNotMatch(chartStylePanel, /applyThemeToApp/);
+  assert.match(chartStylePanel, /applyWheelTheme\(source\.name\)/);
 });
 
 test("workspace Style Lab previews linked app colors and materials on the real shell", () => {
@@ -639,14 +675,6 @@ test("workspace Style Lab previews linked app colors and materials on the real s
   assert.match(appThemeControls, /materialOverrideId\(role, "backgroundColor"\)/);
   assert.match(appThemeControls, /materialOverrideId\(role, "patternColor"\)/);
   assert.match(appThemeControls, /materialOverrideId\(role, "gradientStartColor"\)/);
-});
-
-test("the sidecar authenticates readiness and survives its launcher shell", () => {
-  assert.match(launcher, /\/api\/style-lab\/catalog\?q=__aries_style_lab_probe__/);
-  assert.match(launcher, /ARIES_NEXT_DIST_DIR=\.next-style-lab/);
-  assert.match(launcher, /start_new_session=True/);
-  assert.doesNotMatch(launcher, /tauri-daemon\.json/);
-  assert.match(nextConfig, /ARIES_NEXT_DIST_DIR/);
 });
 
 test("the checked-in style profile catalog matches the generator", () => {
@@ -716,4 +744,32 @@ test('band inspector combines width with the linked appearance controls through 
   assert.match(chartStylePanel, /sceneElements\.find\(element => styleClassId\(element\) === selectedElement\.appearanceClassId\)/);
   assert.match(chartStylePanel, /\.\.\.controlsForElement\(selectedElement, tokenMetadata, authoringEditScope\),\s*\.\.\.controlsForElement\(selectedAppearanceElement, tokenMetadata, authoringEditScope\)/);
   assert.match(chartStylePanel, /\[authoringEditScope, compositionProfile, selectedElement, selectedAppearanceElement, tokenMetadata\]/);
+});
+
+test("copy carries stored values and the footer never shows validator text", () => {
+  // Copy takes the stored edit, else the displayed value converted to a
+  // writable form (a CSS colour becomes RGB(A)).
+  assert.match(chartStylePanel, /function transferValue\([\s\S]{0,700}return colorArray\(value\);/);
+  assert.match(chartStylePanel, /const value = transferValue\(control, semanticOverrides\);/);
+  // Raw daemon messages go to the console only.
+  assert.doesNotMatch(chartStylePanel, /error instanceof Error \? error\.message : String\(error\)\)/);
+  assert.match(chartStylePanel, /function userErrorMessage\(error: unknown, t: TFunc\)/);
+  // Every key the daemon names is undone and the rest of the queue keeps going.
+  assert.match(chartStylePanel, /const named = new Set\(error\.rejectedIds\);[\s\S]{0,200}const rejected = Object\.keys\(delta\)\.filter[\s\S]{0,600}styleLab\.status\.changeUndone[\s\S]{0,80}retryDelay = 80;/);
+});
+
+test("Sync works for bands and in either scope", () => {
+  // A band picked on the wheel syncs its fill class.
+  assert.match(chartStylePanel, /const syncClassId = selectedElement\?\.appearanceClassId && isWheelSemanticClassId\(selectedElement\.appearanceClassId\)/);
+  assert.match(chartStylePanel, /\.\.\.wheelClassSyncScope\(syncClassDefinition, targets\),\s*source: sourceVariant,/);
+  // No scope or per-style override gate: Sync carries the full look.
+  assert.match(chartStylePanel, /const canSyncElement = canCopyElement\s*&& !selectedVintageElement\s*&& syncTargetVariants\.length > 0;/);
+  assert.doesNotMatch(chartStylePanel, /styleLab\.sync\.(?:sharedAlready|noOverrides)/);
+});
+
+test("the theme menu can use the current wheel's look on all wheel styles", () => {
+  const menu = chartStylePanel.match(/<DropdownMenu>[\s\S]*?<\/DropdownMenu>/)?.[0] ?? "";
+  assert.match(menu, /onClick=\{syncWholeWheel\}[\s\S]{0,120}styleLab\.action\.syncWholeWheel/);
+  // Appearance only, every class that the current wheel style paints.
+  assert.match(chartStylePanel, /const syncWholeWheel = useCallback[\s\S]{0,800}buildWholeWheelSyncPatch\(\s*wheelAppearanceOverrides\(semanticOverrides\), compositionProfile, classes,/);
 });

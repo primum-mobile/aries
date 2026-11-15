@@ -5,7 +5,7 @@ era = "hellenistic"
 author_primary = "Vettius Valens (Anthologies, 2nd c. CE)"
 translator = "Mark T. Riley"
 license = "GPL-2.0-only; separately licensed third-party corpus resource"
-version = "0.1.0"
+version = "0.2.1"
 short_label = "Valens"
 disciplines = []
 capabilities = ["inspector_content"]
@@ -13,3 +13,16 @@ capabilities = ["inspector_content"]
 [content.inspector]
 source = "valens"
 mapping = "content/inspector.toml"
+display_order = 0
+
+[upgrade]
+replace_unmodified_tree_hashes = [
+  "879f8faa68dba60c525fd553249d20d59bf5751d75885ed408b47b61abccc54d",
+  "699d434d5bdc2fdb2b14732a841bd14db1a49ab5be094d2d4bec931271a8ad14",
+]
+
+[provenance]
+copyright_note = "English translation by Mark T. Riley; source reformatted and annotated by Jane Griscti. The Valens corpus is a separately licensed GPL-2.0-only resource. Original source notices and attribution apply."
+source_edition = "Vettius Valens, Anthologies; Mark T. Riley English translation, reformatted and annotated by Jane Griscti"
+source_url = "https://github.com/janegca/latex-valens/tree/2d4a8b9890cd5cb7714abd52f6bd938272ba8237"
+source_rights = "GPL-2.0-only; see the bundled original source notices and corresponding LaTeX source."

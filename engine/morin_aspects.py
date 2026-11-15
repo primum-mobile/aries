@@ -32,26 +32,33 @@ so that the corrected ecliptic position of the aspect terminus is
 
 asp_signed_deg is positive for sinister, negative for dexter, in
 {0, 30, 45, 60, 72, 90, 120, 135, 144, 150, 180}.
+
+``flag`` is the Swiss flag that produced ``lat_p``: the half-revolution
+scan must read latitudes in the same frame. Primary directions pass
+``PrimDirs.pd_body_flag``, which sets the topocentric observer before it
+adds SEFLG_TOPOCTR.
 """
 
 import math
 import astrology
 
 
-# Half-revolution scan window in days for each Swiss-Eph planet id.
-# Tuned to comfortably bracket two consecutive ecliptic-latitude zero
-# crossings (apparent nodes).
+# Half-revolution scan window in days for each Swiss-Eph planet id: longer
+# than the longest node-to-node interval, so a scan from any moment reaches
+# both flanking latitude-zero crossings (apparent nodes). From Jupiter out
+# that is half the sidereal period plus the eccentricity's unequal halves
+# (Jupiter ~2170 d, Saturn ~5380 d, Pluto's halves up to ~150 years).
 _NODE_SCAN_DAYS = {
 	astrology.SE_SUN:     0,
 	astrology.SE_MOON:    20,
 	astrology.SE_MERCURY: 60,
 	astrology.SE_VENUS:   140,
 	astrology.SE_MARS:    420,
-	astrology.SE_JUPITER: 800,
-	astrology.SE_SATURN:  1500,
-	astrology.SE_URANUS:  3000,
-	astrology.SE_NEPTUNE: 6000,
-	astrology.SE_PLUTO:   9000,
+	astrology.SE_JUPITER: 2600,
+	astrology.SE_SATURN:  6000,
+	astrology.SE_URANUS:  17000,
+	astrology.SE_NEPTUNE: 32000,
+	astrology.SE_PLUTO:   70000,
 }
 
 
@@ -61,6 +68,12 @@ _cache = {}
 def clear_cache():
 	"""Drop the module-level cache. Call when the chart time changes."""
 	_cache.clear()
+
+
+def _cache_key(tjd_ut, pId, flag, cache_key):
+	# The flag is part of the key: geocentric and topocentric latitudes give
+	# different half-revolutions for the same moment and body.
+	return (cache_key if cache_key is not None else round(tjd_ut, 4), pId, int(flag))
 
 
 def _calc_lat(tjd, pId, flag):
@@ -126,48 +139,62 @@ def _half_revolution(tjd, pId, flag, lat_now):
 	if t_prev is None:
 		return None
 
-	# Locate the latitude extremum between the two nodes.
-	# Coarse scan + parabolic interpolation around the best sample.
-	n_samples = 80
-	dt = (t_next - t_prev) / n_samples
-	best_t = tjd
-	best_lat = lat_now
-	for k in range(1, n_samples):
-		ti = t_prev + k * dt
-		li = _calc_lat(ti, pId, flag)
-		if abs(li) > abs(best_lat):
-			best_t = ti
-			best_lat = li
-
-	# Parabolic refinement around best_t (one bisection-style refinement).
-	for _ in range(8):
-		h = max(dt * 0.5, 1.0e-4)
-		l_left = _calc_lat(best_t - h, pId, flag)
-		l_right = _calc_lat(best_t + h, pId, flag)
-		if abs(l_left) > abs(best_lat):
-			best_t -= h
-			best_lat = l_left
-			dt = h
-			continue
-		if abs(l_right) > abs(best_lat):
-			best_t += h
-			best_lat = l_right
-			dt = h
-			continue
-		# Parabolic vertex of |lat|: approximate via second-difference.
-		denom = (l_right - 2.0 * best_lat + l_left)
-		if abs(denom) > 1.0e-9:
-			shift = 0.5 * h * (l_left - l_right) / denom
-			if -h < shift < h:
-				cand_t = best_t + shift
-				cand_lat = _calc_lat(cand_t, pId, flag)
-				if abs(cand_lat) > abs(best_lat):
-					best_t = cand_t
-					best_lat = cand_lat
-		dt = h
-		break
-
+	best_t, best_lat = _pass_maximum(t_prev, t_next, pId, flag, sign)
+	if abs(lat_now) > abs(best_lat):
+		best_t, best_lat = tjd, lat_now
 	return (t_prev, t_next, best_t, best_lat)
+
+
+# Latitude sampling step: about an eighth of the yearly ripple that the
+# Earth's motion puts on an outer planet's apparent latitude, with at least
+# sixteen samples a pass for the fast bodies.
+_MAX_STEP_DAYS = 45.0
+# Only sampled peaks within this of the highest sample are refined.
+_PEAK_MARGIN_DEG = 0.05
+
+
+def _calc_lat_speed(tjd, pId, flag):
+	serr, data = astrology.swe_calc_ut(tjd, pId, flag | astrology.SEFLG_SPEED)
+	return data[1], data[4]
+
+
+def _pass_maximum(t_prev, t_next, pId, flag, sign):
+	"""The greatest |latitude| of the whole pass between two apparent nodes.
+
+	Morin takes the maximum of the pass, not the nearest yearly peak: Saturn's
+	apparent latitude rises and falls about twelve times within one pass
+	(AG 16 §I ch. 9, book-16.txt 1990-2007).  Every sampled local peak is
+	refined where the latitude speed changes sign, and the largest is kept.
+	"""
+	span = t_next - t_prev
+	n = max(int(math.ceil(span / _MAX_STEP_DAYS)), 16)
+	dt = span / n
+	samples = [(t_prev + k * dt, _calc_lat(t_prev + k * dt, pId, flag) * sign) for k in range(n + 1)]
+	peaks = [k for k in range(1, n)
+		if samples[k][1] >= samples[k - 1][1] and samples[k][1] >= samples[k + 1][1]]
+	best_t, best = max(samples, key=lambda sample: sample[1])
+	# A peak can rise above its sample by far less than this within one step.
+	floor = best - _PEAK_MARGIN_DEG
+	for k in peaks:
+		t_k, v_k = samples[k]
+		if v_k < floor:
+			continue
+		lo, hi = samples[k - 1][0], samples[k + 1][0]
+		for _ in range(40):
+			if hi - lo <= 1.0e-3:
+				break
+			mid = 0.5 * (lo + hi)
+			if _calc_lat_speed(mid, pId, flag)[1] * sign > 0.0:
+				lo = mid
+			else:
+				hi = mid
+		t_peak = 0.5 * (lo + hi)
+		v_peak = _calc_lat(t_peak, pId, flag) * sign
+		if v_peak < v_k:
+			t_peak, v_peak = t_k, v_k
+		if v_peak > best:
+			best_t, best = t_peak, v_peak
+	return best_t, best * sign
 
 
 def _excentric_arc_of_planet(lat_p, lat_max_signed, tjd, t_max):
@@ -240,7 +267,7 @@ def aspect_correction(tjd_ut, pId, flag, lon_p, lat_p, asp_signed_deg, cache_key
 	if abs(lat_p) < 1.0e-9 or pId == astrology.SE_SUN:
 		return 0.0, 0.0
 
-	key = (cache_key if cache_key is not None else round(tjd_ut, 4), pId)
+	key = _cache_key(tjd_ut, pId, flag, cache_key)
 	info = _cache.get(key)
 	if info is None:
 		info = _half_revolution(tjd_ut, pId, flag, lat_p)
@@ -263,7 +290,7 @@ def half_revolution_info(tjd_ut, pId, flag, lat_p, cache_key=None):
 	"""
 	if abs(lat_p) < 1.0e-9 or pId == astrology.SE_SUN:
 		return None
-	key = (cache_key if cache_key is not None else round(tjd_ut, 4), pId)
+	key = _cache_key(tjd_ut, pId, flag, cache_key)
 	info = _cache.get(key)
 	if info is None:
 		info = _half_revolution(tjd_ut, pId, flag, lat_p)

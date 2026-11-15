@@ -127,7 +127,13 @@ const budgetRows = [];
 let failedBudgets = 0;
 let missingBudgets = 0;
 
-for (const [metricName, budget] of Object.entries(budgets.metrics)) {
+const evaluatedBudgets = {...budgets.metrics,
+  ...(run.coordinateScenario ? {"coordinate.mode-switch": {
+    ...budgets.metrics["time-step.first-useful-paint"], reference: undefined,
+    description: "Coordinate mode command to mounted paint",
+  }} : {}),
+};
+for (const [metricName, budget] of Object.entries(evaluatedBudgets)) {
   const metric = measured[metricName] ?? nativeMetrics.get(metricName) ?? null;
   const unit = unitFor(metricName, budget);
   const limit = budgetValue(budget);
@@ -159,6 +165,21 @@ const payload = measured["time-step.payload-bytes"];
 const inputGap = measured["time-step.input-gap"];
 const paintGap = measured["time-step.paint-gap"];
 const paintGapOverInput = measured["time-step.paint-gap-over-input"];
+const stepSplitStages = [
+  ["Queued behind the previous step", "time-step.split.queue-wait"],
+  ["Daemon command (request → response)", "time-step.split.command"],
+  ["↳ Daemon navigation and snapshot", "time-step.split.daemon-navigate"],
+  ["↳ Daemon live-surface payloads", "time-step.split.daemon-live-surfaces"],
+  ["↳ Outside the daemon handler (transport)", "time-step.split.transport"],
+  ["Held for the previous presentation", "time-step.split.presentation-hold"],
+  ["Store/React → paint start", "time-step.split.publish-to-schedule"],
+  ["Wait for animation frame", "time-step.split.raf-wait"],
+  ["Canvas execution", "chart.canvas.step_fast"],
+];
+const stepSplitRows = stepSplitStages.map(([label, name]) => {
+  const metric = measured[name];
+  return `| ${label} | ${formatValue(metric?.averageMs, "ms")} | ${percent(metric?.averageMs, endToEnd?.averageMs) ?? "—"}% | ${formatValue(metric?.p95Ms, "ms")} |`;
+});
 const cadenceProxySources = new Set();
 function cadenceProxyMetric(name) {
   const controlled = measured[name];
@@ -400,6 +421,12 @@ const lines = [
   `| Response JSON parse | ${formatValue(parse?.averageMs, "ms")} | ${percent(parse?.averageMs, endAverage) ?? "—"}% | ${formatValue(parse?.p95Ms, "ms")} |`,
   `| Canvas execution | ${formatValue(canvasAverage, "ms")} | ${percent(canvasAverage, endAverage) ?? "—"}% | ${formatValue(canvas?.p95Ms, "ms")} |`,
   `| Store/React/rAF residual (derived) | ${formatValue(residualAverage, "ms")} | ${percent(residualAverage, endAverage) ?? "—"}% | — |`,
+  "",
+  "### Measured key → paint split",
+  "",
+  "| Stage | Average | Share of key-to-paint average | p95 |",
+  "|---|---:|---:|---:|",
+  ...stepSplitRows,
   "",
   `Navigate response payload: average ${formatValue(payload?.averageMs, "bytes")}, p95 ${formatValue(payload?.p95Ms, "bytes")}, max ${formatValue(payload?.maxMs, "bytes")}.`,
   `Held-key cadence: input-gap p95 ${formatValue(inputGap?.p95Ms, "ms")}; paint-gap p95 ${formatValue(paintGap?.p95Ms, "ms")}; delay beyond measured input p95 ${formatValue(paintGapOverInput?.p95Ms, "ms")}.`,

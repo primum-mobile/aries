@@ -129,6 +129,7 @@ export function useEdgeExtend({
   canExtendForward,
   onExtend,
   recheckToken,
+  fillViewport = false,
 }: {
   scrollerRef: React.RefObject<HTMLDivElement | null>;
   rowCount: number;
@@ -137,6 +138,8 @@ export function useEdgeExtend({
   canExtendForward: boolean;
   onExtend: (direction: "previous" | "next") => void;
   recheckToken?: unknown;
+  /** Search cursors may have valid unsearched coverage with no visible rows. */
+  fillViewport?: boolean;
 }) {
   const thresholdPxRef = React.useRef(thresholdPx);
   React.useLayoutEffect(() => {
@@ -145,7 +148,7 @@ export function useEdgeExtend({
 
   React.useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || rowCount <= 0) {
+    if (!scroller || (rowCount <= 0 && !fillViewport)) {
       return undefined;
     }
     let frame = 0;
@@ -166,10 +169,21 @@ export function useEdgeExtend({
         scrollEventAt = null;
       }
       const maxTop = scroller.scrollHeight - scroller.clientHeight;
-      if (scroller.clientHeight <= 0 || maxTop <= 0) return;
-      if (canExtendBackward && scroller.scrollTop <= thresholdPxRef.current) {
+      if (scroller.clientHeight <= 0) return;
+      if (maxTop <= 0) {
+        // An unfilled viewport cannot scroll to either edge, so it grows
+        // backward first (bounded by the caller) and then forward.
+        if (fillViewport && canExtendBackward) onExtend("previous");
+        else if (fillViewport && canExtendForward) onExtend("next");
+        return;
+      }
+      const nearTop = canExtendBackward && scroller.scrollTop <= thresholdPxRef.current;
+      const nearBottom = canExtendForward && maxTop - scroller.scrollTop <= thresholdPxRef.current;
+      // A short list sits within the threshold of both edges; grow toward the
+      // edge the viewer is closer to.
+      if (nearTop && (!nearBottom || scroller.scrollTop <= maxTop - scroller.scrollTop)) {
         onExtend("previous");
-      } else if (canExtendForward && maxTop - scroller.scrollTop <= thresholdPxRef.current) {
+      } else if (nearBottom) {
         onExtend("next");
       }
     };
@@ -189,6 +203,7 @@ export function useEdgeExtend({
   }, [
     canExtendBackward,
     canExtendForward,
+    fillViewport,
     onExtend,
     recheckToken,
     rowCount,

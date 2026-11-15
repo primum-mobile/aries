@@ -4,15 +4,6 @@
 export type PointRoleSide = "from" | "to";
 export type PointRoleSelection = { fromIds: string[]; toIds: string[] };
 
-/** Moon, Arabic Parts, fixed stars, and asteroids stay explicit choices in All. */
-export function pointRoleSelectAllIds(points: readonly { id: string; groupId: string; from: boolean; to: boolean }[], side: PointRoleSide): string[] {
-  return points.filter((point) => point[side]
-    && point.id !== "planet:moon"
-    && point.groupId !== "part"
-    && point.groupId !== "fixed_star"
-    && point.groupId !== "asteroid").map((point) => point.id);
-}
-
 /** Edit only the exposed side, retaining the other side and unavailable choices. */
 export function setPointRoleIds(selection: PointRoleSelection, side: PointRoleSide, ids: readonly string[], enabled: boolean): PointRoleSelection {
   const key = side === "from" ? "fromIds" : "toIds";

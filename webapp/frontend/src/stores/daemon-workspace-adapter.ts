@@ -36,6 +36,8 @@ import {
   rememberDocumentSnapshot,
 } from "@/lib/chart/document-snapshot-cache";
 import { recordChartPerf } from "@/lib/chart/perf";
+import { useAstrolabeStore } from "@/stores/astrolabe-store";
+import { applyGraphicEphemerisCamera } from "@/lib/chart/graphic-ephemeris-navigation.mjs";
 import {
   acquireDaemonWorkspace,
   useDaemonWorkspaceStore,
@@ -44,7 +46,6 @@ import {
 import { beginWorkspaceSnapshotCommand } from "@/stores/workspace-command-snapshot-gate";
 import {
   SUPPLEMENTARY_KIND_LABELS,
-  useWorkspaceStore,
   type SupplementaryKind,
   type WorkspaceDocument,
 } from "@/stores/workspace-store";
@@ -116,6 +117,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       eclipseEvent: summary.eclipseEvent ?? null,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -133,6 +135,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       directionsDefaultDirection: summary.directionsDefaultDirection ?? null,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -148,6 +151,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Astrolabe",
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -163,6 +167,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Astrolog Sphere",
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -178,6 +183,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Square Chart",
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -193,6 +199,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Mundane Chart",
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -208,6 +215,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Graphic Ephemeris",
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -226,6 +234,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       searchInitialGlyph: summary.searchInitialGlyph,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -243,16 +252,18 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       tableId: summary.tableId,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
-  // Ascensional Transits — a chart visual mode plus daemon AT list pane.
+  // Ascensional Transits — a chart visual mode; its AT list lives in the Inspector.
   if (summary.launcherKind === "ascensional_transits") {
     return {
       id: summary.documentId,
       parentDocumentId: summary.parentDocumentId,
       kind: "ascensional-transits",
       chartVisualMode: summary.chartVisualMode,
+      chartPresentation: summary.chartPresentation,
       titleKey: summary.titleKey ?? null,
       sourceName,
       displayDatetime: summary.displayDatetime ?? undefined,
@@ -260,10 +271,10 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       title: daemonTitle || "Asc. Transits",
       ascensionalEventJd: summary.ascensionalEventJd ?? null,
       ascensionalEventPlace: summary.ascensionalEventPlace ?? null,
-      ascensionalFilterToActiveMoment: summary.ascensionalFilterToActiveMoment ?? true,
       ascensionalApplyPrecession: summary.ascensionalApplyPrecession ?? true,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
@@ -281,27 +292,28 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
       compositeVariant: summary.compositeVariant ?? null,
       displayDatetime: summary.displayDatetime ?? undefined,
       tabSuffix: summary.tabSuffix ?? undefined,
-      titleKey:
-        summary.titleKey !== undefined ? summary.titleKey :
-        (summary.compoundKind === "synastry" ? "supplementary.synastry" : null),
+      titleKey: summary.titleKey ?? null,
       title: daemonTitle || SUPPLEMENTARY_KIND_LABELS.synastry,
       dirty: summary.dirty,
       fpath: summary.fpath,
+      saveName: summary.saveName,
       enabledActions: summary.enabledActions,
     };
   }
   const publicKind = publicFeatureKind(summary.featureKind);
-  const isSupplementary = publicKind != null;
+  const isSupplementary = publicKind != null || (
+    summary.radixDocumentId != null && summary.radixDocumentId !== summary.documentId
+  );
   // Explicit null means a user-authored/data-bearing title: preserve it.
   // Only older summaries without the field need a chart-type fallback.
   // Stable semantic title keys keep already-open derived documents live-localized.
   // Planetary returns and solar averages retain daemon titles because those carry
   // body/range-specific data (for example "Mars Return" / an age span).
   const supplementaryTitleKey =
-    summary.titleKey !== undefined ? summary.titleKey : (isSupplementary && publicKind !== "planetary-return" && publicKind !== "solar-average"
+    summary.titleKey !== undefined ? summary.titleKey : (publicKind != null && publicKind !== "planetary-return" && publicKind !== "solar-average"
       ? `supplementary.${publicKind}`
       : null);
-  const title = isSupplementary
+  const title = publicKind != null
     ? daemonTitle || SUPPLEMENTARY_KIND_LABELS[publicKind]
     : daemonTitle || sourceName || summary.subtitle || "Horoscope";
   return {
@@ -319,6 +331,7 @@ function buildDocumentFromSummary(summary: DaemonDocumentSummary): WorkspaceDocu
     title,
     dirty: summary.dirty,
     fpath: summary.fpath,
+    saveName: summary.saveName,
     enabledActions: summary.enabledActions,
   };
 }
@@ -328,7 +341,9 @@ function summaryToDocument(summary: DaemonDocumentSummary): WorkspaceDocument {
   if (cached) return cached;
   const projected = {
     ...buildDocumentFromSummary(summary),
+    savedEventId: summary.savedEventId ?? null,
     chartVisualMode: summary.chartVisualMode ?? "zodiac",
+    chartPresentation: summary.chartPresentation,
     launcherKind: summary.launcherKind ?? undefined,
   };
   projectedDocumentCache.set(summary, projected);
@@ -343,12 +358,21 @@ function projectDocuments(summaries: DaemonDocumentSummary[]): WorkspaceDocument
 type SnapshotCommandResult = (WorkspaceOpenResult | WorkspaceStatePayload | WorkspaceCloseResult) & {
   documentId?: string | null;
   snapshotInvalidatedIds?: string[];
+  astrolabeCursor?: WorkspaceOpenResult["astrolabeCursor"];
+  ephemerisCamera?: WorkspaceOpenResult["ephemerisCamera"];
 };
 
 function applyImmediateWorkspaceResult(
   result: SnapshotCommandResult,
   fallbackDocumentId?: string | null,
 ): void {
+  if (result.astrolabeCursor) {
+    const { documentId, arc } = result.astrolabeCursor;
+    useAstrolabeStore.getState().requestArc(documentId, arc, true);
+  }
+  if (result.ephemerisCamera) {
+    applyGraphicEphemerisCamera(result.ephemerisCamera.documentId, result.ephemerisCamera.camera);
+  }
   if (result.snapshotInvalidatedIds?.length) {
     invalidateDocumentSnapshots(result.snapshotInvalidatedIds);
   }
@@ -699,33 +723,9 @@ export function useChartLaunchers(): ChartLaunchers {
   }, []);
 
   const openAscensionalTransitsChild = useCallback((parentRadixId: string, sourceDocumentId?: string | null) => {
+    // The AT document's event, contacts and two-transit cue live in the
+    // normal Inspector; opening it needs no dedicated pane.
     void runImmediateWorkspaceCommand(workspaceOpenAscensionalTransits(parentRadixId, sourceDocumentId))
-      .then((res) => {
-        const documentId = res.activeDocumentId ?? res.documentId ?? null;
-        const summary = res.documents.find(
-          (doc) =>
-            doc.documentId === documentId &&
-            (doc.launcherKind === "ascensional_transits" ||
-              doc.chartVisualMode === "ascensional_transits"),
-        );
-        if (!summary) {
-          useWorkspaceStore.getState().closeAscensionalTransitsPane();
-          return;
-        }
-        const sourceName =
-          summary.sourceName ||
-          summary.comparisonName ||
-          summary.subtitle ||
-          summary.title.replace(/\s*\*$/, "");
-        useWorkspaceStore.getState().openAscensionalTransitsPane({
-          documentId: summary.documentId,
-          sourceName,
-          ascensionalEventJd: summary.ascensionalEventJd ?? null,
-          ascensionalEventPlace: summary.ascensionalEventPlace ?? null,
-          ascensionalFilterToActiveMoment: summary.ascensionalFilterToActiveMoment ?? true,
-          ascensionalApplyPrecession: summary.ascensionalApplyPrecession ?? true,
-        });
-      })
       .catch((err) => console.error("[ws-open-ascensional]", err));
   }, []);
 

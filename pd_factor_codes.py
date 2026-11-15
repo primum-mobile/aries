@@ -134,6 +134,7 @@ STATIC_FACTOR_INFOS = _build_static_infos()
 DYNAMIC_POINT_INFOS: dict[str, PDFactorInfo] = {
     "user_prom": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "customer", "USERP", KIND_CUSTOMER, _PROM_ROLES),
     "user_sig": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "customer", "USERS", KIND_CUSTOMER, _SIG_ROLES),
+    "apogee": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "Apogee", "APOGEE", KIND_CUSTOMER, _ALL_ROLES),
     "chiron": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "Chiron", "CHIRON", KIND_CUSTOMER, _ALL_ROLES),
     "vertex": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "Vertex", "VERTEX", KIND_CUSTOMER, _SIG_ROLES),
     "arabic_part_prom": PDFactorInfo(primdirs.PrimDir.CUSTOMERPD, "Arabic_Part", "ARABIC_PART", KIND_CUSTOMER, _PROM_ROLES),
@@ -169,7 +170,14 @@ def factor_info(code: int, role: str | None = None, dynamic_key: str | None = No
     if value == primdirs.PrimDir.NONE:
         return None
     if value == primdirs.PrimDir.CUSTOMERPD and dynamic_key:
-        info = DYNAMIC_POINT_INFOS.get(str(dynamic_key), STATIC_FACTOR_INFOS.get(value))
+        key = str(dynamic_key)
+        family = key.split(':', 1)[0]
+        if family == 'part':
+            info = PDFactorInfo(value, key, key.upper(), KIND_CUSTOMER, _ALL_ROLES)
+        elif family == 'asteroid':
+            info = PDFactorInfo(value, key, key.upper(), KIND_CUSTOMER, _ALL_ROLES)
+        else:
+            info = DYNAMIC_POINT_INFOS.get(family, STATIC_FACTOR_INFOS.get(value))
     else:
         info = STATIC_FACTOR_INFOS.get(value)
     if info is None:

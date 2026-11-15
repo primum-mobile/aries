@@ -1,0 +1,60 @@
+# Exact versions for the Windows release build (pip -c, used by
+# scripts/build_windows_tauri_inputs.ps1). requirements*.txt stay the source of
+# what is needed; this file fixes which release of each one a Windows build
+# installs, so a new upstream release cannot change a rebuild.
+#
+# Resolved for CPython 3.14 / win_amd64 from binary wheels published before
+# 21 Oct 2026:
+#   uv pip compile webapp/daemon/requirements.txt webapp/daemon/requirements-build.txt \
+#     <pip/setuptools/wheel> --python-platform x86_64-pc-windows-msvc \
+#     --python-version 3.14 --only-binary :all: --exclude-newer <date>
+# Bump pins on purpose and prove them with a Windows build.
+
+# Packaging tools
+pip==26.2.2
+setuptools==84.2.1
+wheel==0.48.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.9
+altgraph==0.17.5
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3
+
+# Daemon runtime
+fastapi==0.159.1
+starlette==1.9.0
+pydantic==2.14.1
+pydantic-core==2.50.1
+annotated-doc==0.0.5
+annotated-types==0.8.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+anyio==4.15.1
+idna==3.20
+opentelemetry-api==1.45.1
+uvicorn==0.54.0
+click==8.5.0
+colorama==0.4.6
+h11==0.16.0
+httptools==0.9.0
+python-dotenv==1.2.4
+pyyaml==6.0.3
+watchfiles==1.3.0
+websockets==17.3
+orjson==3.11.9
+numpy==2.4.6
+pillow==13.0.0
+geographiclib==2.1
+reportlab==5.0.1
+charset-normalizer==3.5.2
+fonttools==4.67.0
+brotli==1.2.0
+truststore==0.10.5
+tzdata==2026.5
+
+# Packaging regression gates
+pytest==9.1.1
+iniconfig==2.3.1
+pluggy==1.7.0
+pygments==2.21.0

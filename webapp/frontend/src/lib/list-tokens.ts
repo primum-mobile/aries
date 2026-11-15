@@ -135,7 +135,7 @@ export const LIST_PANE_CLASSES = {
   titleGroup: "flex items-baseline gap-[var(--aries-pane-title-gap)]",
   title: "text-sm font-semibold",
   metadata: "text-[length:var(--aries-font-size-small)] text-muted-foreground",
-  scroller: "flex-1 min-h-0 overflow-auto",
+  scroller: "aries-list-scroller flex-1 min-h-0 overflow-auto",
   loading:
     "px-[var(--aries-pane-header-padding-x)] py-[var(--aries-pane-state-padding)] text-[length:var(--aries-font-size-base)] text-muted-foreground",
   error:
@@ -162,6 +162,10 @@ export const LIST_TEXT_CLASSES = {
   date: "aries-list-date-text",
   secondary: "aries-list-secondary-text",
 } as const;
+
+/** Date cell that opens its row's moment: the list-wide link look. */
+export const LIST_DATE_LINK_CLASSES =
+  "aries-list-date-text inline-block cursor-pointer whitespace-nowrap tabular-nums underline-offset-2 hover:text-primary hover:underline";
 
 export const LIST_BUTTON_PROPS = {
   command: { size: "xs", variant: "outline" },

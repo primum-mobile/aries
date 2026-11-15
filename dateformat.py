@@ -22,9 +22,15 @@ def date_convention_from_options(options=None):
 	return coerce_date_convention(getattr(options, 'dateconvention', DATE_CONVENTION_CURRENT))
 
 
+def civil_year_and_era(year, bc=False):
+	"""Display/storage years have no zero; nonpositive engine years are astronomical."""
+	year = int(year)
+	return (1 - year, True) if year <= 0 else (year, bool(bc))
+
+
 def date_text(year, month, day, options=None, *, bc=False):
 	try:
-		y = int(year)
+		y, bc = civil_year_and_era(year, bc)
 		m = int(month)
 		d = int(day)
 	except Exception:
@@ -37,7 +43,7 @@ def date_text(year, month, day, options=None, *, bc=False):
 
 def date_text_named_month(year, month_name, day, options=None, *, bc=False, pad_year=True, pad_day=True):
 	try:
-		y = int(year)
+		y, bc = civil_year_and_era(year, bc)
 		d = int(day)
 	except Exception:
 		return ''
@@ -52,7 +58,7 @@ def date_text_named_month(year, month_name, day, options=None, *, bc=False, pad_
 
 def month_year_text(year, month_name, options=None, *, bc=False, pad_year=True):
 	try:
-		y = int(year)
+		y, bc = civil_year_and_era(year, bc)
 	except Exception:
 		return ''
 	sign = '-' if bc else ''

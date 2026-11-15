@@ -100,6 +100,7 @@ class PlacementClause(object):
 
 class AspectClause(object):
 	COPRESENCE = -2
+	MOON_VOID = -3
 
 	def __init__(self, object_a_ids=None, aspect_type=None, object_b_ids=None, orb=1.0, exclude=False, aspect_types=None):
 		self.object_a_ids = _clean_list(object_a_ids)

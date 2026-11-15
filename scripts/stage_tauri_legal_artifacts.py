@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -71,6 +72,9 @@ _VALENS_SOURCE_ROOT_FILES = {"LICENSE", "SOURCE.txt"}
 _NORMALIZE_NAME = re.compile(r"[-_.]+")
 _REQUIREMENT_NAME = re.compile(
     r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[([^\]]+)\])?"
+)
+_SYS_PLATFORM_MARKER = re.compile(
+    r"^\s*sys_platform\s*(==|!=)\s*['\"]([^'\"]+)['\"]\s*$"
 )
 _EXTRA_EQUALS = re.compile(r"\bextra\s*==\s*['\"]([^'\"]+)['\"]", re.IGNORECASE)
 _LICENSE_FILE_PREFIXES = (
@@ -339,7 +343,24 @@ def _parse_requirement(requirement: str) -> tuple[str, set[str], str]:
     return _normalized_name(match.group(1)), extras, marker if separator else ""
 
 
-def _daemon_requirement_roots() -> list[tuple[str, set[str]]]:
+def _root_marker_applies(marker: str, platform: str) -> bool:
+    """Evaluate a daemon requirement's platform marker for this build.
+
+    Only ``sys_platform`` comparisons are accepted, so a platform-only
+    requirement (Windows ``truststore``) neither enters nor breaks another
+    platform's inventory. Anything else fails closed.
+    """
+
+    if not marker.strip():
+        return True
+    match = _SYS_PLATFORM_MARKER.match(marker)
+    if not match:
+        raise RuntimeError(f"unsupported daemon requirement marker: {marker!r}")
+    same_platform = platform == match.group(2)
+    return same_platform if match.group(1) == "==" else not same_platform
+
+
+def _daemon_requirement_roots(platform: str = sys.platform) -> list[tuple[str, set[str]]]:
     roots: list[tuple[str, set[str]]] = []
     for raw_line in DAEMON_REQUIREMENTS.read_text(encoding="utf-8").splitlines():
         line = raw_line.split("#", 1)[0].strip()
@@ -350,7 +371,9 @@ def _daemon_requirement_roots() -> list[tuple[str, set[str]]]:
                 "webapp/daemon/requirements.txt must use direct PEP 508 "
                 f"requirements for legal inventory: {raw_line!r}"
             )
-        name, extras, _marker = _parse_requirement(line)
+        name, extras, marker = _parse_requirement(line)
+        if not _root_marker_applies(marker, platform):
+            continue
         roots.append((name, extras))
     if not roots:
         raise RuntimeError(f"no daemon requirements found in {DAEMON_REQUIREMENTS}")

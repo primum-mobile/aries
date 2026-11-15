@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class RelationshipView:
+    mode: str
+    center_index: int = 0
+    single: bool = False
+
+
+@dataclass
 class SideBySideView:
     enabled: bool = False
     left: str | None = None
@@ -17,10 +24,28 @@ class SideBySideView:
     # Branch ring membership stays shared; isolating one tab is pane-local.
     single_chart_views: dict[str, bool] = field(default_factory=dict)
 
+    coordinate_modes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    scenes: dict[str, tuple[str, dict]] = field(default_factory=dict)
+    relationship_views: dict[tuple[str, str], RelationshipView] = field(default_factory=dict)
+
+    def side_for(self, document_id: str, side: str | None = None) -> str | None:
+        if not self.contains(document_id):
+            return None
+        if side is not None:
+            if side not in ("left", "right") or getattr(self, side) != document_id:
+                raise ValueError("invalid side-by-side presentation target")
+            return side
+        return self.active_side if getattr(self, self.active_side) == document_id else ("left" if self.left == document_id else "right")
+
+    def coordinate_mode(self, side: str, document_id: str, fallback: str) -> str:
+        value = self.coordinate_modes.get(side)
+        return value[1] if value and value[0] == document_id else fallback
+
     def reconcile(self, eligible: list[str], active: str | None, *, activate: bool = False) -> None:
         before = (self.left, self.right)
         focused_was_empty = getattr(self, self.active_side) is None
         self.single_chart_views = {doc: single for doc, single in self.single_chart_views.items() if doc in eligible}
+        self.relationship_views = {key: value for key, value in self.relationship_views.items() if key[1] in eligible}
         for side in ("left", "right"):
             if getattr(self, side) not in eligible:
                 setattr(self, side, None)

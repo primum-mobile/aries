@@ -4,17 +4,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Modified for Aries in 2026 by Max Lange.
 
+import copy
 import math
 import datetime
 from contextlib import contextmanager
 from contextvars import ContextVar
 import astrology
+import chart_bodies
 import planets
 import houses
 import fixstars
 import midpoints
 import riseset
 import asteroids
+import pd_point_selection
+from engine import orb_policy
 import zodpars
 import antzodpars
 import options
@@ -282,6 +286,41 @@ class Time:
 			'daylightsaving': daylightsaving,
 		}
 
+	@staticmethod
+	def equation_of_time(jd_ut):
+		"""Equation of time E = LAT − LMT, in days, at the UT instant ``jd_ut``.
+
+		Swiss Ephemeris ``swe_time_equ`` contract (input is UT).  E is positive
+		when the sundial runs ahead of the mean clock (about +16.4 min on
+		3 November, −14.2 min on 11 February).  Hence LAT = LMT + E and
+		LMT = LAT − E.
+		"""
+		_ret, te, _serr = astrology.swe_time_equ(float(jd_ut))
+		return float(te)
+
+	@staticmethod
+	def solar_clock_offset_days(jd_ut, longitude, zt):
+		"""Offset from UT to the mean or apparent solar clock at signed longitude."""
+		offset = longitude / 360.0
+		if zt == Time.LOCALAPPARENT:
+			offset += Time.equation_of_time(jd_ut)
+		return offset
+
+	@staticmethod
+	def apparent_clock_equation(jd_lat, lon_hours):
+		"""E (days) for a Local Apparent clock reading ``jd_lat``.
+
+		``jd_lat`` is the apparent clock time written as a Julian day and
+		``lon_hours`` the signed geographic longitude in hours (east +).  E is
+		evaluated at the UT of that reading (LAT − E − longitude), iterated as
+		Swiss Ephemeris' ``swe_lat_to_lmt`` does.
+		"""
+		jd_ut = float(jd_lat) - float(lon_hours) / Time.HOURSPERDAY
+		te = Time.equation_of_time(jd_ut)
+		for _ in range(2):
+			te = Time.equation_of_time(jd_ut - te)
+		return te
+
 	def __init__(self, year, month, day, hour, minute, second, bc, cal, zt, plus, zh, zm, daylightsaving, place, full = True, tzid='', tzauto=False): #zt is zonetime, zh is zonehour, zm is zoneminute, full means to calculate everything e.g. FixedStars, MidPoints, ...
 		self.tzid = tzid or ''
 		self.tzauto = bool(tzauto)
@@ -306,7 +345,8 @@ class Time:
 					daylightsaving = zone_fields['daylightsaving']
 					zone_offset_seconds = local_dt.utcoffset().total_seconds()
 
-		self.year = year
+		astro_year = 1 - year if bc else year
+		self.year = astro_year
 		self.month = month
 		self.day = day
 		self.origyear = year
@@ -323,78 +363,41 @@ class Time:
 		self.zm = zm
 		self.daylightsaving = daylightsaving
 
-		self.time = hour+minute/60.0+second/3600.0
+		calflag = astrology.SE_JUL_CAL if cal == Time.JULIAN else astrology.SE_GREG_CAL
+		local_midnight = astrology.swe_julday(astro_year, month, day, 0.0, calflag)
+		clock_hours = hour + minute / 60.0 + second / 3600.0
+		ut_hours = clock_hours
 
 		self.dyear, self.dmonth, self.dday, self.dhour, self.dmin, self.dsec = year, month, day, hour, minute, second
 		if self.daylightsaving:
-			self.time -= 1.0
+			ut_hours -= 1.0
 			self.dhour -= 1
-		#check daylightsaving underflow
-		if self.time < 0.0:
-			self.time += Time.HOURSPERDAY
-			self.year, self.month, self.day = util.decrDay(self.year, self.month, self.day)
-			self.dhour += int(Time.HOURSPERDAY)
-			self.dyear, self.dmonth, self.dday = self.year, self.month, self.day
-			
-		if zt == Time.ZONE:#ZONE
-			ztime = zh+zm/60.0
-			if self.plus:
-				self.time-=ztime
-			else:
-				self.time+=ztime
+			if ut_hours < 0.0:
+				dy, self.dmonth, self.dday, _ = astrology.swe_revjul(local_midnight - 1.0, calflag)
+				self.dyear = 1 - dy if bc else dy
+				self.dhour += int(Time.HOURSPERDAY)
+
+		if zt == Time.ZONE:
 			if zone_offset_seconds is not None:
 				# Historical IANA local-mean-time offsets can include seconds.  The
 				# exposed hour/minute fields are for display and persistence; the JD
 				# must use the exact offset of this local civil instant.
-				represented_seconds = (1 if self.plus else -1) * (zh * 3600 + zm * 60)
-				if self.daylightsaving:
-					represented_seconds += 3600
-				self.time -= (zone_offset_seconds - represented_seconds) / 3600.0
-		elif zt == Time.LOCALMEAN:#LMT
-			t = (place.deglon+place.minlon/60.0)*4.0 #long * 4min
-			if place.east:
-				self.time-=t/60.0
+				ut_hours = clock_hours - zone_offset_seconds / 3600.0
 			else:
-				self.time+=t/60.0	
+				zone_hours = zh + zm / 60.0
+				ut_hours -= zone_hours if plus else -zone_hours
+		elif zt in (Time.LOCALMEAN, Time.LOCALAPPARENT):
+			lon_hours = place.lon / 15.0
+			if zt == Time.LOCALAPPARENT:
+				jd_lat = local_midnight + ut_hours / Time.HOURSPERDAY
+				ut_hours -= Time.apparent_clock_equation(jd_lat, lon_hours) * Time.HOURSPERDAY
+			ut_hours -= lon_hours
 
-		if bc:
-			self.year = 1-self.year
-
-		#check over/underflow
-		if self.time >= Time.HOURSPERDAY:
-			self.time -= Time.HOURSPERDAY
-			self.year, self.month, self.day = util.incrDay(self.year, self.month, self.day)
-		elif self.time < 0.0:
-			self.time += Time.HOURSPERDAY
-			self.year, self.month, self.day = util.decrDay(self.year, self.month, self.day)
-
-		calflag = astrology.SE_GREG_CAL
-		if self.cal == Time.JULIAN:
-			calflag = astrology.SE_JUL_CAL
-		self.jd = astrology.swe_julday(self.year, self.month, self.day, self.time, calflag)
-
-		if zt == Time.LOCALAPPARENT:#LAT
-			ret, te, serr = astrology.swe_time_equ(self.jd)
-			self.jd += te #LMT
-			#Back to h,m,s(self.time) from julianday fromat
-			self.year, self.month, self.day, self.time = astrology.swe_revjul(self.jd, calflag)
-			#To GMT
-			t = (place.deglon+place.minlon/60.0)*4.0 #long * 4min
-			if place.east:
-				self.time-=t/60.0
-			else:
-				self.time+=t/60.0	
-
-			#check over/underflow
-			if self.time >= Time.HOURSPERDAY:
-				self.time -= Time.HOURSPERDAY
-				self.year, self.month, self.day = util.incrDay(self.year, self.month, self.day)
-			elif self.time < 0.0:
-				self.time += Time.HOURSPERDAY
-				self.year, self.month, self.day = util.decrDay(self.year, self.month, self.day)
-
-			#GMT in JD (julianday)
-			self.jd = astrology.swe_julday(self.year, self.month, self.day, self.time, calflag)
+		# Normalize UT across midnight in the chart's calendar, preserving fractional hours.
+		self.jd = local_midnight + ut_hours / Time.HOURSPERDAY
+		day_shift, self.time = divmod(ut_hours, Time.HOURSPERDAY)
+		if day_shift:
+			self.year, self.month, self.day, _ = astrology.swe_revjul(local_midnight + day_shift, calflag)
 
 		self.sidTime = astrology.swe_sidtime(self.jd) #GMT
 
@@ -413,9 +416,7 @@ class Time:
 	def calcPHs(self, place):
 		#Planetary day/hour calculation
 		#self.weekday = datetime.datetime(self.dyear, self.dmonth, self.dday, self.dhour, self.dmin, self.dsec).weekday()#only daylightsaving was subtracted
-		lon = place.deglon+place.minlon/60.0
-		if not place.east:
-			lon *= -1
+		lon = place.lon
 		lat = place.deglat+place.minlat/60.0
 		if not place.north:
 			lat *= -1
@@ -427,7 +428,7 @@ class Time:
 		elif self.zt == Time.LOCALMEAN:  # LMT
 			tz_hours = place.lon / 15.0
 		else:  # Time.LOCALAPPARENT (LAT = LMT + 방정시)
-			ret, te, serr = astrology.swe_time_equ(self.jd)  # te: day 단위
+			te = Time.equation_of_time(self.jd)  # te: day 단위, E = LAT - LMT
 			tz_hours = (place.lon / 15.0) + te*24.0
 
 		# --- JD 기반 요일 계산 (달력 독립, Monday=0 ... Sunday=6)
@@ -478,6 +479,33 @@ class Asp:
 		self.parallel = Chart.NONE
 		self.exact = False
 		self.max_orb = 0.0
+		self.candidates = {}  # aspect type -> (aspdif, appl, exact, max_orb)
+
+	def offer(self, typ, aspdif, appl, exact, max_orb):
+		"""Record one aspect within its orb; the cell itself shows the nearest."""
+		known = self.candidates.get(typ)
+		if known is None or aspdif < known[0]:
+			self.candidates[typ] = (aspdif, appl, exact, max_orb)
+		if self.typ == Chart.NONE or aspdif < self.aspdif:
+			self.typ, self.aspdif, self.appl, self.exact, self.max_orb = typ, aspdif, appl, exact, max_orb
+
+	def nearest(self, allowed):
+		"""The nearest recorded aspect whose type passes allowed(typ), or None.
+
+		Display filters select after the matrix, so a hidden aspect never
+		displaces an enabled one that is also within orb."""
+		if self.typ == Chart.NONE:
+			return None
+		if allowed(self.typ):
+			return self
+		passing = [(v[0], t) for t, v in self.candidates.items() if allowed(t)]
+		if not passing:
+			return None
+		typ = min(passing)[1]
+		asp = copy.copy(self)
+		asp.typ = typ
+		asp.aspdif, asp.appl, asp.exact, asp.max_orb = self.candidates[typ]
+		return asp
 
 
 class BodyProxy:
@@ -626,7 +654,7 @@ class Chart:
 		# RA is frame-independent, so cotrans needs a tropical lon.
 		self.raequasc, declequasc, dist = astrology.swe_cotrans(util.to_tropical_lon(self.houses.ascmc[houses.Houses.EQUASC], self.ayanamsha_offset), 0.0, 1.0, -self.obl[0])
 		self.planets = planets.Planets(self.time.jd, self.options.meannode, pflag, self.place.lat, self.houses.ascmc2, self.raequasc, self.nolat, self.obl[0])
-		self.chiron = planets.Planet(self.time.jd, astrology.SE_CHIRON, pflag, self.place.lat, self.houses.ascmc2, self.raequasc, None, None, self.nolat, self.obl[0])
+		self._rebuild_dynamic_chart_bodies(pflag)
 
 		self.abovehorizonwithorb = self.isAboveHorizonWithOrb()
 
@@ -680,7 +708,7 @@ class Chart:
 				self.obl[0],
 				self.ayanamsha_offset,
 			)
-			self.midpoints = midpoints.MidPoints(self.planets, chiron=self.chiron)
+			self.midpoints = midpoints.MidPoints(self.planets, chiron=self.chiron, apogee=getattr(self, 'apogee', None))
 			# 차트의 시간 설정을 그대로 따른다 (ZONE / GREENWICH / LMT / LAT)
 			if self.time.zt == Time.ZONE:  # 표준시
 				tz_hours = (1 if self.time.plus else -1) * (self.time.zh + self.time.zm/60.0) + (1.0 if self.time.daylightsaving else 0.0)
@@ -689,7 +717,7 @@ class Chart:
 			elif self.time.zt == Time.LOCALMEAN:  # LMT = 경도/15h (동경 +, 서경 -)
 				tz_hours = self.place.lon / 15.0
 			else:  # Time.LOCALAPPARENT (LAT) = LMT + 방정시
-				_, te, _ = astrology.swe_time_equ(self.time.jd)  # te는 '일(day)' 단위
+				te = Time.equation_of_time(self.time.jd)  # te는 '일(day)' 단위, E = LAT - LMT
 				tz_hours = (self.place.lon / 15.0) + te*24.0     # 시간을 시(hour) 단위로
 
 			self.riseset = riseset.RiseSet(self.time.jd, self.time.cal, self.place.lon, self.place.lat, self.place.altitude, tz_hours, self.planets)
@@ -755,7 +783,7 @@ class Chart:
 		elif self.time.zt == Time.LOCALMEAN:
 			tz_hours = self.place.lon / 15.0
 		else:
-			_, te, _ = astrology.swe_time_equ(self.time.jd)
+			te = Time.equation_of_time(self.time.jd)
 			tz_hours = (self.place.lon / 15.0) + te*24.0
 
 		self.riseset = riseset.RiseSet(self.time.jd, self.time.cal, self.place.lon, self.place.lat, self.place.altitude, tz_hours, self.planets)
@@ -797,8 +825,7 @@ class Chart:
 		already in the chart's chosen zodiac post-helper, so
 		``int(lon // 30) % 12`` is the correct sign in both modes.
 
-		See ``doc/ayanamsha-test-plan.md`` for the full invariant
-		battery and ``tests/test_ayanamsha_intrinsics.py`` for the
+		See ``tests/test_ayanamsha_intrinsics.py`` for the
 		automated regression guard.
 		"""
 		pflag = astrology.SEFLG_SWIEPH | astrology.SEFLG_SPEED
@@ -823,18 +850,12 @@ class Chart:
 		return pflag
 
 	def _rebuild_dynamic_chart_bodies(self, pflag):
-		self.chiron = planets.Planet(
-			self.time.jd,
-			astrology.SE_CHIRON,
-			pflag,
-			self.place.lat,
-			self.houses.ascmc2,
-			self.raequasc,
-			None,
-			None,
-			self.nolat,
-			self.obl[0],
-		)
+		for body_id, attr in chart_bodies.dynamic_body_specs(self.options):
+			setattr(self, attr, planets.Planet(
+				self.time.jd, body_id, pflag, self.place.lat,
+				self.houses.ascmc2, self.raequasc, None, None,
+				self.nolat, self.obl[0],
+			))
 
 	def _rebuild_cached_mundane_fortune(self, abovehor):
 		if self.munfortune == None:
@@ -1013,7 +1034,7 @@ class Chart:
 		return abovehorizon
 
 
-	def calcSyzygy(self):
+	def calcSyzygy(self, previous_same_phase=None):
 		if self.syzygy != None:
 			del self.syzygy
 		try:
@@ -1021,10 +1042,15 @@ class Chart:
 			del self._step_syzygy_previous_opposite
 		except AttributeError:
 			previous_opposite = None
-		self.syzygy = syzygy.Syzygy(self, previous_opposite=previous_opposite)
+		self.syzygy = syzygy.Syzygy(
+			self, previous_opposite=previous_opposite,
+			previous_same_phase=previous_same_phase,
+		)
 
 
-	def calcArabicParts(self):
+	def calcArabicParts(self, lot_houses=None):
+		"""Build the Lots; ``lot_houses`` supplies the cusps (default: the chart's)."""
+		hs = lot_houses if lot_houses is not None else self.houses
 		if self.parts != None:
 			del self.parts
 		if self.syzygy == None:
@@ -1035,7 +1061,7 @@ class Chart:
 		if self.syzygy == None:
 			self.parts = None
 			return
-		self.parts = arabicparts.ArabicParts(self.options.arabicparts, self.houses.ascmc, self.planets, self.houses, self.houses.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha_offset, self.male)
+		self.parts = arabicparts.ArabicParts(self.options.arabicparts, hs.ascmc, self.planets, hs, hs.cusps, self.fortune, self.syzygy, self.options, self.ayanamsha_offset, self.male)
 
 
 	def calcAntiscia(self):
@@ -1047,7 +1073,7 @@ class Chart:
 	def calcMidPoints(self):
 		if self.midpoints != None:
 			del self.midpoints
-		self.midpoints = midpoints.MidPoints(self.planets, chiron=self.chiron)
+		self.midpoints = midpoints.MidPoints(self.planets, chiron=self.chiron, apogee=getattr(self, 'apogee', None))
 
 	def _get_desc_node_body(self):
 		try:
@@ -1084,8 +1110,8 @@ class Chart:
 		return semantic_angle_longitude(self, angle_key)
 
 	def get_planet_body(self, planet_idx):
-		if planet_idx == astrology.SE_CHIRON:
-			return getattr(self, 'chiron', None)
+		if planet_idx == astrology.SE_CHIRON or planet_idx in chart_bodies.APOGEE_IDS:
+			return chart_bodies.dynamic_body(self, planet_idx)
 		if planet_idx == astrology.SE_TRUE_NODE:
 			return self._get_desc_node_body()
 		try:
@@ -1095,8 +1121,13 @@ class Chart:
 			pass
 		return None
 
+	@property
+	def _orbis(self):
+		"""Effective per-body aspect contributions under the chart's orb policy."""
+		return orb_policy.contributions(self.options)
+
 	def get_planet_orb_index(self, planet_idx):
-		if planet_idx == astrology.SE_CHIRON:
+		if planet_idx == astrology.SE_CHIRON or planet_idx in chart_bodies.APOGEE_IDS:
 			return astrology.SE_PLUTO
 		if planet_idx < 0:
 			return 0
@@ -1120,8 +1151,10 @@ class Chart:
 				continue
 			if self.get_planet_body(planet_idx) is not None:
 				ids.append(planet_idx)
-		if include_chiron and getattr(self, 'chiron', None) is not None and getattr(self.options, 'showchiron', True):
-			ids.append(astrology.SE_CHIRON)
+		if include_chiron:
+			for body_id, body in chart_bodies.iter_dynamic_bodies(self):
+				if common.is_planet_visible(self.options, body_id):
+					ids.append(body_id)
 		return ids
 
 	def _aspect_distance(self, lon1, lon2):
@@ -1243,12 +1276,7 @@ class Chart:
 			delta = math.fabs(asp.dif - Chart.Aspects[a])
 			if delta > orb_by_aspect[a]:
 				continue
-			if asp.typ == Chart.NONE or delta < asp.aspdif:
-				asp.typ = a
-				asp.aspdif = delta
-				asp.max_orb = orb_by_aspect[a]
-				asp.appl = self._is_applying_dynamic(lon1, speed1, lon2, speed2, a)
-				asp.exact = delta <= self.options.exact
+			asp.offer(a, delta, self._is_applying_dynamic(lon1, speed1, lon2, speed2, a), delta <= self.options.exact, orb_by_aspect[a])
 		return asp
 
 	def get_planetary_aspect(self, planet1_idx, planet2_idx):
@@ -1264,8 +1292,9 @@ class Chart:
 		idx1 = self.get_planet_orb_index(planet1_idx)
 		idx2 = self.get_planet_orb_index(planet2_idx)
 		orb_by_aspect = []
+		orbis, combine = self._orbis, orb_policy.combiner(self.options)
 		for a in range(Chart.ASPECT_NUM):
-			orb_by_aspect.append(self.options.orbis[idx1][a] + self.options.orbis[idx2][a])
+			orb_by_aspect.append(combine(orbis[idx1][a], orbis[idx2][a]))
 		parallel_orbs = [self.options.orbisplanetspar[idx1][0] + self.options.orbisplanetspar[idx2][0], self.options.orbisplanetspar[idx1][1] + self.options.orbisplanetspar[idx2][1]]
 		return self._build_dynamic_aspect(body1.data[planets.Planet.LONG], body2.data[planets.Planet.LONG], body1.data[planets.Planet.SPLON], body2.data[planets.Planet.SPLON], orb_by_aspect, body1.dataEqu[planets.Planet.DECLEQU], body2.dataEqu[planets.Planet.DECLEQU], parallel_orbs, False)
 
@@ -1310,8 +1339,9 @@ class Chart:
 		idx1 = self.get_planet_orb_index(planet1_idx)
 		idx2 = self.get_planet_orb_index(planet2_idx)
 		orb_by_aspect = []
+		orbis, combine = self._orbis, orb_policy.combiner(self.options)
 		for a in range(Chart.ASPECT_NUM):
-			orb_by_aspect.append(self.options.orbis[idx1][a] + self.options.orbis[idx2][a])
+			orb_by_aspect.append(combine(orbis[idx1][a], orbis[idx2][a]))
 		parallel_orbs = [
 			self.options.orbisplanetspar[idx1][0] + self.options.orbisplanetspar[idx2][0],
 			self.options.orbisplanetspar[idx1][1] + self.options.orbisplanetspar[idx2][1],
@@ -1355,8 +1385,9 @@ class Chart:
 			return Asp()
 		idx = self.get_planet_orb_index(planet_idx)
 		orb_by_aspect = []
+		orbis, combine = self._orbis, orb_policy.combiner(self.options)
 		for a in range(Chart.ASPECT_NUM):
-			orb_by_aspect.append(self.options.orbisAscMC[a] + self.options.orbis[idx][a])
+			orb_by_aspect.append(combine(self.options.orbisAscMC[a], orbis[idx][a]))
 		parallel_orbs = [self.options.orbisparAscMC[0] + self.options.orbisplanetspar[idx][0], self.options.orbisparAscMC[1] + self.options.orbisplanetspar[idx][1]]
 		decl = self.houses.ascmc2[houses.Houses.ASC][houses.Houses.DECL]
 		if angle_idx == 1:
@@ -1373,11 +1404,12 @@ class Chart:
 		hidx = (1, 2, 3, 10, 11, 12)
 		idx = self.get_planet_orb_index(planet_idx)
 		orb_by_aspect = []
+		orbis, combine = self._orbis, orb_policy.combiner(self.options)
 		for a in range(Chart.ASPECT_NUM):
 			orbH = self.options.orbisH[a]
 			if (house_idx == 0 or house_idx == 3) and (self.houses.hsys == 'P' or self.houses.hsys == 'K' or self.houses.hsys == 'O' or self.houses.hsys == 'R' or self.houses.hsys == 'C' or self.houses.hsys == 'E' or self.houses.hsys == 'T' or self.houses.hsys == 'B'):
 				orbH = self.options.orbisAscMC[a]
-			orb_by_aspect.append(orbH + self.options.orbis[idx][a])
+			orb_by_aspect.append(combine(orbH, orbis[idx][a]))
 		parallel_orbs = [self.options.orbisparH[0] + self.options.orbisplanetspar[idx][0], self.options.orbisparH[1] + self.options.orbisplanetspar[idx][1]]
 		# Both `pllon` and the Whole-Sign cusps stored in `self.houses.cusps`
 		# are already in the chart's chosen zodiac post-Chart._zodiac_flags;
@@ -1395,7 +1427,7 @@ class Chart:
 		if body is None:
 			return Asp()
 		idx = self.get_planet_orb_index(planet_idx)
-		orb_by_aspect = self.options.orbis[idx][:]
+		orb_by_aspect = self._orbis[idx][:]
 		return self._build_dynamic_aspect(body.data[planets.Planet.LONG], self.fortune.fortune[fortune.Fortune.LON], body.data[planets.Planet.SPLON], 0.0, orb_by_aspect, node_only_conjunction=planet_idx in (astrology.SE_MEAN_NODE, astrology.SE_TRUE_NODE))
 
 
@@ -1409,6 +1441,7 @@ class Chart:
 			self._fortune_aspects_pending = True
 			return
 		self.__dict__.pop("_aspects_pending", None)
+		orbis, combine = self._orbis, orb_policy.combiner(self.options)
 
 		self.aspmatrix = [[Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp()], 
 					[Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp(),Asp()], 
@@ -1449,26 +1482,14 @@ class Chart:
 					for a in range(Chart.ASPECT_NUM):
 						#Check aspects
 
-						val1 = self.planets.planets[j].data[0]+self.options.orbis[j][a]+self.options.orbis[i][a]
-						val2 = self.planets.planets[j].data[0]-(self.options.orbis[j][a]+self.options.orbis[i][a])
+						allow = combine(orbis[j][a], orbis[i][a])
+						val1 = self.planets.planets[j].data[0]+allow
+						val2 = self.planets.planets[j].data[0]-allow
 
 						if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
 							tmp = util.normalize(self.planets.planets[i].data[0]+Chart.Aspects[a])
-							dif = math.fabs(tmp-self.planets.planets[j].data[0])
-							if self.aspmatrix[k][l].typ == Chart.NONE or (self.aspmatrix[k][l].typ != Chart.NONE and self.aspmatrix[k][l].dif > dif):
-								self.aspmatrix[k][l].typ = a
-								self.aspmatrix[k][l].aspdif = dif
-								self.aspmatrix[k][l].appl = self.isApplPlanets(tmp, i, j)
-								self.aspmatrix[k][l].max_orb = self.options.orbis[j][a]+self.options.orbis[i][a]  # Set max orb for thickness calculation 
-
-								#Check Exact
-								val1 = self.planets.planets[j].data[0]+self.options.exact
-								val2 = self.planets.planets[j].data[0]-self.options.exact
-
-								if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
-									self.aspmatrix[k][l].exact = True 
-								else:	
-									self.aspmatrix[k][l].exact = False
+							dif = self._aspect_distance(tmp, self.planets.planets[j].data[0])
+							self.aspmatrix[k][l].offer(a, dif, self.isApplPlanets(tmp, i, j), dif < self.options.exact, allow)
 						dif = self.planets.planets[i].data[0]-self.planets.planets[j].data[0]
 						if self.planets.planets[j].data[0] > self.planets.planets[i].data[0]:
 							dif = self.planets.planets[j].data[0]-self.planets.planets[i].data[0]
@@ -1506,44 +1527,19 @@ class Chart:
 						break
 
 					#Check aspects
-					val1 = self.houses.ascmc[j]+self.options.orbisAscMC[a]+self.options.orbis[i][a]
-					val2 = self.houses.ascmc[j]-(self.options.orbisAscMC[a]+self.options.orbis[i][a])
+					allow = combine(self.options.orbisAscMC[a], orbis[i][a])
+					val1 = self.houses.ascmc[j]+allow
+					val2 = self.houses.ascmc[j]-allow
 
 					if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
 						tmp = util.normalize(self.planets.planets[i].data[0]+Chart.Aspects[a])
-						dif = math.fabs(tmp-self.houses.ascmc[j])
-						if self.aspmatrixAscMC[j][i].typ == Chart.NONE or (self.aspmatrixAscMC[j][i].typ != Chart.NONE and self.aspmatrixAscMC[j][i].dif > dif):
-							self.aspmatrixAscMC[j][i].typ = a
-							self.aspmatrixAscMC[j][i].aspdif = dif
-							self.aspmatrixAscMC[j][i].appl = tmp > self.houses.ascmc[j]
-							self.aspmatrixAscMC[j][i].max_orb = self.options.orbisAscMC[a]+self.options.orbis[i][a]  # Set max orb for thickness calculation 
-
-							#Exact
-							val1 = self.houses.ascmc[j]+self.options.exact
-							val2 = self.houses.ascmc[j]-self.options.exact
-
-							if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
-								self.aspmatrixAscMC[j][i].exact = True 
-							else:	
-								self.aspmatrixAscMC[j][i].exact = False
+						dif = self._aspect_distance(tmp, self.houses.ascmc[j])
+						self.aspmatrixAscMC[j][i].offer(a, dif, Chart._signed_lon_delta(tmp, self.houses.ascmc[j]) > 0.0, dif < self.options.exact, allow)
 					else:#negativ
 						if (self.inorbdexter(val1, val2, self.planets.planets[i].data[0], a)):
 							tmp = util.normalize(self.planets.planets[i].data[0]-Chart.Aspects[a])
-							dif = math.fabs(tmp-self.houses.ascmc[j])
-							if self.aspmatrixAscMC[j][i].typ == Chart.NONE or (self.aspmatrixAscMC[j][i].typ != Chart.NONE and self.aspmatrixAscMC[j][i].dif > dif):
-								self.aspmatrixAscMC[j][i].typ = a
-								self.aspmatrixAscMC[j][i].aspdif = dif
-								self.aspmatrixAscMC[j][i].appl = tmp > self.houses.ascmc[j]
-								self.aspmatrixAscMC[j][i].max_orb = self.options.orbisAscMC[a]+self.options.orbis[i][a]  # Set max orb for thickness calculation 
-
-								#Exact
-								val1 = self.houses.ascmc[j]+self.options.exact
-								val2 = self.houses.ascmc[j]-self.options.exact
-
-								if (self.inorbdexter(val1, val2, self.planets.planets[i].data[0], a)):
-									self.aspmatrixAscMC[j][i].exact = True 
-								else:	
-									self.aspmatrixAscMC[j][i].exact = False
+							dif = self._aspect_distance(tmp, self.houses.ascmc[j])
+							self.aspmatrixAscMC[j][i].offer(a, dif, Chart._signed_lon_delta(tmp, self.houses.ascmc[j]) > 0.0, dif < self.options.exact, allow)
 
 					dif = self.planets.planets[i].data[0]-self.houses.ascmc[j]
 					if self.houses.ascmc[j] > self.planets.planets[i].data[0]:
@@ -1587,8 +1583,8 @@ class Chart:
 
 					#Check aspects
 					orbH = self.options.orbisH[a]
-					val1 = self.houses.cusps[hidx[j]]+orbH+self.options.orbis[i][a]
-					val2 = self.houses.cusps[hidx[j]]-(orbH+self.options.orbis[i][a])
+					val1 = self.houses.cusps[hidx[j]]+combine(orbH, orbis[i][a])
+					val2 = self.houses.cusps[hidx[j]]-combine(orbH, orbis[i][a])
 
 					if (j == 0 or j == 3) and (self.houses.hsys == 'P' or self.houses.hsys == 'K' or self.houses.hsys == 'O' or self.houses.hsys == 'R' or self.houses.hsys == 'C' or self.houses.hsys == 'E' or self.houses.hsys == 'T' or self.houses.hsys == 'B'):
 						orbH = self.options.orbisAscMC[a]
@@ -1596,42 +1592,16 @@ class Chart:
 					pllon = self.planets.planets[i].data[0]
 					if (self.inorbsinister(val1, val2, pllon, a)):
 						tmp = util.normalize(pllon+Chart.Aspects[a])
-						dif = math.fabs(tmp-self.houses.cusps[hidx[j]])
-						if self.aspmatrixH[j][i].typ == Chart.NONE or (self.aspmatrixH[j][i].typ != Chart.NONE and self.aspmatrixH[j][i].dif > dif):
-							self.aspmatrixH[j][i].typ = a
-							self.aspmatrixH[j][i].aspdif = dif
-							self.aspmatrixH[j][i].appl = tmp > self.houses.cusps[hidx[j]]
-							self.aspmatrixH[j][i].max_orb = orbH+self.options.orbis[i][a]  # Set max orb for thickness calculation 
-
-							#Exact
-							val1 = self.houses.cusps[hidx[j]]+self.options.exact
-							val2 = self.houses.cusps[hidx[j]]-self.options.exact
-
-							if (self.inorbsinister(val1, val2, pllon, a)):
-								self.aspmatrixH[j][i].exact = True 
-							else:	
-								self.aspmatrixH[j][i].exact = False
+						dif = self._aspect_distance(tmp, self.houses.cusps[hidx[j]])
+						self.aspmatrixH[j][i].offer(a, dif, Chart._signed_lon_delta(tmp, self.houses.cusps[hidx[j]]) > 0.0, dif < self.options.exact, combine(orbH, orbis[i][a]))
 					else:#negativ
 						if (j == 0 or j == 3) and (self.houses.hsys == 'P' or self.houses.hsys == 'K' or self.houses.hsys == 'O' or self.houses.hsys == 'R' or self.houses.hsys == 'C' or self.houses.hsys == 'E' or self.houses.hsys == 'T' or self.houses.hsys == 'B'):
 							orbH = self.options.orbisAscMC[a]
 
 						if (self.inorbdexter(val1, val2, pllon, a)):
 							tmp = util.normalize(pllon-Chart.Aspects[a])
-							dif = math.fabs(tmp-self.houses.cusps[hidx[j]])
-							if self.aspmatrixH[j][i].typ == Chart.NONE or (self.aspmatrixH[j][i].typ != Chart.NONE and self.aspmatrixH[j][i].dif > dif):
-								self.aspmatrixH[j][i].typ = a
-								self.aspmatrixH[j][i].aspdif = dif
-								self.aspmatrixH[j][i].appl = tmp > self.houses.cusps[hidx[j]]
-								self.aspmatrixH[j][i].max_orb = orbH+self.options.orbis[i][a]  # Set max orb for thickness calculation 
-
-								#exact
-								val1 = self.houses.cusps[hidx[j]]+self.options.exact
-								val2 = self.houses.cusps[hidx[j]]-self.options.exact
-
-								if (self.inorbdexter(val1, val2, pllon, a)):
-									self.aspmatrixH[j][i].exact = True 
-								else:	
-									self.aspmatrixH[j][i].exact = False
+							dif = self._aspect_distance(tmp, self.houses.cusps[hidx[j]])
+							self.aspmatrixH[j][i].offer(a, dif, Chart._signed_lon_delta(tmp, self.houses.cusps[hidx[j]]) > 0.0, dif < self.options.exact, combine(orbH, orbis[i][a]))
 
 					dif = pllon-self.houses.cusps[hidx[j]]
 					if self.houses.cusps[hidx[j]] > pllon:
@@ -1668,48 +1638,22 @@ class Chart:
 				#Check aspects
 				orb = 0.0
 				if i < self.planets.PLANETS_NUM-1:
-					orb = self.options.orbis[i][a]
+					orb = self._orbis[i][a]
 				else:
-					orb = self.options.orbis[i-1][a]
+					orb = self._orbis[i-1][a]
 
 				val1 = lonlof+orb
 				val2 = lonlof-orb
 
 				if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
 					tmp = util.normalize(self.planets.planets[i].data[0]+Chart.Aspects[a])
-					dif = math.fabs(tmp-lonlof)
-					if self.aspmatrixLoF[i].typ == Chart.NONE or (self.aspmatrixLoF[i].typ != Chart.NONE and self.aspmatrixLoF[i].dif > dif):
-						self.aspmatrixLoF[i].typ = a
-						self.aspmatrixLoF[i].aspdif = dif
-						self.aspmatrixLoF[i].appl = tmp > lonlof
-						self.aspmatrixLoF[i].max_orb = orb  # Set max orb for thickness calculation
-
-						#Exact
-						val1 = lonlof+self.options.exact
-						val2 = lonlof-self.options.exact
-
-						if (self.inorbsinister(val1, val2, self.planets.planets[i].data[0], a)):
-							self.aspmatrixLoF[i].exact = True 
-						else:	
-							self.aspmatrixLoF[i].exact = False
+					dif = self._aspect_distance(tmp, lonlof)
+					self.aspmatrixLoF[i].offer(a, dif, Chart._signed_lon_delta(tmp, lonlof) > 0.0, dif < self.options.exact, orb)
 				else:#negativ
 					if (self.inorbdexter(val1, val2, self.planets.planets[i].data[0], a)):
 						tmp = util.normalize(self.planets.planets[i].data[0]-Chart.Aspects[a])
-						dif = math.fabs(tmp-lonlof)
-						if self.aspmatrixLoF[i].typ == Chart.NONE or (self.aspmatrixLoF[i].typ != Chart.NONE and self.aspmatrixLoF[i].dif > dif):
-							self.aspmatrixLoF[i].typ = a
-							self.aspmatrixLoF[i].aspdif = dif
-							self.aspmatrixLoF[i].appl = tmp > lonlof
-							self.aspmatrixLoF[i].max_orb = orb  # Set max orb for thickness calculation
-
-							#exact
-							val1 = lonlof+self.options.exact
-							val2 = lonlof-self.options.exact
-
-							if (self.inorbdexter(val1, val2, self.planets.planets[i].data[0], a)):
-								self.aspmatrixLoF[i].exact = True 
-							else:	
-								self.aspmatrixLoF[i].exact = False
+						dif = self._aspect_distance(tmp, lonlof)
+						self.aspmatrixLoF[i].offer(a, dif, Chart._signed_lon_delta(tmp, lonlof) > 0.0, dif < self.options.exact, orb)
 
 				dif = self.planets.planets[i].data[0]-lonlof
 				if lonlof > self.planets.planets[i].data[0]:
@@ -1765,10 +1709,10 @@ class Chart:
 					self.speeds[i+1] = a
 
 
-	def dignity(self, pid):
+	def dignity(self, pid, longitude=None):
 		# planets.data[0] is already in the chart's chosen zodiac; sign
 		# falls out via `lon // 30` regardless of tropical / sidereal.
-		lona = util.normalize(self.planets.planets[pid].data[0])
+		lona = util.normalize(self.planets.planets[pid].data[0] if longitude is None else longitude)
 		sign = int(lona/Chart.SIGN_DEG)
 		val = Chart.PEREGRIN
 
@@ -1780,7 +1724,11 @@ class Chart:
 			isexil = self.options.dignities[pid][0][oppsign]
 			iscasus = self.options.dignities[pid][1][oppsign]
 
-			if isdom:
+			# Mercury's combined domicile/exaltation uses exaltation paint.
+			# This display classifier does not change essential-dignity scores.
+			if pid == astrology.SE_MERCURY and isdom and isexal:
+				val = Chart.EXAL
+			elif isdom:
 				val = Chart.DOMICIL
 			elif isexil:
 				val = Chart.EXIL
@@ -1841,15 +1789,24 @@ class Chart:
 		pid = int(pid)
 		if pid < astrology.SE_SUN or pid > astrology.SE_SATURN:
 			return None
+		if lon is None:
+			body = self.get_planet_body(pid)
+			if body is None:
+				return None
+			lon = body.data[planets.Planet.LONG]
+		return self._essential_dignities_at(lon, pid)
 
+	def get_longitude_essential_rulers(self, lon):
+		'''Domicile, exaltation, triplicity, term and face rulers of a longitude.
+
+		Same configured tables as get_planet_essential_dignities(), but no body
+		holds dignity there: every row is inactive.  Used for outer planets,
+		nodes, lots and angles, which have rulers but no essential dignity.'''
+		return self._essential_dignities_at(lon, None)
+
+	def _essential_dignities_at(self, lon, pid):
 		try:
-			if lon is None:
-				body = self.get_planet_body(pid)
-				if body is None:
-					return None
-				lon = float(body.data[planets.Planet.LONG])
-			else:
-				lon = float(lon)
+			lon = float(lon)
 			# planets.data[LONG] is in the chosen zodiac; sign falls
 			# out directly.
 			lon = util.normalize(lon)
@@ -1867,7 +1824,7 @@ class Chart:
 		default_domicile_rulers = (4, 3, 2, 1, 0, 2, 3, 4, 5, 6, 6, 5)
 
 		try:
-			is_domicile = bool(self.options.dignities[pid][0][sign])
+			is_domicile = pid is not None and bool(self.options.dignities[pid][0][sign])
 			domicile_ruler = default_domicile_rulers[sign]
 			for candidate in range(astrology.SE_SUN, astrology.SE_SATURN + 1):
 				if self.options.dignities[candidate][0][sign]:
@@ -1886,7 +1843,7 @@ class Chart:
 					exaltation_ruler = candidate
 					break
 			mercury_in_virgo = sign == 5 and pid == astrology.SE_MERCURY
-			is_exaltation = bool(exaltation_ruler == pid)
+			is_exaltation = pid is not None and exaltation_ruler == pid
 			if mercury_in_virgo and not getattr(self.options, 'useexaltationmercury', False):
 				is_exaltation = False
 			rows.append({'label': 'Exaltation', 'ruler': exaltation_ruler, 'active': is_exaltation, 'score': self.options.dignityscores[1]})
@@ -1958,7 +1915,7 @@ class Chart:
 				if span_total > pos_in_sign:
 					term_ruler = int(term_pid)
 					break
-			is_term = term_ruler == pid
+			is_term = pid is not None and term_ruler == pid
 			rows.append({'label': 'Term', 'ruler': term_ruler, 'active': is_term, 'score': self.options.dignityscores[3]})
 			if is_term:
 				active.append('Term')
@@ -1968,7 +1925,7 @@ class Chart:
 		try:
 			decan_index = int(pos_in_sign / 10.0)
 			decan_ruler = int(self.options.decans[self.options.seldecan][sign][decan_index])
-			is_face = decan_ruler == pid
+			is_face = pid is not None and decan_ruler == pid
 			rows.append({'label': 'Face', 'ruler': decan_ruler, 'active': is_face, 'score': self.options.dignityscores[4]})
 			if is_face:
 				active.append('Face')
@@ -2165,8 +2122,9 @@ class Chart:
 				continue
 		return None
 
-	def _get_pd_arabic_part_point(self, promissor=False):
-		selected_name = self._get_pd_active_arabic_part_name(promissor)
+	def _get_pd_arabic_part_point(self, promissor=False, selected_name=None):
+		if selected_name is None:
+			selected_name = self._get_pd_active_arabic_part_name(promissor)
 		if selected_name is None:
 			return None
 		parts = getattr(getattr(self, 'parts', None), 'parts', None)
@@ -2194,7 +2152,43 @@ class Chart:
 	def _get_pd_arabic_part_significator_point(self):
 		return self._get_pd_arabic_part_point(False)
 
+	def _iter_pd_selected_points(self, promissor=False, options=None):
+		opts = options if options is not None else self.options
+		fields = pd_point_selection.ROLE_FIELDS[promissor]
+		if getattr(opts, fields['partsEnabled'], False):
+			for name in pd_point_selection.arabic_part_names(opts, promissor):
+				point = self._get_pd_arabic_part_point(promissor, name)
+				if point is not None:
+					index = next(i for i, part in enumerate(opts.arabicparts) if part[0] == name)
+					yield 'part:%03d' % index, point
+		if getattr(opts, fields['asteroidsEnabled'], False):
+			selected = set(pd_point_selection.asteroid_numbers(opts, promissor))
+			for body in asteroids.iter_chart_asteroids(self):
+				if body.number not in selected or not body.available:
+					continue
+				# Chiron already has a dedicated control; emit its identity once.
+				if (body.aId == astrology.SE_CHIRON and getattr(opts, fields['chironEnabled'], False)
+						and self._get_chiron_pd_point() is not None):
+					continue
+				point = customerpd.CustomerPD.from_ecliptic_longitude(
+					body.data[0], self.place.lat, self.houses.ascmc2,
+					self.obl[0], self.raequasc, body.data[1], self.ayanamsha_offset)
+				# Asteroid RA/declination are physical equatorial coordinates.
+				point.ra, point.decl = body.data[2:4]
+				point.speculums = []
+				point.computePlacidianSpeculum(self.place.lat, self.houses.ascmc2)
+				point.computeRegiomontanSpeculum(self.place.lat, self.houses.ascmc2, self.raequasc)
+				yield f'asteroid:{body.number}', point
+
 	def get_pd_dynamic_point_label(self, key, promissor):
+		if key and key.startswith('part:'):
+			index = int(key.split(':', 1)[1])
+			return self.options.arabicparts[index][arabicparts.ArabicParts.NAME]
+		if key and key.startswith('asteroid:'):
+			number = int(key.split(':', 1)[1])
+			return astrology.swe_get_planet_name(asteroids.asteroid_body_id(number))
+		if key == 'apogee':
+			return mtexts.txts['Apogee']
 		if key == 'chiron':
 			return mtexts.txts.get('Chiron', 'Chiron')
 		if key == 'vertex':
@@ -2228,9 +2222,11 @@ class Chart:
 		chiron_point = self._get_chiron_pd_point()
 		if chiron_point is not None and getattr(self.options, 'pdpromchiron', getattr(self.options, 'showchiron', True)):
 			points.append(('chiron', chiron_point))
-		arabic_part_point = getattr(self, 'pd_arabic_part_prom', None)
-		if arabic_part_point is not None:
-			points.append(('arabic_part_prom', arabic_part_point))
+		if getattr(self, 'apogee', None) is not None and getattr(self.options, 'pdpromapogee', True):
+			points.append(('apogee', customerpd.CustomerPD.from_planet(self.apogee)))
+		points.extend(self._iter_pd_selected_points(True))
+		if getattr(self.options, 'pdpromarabicpartnames', None) is None:
+			points = [('arabic_part_prom' if key.startswith('part:') else key, point) for key, point in points]
 		return points
 
 	def iter_pd_significator_points(self):
@@ -2244,66 +2240,48 @@ class Chart:
 		vertex_point = self._get_vertex_pd_point()
 		if vertex_point is not None and getattr(self.options, 'pdsigvertex', False):
 			points.append(('vertex', vertex_point))
-		arabic_part_point = getattr(self, 'pd_arabic_part_sig', None)
-		if arabic_part_point is not None:
-			points.append(('arabic_part_sig', arabic_part_point))
+		if getattr(self, 'apogee', None) is not None and getattr(self.options, 'pdsigapogee', True):
+			points.append(('apogee', customerpd.CustomerPD.from_planet(self.apogee)))
+		points.extend(self._iter_pd_selected_points(False))
+		if getattr(self.options, 'pdsigarabicpartnames', None) is None:
+			points = [('arabic_part_sig' if key.startswith('part:') else key, point) for key, point in points]
 		return points
 
 
+	@staticmethod
+	def _in_orb_window(val1, val2, asppoint):
+		'''True when asppoint lies strictly inside the window val2..val1 (centre +/- orb), measured around the circle so windows across 0 Aries work.'''
+		centre = (val1+val2)/2.0
+		half = (val1-val2)/2.0
+		delta = math.fabs((asppoint-centre+180.0) % 360.0 - 180.0)
+		return delta < half
+
+	@staticmethod
+	def _signed_lon_delta(lon1, lon2):
+		'''Shortest signed arc from lon2 to lon1, in (-180, 180].'''
+		return 180.0-((180.0-(lon1-lon2)) % 360.0)
+
 	def inorbsinister(self, val1, val2, pos, asp):
-		'''Checks if inside orb (Pisces-Aries transition also!), val1 is leftorbboundary, val2 is rightorb boundary'''
-
-		asppoint = pos+Chart.Aspects[asp]
-
-		if (val1 >= 360.0 and val2 < 360.0) or (val1 > 0 and val2 < 0):#left is in Aries, right is in Pisces
-			if (val1 >= 0 and val2 < 0):
-				val1 += 360.0
-				val2 += 360.0
-			if asp == Chart.CONJUNCTIO and pos < 20.0: # 20.0 is arbitrary, just to see if the planet is close to the Pisces-Aries transition
-				asppoint += 360.0
-		else:
-			val1 = util.normalize(val1)
-			val2 = util.normalize(val2)
-			asppoint = util.normalize(asppoint)
-
-		if val1 > asppoint and val2 < asppoint:
-			return True
-
-		return False 
-
+		'''Checks if pos+aspect is inside the orb window; val1 is the left orb boundary, val2 the right one'''
+		return Chart._in_orb_window(val1, val2, pos+Chart.Aspects[asp])
 
 	def inorbdexter(self, val1, val2, pos, asp):
-		'''Checks if inside orb (Pisces-Aries transition also!), val1 is leftorbboundary, val2 is rightorb boundary'''
-
-		asppoint = pos-Chart.Aspects[asp]
-		asppoint = util.normalize(asppoint)
-
-		if (val1 >= 360.0 and val2 < 360.0) or (val1 > 0 and val2 < 0):#left is in Aries, right is in Pisces
-			asppoint += 360.0
-			if (val1 >= 0 and val2 < 0):
-				val1 += 360.0
-				val2 += 360.0
-			if asppoint < 20.0: # 20.0 is arbitrary, just to see if the planet is close to the Pisces-Aries transition
-				asppoint += 360.0
-		else:
-			val1 = util.normalize(val1)
-			val2 = util.normalize(val2)
-
-		if val1 > asppoint and val2 < asppoint:
-			return True
-
-		return False 
+		'''Checks if pos-aspect is inside the orb window; val1 is the left orb boundary, val2 the right one'''
+		return Chart._in_orb_window(val1, val2, pos-Chart.Aspects[asp])
 
 
-	def calcProfPos(self, prof):
-		if getattr(self, 'syzygy', None) is None:
+	def calcProfPos(self, prof, with_syzygy=True):
+		# with_syzygy=False is for longitude-only consumers (the Profections
+		# table): it skips the prenatal-lunation search, which costs tens of
+		# ms per chart and is not read there.
+		if with_syzygy and getattr(self, 'syzygy', None) is None:
 			try:
 				self.calcSyzygy()
 			except Exception:
 				self.syzygy = None
 		self.planets.calcProfPos(prof)
-		if getattr(self, 'chiron', None) is not None:
-			self.chiron.calcProfPos(prof)
+		for _body_id, body in chart_bodies.iter_dynamic_bodies(self):
+			body.calcProfPos(prof)
 		self.houses.calcProfPos(prof)
 		self.fortune.calcProfPos(prof)
 		if getattr(self, 'syzygy', None) is not None:
@@ -2313,8 +2291,10 @@ class Chart:
 		if source_chart is None:
 			return
 		self.planets.calcMundaneProfPos(self.houses.ascmc2, source_chart.planets.planets, placelat, obl, self.ayanamsha_offset)
-		if getattr(self, 'chiron', None) is not None and getattr(source_chart, 'chiron', None) is not None:
-			self.chiron.calcMundaneProfPos(self.houses.ascmc2, source_chart.chiron, placelat, obl, self.ayanamsha_offset)
+		for body_id, body in chart_bodies.iter_dynamic_bodies(self):
+			source = chart_bodies.dynamic_body(source_chart, body_id)
+			if source is not None:
+				body.calcMundaneProfPos(self.houses.ascmc2, source, placelat, obl, self.ayanamsha_offset)
 		self.fortune.calcMundaneProfPos(self.houses.ascmc2, source_chart.fortune, placelat, obl, self.ayanamsha_offset)
 		self.calcAspMatrix()
 		self.calcLoFAspMatrix()

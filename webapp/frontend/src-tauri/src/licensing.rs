@@ -25,6 +25,10 @@ const DEFAULT_LICENSE_SERVER_URL: &str = "";
 const DEFAULT_LICENSE_PUBLIC_KEY: &str = "";
 const UPDATE_CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const UPDATE_TRANSFER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Windows `CRED_MAX_CREDENTIAL_BLOB_SIZE`; keyring stores the secret as UTF-16.
+const CREDENTIAL_BLOB_LIMIT_BYTES: usize = 2560;
+/// The server accepts device ids of 16..=256 characters.
+const DEVICE_ID_LENGTH: std::ops::RangeInclusive<usize> = 16..=256;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,11 +42,16 @@ struct LocalState {
     seats: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CredentialSecret {
     license_key: String,
     activation_token: String,
+    /// Backup of the device identity the activation token is bound to (Windows).
+    /// Credential Manager survives uninstall and app-data deletion, so a
+    /// reinstall reuses the same seat instead of activating a new device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    device_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -109,6 +118,8 @@ pub struct LicenseStatus {
     seats: Option<u32>,
     lease_expires_at: Option<String>,
     refresh_after: Option<String>,
+    /// No local lease, but a stored activation can renew it without the key.
+    recoverable: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -138,6 +149,40 @@ pub struct UpdateInfo {
 
 #[derive(Default)]
 pub struct PendingLicenseUpdate(Mutex<Option<Update>>);
+
+/// A verified Windows update package waiting for the app to quit.
+///
+/// The Windows updater launches the installer and ends the process with
+/// `std::process::exit`, which skips the quit preflight (Save/Discard/Cancel)
+/// and the notes flush. Windows therefore downloads and verifies the package
+/// when the user accepts the update and runs the installer from the confirmed
+/// quit path, matching the dialog's "the next time it starts" promise.
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+pub struct StagedWindowsUpdate(Mutex<Option<(Update, Vec<u8>)>>);
+
+/// Runs a staged Windows installer after a confirmed quit. Does not return
+/// when the installer starts; returns when nothing is staged or install failed.
+#[cfg(target_os = "windows")]
+pub(crate) fn install_staged_windows_update(app: &AppHandle<Wry>) {
+    let Some(state) = app.try_state::<StagedWindowsUpdate>() else {
+        return;
+    };
+    let staged = match state.0.lock() {
+        Ok(mut staged) => staged.take(),
+        Err(_) => {
+            log::warn!("staged update state is unavailable");
+            return;
+        }
+    };
+    let Some((update, bytes)) = staged else {
+        return;
+    };
+    log::info!("running staged Aries {} installer at quit", update.version);
+    if let Err(error) = update.install(bytes) {
+        log::error!("staged update install failed: {error}");
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
@@ -181,11 +226,30 @@ fn local_state_file() -> &'static str {
 
 fn read_local_state(app: &AppHandle<Wry>) -> Result<LocalState, String> {
     let path = local_state_path(app)?;
-    match fs::read_to_string(path) {
-        Ok(raw) => serde_json::from_str(&raw).map_err(|error| error.to_string()),
+    match fs::read_to_string(&path) {
+        Ok(raw) => match parse_local_state(&raw) {
+            Some(state) => Ok(state),
+            None if repairs_corrupt_license_storage() => {
+                // Windows: a truncated or hand-edited file must not lock the
+                // app with no way to activate. The signed lease is the only
+                // authority and the device identity comes back from
+                // Credential Manager, so a fresh state is safe; keep the bad
+                // copy for support.
+                log::warn!("license state unreadable; starting from an empty state");
+                let _ = fs::rename(&path, path.with_extension("json.corrupt"));
+                Ok(LocalState::default())
+            }
+            // macOS keeps its existing behavior: report, never regenerate the
+            // device identity behind a stored Keychain activation.
+            None => serde_json::from_str(&raw).map_err(|error| error.to_string()),
+        },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(LocalState::default()),
         Err(error) => Err(error.to_string()),
     }
+}
+
+fn parse_local_state(raw: &str) -> Option<LocalState> {
+    serde_json::from_str(raw).ok()
 }
 
 fn write_local_state(app: &AppHandle<Wry>, state: &LocalState) -> Result<(), String> {
@@ -195,17 +259,106 @@ fn write_local_state(app: &AppHandle<Wry>, state: &LocalState) -> Result<(), Str
     }
     let temporary = path.with_extension("json.tmp");
     let raw = serde_json::to_vec_pretty(state).map_err(|error| error.to_string())?;
-    fs::write(&temporary, raw).map_err(|error| error.to_string())?;
+    {
+        use std::io::Write as _;
+        let mut file = fs::File::create(&temporary).map_err(|error| error.to_string())?;
+        file.write_all(&raw).map_err(|error| error.to_string())?;
+        // Flush before the rename so a power loss cannot leave an empty file.
+        file.sync_all().map_err(|error| error.to_string())?;
+    }
     fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
 fn ensure_device_id(app: &AppHandle<Wry>) -> Result<LocalState, String> {
     let mut state = read_local_state(app)?;
     if state.device_id.is_empty() {
-        state.device_id = random_device_id()?;
+        state.device_id = initial_device_id(credential_backs_device_identity(), read_credentials)?;
         write_local_state(app, &state)?;
     }
     Ok(state)
+}
+
+/// Windows backs the device identity up in Credential Manager. The NSIS
+/// uninstaller's "delete application data" option removes the roaming
+/// app-config folder but never touches stored credentials, so reinstalling
+/// keeps the same server-side seat. macOS keeps its existing Keychain usage.
+fn credential_backs_device_identity() -> bool {
+    cfg!(target_os = "windows")
+}
+
+/// Windows discards an unreadable license state file or credential so the
+/// user can activate again; macOS keeps reporting the error unchanged.
+fn repairs_corrupt_license_storage() -> bool {
+    cfg!(target_os = "windows")
+}
+
+/// Picks the identity for a state that has none: the activation's own device
+/// id when Credential Manager still holds it, otherwise a new random id.
+fn initial_device_id(
+    recover: bool,
+    read: impl FnOnce() -> Result<Option<CredentialSecret>, String>,
+) -> Result<String, String> {
+    if recover {
+        match read() {
+            Ok(secret) => {
+                if let Some(device_id) = restored_device_id(secret.as_ref()) {
+                    log::info!("restored license device identity from the credential store");
+                    return Ok(device_id);
+                }
+            }
+            Err(error) => {
+                log::warn!("license credential unavailable for device recovery: {error}")
+            }
+        }
+    }
+    random_device_id()
+}
+
+fn restored_device_id(secret: Option<&CredentialSecret>) -> Option<String> {
+    let device_id = secret?.device_id.as_deref()?.trim();
+    valid_device_id(device_id).then(|| device_id.to_string())
+}
+
+fn valid_device_id(device_id: &str) -> bool {
+    DEVICE_ID_LENGTH.contains(&device_id.len())
+        && device_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+/// The stored activation token only authorizes the device it was issued to.
+/// When the local file names another device (restored backup, roaming copy),
+/// adopt the credential's identity instead of letting the server reject the
+/// refresh as `activation_invalid`, which would wipe a working activation.
+fn adopt_credential_device(
+    state: &mut LocalState,
+    secret: &CredentialSecret,
+    enabled: bool,
+) -> bool {
+    if !enabled {
+        return false;
+    }
+    let Some(device_id) = restored_device_id(Some(secret)) else {
+        return false;
+    };
+    if device_id == state.device_id {
+        return false;
+    }
+    state.device_id = device_id;
+    state.activation_id = None;
+    state.lease_token = None;
+    state.lease_expires_at = None;
+    state.refresh_after = None;
+    true
+}
+
+/// The device the stored activation token was issued to. Deactivation must
+/// release that seat even when the local file names another device.
+fn activation_device_id(state: &LocalState, secret: &CredentialSecret, enabled: bool) -> String {
+    enabled
+        .then(|| restored_device_id(Some(secret)))
+        .flatten()
+        .unwrap_or_else(|| state.device_id.clone())
 }
 
 fn random_device_id() -> Result<String, String> {
@@ -234,35 +387,91 @@ fn random_device_id() -> Result<String, String> {
     ))
 }
 
+/// Windows: a generic credential with target `activation.<service>`,
+/// persisted `CRED_PERSIST_ENTERPRISE` (per user, roams with a roaming
+/// profile, survives uninstall). macOS: the login Keychain.
 fn credential_entry() -> Result<Entry, String> {
     if !cfg!(any(target_os = "macos", target_os = "windows")) {
         return Err("license_secure_storage_unsupported".to_string());
     }
-    Entry::new(credential_service(), CREDENTIAL_USER).map_err(|error| error.to_string())
+    Entry::new(credential_service(), CREDENTIAL_USER).map_err(|error| credential_error_code(&error))
 }
 
 fn store_credentials(secret: &CredentialSecret) -> Result<(), String> {
+    store_credentials_in(&credential_entry()?, secret)
+}
+
+fn store_credentials_in(entry: &Entry, secret: &CredentialSecret) -> Result<(), String> {
+    entry
+        .set_password(&encode_credentials(secret)?)
+        .map_err(|error| credential_error_code(&error))
+}
+
+fn encode_credentials(secret: &CredentialSecret) -> Result<String, String> {
     let raw = serde_json::to_string(secret).map_err(|error| error.to_string())?;
-    credential_entry()?
-        .set_password(&raw)
-        .map_err(|error| error.to_string())
+    if raw.encode_utf16().count() * 2 > CREDENTIAL_BLOB_LIMIT_BYTES {
+        return Err("license_credential_unavailable".to_string());
+    }
+    Ok(raw)
+}
+
+fn decode_credentials(raw: &str) -> Option<CredentialSecret> {
+    serde_json::from_str::<CredentialSecret>(raw)
+        .ok()
+        .filter(|secret| !secret.license_key.trim().is_empty())
+        .filter(|secret| !secret.activation_token.trim().is_empty())
 }
 
 fn read_credentials() -> Result<Option<CredentialSecret>, String> {
-    match credential_entry()?.get_password() {
-        Ok(raw) => serde_json::from_str(&raw)
+    read_credentials_in(&credential_entry()?, repairs_corrupt_license_storage())
+}
+
+fn read_credentials_in(entry: &Entry, repair: bool) -> Result<Option<CredentialSecret>, String> {
+    let raw = match entry.get_password() {
+        Ok(raw) => raw,
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(keyring::Error::BadEncoding(_)) if repair => return discard_corrupt_credentials(entry),
+        Err(error) => return Err(credential_error_code(&error)),
+    };
+    if !repair {
+        // macOS: never delete a Keychain item this build cannot parse.
+        return serde_json::from_str(&raw)
             .map(Some)
-            .map_err(|error| error.to_string()),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(error.to_string()),
+            .map_err(|error| error.to_string());
+    }
+    match decode_credentials(&raw) {
+        Some(secret) => Ok(Some(secret)),
+        None => discard_corrupt_credentials(entry),
     }
 }
 
-fn clear_credentials() -> Result<(), String> {
-    match credential_entry()?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(error.to_string()),
+/// An unreadable secret can never authenticate again. Remove it so the user
+/// is asked for the key once, instead of failing every refresh forever.
+fn discard_corrupt_credentials(entry: &Entry) -> Result<Option<CredentialSecret>, String> {
+    log::warn!("discarding unreadable license credential");
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {}
+        Err(error) => log::warn!("failed to remove unreadable license credential: {error}"),
     }
+    Ok(None)
+}
+
+fn clear_credentials() -> Result<(), String> {
+    clear_credentials_in(&credential_entry()?)
+}
+
+fn clear_credentials_in(entry: &Entry) -> Result<(), String> {
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(credential_error_code(&error)),
+    }
+}
+
+/// Credential store failures (locked or unavailable vault, policy, size)
+/// become one actionable code; details go to the log only.
+fn credential_error_code(error: &keyring::Error) -> String {
+    log::warn!("license credential store error: {error}");
+    "license_credential_unavailable".to_string()
 }
 
 fn server_url() -> Result<&'static str, String> {
@@ -283,6 +492,12 @@ fn server_url() -> Result<&'static str, String> {
 }
 
 fn license_required() -> bool {
+    // Windows release rehearsal builds only (src/ci_licence_bypass.rs); no
+    // release build compiles this.
+    #[cfg(all(feature = "ci-licence-bypass", target_os = "windows"))]
+    if crate::ci_licence_bypass::active() {
+        return false;
+    }
     license_required_from_config(
         option_env!("ARIES_LICENSE_REQUIRED"),
         cfg!(debug_assertions),
@@ -391,10 +606,28 @@ fn verify_lease_with_key(
 }
 
 fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(12))
-        .user_agent("Aries-License")
-        .build()
+    license_agent_builder(Duration::from_secs(12)).build()
+}
+
+/// The license server client: on Windows it verifies against the system
+/// certificate store and uses the user's proxy; other platforms are unchanged.
+fn license_agent_builder(timeout: Duration) -> ureq::AgentBuilder {
+    let mut builder = ureq::AgentBuilder::new()
+        .timeout(timeout)
+        .user_agent("Aries-License");
+    if let Some(tls) = crate::license_network::tls_config() {
+        builder = builder.tls_config(tls);
+    }
+    if let Some(proxy) = server_url()
+        .ok()
+        .and_then(crate::license_network::license_proxy)
+    {
+        match ureq::Proxy::new(&proxy) {
+            Ok(proxy) => builder = builder.proxy(proxy),
+            Err(error) => log::warn!("ignoring unusable system proxy for licensing: {error}"),
+        }
+    }
+    builder
 }
 
 fn status_from_state(state: LocalState) -> Result<LicenseStatus, String> {
@@ -414,6 +647,7 @@ fn status_from_state(state: LocalState) -> Result<LicenseStatus, String> {
             seats: state.seats,
             lease_expires_at: state.lease_expires_at,
             refresh_after: state.refresh_after,
+            recoverable: false,
         });
     };
     let payload = match verify_lease(lease_token, &state.device_id) {
@@ -428,6 +662,7 @@ fn status_from_state(state: LocalState) -> Result<LicenseStatus, String> {
                 seats: state.seats,
                 lease_expires_at: state.lease_expires_at,
                 refresh_after: state.refresh_after,
+                recoverable: false,
             })
         }
     };
@@ -451,6 +686,7 @@ fn status_from_state(state: LocalState) -> Result<LicenseStatus, String> {
         seats: state.seats,
         lease_expires_at: state.lease_expires_at,
         refresh_after: state.refresh_after,
+        recoverable: false,
     })
 }
 
@@ -510,13 +746,35 @@ fn normalize_update_version(version: &str) -> String {
 
 fn api_error(error: ureq::Error) -> String {
     match error {
-        ureq::Error::Status(_, response) => response
+        ureq::Error::Status(status, response) => response
             .into_json::<serde_json::Value>()
             .ok()
             .and_then(|payload| payload.get("detail")?.as_str().map(str::to_string))
-            .unwrap_or_else(|| "license_request_rejected".to_string()),
-        ureq::Error::Transport(_) => "license_server_unavailable".to_string(),
+            .unwrap_or_else(|| status_without_detail(status).to_string()),
+        ureq::Error::Transport(transport) => {
+            log::warn!("license request transport failure: {transport}");
+            crate::license_network::transport_error_code(&transport).to_string()
+        }
     }
+}
+
+/// A status without the server's JSON `detail` came from something in
+/// between (a proxy block page, a gateway outage), not from the license API.
+fn status_without_detail(status: u16) -> &'static str {
+    match status {
+        407 => "license_proxy_auth_required",
+        500..=599 => "license_server_unavailable",
+        _ => "license_request_rejected",
+    }
+}
+
+/// A lease the server has just issued cannot already be expired unless the
+/// local clock is far ahead; say so instead of showing "expired".
+fn fresh_lease_clock_check(state: &str) -> Result<(), String> {
+    if state == "expired" {
+        return Err("license_clock_invalid".to_string());
+    }
+    Ok(())
 }
 
 fn apply_activation(
@@ -533,6 +791,7 @@ fn apply_activation(
     if let Err(error) = store_credentials(&CredentialSecret {
         license_key,
         activation_token: response.activation_token,
+        device_id: credential_backs_device_identity().then(|| state.device_id.clone()),
     }) {
         rollback_remote_activation(&rollback_token, &state.device_id);
         return Err(error);
@@ -544,7 +803,9 @@ fn apply_activation(
     state.provider = Some(response.provider);
     state.seats = Some(response.seats);
     write_local_state(app, &state)?;
-    status_from_state(state)
+    let status = status_from_state(state)?;
+    fresh_lease_clock_check(&status.state)?;
+    Ok(status)
 }
 
 fn rollback_remote_activation(activation_token: &str, device_id: &str) {
@@ -579,6 +840,10 @@ fn activate_blocking(app: AppHandle<Wry>, license_key: String) -> Result<License
 fn refresh_blocking(app: AppHandle<Wry>) -> Result<LicenseStatus, String> {
     let mut state = ensure_device_id(&app)?;
     let secret = read_credentials()?.ok_or_else(|| "activation_required".to_string())?;
+    if adopt_credential_device(&mut state, &secret, credential_backs_device_identity()) {
+        log::info!("license state follows the stored activation's device identity");
+        write_local_state(&app, &state)?;
+    }
     let request = ActivationRequest {
         license_key: secret.license_key,
         device_id: state.device_id.clone(),
@@ -619,9 +884,66 @@ fn is_authoritative_license_rejection(code: &str) -> bool {
     )
 }
 
+pub(crate) fn submit_bug_report(app: &AppHandle<Wry>, report: &str) -> Result<(), String> {
+    let credentials = read_credentials()?.ok_or_else(|| "activation_required".to_owned())?;
+    let state = read_local_state(app)?;
+    let response = license_agent_builder(Duration::from_secs(40))
+        .redirects(0)
+        .build()
+        .post(&format!("{}/v1/support/bug-report", server_url()?))
+        .set("Authorization", &format!("Bearer {}", credentials.activation_token))
+        .set("X-Aries-Device-Id", &state.device_id)
+        .set("Content-Type", "text/plain; charset=utf-8")
+        .send_string(report);
+    match response {
+        Ok(response) if response.status() == 204 => Ok(()),
+        Err(ureq::Error::Status(409, _)) => Err("bug_report_contact_missing".into()),
+        _ => Err("bug_report_send_failed".into()),
+    }
+}
+
+/// Licence facts for the support diagnostics report. Only the state and its
+/// dates: never the key, activation token, lease, activation id or device id,
+/// and the credential store is not read.
+pub(crate) fn diagnostics_summary(app: &AppHandle<Wry>) -> String {
+    match ensure_device_id(app).and_then(status_from_state) {
+        Ok(status) => license_status_summary(&status),
+        Err(error) => format!("unavailable ({error})"),
+    }
+}
+
+fn license_status_summary(status: &LicenseStatus) -> String {
+    let mut parts = vec![
+        format!("state={}", status.state),
+        format!("required={}", status.required),
+        format!("configured={}", status.configured),
+    ];
+    if let Some(provider) = &status.provider {
+        parts.push(format!("provider={provider}"));
+    }
+    if let Some(seats) = status.seats {
+        parts.push(format!("seats={seats}"));
+    }
+    if let Some(expires) = &status.lease_expires_at {
+        parts.push(format!("lease_expires_at={expires}"));
+    }
+    if let Some(refresh) = &status.refresh_after {
+        parts.push(format!("refresh_after={refresh}"));
+    }
+    parts.join(" ")
+}
+
 #[tauri::command]
 pub fn license_status(app: AppHandle<Wry>) -> Result<LicenseStatus, String> {
-    status_from_state(ensure_device_id(&app)?)
+    let state = ensure_device_id(&app)?;
+    // Windows only: a missing lease with a stored activation (app data
+    // deleted on uninstall) renews on the same seat without the key.
+    let recoverable = credential_backs_device_identity()
+        && state.lease_token.is_none()
+        && matches!(read_credentials(), Ok(Some(_)));
+    let mut status = status_from_state(state)?;
+    status.recoverable = recoverable && status.state == "unlicensed";
+    Ok(status)
 }
 
 #[tauri::command]
@@ -757,7 +1079,11 @@ pub async fn license_deactivate(app: AppHandle<Wry>) -> Result<LicenseStatus, St
                         &format!("Bearer {}", secret.activation_token),
                     )
                     .send_json(&DeactivationRequest {
-                        device_id: state.device_id.clone(),
+                        device_id: activation_device_id(
+                            &state,
+                            &secret,
+                            credential_backs_device_identity(),
+                        ),
                     })
                 {
                     log::warn!(
@@ -793,6 +1119,10 @@ pub async fn license_check_update(
     pending_update: State<'_, PendingLicenseUpdate>,
     channel: Option<String>,
 ) -> Result<Option<UpdateInfo>, String> {
+    if !crate::distribution::current().self_updates() {
+        // The Microsoft Store delivers updates to Store installs.
+        return Ok(None);
+    }
     let state = ensure_device_id(&app)?;
     let status = status_from_state(read_local_state(&app)?)?;
     if !matches!(status.state.as_str(), "active" | "grace") {
@@ -808,10 +1138,24 @@ pub async fn license_check_update(
         server_url()?
     ))
     .map_err(|_| "update_endpoint_invalid".to_string())?;
-    let update = app
+    // Resolve WPAD/PAC off the async runtime. reqwest itself only reads the
+    // static registry proxy, so hand it the resolved proxy explicitly.
+    let proxy_target = server_url()?.to_string();
+    let proxy = tauri::async_runtime::spawn_blocking(move || {
+        crate::license_network::license_proxy(&proxy_target)
+    })
+    .await
+    .ok()
+    .flatten()
+    .and_then(|proxy| Url::parse(&proxy).ok());
+    let mut updater = app
         .updater_builder()
         .endpoints(vec![endpoint])
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    if let Some(proxy) = proxy {
+        updater = updater.proxy(proxy);
+    }
+    let update = updater
         .header(
             "Authorization",
             format!("Bearer {}", secret.activation_token),
@@ -822,6 +1166,16 @@ pub async fn license_check_update(
         // The updater retains this client for the artifact transfer. Keep
         // connection failures prompt without timing out a large signed archive.
         .timeout(UPDATE_TRANSFER_TIMEOUT)
+        // Windows runs this right before the installer starts and the process
+        // exits without RunEvent::Exit. Stop the daemon so NSIS can replace
+        // aries-daemon.exe, then keep the plugin's default cleanup.
+        .on_before_exit({
+            let app = app.clone();
+            move || {
+                crate::stop_daemon(&app, "updater install");
+                app.cleanup_before_exit();
+            }
+        })
         .configure_client(|builder| builder.connect_timeout(UPDATE_CONNECT_TIMEOUT))
         .build()
         .map_err(|error| error.to_string())?
@@ -849,9 +1203,13 @@ pub async fn license_check_update(
 
 #[tauri::command]
 pub async fn license_install_update(
+    app: AppHandle<Wry>,
     pending_update: State<'_, PendingLicenseUpdate>,
     on_event: Channel<UpdateInstallEvent>,
 ) -> Result<(), String> {
+    if !crate::distribution::current().self_updates() {
+        return Err("update_managed_by_store".to_string());
+    }
     let update = pending_update
         .0
         .lock()
@@ -862,28 +1220,44 @@ pub async fn license_install_update(
     let installed_channel = on_event.clone();
     let mut started = false;
     let mut downloaded = 0_usize;
-    update
-        .download_and_install(
-            move |chunk_length, content_length| {
-                if !started {
-                    let _ = on_event.send(UpdateInstallEvent::Started { content_length });
-                    started = true;
-                }
-                downloaded = downloaded.saturating_add(chunk_length);
-                let _ = on_event.send(UpdateInstallEvent::Progress {
-                    chunk_length,
-                    downloaded,
-                });
-            },
-            move || {
-                let _ = finish_channel.send(UpdateInstallEvent::Finished);
-            },
-        )
-        .await
-        .map_err(|error| {
-            log::error!("licensed update download/install failed: {error}");
+    let on_chunk = move |chunk_length, content_length| {
+        if !started {
+            let _ = on_event.send(UpdateInstallEvent::Started { content_length });
+            started = true;
+        }
+        downloaded = downloaded.saturating_add(chunk_length);
+        let _ = on_event.send(UpdateInstallEvent::Progress {
+            chunk_length,
+            downloaded,
+        });
+    };
+    let on_finish = move || {
+        let _ = finish_channel.send(UpdateInstallEvent::Finished);
+    };
+    #[cfg(target_os = "windows")]
+    {
+        // Download and verify the signature now; install at the confirmed
+        // quit (StagedWindowsUpdate).
+        let bytes = update.download(on_chunk, on_finish).await.map_err(|error| {
+            log::error!("licensed update download failed: {error}");
             error.to_string()
         })?;
+        *app.state::<StagedWindowsUpdate>()
+            .0
+            .lock()
+            .map_err(|_| "update_state_unavailable".to_string())? = Some((update, bytes));
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = &app;
+        update
+            .download_and_install(on_chunk, on_finish)
+            .await
+            .map_err(|error| {
+                log::error!("licensed update download/install failed: {error}");
+                error.to_string()
+            })?;
+    }
     let _ = installed_channel.send(UpdateInstallEvent::Installed);
     Ok(())
 }
@@ -970,6 +1344,27 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_summary_names_the_state_but_no_identifiers() {
+        let status = LicenseStatus {
+            configured: true,
+            required: true,
+            state: "active".to_string(),
+            activation_id: Some("act_secret_123".to_string()),
+            provider: Some("trial".to_string()),
+            seats: Some(2),
+            lease_expires_at: Some("2026-12-01T00:00:00Z".to_string()),
+            refresh_after: None,
+            recoverable: false,
+        };
+        let summary = license_status_summary(&status);
+        assert_eq!(
+            summary,
+            "state=active required=true configured=true provider=trial seats=2 lease_expires_at=2026-12-01T00:00:00Z"
+        );
+        assert!(!summary.contains("act_secret_123"));
+    }
+
+    #[test]
     fn daemon_runtime_requires_a_valid_local_lease_for_commercial_builds() {
         assert!(runtime_access_allowed(true, "active"));
         assert!(runtime_access_allowed(true, "grace"));
@@ -988,6 +1383,231 @@ mod tests {
             DEVELOPMENT_CREDENTIAL_SERVICE
         );
         assert_ne!(PRODUCTION_LOCAL_STATE_FILE, DEVELOPMENT_LOCAL_STATE_FILE);
+    }
+
+    fn mock_entry() -> Entry {
+        Entry::new_with_credential(
+            keyring::mock::default_credential_builder()
+                .build(None, DEVELOPMENT_CREDENTIAL_SERVICE, CREDENTIAL_USER)
+                .expect("mock credential"),
+        )
+    }
+
+    fn mock_error(entry: &Entry, error: keyring::Error) {
+        entry
+            .get_credential()
+            .downcast_ref::<keyring::mock::MockCredential>()
+            .expect("mock credential")
+            .set_error(error);
+    }
+
+    fn secret(device_id: Option<&str>) -> CredentialSecret {
+        CredentialSecret {
+            license_key: "ARIES-TEST-KEY".to_string(),
+            activation_token: "token".to_string(),
+            device_id: device_id.map(str::to_string),
+        }
+    }
+
+    const DEVICE_A: &str = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const DEVICE_B: &str = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+    #[test]
+    fn credential_round_trip_keeps_device_backup_and_reads_legacy_secrets() {
+        let entry = mock_entry();
+        assert_eq!(read_credentials_in(&entry, true), Ok(None));
+        store_credentials_in(&entry, &secret(Some(DEVICE_A))).expect("store");
+        assert_eq!(
+            read_credentials_in(&entry, true),
+            Ok(Some(secret(Some(DEVICE_A))))
+        );
+        // Secrets written before the device backup existed still decode.
+        entry
+            .set_password(r#"{"licenseKey":"ARIES-TEST-KEY","activationToken":"token"}"#)
+            .expect("legacy secret");
+        assert_eq!(read_credentials_in(&entry, true), Ok(Some(secret(None))));
+        clear_credentials_in(&entry).expect("clear");
+        assert_eq!(read_credentials_in(&entry, true), Ok(None));
+        clear_credentials_in(&entry).expect("clearing twice is not an error");
+    }
+
+    #[test]
+    fn macos_credentials_keep_their_exact_format_and_are_never_discarded() {
+        // macOS writes no device backup: the Keychain blob is byte-identical
+        // to the one existing activations already hold.
+        assert_eq!(
+            encode_credentials(&secret(None)).expect("encode"),
+            r#"{"licenseKey":"ARIES-TEST-KEY","activationToken":"token"}"#
+        );
+        let entry = mock_entry();
+        store_credentials_in(&entry, &secret(None)).expect("store");
+        assert_eq!(read_credentials_in(&entry, false), Ok(Some(secret(None))));
+        // An unparseable Keychain item is reported, never deleted.
+        entry.set_password("not json").expect("corrupt secret");
+        assert!(read_credentials_in(&entry, false).is_err());
+        assert!(matches!(entry.get_password().as_deref(), Ok("not json")));
+    }
+
+    #[test]
+    fn deactivation_releases_the_seat_the_stored_activation_belongs_to() {
+        let state = LocalState {
+            device_id: DEVICE_B.to_string(),
+            ..LocalState::default()
+        };
+        assert_eq!(
+            activation_device_id(&state, &secret(Some(DEVICE_A)), true),
+            DEVICE_A
+        );
+        assert_eq!(
+            activation_device_id(&state, &secret(Some(DEVICE_A)), false),
+            DEVICE_B
+        );
+        assert_eq!(activation_device_id(&state, &secret(None), true), DEVICE_B);
+        assert_eq!(
+            activation_device_id(&state, &secret(Some("short")), true),
+            DEVICE_B
+        );
+    }
+
+    #[test]
+    fn corrupt_credentials_are_discarded_instead_of_failing_forever() {
+        let entry = mock_entry();
+        entry.set_password("not json").expect("corrupt secret");
+        assert_eq!(read_credentials_in(&entry, true), Ok(None));
+        assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
+
+        entry
+            .set_password(r#"{"licenseKey":"","activationToken":"token"}"#)
+            .expect("empty key");
+        assert_eq!(read_credentials_in(&entry, true), Ok(None));
+
+        mock_error(&entry, keyring::Error::BadEncoding(vec![0xff, 0xfe]));
+        assert_eq!(read_credentials_in(&entry, true), Ok(None));
+    }
+
+    #[test]
+    fn credential_store_failures_map_to_one_actionable_code() {
+        let entry = mock_entry();
+        mock_error(
+            &entry,
+            keyring::Error::NoStorageAccess("vault locked".to_string().into()),
+        );
+        assert_eq!(
+            read_credentials_in(&entry, true),
+            Err("license_credential_unavailable".to_string())
+        );
+        mock_error(
+            &entry,
+            keyring::Error::PlatformFailure("ERROR_NO_SUCH_LOGON_SESSION".to_string().into()),
+        );
+        assert_eq!(
+            store_credentials_in(&entry, &secret(None)),
+            Err("license_credential_unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn largest_server_accepted_secret_fits_the_windows_credential_blob() {
+        let worst = CredentialSecret {
+            license_key: "ä".repeat(256),
+            activation_token: "t".repeat(64),
+            device_id: Some("d".repeat(256)),
+        };
+        let raw = encode_credentials(&worst).expect("fits");
+        assert!(raw.encode_utf16().count() * 2 <= CREDENTIAL_BLOB_LIMIT_BYTES);
+        let oversized = CredentialSecret {
+            license_key: "k".repeat(CREDENTIAL_BLOB_LIMIT_BYTES),
+            ..worst
+        };
+        assert_eq!(
+            encode_credentials(&oversized),
+            Err("license_credential_unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn reinstall_reuses_the_device_identity_from_the_credential_store() {
+        let restored = initial_device_id(true, || Ok(Some(secret(Some(DEVICE_A))))).expect("id");
+        assert_eq!(restored, DEVICE_A);
+        // No credential, a legacy credential, an invalid backup or a locked
+        // store all fall back to a fresh random identity.
+        for read in [
+            Ok(None),
+            Ok(Some(secret(None))),
+            Ok(Some(secret(Some("short")))),
+            Ok(Some(secret(Some("../../not a device id at all")))),
+            Err("license_credential_unavailable".to_string()),
+        ] {
+            let id = initial_device_id(true, || read).expect("id");
+            assert_ne!(id, DEVICE_A);
+            assert_eq!(id.len(), 36);
+        }
+        // Platforms without the backup never read the credential store here.
+        let id =
+            initial_device_id(false, || panic!("credential store must not be read")).expect("id");
+        assert_eq!(id.len(), 36);
+    }
+
+    #[test]
+    fn refresh_follows_the_device_the_stored_activation_belongs_to() {
+        let mut state = LocalState {
+            device_id: DEVICE_B.to_string(),
+            activation_id: Some("activation-1".to_string()),
+            lease_token: Some("lease".to_string()),
+            lease_expires_at: Some("2026-11-11T00:00:00Z".to_string()),
+            refresh_after: Some("2026-11-05T00:00:00Z".to_string()),
+            provider: Some("gumroad".to_string()),
+            seats: Some(2),
+        };
+        assert!(!adopt_credential_device(
+            &mut state,
+            &secret(Some(DEVICE_A)),
+            false
+        ));
+        assert!(!adopt_credential_device(&mut state, &secret(None), true));
+        assert!(!adopt_credential_device(
+            &mut state,
+            &secret(Some(DEVICE_B)),
+            true
+        ));
+        assert_eq!(state.lease_token.as_deref(), Some("lease"));
+
+        assert!(adopt_credential_device(
+            &mut state,
+            &secret(Some(DEVICE_A)),
+            true
+        ));
+        assert_eq!(state.device_id, DEVICE_A);
+        assert!(state.lease_token.is_none() && state.activation_id.is_none());
+        assert_eq!(state.seats, Some(2));
+    }
+
+    #[test]
+    fn unreadable_local_state_does_not_lock_the_gate_shut() {
+        assert!(parse_local_state("").is_none());
+        assert!(parse_local_state("{\"deviceId\":").is_none());
+        let parsed =
+            parse_local_state(&format!("{{\"deviceId\":\"{DEVICE_A}\"}}")).expect("minimal state");
+        assert_eq!(parsed.device_id, DEVICE_A);
+        assert!(parsed.lease_token.is_none());
+    }
+
+    #[test]
+    fn fresh_leases_that_look_expired_blame_the_clock() {
+        assert_eq!(
+            fresh_lease_clock_check("expired"),
+            Err("license_clock_invalid".to_string())
+        );
+        for state in ["active", "grace"] {
+            assert_eq!(fresh_lease_clock_check(state), Ok(()));
+        }
+    }
+
+    #[test]
+    fn intermediary_statuses_without_api_detail_are_classified() {
+        assert_eq!(status_without_detail(407), "license_proxy_auth_required");
+        assert_eq!(status_without_detail(502), "license_server_unavailable");
+        assert_eq!(status_without_detail(403), "license_request_rejected");
     }
 
     #[test]

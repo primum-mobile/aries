@@ -478,6 +478,30 @@ def source_note_metadata_errors(data: dict) -> list[str]:
     return errors
 
 
+def inspector_inline_entry_errors(entry: dict) -> list[str]:
+    """Shared authoring/runtime contract for attributed passive source text."""
+    errors = [
+        f'{field} must be a nonempty string'
+        for field in ('text', 'source_label', 'citation')
+        if not isinstance(entry.get(field), str) or not entry[field].strip()
+    ]
+    if entry.get('heading') is not None and not isinstance(entry['heading'], str):
+        errors.append('heading must be a string')
+    if entry.get('citation_label') is not None and (
+        not isinstance(entry['citation_label'], str) or not entry['citation_label'].strip()
+    ):
+        errors.append('citation_label must be a nonempty string')
+    for field in ('constellation_name', 'constellation_english_name'):
+        if field in entry and (not isinstance(entry[field], str) or not entry[field].strip()):
+            errors.append(f'{field} must be a nonempty string')
+    if 'constellation_english_name' in entry and not entry.get('constellation_name'):
+        errors.append('constellation_english_name requires constellation_name')
+    if any(field in entry for field in ('constellation_name', 'constellation_english_name')):
+        if entry.get('kind') != 'fixed_star_constellation':
+            errors.append('constellation identity requires kind fixed_star_constellation')
+    return errors
+
+
 def normalize_theme_context_options(spec: dict) -> list[dict]:
     """Validate and normalize one manifest theme's selectable context.
 
@@ -634,6 +658,22 @@ def _validate_manifest(pack_dir: Path, errors: list) -> dict:
     for field in ('id', 'name'):
         if not pack.get(field):
             _err(errors, manifest_path, f'pack.{field} missing or empty')
+    provenance = manifest.get('provenance')
+    if provenance is not None:
+        if not isinstance(provenance, dict):
+            _err(errors, manifest_path, '[provenance] must be a table')
+        else:
+            for field in (
+                'copyright_note', 'source_edition', 'source_url',
+                'source_rights', 'corpus_curation_rights',
+                'public_source_distribution',
+            ):
+                if field in provenance and (
+                    not isinstance(provenance[field], str)
+                    or not provenance[field].strip()
+                ):
+                    _err(errors, manifest_path,
+                         f'provenance.{field} must be a non-empty string')
     disciplines = pack.get('disciplines')
     capabilities = pack.get('capabilities')
     if not isinstance(disciplines, list):
@@ -678,9 +718,11 @@ def _validate_manifest(pack_dir: Path, errors: list) -> dict:
         else:
             source = inspector_spec.get('source')
             mapping = inspector_spec.get('mapping')
+            if type(inspector_spec.get('display_order', 100)) is not int:
+                _err(errors, manifest_path, 'content.inspector.display_order must be an integer')
             if not isinstance(source, str) or not source.strip():
                 _err(errors, manifest_path, 'content.inspector.source missing')
-            elif source.strip() not in {'valens'}:
+            elif source.strip() not in {'valens', 'inline'}:
                 _err(
                     errors, manifest_path,
                     f'unsupported content.inspector.source "{source}"',
@@ -714,6 +756,24 @@ def _validate_manifest(pack_dir: Path, errors: list) -> dict:
                                 errors, mapping_path,
                                 'expected version = 1 and [[entries]] records',
                             )
+                        elif isinstance(source, str) and source.strip() == 'inline':
+                            seen = set()
+                            for index, entry in enumerate(content_map['entries']):
+                                where = f'entries[{index}]'
+                                if not isinstance(entry, dict):
+                                    _err(errors, mapping_path, f'{where} must be a table')
+                                    continue
+                                kind, object_id = entry.get('kind'), entry.get('object_id')
+                                if (not isinstance(kind, str) or not kind.strip()
+                                        or not isinstance(object_id, (str, int))
+                                        or isinstance(object_id, bool)):
+                                    _err(errors, mapping_path, f'{where} requires string kind and scalar object_id')
+                                key = (str(kind).strip(), str(object_id))
+                                if key in seen:
+                                    _err(errors, mapping_path, f'{where} duplicates inspector target')
+                                seen.add(key)
+                                for message in inspector_inline_entry_errors(entry):
+                                    _err(errors, mapping_path, f'{where}: {message}')
                     except Exception as exc:
                         _err(errors, mapping_path, f'invalid mapping: {exc}')
     semantics = manifest.get('semantics') or {}

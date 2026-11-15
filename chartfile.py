@@ -20,7 +20,7 @@ Schema v1 fields
   name        str     chart / person name
   type        str     "radix"|"solar"|"lunar"|"revolution"|"transit"|"horary"|"profection"|"pdinchart"
   male        bool    gender (true=male)
-  date        str     ISO 8601 date "YYYY-MM-DD"  (negative year for BC)
+  date        str     civil date "YYYY-MM-DD" (negative year for BC, no year zero)
   time        str     ISO 8601 time "HH:MM:SS"
   tz          str     ISO 8601 offset "+HH:MM" or "-HH:MM" or "Z"
   tz_name     str     timezone abbreviation (informational, e.g. "CEDT")
@@ -45,6 +45,7 @@ import copy
 import uuid
 import os
 import chart as _chart_mod
+import dateformat
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,7 @@ def chart_to_dict(chrt, chart_id=None, interpretation=None, *, include_events=Tr
     month = getattr(t, 'origmonth', t.month)
     day = getattr(t, 'origday', t.day)
     bc = getattr(t, 'bc', False)
+    year, bc = dateformat.civil_year_and_era(year, bc)
 
     if bc:
         date_str = f'-{abs(year):04d}-{month:02d}-{day:02d}'

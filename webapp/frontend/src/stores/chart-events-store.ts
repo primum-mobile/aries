@@ -21,6 +21,7 @@ export type SavedChartEvent = {
   datetime: string;
   kind: string;
   tags?: EventTag[];
+  matches?: string[];
 };
 type EventPage = { recordId: string; rows: SavedChartEvent[]; total: number; sourceName: string;
   tagCatalog: EventTag[]; catalogVersion?: number; tagCounts: Record<string, number>; untaggedCount: number };
@@ -31,6 +32,8 @@ type EventView = EventPage & {
   rowHeights: Record<string, number>; rowWidth: number;
   tagsOpen: boolean; tagQuery: string;
   tagIds: string[]; tagMatch: "any" | "all"; untagged: boolean;
+  /** A just-added event whose name the open pane puts into inline rename. */
+  renameEventId: string | null;
 };
 export const EMPTY_EVENT_VIEW: EventView = {
   sort: "date", descending: false, sortPending: false,
@@ -38,6 +41,7 @@ export const EMPTY_EVENT_VIEW: EventView = {
   loaded: false, stale: true, loading: false, error: null, revision: 0,
   tagsOpen: false, tagQuery: "",
   tagCatalog: [], tagCounts: {}, untaggedCount: 0, tagIds: [], tagMatch: "any", untagged: false, rowHeights: {}, rowWidth: 0,
+  renameEventId: null,
 };
 
 /** Display-only filters retain the paged source and never start another query. */

@@ -3644,20 +3644,60 @@ licensetxtdeu = (
 )
 
 
+licensetxtjpn = (
+	u'Aries 占星術ソフトウェア\n'
+	u'Copyright (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'一部は Morinus に由来します: Copyright (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com)。その後 Roberto Luporini、Elías D. Molins、'
+	u'Shin Ji-Hyeon、James Ren が貢献しています。\n\n'
+	u'Aries 独自のコードは AGPL-3.0-or-later、Morinus に由来する部分は '
+	u'GPL-3.0-or-later で提供されます。GPLv3 第13条および AGPLv3 第13条により'
+	u'この結合が認められています。GPL の対象部分には引き続き GPL の条件が適用され、'
+	u'ネットワーク経由でソースコードを提供する AGPL の要件は結合された著作物に適用されます。\n\n'
+	u'本プログラムは、それぞれのライセンスに従って再頒布および改変できます。'
+	u'本プログラムは一切の保証なしに提供されます。LICENSE、COPYING-GPL-3.0.txt、'
+	u'COPYRIGHT.txt および THIRD_PARTY_NOTICES.txt を参照してください。'
+)
+
+
+licensetxttur = (
+	u'Aries, astroloji yazılımı\n'
+	u'Telif hakkı (C) 2026 Max Lange (contact@maxlange.cc)\n'
+	u'Kısmen Morinus\'tan türetilmiştir: Telif hakkı (C) 2008-2012 Robert Nagy '
+	u'(robert.pluto@gmail.com); sonraki katkılar Roberto Luporini, '
+	u'Elías D. Molins, Shin Ji-Hyeon ve James Ren\'e aittir.\n\n'
+	u'Aries\'e ait özgün kod AGPL-3.0-or-later, Morinus\'tan türetilen bölümler '
+	u'GPL-3.0-or-later lisansıyla sunulur. GPLv3 13. bölüm ve AGPLv3 13. bölüm bu '
+	u'birleşime izin verir: GPL kapsamındaki bölümlerde GPL koşulları geçerliliğini '
+	u'korur; kaynak kodun ağ üzerinden sunulmasına ilişkin AGPL şartı birleşik esere '
+	u'uygulanır.\n\n'
+	u'Program, ilgili lisanslar uyarınca yeniden dağıtılabilir ve değiştirilebilir. '
+	u'Program HİÇBİR GARANTİ OLMAKSIZIN sunulur. LICENSE, COPYING-GPL-3.0.txt, '
+	u'COPYRIGHT.txt ve THIRD_PARTY_NOTICES.txt dosyalarına bakın.'
+)
+
 
 MENU = 0
 TXT = 1
 LICENSE = 2
 
 #langtexts = ('English', 'Hungarian', 'Italian', 'French', 'Russian', 'Spanish')
-langtexts = ('English', 'Magyar (Hungarian)', 'Italiano (Italian)', 'Français (French)', 'Русский (Russian)', 'Español (Spanish)','简体中文 (Simplified Chinese)','繁体中文 (Traditional Chinese)',"한국어 (Korean)","Deutsch (German)")
+langtexts = ('English', 'Magyar (Hungarian)', 'Italiano (Italian)', 'Français (French)', 'Русский (Russian)', 'Español (Spanish)','简体中文 (Simplified Chinese)','繁体中文 (Traditional Chinese)',"한국어 (Korean)","Deutsch (German)","日本語 (Japanese)","Türkçe (Turkish)")
 # German (langid 9) is a webapp-era addition, so its embedded dictionaries start
 # empty. The generic external-catalog loader installs the reviewed legacy corpus
 # before authored coverage is captured; the overlay then supplies web-era engine
 # labels and compatibility fallback remains only a final safety net.
 menutxtsdeu = {}
 txtsdeu = {}
-langs = {0:(menutxtseng, txtseng, licensetxteng), 1:(menutxtshun, txtshun, licensetxthun), 2:(menutxtsita, txtsita, licensetxtita), 3:(menutxtsfre, txtsfre, licensetxtfre), 4:(menutxtsrus, txtsrus, licensetxtrus), 5:(menutxtsesp, txtsesp, licensetxtesp), 6:(menutxtschs, txtschs, licensetxtchs), 7:(menutxtscht, txtscht, licensetxtcht), 8:(menutxtsko, txtsko, licensetxtko), 9:(menutxtsdeu, txtsdeu, licensetxtdeu)}
+# Japanese (langid 10) has no wx-era corpus either; it is filled entirely by the
+# translation pipeline (mtexts_ja_legacy.json + the overlay column 'ja').
+menutxtsjpn = {}
+txtsjpn = {}
+# Turkish (langid 11), like Japanese, is filled entirely by the translation
+# pipeline (mtexts_tr_legacy.json + the overlay column 'tr').
+menutxtstur = {}
+txtstur = {}
+langs = {0:(menutxtseng, txtseng, licensetxteng), 1:(menutxtshun, txtshun, licensetxthun), 2:(menutxtsita, txtsita, licensetxtita), 3:(menutxtsfre, txtsfre, licensetxtfre), 4:(menutxtsrus, txtsrus, licensetxtrus), 5:(menutxtsesp, txtsesp, licensetxtesp), 6:(menutxtschs, txtschs, licensetxtchs), 7:(menutxtscht, txtscht, licensetxtcht), 8:(menutxtsko, txtsko, licensetxtko), 9:(menutxtsdeu, txtsdeu, licensetxtdeu), 10:(menutxtsjpn, txtsjpn, licensetxtjpn), 11:(menutxtstur, txtstur, licensetxttur)}
 
 def _install_export_texts():
 	for menudict, txtdict, _license in langs.values():
@@ -3711,7 +3751,7 @@ def _load_i18n_resource(filename):
 	candidates.append(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), *rel))
 	for path in candidates:
 		try:
-			with open(path, 'r') as handle:
+			with open(path, 'r', encoding='utf-8') as handle:
 				data = _json.load(handle)
 			return data if isinstance(data, dict) else {}
 		except (IOError, OSError, ValueError):
@@ -3733,7 +3773,8 @@ def _install_external_legacy_texts():
 		'fr': (menutxtsfre, txtsfre), 'ru': (menutxtsrus, txtsrus),
 		'es': (menutxtsesp, txtsesp), 'zh-Hans': (menutxtschs, txtschs),
 		'zh-Hant': (menutxtscht, txtscht), 'ko': (menutxtsko, txtsko),
-		'de': (menutxtsdeu, txtsdeu),
+		'de': (menutxtsdeu, txtsdeu), 'ja': (menutxtsjpn, txtsjpn),
+		'tr': (menutxtstur, txtstur),
 	}
 	for code, (menudict, txtdict) in code_to_dicts.items():
 		data = _load_i18n_resource('mtexts_%s_legacy.json' % code)
@@ -3778,6 +3819,10 @@ def _install_signal_overlay_texts():
 		'Tertiary Progression': u'Tertiary Progression',
 		'Minor Progression': u'Minor Progression',
 		'Solar Average': u'Solar Average',
+		# Chart-type list entries (typeList), kept apart from the Solar/Lunar
+		# return-body labels (revtypeList) so languages can name the chart type.
+		'ChartTypeSolar': u'Solar', 'ChartTypeLunar': u'Lunar',
+		'DodecatemorionRingLabel': u'%s dodec',
 	}
 	for key, value in base.items():
 		txtseng.setdefault(key, value)
@@ -3804,7 +3849,7 @@ def _install_signal_overlay_texts():
 	code_to_dict = {
 		'en': txtseng, 'fr': txtsfre, 'it': txtsita, 'es': txtsesp, 'ru': txtsrus,
 		'hu': txtshun, 'zh-Hans': txtschs, 'zh-Hant': txtscht, 'ko': txtsko,
-		'de': txtsdeu,
+		'de': txtsdeu, 'ja': txtsjpn, 'tr': txtstur,
 	}
 	overlay = _load_i18n_resource('mtexts_overlay.json')
 	for key, langvals in overlay.items():
@@ -3832,7 +3877,7 @@ menutxts = langs[0][MENU]
 txts = langs[0][TXT]
 licensetxt = langs[0][LICENSE]
 
-typeList = (txts['Radix'], txts['Solar'], txts['Lunar'], txts['Revolution'], txts['Transit'], txts['Horary'], txts['Profections'], txts['PDsInChart'], txts['Composite'], txts['Relationship'])
+typeList = (txts['Radix'], txts['ChartTypeSolar'], txts['ChartTypeLunar'], txts['Revolution'], txts['Transit'], txts['Horary'], txts['Profections'], txts['PDsInChart'], txts['Composite'], txts['Relationship'])
 calList = (txts['Gregorian'], txts['Julian'])
 zoneList = (txts['Zone'], txts['Greenwich'], txts['LocalMean'], txts['LocalApparent'])
 themeList = (txts['theme1'], txts['theme2'])
@@ -3971,7 +4016,7 @@ def setLang(langid):
 	txts = langs[langid][TXT]
 	licensetxt = langs[langid][LICENSE]
 
-	typeList = (txts['Radix'], txts['Solar'], txts['Lunar'], txts['Revolution'], txts['Transit'], txts['Horary'], txts['Profections'], txts['PDsInChart'], txts['Composite'], txts['Relationship'])
+	typeList = (txts['Radix'], txts['ChartTypeSolar'], txts['ChartTypeLunar'], txts['Revolution'], txts['Transit'], txts['Horary'], txts['Profections'], txts['PDsInChart'], txts['Composite'], txts['Relationship'])
 	calList = (txts['Gregorian'], txts['Julian'])
 	zoneList = (txts['Zone'], txts['Greenwich'], txts['LocalMean'], txts['LocalApparent'])
 	themeList = (txts['theme1'], txts['theme2'])

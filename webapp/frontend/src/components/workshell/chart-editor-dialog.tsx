@@ -10,6 +10,7 @@ import * as React from "react";
 import { Dialog, FloatingDialogContent, NativeDialogContent } from "@/components/ui/dialog";
 import { resolveShellHost } from "@/lib/shell-host";
 import { ChartEditorWindowHost } from "./chart-editor-window-host";
+import { PlaceSearchField } from "./place-search-field";
 import { flushEditorNotes, notifyEditorNotesChanged } from "@/lib/shell/chart-editor-window";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +24,6 @@ import {
   fetchEditorRecord,
   fetchNotes,
   listCollections,
-  resolvePlace,
   type ChartCollection,
   type EditorCursorSeed,
   type EditorDefaults,
@@ -37,13 +37,16 @@ import {
   automaticCalendarForDate,
   calendarAfterDateChange,
 } from "@/lib/chart/calendar-auto";
-import { useT } from "@/lib/i18n/i18n";
+import { editorFieldsWithPlace, editorFieldsWithTimezone, editorPlaceRequest, editorTimezoneRequest, invalidateEditorLocation } from "@/lib/chart/editor-location";
+import { useEditorTimezone } from "@/hooks/use-editor-timezone";
+import { useEditorPlace } from "@/hooks/use-editor-place";
+import { useLocale, useT } from "@/lib/i18n/i18n";
 
 // ---------------------------------------------------------------------------
 // Chart editor (Personal Data) dialog.
 //
 // Faithful translation of personaldatadlg.py — every field, order and grouping
-// mirrors the wx dialog (cited in doc/migration/surfaces/chart-editor.md §7);
+// mirrors the wx dialog;
 // styling is from scratch in the Aries webapp component language (dense rows,
 // hairline groups, compact labels, tabular-nums numeric fields).
 //
@@ -88,6 +91,7 @@ type FormState = {
   lonDec: string;
   latDec: string;
   place: string; // Optional persisted name; also the query for explicit city search.
+  inferPlace: boolean;
   cal: string;
   zt: string;
   plus: boolean; // GMT sign: true = '+'
@@ -132,6 +136,7 @@ function stateFromDefaults(d: EditorDefaults | EditorRecord): FormState {
     lonDec: d.lon != null ? String(d.lon) : "",
     latDec: d.lat != null ? String(d.lat) : "",
     place: d.place,
+    inferPlace: false,
     cal: d.cal,
     zt: d.zt,
     plus: d.plus,
@@ -190,6 +195,7 @@ function toFields(s: FormState): EditorFields {
     lon: dec(s.lonDec, s.lonDeg, s.lonMin, s.lonSec, s.east),
     lat: dec(s.latDec, s.latDeg, s.latMin, s.latSec, s.north),
     place: s.place,
+    inferPlace: s.inferPlace,
     altitude: n(s.altitude),
     plus: s.plus,
     zoneHour: n(s.zoneHour),
@@ -291,6 +297,7 @@ function EditorLoader({
   editTarget: EditTarget | null;
 }) {
   const t = useT();
+  const lang = useLocale();
   const {beforeLoad, notesChanged} = React.useContext(EditorHost);
   const [meta, setMeta] = React.useState<EditorMeta | null>(null);
   const [metaErr, setMetaErr] = React.useState<string | null>(null);
@@ -304,6 +311,8 @@ function EditorLoader({
   const cursorMode = Boolean(editTarget?.cursorDocId && editTarget?.cursorSeed?.usesSessionCursor);
   const [recordLoaded, setRecordLoaded] = React.useState(!editTarget || Boolean(editTarget.eventOwnerDocumentId));
 
+  // Enum labels are daemon vocabulary in the active language: refetch on a
+  // language switch. The form state is seeded once, so only option labels change.
   React.useEffect(() => {
     const ctrl = new AbortController();
     fetchEditorMeta(ctrl.signal)
@@ -313,7 +322,7 @@ function EditorLoader({
         setMetaErr(String((err as Error).message ?? err));
       });
     return () => ctrl.abort();
-  }, []);
+  }, [lang]);
 
   React.useEffect(() => {
     if (!editTarget || editTarget.eventOwnerDocumentId) return;
@@ -432,6 +441,9 @@ function EditorBody({
   // fresh on every open.
   const [newEventId] = React.useState(() => crypto.randomUUID());
   const [s, setS] = React.useState<FormState>(() => stateFromDefaults(seed));
+  const timezone = useEditorTimezone(editorTimezoneRequest(toFields(s)), active);
+  const inferredPlace = useEditorPlace(editorPlaceRequest(toFields(s)), active);
+  const fields = editorFieldsWithPlace(editorFieldsWithTimezone(toFields(s), timezone.zone), inferredPlace);
   const seedAutoCalendar = automaticCalendarForDate(
     stateFromDefaults(seed),
     meta.calendarAutoPolicy,
@@ -445,11 +457,14 @@ function EditorBody({
   const set = React.useCallback(
     <K extends keyof FormState>(key: K, value: FormState[K]) =>
       setS((prev) => {
-        const next: FormState = { ...prev, [key]: value };
-        // Editing any DMS field drops that axis's authoritative decimal, so the
-        // value reconstructs from deg/min/sec; an untouched map/search-pick keeps it.
-        if (key === "lonDeg" || key === "lonMin" || key === "lonSec" || key === "east") next.lonDec = "";
-        if (key === "latDeg" || key === "latMin" || key === "latSec" || key === "north") next.latDec = "";
+        if (prev[key] === value && !(key === "place" && prev.inferPlace)) return prev;
+        // Turning Auto off starts manual editing from the resolved civil zone.
+        const manual = key === "tzauto" && !value && timezone.zone ? {
+          ...timezone.zone,
+          zoneHour: String(timezone.zone.zoneHour),
+          zoneMin: String(timezone.zone.zoneMin),
+        } : {};
+        const next = invalidateEditorLocation({ ...prev, ...manual, [key]: value }, key);
         if (key === "bc" || key === "year" || key === "month" || key === "day") {
           next.cal = calendarAfterDateChange(
             next,
@@ -460,7 +475,7 @@ function EditorBody({
         }
         return next;
       }),
-    [meta.calendarAutoPolicy],
+    [meta.calendarAutoPolicy, timezone.zone],
   );
 
   const nameRef = React.useRef<HTMLInputElement>(null);
@@ -491,12 +506,7 @@ function EditorBody({
     return () => ctrl.abort();
   }, [seedCollection]);
 
-  // -- City search → candidate list ---------------------------------------
-  const placeSearchVersion = React.useRef(0);
-  const [searching, setSearching] = React.useState(false);
-  const [candidates, setCandidates] = React.useState<PlaceCandidate[] | null>(null);
-  const [searchError, setSearchError] = React.useState<string | null>(null);
-
+  // -- Type-ahead place search (cities + addresses) ----------------------
   // The daemon already returns each candidate in form-field shape (deg/min split,
   // E/W·N/S, capped name, altitude≥0, GMT offset, tzid — the
   // personaldatadlg._applyGeoPlace work, done server-side). The skin only assigns.
@@ -504,6 +514,7 @@ function EditorBody({
     setS((prev) => ({
       ...prev,
       place: c.label,
+      inferPlace: false,
       lonDeg: String(c.lonDeg),
       lonMin: String(c.lonMin),
       lonSec: String(c.lonSec ?? 0),
@@ -517,53 +528,41 @@ function EditorBody({
       lonDec: c.lon != null ? String(c.lon) : "",
       latDec: c.lat != null ? String(c.lat) : "",
       altitude: String(c.altitude),
-      plus: c.plus,
-      zoneHour: String(c.zoneHour),
-      zoneMin: String(c.zoneMin),
+      // A fixed manual zone is an explicit override, including on place picks.
+      ...(prev.tzauto ? {
+        plus: c.plus,
+        zoneHour: String(c.zoneHour),
+        zoneMin: String(c.zoneMin),
+      } : {}),
       tzid: c.tzid,
     }));
-    setCandidates(null);
   }, []);
 
-  const runSearch = React.useCallback(async () => {
-    const version = ++placeSearchVersion.current;
-    const q = s.place.trim();
-    setSearchError(null);
-    if (q.length < 3) {
-      setSearchError(t("editor.searchMinChars"));
-      return;
-    }
-    setSearching(true);
-    setCandidates(null);
-    try {
-      const list = await resolvePlace(q);
-      if (version !== placeSearchVersion.current) return;
-      if (list.length === 0) {
-        setSearchError(t("editor.searchNoResults"));
-      } else if (list.length === 1) {
-        applyCandidate(list[0]);
-      } else {
-        setCandidates(list);
-      }
-    } catch (err) {
-      if (version === placeSearchVersion.current) {
-        setSearchError(String((err as Error).message ?? err));
-      }
-    } finally {
-      if (version === placeSearchVersion.current) setSearching(false);
-    }
-  }, [s.place, applyCandidate, t]);
+  // Bias address results toward the form's current place (the saved Default
+  // Location for a new chart).
+  const fieldLon = toFields(s).lon;
+  const fieldLat = toFields(s).lat;
+  const placeBias = React.useMemo(
+    () => (Number.isFinite(fieldLon) && Number.isFinite(fieldLat)
+      ? { lon: fieldLon as number, lat: fieldLat as number, zoom: 9 }
+      : null),
+    [fieldLon, fieldLat],
+  );
 
   // -- Live preview (Asc/MC) ----------------------------------------------
   const [preview, setPreview] = React.useState<{ asc: number; mc: number } | null>(null);
   const [previewErr, setPreviewErr] = React.useState<string | null>(null);
+  const previewFields = JSON.stringify(fields);
+  const timezonePending = timezone.pending;
+  const timezoneError = timezone.error;
   // Debounced build on field changes — purely informational.
   React.useEffect(() => {
-    if (!active) return;
+    if (!active || timezonePending || timezoneError) return;
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
-      editorBuild(toFields(s), ctrl.signal)
+      editorBuild(JSON.parse(previewFields), ctrl.signal)
         .then((res) => {
+          if (ctrl.signal.aborted) return;
           const ang = readAscMc(res.snapshot);
           setPreview(ang);
           setPreviewErr(ang ? null : null);
@@ -580,7 +579,7 @@ function EditorBody({
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [s, active]);
+  }, [previewFields, active, timezonePending, timezoneError]);
 
   // -- Save ----------------------------------------------------------------
   const [saving, setSaving] = React.useState(false);
@@ -603,7 +602,7 @@ function EditorBody({
       try {
         if (eventOwnerDocumentId) {
           await executeWorkspaceContextMenuAction("workspace.create_event", {
-            documentId: eventOwnerDocumentId, eventId: newEventId, fields: toFields(s),
+            documentId: eventOwnerDocumentId, eventId: newEventId, fields,
           });
           await notesChanged();
           onOpenChange(false);
@@ -612,7 +611,7 @@ function EditorBody({
           // the canonical Binding -> Deriver -> Chart path; no .jsonl write. The
           // daemon broadcasts session.changed/documents.changed, so the open
           // child + its descendants repaint without a re-open dance.
-          await editorApplyCursor(cursorDocId, toFields(s));
+          await editorApplyCursor(cursorDocId, fields);
           await notesChanged();
           onOpenChange(false);
         } else if (radixDocId) {
@@ -621,13 +620,13 @@ function EditorBody({
           // into the live session and broadcasts session.changed, so the wheel
           // repaints WITHOUT a close/reopen flash. No collection picker, no
           // separate save step.
-          await editorApply(radixDocId, toFields(s));
+          await editorApply(radixDocId, fields);
           await notesChanged();
           onOpenChange(false);
         } else {
           const result = await editorSave({
             collection: collectionPath || null,
-            record: toFields(s),
+            record: fields,
           });
           await notesChanged();
           await onSaved(name, result.collection || collectionPath, result.recordIndex ?? null);
@@ -639,13 +638,16 @@ function EditorBody({
         setSaving(false);
       }
     },
-    [s, collectionPath, cursorDocId, radixDocId, eventOwnerDocumentId, newEventId, onSaved, onOpenChange, notesChanged, t],
+    [s.name, fields, collectionPath, cursorDocId, radixDocId, eventOwnerDocumentId, newEventId, onSaved, onOpenChange, notesChanged, t],
   );
 
   const zoneIsZone = s.zt === "zone";
   // Manual zone fields disabled unless zone-type==Zone AND Auto is off
   // (syncAutoTimezone, personaldatadlg.py:481).
-  const manualZoneDisabled = !zoneIsZone || s.tzauto;
+  const automaticZone = zoneIsZone && s.tzauto && !s.bc;
+  const manualZoneDisabled = !zoneIsZone || automaticZone;
+  const shownZone = timezone.zone;
+  const shownPreviewError = timezoneError ? humanizeDaemonError(timezoneError) : previewErr;
 
   return (
     <form onSubmit={onSubmit} className={nativeWindow ? "flex h-full min-h-0 flex-col" : "flex max-h-[min(var(--aries-dialog-viewport-height),var(--aries-dialog-content-height-workspace))] flex-col"}>
@@ -735,7 +737,7 @@ function EditorBody({
               <div className="flex flex-col gap-[var(--aries-control-gap-compact)]">
                 <FieldLabel>{t("editor.gmt")}</FieldLabel>
                 <Select
-                  value={s.plus ? "+" : "-"}
+                  value={(shownZone?.plus ?? s.plus) ? "+" : "-"}
                   options={[
                     { value: "+", label: "+" },
                     { value: "-", label: "-" },
@@ -747,21 +749,21 @@ function EditorBody({
               </div>
               <NumField
                 label={t("editor.hour")}
-                value={s.zoneHour}
+                value={automaticZone ? (shownZone ? String(shownZone.zoneHour) : "") : s.zoneHour}
                 maxLength={2}
                 onChange={(v) => set("zoneHour", v)}
                 disabled={manualZoneDisabled}
               />
               <NumField
                 label={t("editor.min")}
-                value={s.zoneMin}
+                value={automaticZone ? (shownZone ? String(shownZone.zoneMin) : "") : s.zoneMin}
                 maxLength={2}
                 onChange={(v) => set("zoneMin", v)}
                 disabled={manualZoneDisabled}
               />
             </div>
             <Checkbox
-              checked={s.daylightSaving}
+              checked={shownZone?.daylightSaving ?? s.daylightSaving}
               onChange={(v) => set("daylightSaving", v)}
               label={t("editor.daylightSaving")}
               disabled={manualZoneDisabled}
@@ -772,71 +774,24 @@ function EditorBody({
               label={t("editor.autoDstTz")}
               disabled={!zoneIsZone}
             />
-            {s.tzauto && s.tzid ? (
-              <p className="text-[length:var(--aries-font-size-section)] break-words tabular-nums text-foreground/55">{s.tzid}</p>
+            {automaticZone && shownZone?.tzid ? (
+              <p className="text-[length:var(--aries-font-size-section)] break-words tabular-nums text-foreground/55">{shownZone.tzid}</p>
             ) : null}
           </Group>
         </div>
         <div className="flex min-w-0 flex-col gap-[var(--aries-form-group-gap)]">
           <Group title={t("editor.groupPlace")}>
-            <div className="flex items-center gap-[var(--aries-form-field-gap)]">
-              <input
-                data-aries-control-appearance="local"
-                value={s.place}
-                onChange={(e) => {
-                  placeSearchVersion.current += 1;
-                  setSearching(false);
-                  set("place", e.target.value);
-                  setCandidates(null);
-                  setSearchError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void runSearch();
-                  }
-                }}
-                className={fieldCls("flex-1")}
-                aria-label={t("editor.placeNameOptional")}
+            <div className="flex items-start gap-[var(--aries-form-field-gap)]">
+              <PlaceSearchField
+                value={fields.place ?? s.place}
+                onValueChange={(text) => set("place", text)}
+                onPick={applyCandidate}
+                bias={placeBias}
                 placeholder={t("editor.placeNameOptional")}
+                ariaLabel={t("editor.placeNameOptional")}
+                inputClassName={fieldCls("w-full")}
               />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={searching}
-                onClick={() => void runSearch()}
-              >
-                {searching ? t("editor.searching") : t("editor.search")}
-              </Button>
             </div>
-            {searchError ? (
-              <p className="text-[length:var(--aries-font-size-small)] text-destructive">{searchError}</p>
-            ) : null}
-            {candidates ? (
-              <ul className="max-h-40 overflow-y-auto rounded-md border border-border/40">
-                {candidates.map((c, i) => (
-                  <li key={`${c.label}-${i}`}>
-                    <button
-                      type="button"
-                      onClick={() => applyCandidate(c)}
-                      className="flex w-full flex-col items-start gap-[calc(var(--aries-control-gap-compact)/2)] px-[var(--aries-control-padding-x)] py-[var(--aries-control-gap)] text-left hover:bg-accent/60"
-                    >
-                      <span className="text-[length:var(--aries-font-size-base)] text-foreground">
-                        {c.label}
-                        {c.countryName ? `, ${c.countryName}` : ""}
-                      </span>
-                      <span className="text-[length:var(--aries-font-size-section)] tabular-nums text-foreground/55">
-                        {c.latDeg}°{c.latMin}′{c.latSec ?? 0}″{c.north ? "N" : "S"},{" "}
-                        {c.lonDeg}°{c.lonMin}′{c.lonSec ?? 0}″{c.east ? "E" : "W"}
-                        {c.tzid ? ` · ${c.tzid}` : ""}
-                        {` · ${c.altitude}m`}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             <div className="grid grid-cols-[auto_repeat(3,minmax(0,1fr))_auto] items-end gap-x-[var(--aries-control-gap)] gap-y-[var(--aries-form-field-gap)]">
               <span className="flex h-[var(--aries-control-height-small)] items-center text-[length:var(--aries-font-size-small)] text-foreground/55">{t("editor.long")}</span>
               <NumField label={t("editor.deg")} value={s.lonDeg} maxLength={3} widthDigits={3} onChange={(v) => set("lonDeg", v)} />
@@ -892,18 +847,18 @@ function EditorBody({
               <div className="flex gap-[var(--aries-form-field-gap)]">
                 <dt className="text-foreground/55">{t("editor.asc")}</dt>
                 <dd className="tabular-nums">
-                  {preview ? preview.asc.toFixed(4) + "°" : previewErr ? "—" : "…"}
+                  {preview ? preview.asc.toFixed(4) + "°" : shownPreviewError ? "—" : "…"}
                 </dd>
               </div>
               <div className="flex gap-[var(--aries-form-field-gap)]">
                 <dt className="text-foreground/55">{t("editor.mc")}</dt>
                 <dd className="tabular-nums">
-                  {preview ? preview.mc.toFixed(4) + "°" : previewErr ? "—" : "…"}
+                  {preview ? preview.mc.toFixed(4) + "°" : shownPreviewError ? "—" : "…"}
                 </dd>
               </div>
             </dl>
-            {previewErr ? (
-              <p className="mt-2 text-[length:var(--aries-font-size-section)] leading-snug text-destructive">{previewErr}</p>
+            {shownPreviewError ? (
+              <p className="mt-2 text-[length:var(--aries-font-size-section)] leading-snug text-destructive">{shownPreviewError}</p>
             ) : null}
           </div>
         </div>

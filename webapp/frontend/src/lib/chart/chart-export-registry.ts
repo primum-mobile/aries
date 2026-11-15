@@ -4,6 +4,7 @@
 import type {
   PdfChartColorMode,
   PdfChartRasterPreset,
+  PngPageFormat,
   PngChartAppearance,
   PngWatermarkStyle,
 } from "@/lib/daemon/client";
@@ -18,6 +19,10 @@ export type ChartExportRenderRequest = {
   output?: "base64" | "bytes";
   colorMode: PdfChartColorMode | PngChartAppearance;
   rasterPreset: PdfChartRasterPreset;
+  /** Portrait page; A3 paints the A4 layout at a higher pixel density. PNG
+   * uses it in the dashboard view only ("viewport" exports the visible chart
+   * area at screen pixels); every other PNG stays square. */
+  pageFormat: PngPageFormat;
   includeOverlays: boolean;
   dignityHighlights: boolean;
   individualBodyColors: boolean;
@@ -35,7 +40,7 @@ export type ChartExportRenderer = (
 ) => Promise<ChartExportRenderResult>;
 
 const renderers = new Map<string, ChartExportRenderer>();
-const PNG_EXPORT_PIXEL_SIZE = 1200;
+export const PNG_EXPORT_PIXEL_SIZE = 1200;
 
 function cssBackgroundColor(element: HTMLElement): string {
   const elementColor = getComputedStyle(element).backgroundColor;
@@ -62,7 +67,7 @@ function hasColorDetail(data: Uint8ClampedArray, index: number): boolean {
   return Math.max(red, green, blue) - Math.min(red, green, blue) >= 24;
 }
 
-function normalizeCanvasForPrint(
+export function normalizeCanvasForPrint(
   data: Uint8ClampedArray,
   width: number,
   height: number,
@@ -89,7 +94,7 @@ function normalizeCanvasForPrint(
   }
 }
 
-async function canvasPngPayload(
+export async function canvasPngPayload(
   canvas: HTMLCanvasElement,
   output: ChartExportRenderRequest["output"],
 ): Promise<Pick<ChartExportRenderResult, "pngBase64" | "pngBytes">> {
@@ -119,22 +124,32 @@ async function canvasPngPayload(
   return { pngBase64 };
 }
 
+/** How a PNG frames the source: the square page (wheels), or the source's
+ * own shape at its own pixels with the watermark band added above (plates
+ * that fill their pane, e.g. the Graphic Ephemeris). */
+export type CanvasExportFrame = "square" | "source";
+
 /** Export the exact retained specialized canvas registered by the visible
  * surface. File -> Export must never silently substitute a standard wheel. */
 export async function renderCanvasChartExport(
   source: HTMLCanvasElement,
   request: ChartExportRenderRequest,
+  frame: CanvasExportFrame = "square",
 ): Promise<ChartExportRenderResult> {
   const canvas = document.createElement("canvas");
-  const squarePng = request.kind === "png";
-  if (squarePng) await preparePngWatermark(request.watermarkStyle);
-  canvas.width = squarePng ? PNG_EXPORT_PIXEL_SIZE : Math.max(1, source.width);
-  canvas.height = squarePng ? PNG_EXPORT_PIXEL_SIZE : Math.max(1, source.height);
+  const png = request.kind === "png";
+  const squarePng = png && frame === "square";
+  if (png) await preparePngWatermark(request.watermarkStyle);
+  const sourceWidth = Math.max(1, source.width);
+  const sourceHeight = Math.max(1, source.height);
+  const sourceHeader = png && !squarePng ? Math.round(pngWatermarkHeaderHeight(sourceWidth, request.watermarkStyle)) : 0;
+  canvas.width = squarePng ? PNG_EXPORT_PIXEL_SIZE : sourceWidth;
+  canvas.height = squarePng ? PNG_EXPORT_PIXEL_SIZE : sourceHeight + sourceHeader;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("visible chart canvas export context unavailable");
   context.fillStyle = request.colorMode === "screen" ? cssBackgroundColor(source) : "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  const headerHeight = squarePng ? pngWatermarkHeaderHeight(canvas.width, request.watermarkStyle) : 0;
+  const headerHeight = squarePng ? pngWatermarkHeaderHeight(canvas.width, request.watermarkStyle) : sourceHeader;
   const contentHeight = canvas.height - headerHeight;
   const scale = Math.min(canvas.width / source.width, contentHeight / source.height);
   const drawWidth = source.width * scale;
@@ -162,7 +177,7 @@ export async function renderCanvasChartExport(
     );
     context.putImageData(image, 0, 0);
   }
-  if (squarePng) {
+  if (png) {
     drawPngWatermark(context, canvas.width, request.watermarkLabel, {
       monochrome: request.colorMode === "monochrome",
       style: request.watermarkStyle,

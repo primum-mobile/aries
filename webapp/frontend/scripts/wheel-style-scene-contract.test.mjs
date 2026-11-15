@@ -14,7 +14,7 @@ async function transpile(url) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
     },
-  }).outputText.replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
+  }).outputText.replaceAll('"colorjs.io"', JSON.stringify(import.meta.resolve("colorjs.io"))).replaceAll('"./wheel-composition"', `"${compositionModuleUrl}"`).replaceAll('"../chart/wheel-composition"', `"${compositionModuleUrl}"`);
 }
 
 function dataUrl(source) {
@@ -28,6 +28,19 @@ const wheelJavascript = (
   await transpile(new URL("../src/lib/chart/wheel-render-style.ts", import.meta.url))
 ).replaceAll('"./wheel-layout-model"', `"${layoutModelUrl}"`);
 const wheelUrl = dataUrl(wheelJavascript);
+const chartFontsUrl = dataUrl(
+  await transpile(new URL("../src/lib/chart/chart-fonts.ts", import.meta.url)),
+);
+const textInkGapUrl = dataUrl(
+  await transpile(new URL("../src/lib/chart/text-ink-gap.ts", import.meta.url)),
+);
+const chartFonts = await import(chartFontsUrl);
+const canvasDrawUrl = dataUrl((
+  await transpile(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url))
+).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`));
+const vintageUrl = dataUrl((
+  await transpile(new URL("../src/lib/chart/vintage-magazine-wheel.ts", import.meta.url))
+).replaceAll('"./chart-fonts"', `"${chartFontsUrl}"`).replaceAll('"./text-ink-gap"', `"${textInkGapUrl}"`).replaceAll('"./canvas-draw"', `"${canvasDrawUrl}"`));
 const genericSceneJavascript = await transpile(
   new URL("../src/lib/style-lab/style-scene.ts", import.meta.url),
 );
@@ -65,7 +78,9 @@ wheelSceneJavascript = wheelSceneJavascript
   .replaceAll('"./style-scene"', `"${genericSceneUrl}"`)
   .replaceAll('"./authoring-schema"', `"${authoringSchemaUrl}"`)
   .replaceAll('"./semantic-class-manifest"', `"${semanticManifestUrl}"`)
-  .replaceAll('"./wheel-authoring-adapter"', `"${authoringAdapterUrl}"`);
+  .replaceAll('"./wheel-authoring-adapter"', `"${authoringAdapterUrl}"`)
+  .replaceAll('"./unit-projection"', `"${unitProjectionUrl}"`)
+  .replaceAll('"../chart/vintage-magazine-wheel"', `"${vintageUrl}"`);
 
 const wheel = await import(wheelUrl);
 const sceneApi = await import(dataUrl(wheelSceneJavascript));
@@ -84,6 +99,22 @@ function geometry(profile = "classic", mode = "single", overrides = {}) {
     ...overrides,
   };
 }
+
+test("Apogee glyph editing resolves the same Moon color role as production paint", () => {
+  const scene = sceneApi.buildWheelStyleScene({
+    style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    geometry: geometry(),
+    useIndividualBodyColors: true,
+    hitRegions: [
+      { kind: "planet", planetId: "apogee", seId: 12, x: 150, y: 100, r: 8, longitude: 10, latitude: 0, speed: 0.11, priority: 40 },
+    ],
+  });
+  const glyph = scene.elements.find((element) => element.id === "wheel.body.primary.apogee");
+  assert.ok(glyph);
+  assert.ok(glyph.tokenBindings.some((binding) =>
+    binding.semanticId === "chart.color.body.moon" && binding.cssVar === "--morinus-body-moon"));
+  assert.ok(!glyph.tokenBindings.some((binding) => binding.semanticId === "chart.color.body.apogee"));
+});
 
 test("bounded geometry tokens preserve the production default ring matrix", () => {
   // +24 for the two independently authored cusp-band wheel profiles.
@@ -149,11 +180,8 @@ test("canonical geometry edits move resolved rings and invalid groups reset atom
       biwheelOuterMax: 0.98,
     },
   });
-  assert.equal(wheel.resolveWheelRingSet(custom, geometry()).r30, 340);
-  assert.equal(
-    wheel.resolveWheelRingSet(custom, geometry("compact", "single")).rAspAscMC,
-    104,
-  );
+  assert.ok(Math.abs(wheel.resolveWheelRingSet(custom, geometry()).r30 - 392) < 1e-9);
+  assert.ok(Math.abs(wheel.resolveWheelRingSet(custom, geometry("compact", "single")).rAspAscMC - 128) < 1e-9);
   assert.equal(
     wheel.resolveWheelRingSet(custom, geometry("anglo", "single")).rPlanet,
     400 * 0.895 * 0.72 - 400 * 0.895 * 0.047,
@@ -262,12 +290,12 @@ test("scene radii come from resolveWheelRingSet and expose exact painted-ring ha
   );
   const patch = sceneApi.resolveWheelStyleHandleDrag(
     zodiacHandle,
-    { start: zodiacHandle.position, current: [zodiacHandle.position[0] + 20, zodiacHandle.position[1]] },
+    { start: zodiacHandle.position, current: [zodiacHandle.position[0] + 10, zodiacHandle.position[1]] },
   );
   assert.deepEqual(patch, {
     semanticId: "authoring.wheel.classic.rings.zodiacOuter.radius",
     cssVar: "",
-    value: zodiacRing.authoringDefaults.radiusPx + 20,
+    value: zodiacRing.authoringDefaults.radiusPx + 10,
   });
 
   const angloComparison = sceneApi.buildWheelStyleScene({
@@ -1914,7 +1942,7 @@ test("the Cusp Wheel scene exposes the same radial authoring surface independent
   assert.ok(cusps.elements.every((element) => element.stateTags.includes("profile:cusps")));
 });
 
-test('composition handles author stable widths and omit independent radius pins', () => {
+test('composition exposes radius controls alongside stable widths', () => {
   const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
     ['decans','terms','cuspLabels','bodies','houses','hub'].map(archetypeId => ({
       instanceId: `cusps-${archetypeId}`, archetypeId, enabled: true, chartRole: 'primary',
@@ -1926,7 +1954,7 @@ test('composition handles author stable widths and omit independent radius pins'
   });
   const handle = scene.handles.find(h => h.binding?.semanticId.endsWith('cusps-terms.bandWidth'));
   assert.ok(handle);
-  assert.ok(!scene.handles.some(h => h.binding?.semanticId.endsWith('.radius')));
+  assert.ok(scene.handles.some(h => h.binding?.semanticId.endsWith('.radius')));
   const distance = 4;
   const radians = handle.angleDegrees * Math.PI / 180;
   const patch = sceneApi.resolveWheelStyleHandleDrag(handle, {
@@ -1997,6 +2025,125 @@ test('a Cusp ruler touching Signs has matching scene ticks and an inward-facing 
   }
 });
 
+test('reordered ruler boundary targets match allocated lanes and omit hosted or disabled cusp circles', () => {
+  for (const outside of [false, true]) {
+    const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+      [...(outside ? ['cuspRuler', 'zodiac'] : ['zodiac', 'cuspRuler']),
+        'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'].map(archetypeId => ({
+        instanceId: `anglo-${archetypeId}`, archetypeId,
+        enabled: archetypeId !== 'cuspLabels', chartRole: 'primary',
+      }))};
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', 'single', {composition})});
+    const boundaries = scene.elements.filter(element => element.id.endsWith('.boundary')
+      && element.id.startsWith('wheel.composition.'));
+    assert.deepEqual(boundaries.map(element => element.id).sort(),
+      ['zodiac', 'terms', 'degree', 'decans', 'bodies', 'houses', 'hub']
+        .map(kind => `wheel.composition.anglo-${kind}.boundary`).sort());
+    assert.equal(new Set(boundaries.map(element => element.hitGeometry.radius)).size, 7);
+    const hosted = scene.elements.find(element => element.id === 'wheel.composition.anglo-cuspRuler');
+    assert.ok(hosted?.handles.some(handle => handle.binding.semanticId.endsWith('.bandWidth')));
+  }
+});
+
+test('adjoining cusp ruler and annotations share a material rim while separate annotations retain their boundary', () => {
+  for (const placement of ['adjoining', 'separate', 'reverse']) {
+    const prefix = ['zodiac', 'terms', 'degree', 'decans'];
+    const order = [...prefix, ...(placement === 'separate'
+      ? ['cuspRuler', 'bodies', 'cuspLabels']
+      : placement === 'reverse' ? ['cuspLabels', 'cuspRuler', 'bodies']
+        : ['cuspRuler', 'cuspLabels', 'bodies']), 'houses', 'hub'];
+    const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+      order.map(archetypeId => ({instanceId: `anglo-${archetypeId}`, archetypeId, enabled: true, chartRole: 'primary'}))};
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', 'single', {composition})});
+    assert.equal(scene.elements.some(element => element.id === 'wheel.composition.anglo-cuspLabels.boundary'), placement !== 'adjoining');
+    const rim = scene.elements.find(element => element.id === 'wheel.composition.anglo-cuspRuler.boundary');
+    assert.equal(rim.classId, 'rings.angloCuspOuter');
+    assert.equal(rim.hitGeometry.radius, scene.rings.rCuspOuter);
+    assert.equal(rim.handles.find(handle => handle.binding.property === 'radius')?.binding.semanticId,
+      'authoring.wheel.anglo.rings.angloCuspOuter.radius');
+    const tick = scene.elements.find(element => element.id === 'wheel.zodiac.tick.angloCuspRuler.10deg')
+      .hitGeometry.geometries[0];
+    const distance = point => Math.hypot(point[0] - scene.center[0], point[1] - scene.center[1]);
+    assert.ok(Math.abs(distance(tick.start) - rim.hitGeometry.radius) < 1e-7);
+    assert.ok(distance(tick.end) < distance(tick.start));
+    const degree = scene.elements.find(element => element.id === 'wheel.composition.anglo-degree.boundary');
+    assert.equal(degree.classId, 'rings.innerDegree');
+    assert.equal(degree.hitGeometry.radius, scene.rings.rDegreeOuter);
+    assert.equal(degree.handles.find(handle => handle.binding.property === 'radius')?.binding.semanticId,
+      'authoring.wheel.anglo.rings.innerDegree.radius');
+    for (const kind of ['cuspRuler', 'cuspLabels']) {
+      const band = scene.elements.find(element => element.id === `wheel.composition.anglo-${kind}`);
+      assert.ok(band?.handles.some(handle => handle.binding.semanticId.endsWith('.bandWidth')),
+        'both constituent bands remain independently editable');
+    }
+    if (placement !== 'adjoining') {
+      const boundary = scene.elements.find(element => element.id === 'wheel.composition.anglo-cuspLabels.boundary');
+      assert.equal(boundary.classId, 'rings.outerDegree');
+      assert.equal(boundary.tokenBindings.find(binding => binding.property === 'radius')?.radiusTarget, 'cuspLabels');
+    }
+  }
+});
+
+test('composition cusp tick targets retain their material containment and direction when Degree and subdivisions toggle', () => {
+  const orders = {
+    allocated: ['degree', 'zodiac', 'terms', 'decans', 'cuspRuler', 'cuspLabels', 'bodies', 'houses', 'hub'],
+    outside: ['cuspRuler', 'zodiac', 'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'],
+    inside: ['zodiac', 'cuspRuler', 'terms', 'degree', 'decans', 'cuspLabels', 'bodies', 'houses', 'hub'],
+  };
+  for (const [placement, order] of Object.entries(orders)) for (const subdivisions of [true, false])
+  for (const degreeEnabled of [true, false]) {
+    const composition = {schemaVersion: 1, customized: true, projection: 'zodiac', rings:
+      ['outerHouses', 'outerBodies', ...order].map(archetypeId => ({archetypeId,
+        instanceId: `anglo-${archetypeId}`, chartRole: archetypeId.startsWith('outer') ? 'outer' : 'primary',
+        enabled: archetypeId === 'degree' ? degreeEnabled
+          : ['terms', 'decans'].includes(archetypeId) ? subdivisions : true}))};
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', 'single', {composition, showTerms: subdivisions, showDecans: subdivisions}),
+      hitRegions: [...Array.from({length: 12}, (_, index) => ({kind: 'house', chartRole: 'primary',
+        house: index + 1, longitude: 3 + index * 30, x: 0, y: 0, r: 4})),
+      ...['asc', 'mc'].map((angleId, index) => ({kind: 'angle', angleId, chartRole: 'primary',
+        longitude: index * 90, x: 0, y: 0, r: 4}))]});
+    const band = scene.elements.find(element => element.id === 'wheel.composition.anglo-cuspRuler').hitGeometry;
+    const labels = scene.elements.find(element => element.id === 'wheel.composition.anglo-cuspLabels')?.hitGeometry;
+    const materialInner = placement === 'allocated' && labels && Math.abs(labels.outerRadius - band.innerRadius) < 1e-7
+      ? labels.innerRadius : band.innerRadius;
+    const inward = placement !== 'inside';
+    const context = `${placement}/subdivisions ${subdivisions}/Degree ${degreeEnabled}`;
+    const ticks = scene.elements.filter(element => /^zodiac\.tick\.angloCuspRuler\./.test(element.classId))
+      .flatMap(element => element.hitGeometry?.geometries ?? []);
+    const houseTicks = scene.elements.find(element => element.classId === 'zodiac.tick.angloHouseCusp')
+      .hitGeometry.geometries;
+    const angleTicks = scene.elements.find(element => element.classId === 'zodiac.tick.angloAngleRuler')
+      .hitGeometry.geometries;
+    assert.equal(ticks.length, inward ? 360 : 348, context);
+    assert.equal(houseTicks.length, 12, context);
+    assert.equal(angleTicks.length, 2, context);
+    const radius = point => Math.hypot(point[0] - scene.center[0], point[1] - scene.center[1]);
+    const base = inward ? band.outerRadius : band.innerRadius;
+    for (const tick of [...ticks, ...houseTicks, ...angleTicks]) {
+      assert.ok(Math.abs(radius(tick.start) - base) < 1e-7, `${context}: target starts at own band edge`);
+      assert.ok(inward ? radius(tick.end) < radius(tick.start) : radius(tick.end) > radius(tick.start), context);
+      assert.ok(radius(tick.end) >= materialInner - 1e-7 && radius(tick.end) <= band.outerRadius + 1e-7,
+        `${context}: target remains within contiguous Cusp material or its hosted instrument`);
+    }
+  }
+});
+
+test('raw historical cusp tick targets preserve their direction without a composition', () => {
+  for (const subdivisions of [true, false]) {
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', 'single', {showTerms: subdivisions, showDecans: subdivisions})});
+    const ticks = scene.elements.filter(element => /^zodiac\.tick\.angloCuspRuler\./.test(element.classId))
+      .flatMap(element => element.hitGeometry?.geometries ?? []);
+    assert.equal(ticks.length, subdivisions ? 360 : 348);
+    const radius = point => Math.hypot(point[0] - scene.center[0], point[1] - scene.center[1]);
+    assert.ok(ticks.every(tick => subdivisions ? radius(tick.end) < radius(tick.start)
+      : radius(tick.end) > radius(tick.start)));
+  }
+});
+
 test('band boundaries do not steal nearby cusp text selection', async () => {
   const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
   const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
@@ -2051,7 +2198,6 @@ test('enabled subdivisions on an untouched Cusp recipe remain selectable', async
 test('factory band handles preserve their starting width and use solved bounds at every scale', async () => {
   const {WHEEL_FACTORY_SETTINGS, WHEEL_RING_ARCHETYPES} = await import(compositionModuleUrl);
   const layoutModel = await import(layoutModelUrl);
-  let grandfatheredWidths = 0;
   for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps']) {
     const composition = WHEEL_FACTORY_SETTINGS.layouts[profile].composition;
     for (const mode of ['single', 'comparison']) {
@@ -2077,22 +2223,45 @@ test('factory band handles preserve their starting width and use solved bounds a
             `${profile}/${mode}/${instanceId} must preserve the exact width below one fine step`);
           const instance = composition.rings.find(item => item.instanceId === instanceId);
           const minimum = WHEEL_RING_ARCHETYPES[instance.archetypeId].minWidth;
-          if (handle.binding.value < minimum) grandfatheredWidths++;
+          assert.ok(handle.binding.value >= minimum - 1e-7, "factory widths must meet the shared semantic minimum");
         }
       }
     }
   }
-  assert.ok(grandfatheredWidths > 0, 'the matrix must exercise original bands below the generic minimum');
 });
 
 test('an enabled original Anglo degree ruler has a width handle without reordering', async () => {
   const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
-  const composition = WHEEL_FACTORY_SETTINGS.layouts.anglo.composition;
+  const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
   const degree = composition.rings.find(ring => ring.archetypeId === 'degree');
+  degree.enabled = true;
   const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
     geometry: geometry('anglo', 'single', {composition}),
   });
   assert.ok(scene.handles.some(handle => handle.binding?.semanticId.includes(`.${degree.instanceId}.`)));
+});
+
+test('explicitly hosted cusp ruler keeps its controls without a phantom circle target', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const mode of ['single', 'comparison']) for (const hosted of [false, true]) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    if (hosted) {
+      for (const ring of composition.rings) {
+        if (['terms', 'decans', 'cuspLabels'].includes(ring.archetypeId)) ring.enabled = false;
+      }
+      const ruler = composition.rings.splice(composition.rings.findIndex(ring => ring.archetypeId === 'cuspRuler'), 1)[0];
+      composition.rings.splice(composition.rings.findIndex(ring => ring.archetypeId === 'zodiac') + 1, 0, ruler);
+    }
+    const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      geometry: geometry('anglo', mode, {composition, showTerms: !hosted, showDecans: !hosted}),
+    });
+    assert.equal(scene.elements.some(element => element.id === sceneApi.WHEEL_STYLE_SCENE_ELEMENT_IDS.ringCuspOuter),
+      !hosted, `${mode}: only a separate cusp band has its own circle`);
+    assert.ok(scene.handles.some(handle => handle.binding?.semanticId.includes('.anglo-cuspRuler.')),
+      `${mode}: the ruler width remains editable`);
+    assert.ok(scene.elements.some(element => element.classId === 'zodiac.tick.angloCuspRuler.10deg'),
+      `${mode}: the ruler ticks remain selectable`);
+  }
 });
 
 test('open exterior cusp labels keep their band editor but have no phantom boundary target', () => {
@@ -2207,5 +2376,335 @@ test('tiny exterior cusp markers expose the same short radial segments in the ed
   assert.equal(markers.hitGeometry.geometries.length, 12);
   for (const segment of markers.hitGeometry.geometries) {
     assert.ok(Math.hypot(segment.end[0] - segment.start[0], segment.end[1] - segment.start[1]) < 4);
+  }
+});
+
+test("triplicity triangles follow uniform and element colors without changing their geometry", async () => {
+  const palette = { signs: "uniform-sign", domicil: "dignity-green", elements: ["fire", "earth", "air", "water"] };
+  const bounds = { x: 10, y: 20, w: 18, h: 24 };
+  for (const [index, element] of ["fire", "earth", "air", "water"].entries()) {
+    const facts = { minorDignityCount: 1, primaryTriplicityElement: element };
+    const marker = (mode) => wheel.resolveMinorDignityDecoration(facts, bounds, 24,
+      { font: "FreeSans", dignityColor: palette.domicil,
+        triplicityColor: wheel.triplicityElementColor(element, palette, mode),
+        measure: (_text, size) => [size * 0.6, size * 0.7] },
+      { showDignityGlyphs: true }).markers[0];
+    const uniform = marker(false), colored = marker(true);
+    assert.equal(uniform.color, palette.signs);
+    assert.equal(colored.color, palette.elements[index]);
+    assert.equal(wheel.triplicityColorRole(element, false), "--morinus-signs");
+    assert.equal(wheel.triplicityColorRole(element, true), `--morinus-element-${element}`);
+    assert.deepEqual(uniform.bounds, colored.bounds);
+  }
+  for (const path of ["square-chart-view", "astrolabe-view", "astrolog-sphere-view", "mundane-chart-view"]) {
+    const source = await readFile(new URL(`../src/components/workshell/${path}.tsx`, import.meta.url), "utf8");
+    assert.match(source, /triplicityColorRole\([^,]+,\s*Boolean\(appearance\?\.useZodiacElementColors\)\)/, path);
+  }
+});
+
+test("minor dignities use independent superscripts and a triplicity triangle without planet contours", async () => {
+  const bounds = { x: 10, y: 20, w: 18, h: 24 };
+  const facts = { minorDignityCount: 3, hasTermDignity: true, hasFaceDignity: true, primaryTriplicityElement: "fire" };
+  const motionBounds = { x: 28, y: 35, w: 15, h: 9 };
+  const markerStyle = { font: "FreeSans", triplicityColor: "fire-color", dignityColor: "dignity-green", motionBounds,
+    measure: (text, size) => [size * 0.6, size * (text === "*" ? 0.3 : 0.7)] };
+  const resolve = (options, body = facts) => wheel.resolveMinorDignityDecoration(body, bounds, 24, markerStyle, options);
+  for (const showDignityGlyphs of [false, true]) for (const showTermGlyphs of [false, true]) for (const showFaceGlyphs of [false, true]) {
+    const decoration = resolve({ showDignityGlyphs, showTermGlyphs, showFaceGlyphs });
+    const expected = [...(showTermGlyphs ? ["*"] : []), ...(showFaceGlyphs ? ["𝑭"] : []), ...(showDignityGlyphs ? ["△"] : [])];
+    assert.deepEqual(decoration?.markers.map(marker => marker.text) ?? [], expected);
+    assert.equal(decoration?.outline, undefined);
+  }
+  const options = { showDignityGlyphs: true, showTermGlyphs: true, showFaceGlyphs: true };
+  for (const dignity of ["casus", "exil", "domicil", "exal", "peregrin"]) {
+    const decoration = resolve(options, { ...facts, dignity });
+    const [term, face, triplicity] = decoration.markers;
+    assert.equal(term.color, "dignity-green");
+    assert.equal(face.color, "dignity-green");
+    assert.equal(triplicity.color, "fire-color");
+    assert.equal(term.weight, 700);
+    assert.equal(face.font, "AriesDignityFace");
+    assert.equal(face.weight, 400, "The mathematical glyph already carries its bold italic weight");
+    assert.ok(term.bounds.h > bounds.h * 0.35, "The five-point asterisk remains visible at chart size");
+    assert.ok(Math.abs(triplicity.strokeWidth / (triplicity.bounds.h - triplicity.strokeWidth) - 0.1) < 1e-8);
+    assert.ok(face.bounds.x > term.bounds.x + term.bounds.w);
+    assert.ok(term.bounds.y < bounds.y + bounds.h / 2 && face.bounds.y < bounds.y + bounds.h / 2);
+    assert.ok(triplicity.bounds.x > motionBounds.x + motionBounds.w);
+    for (const marker of decoration.markers) {
+      assert.ok(decoration.bounds.x <= marker.bounds.x && decoration.bounds.y <= marker.bounds.y);
+      assert.ok(decoration.bounds.x + decoration.bounds.w >= marker.bounds.x + marker.bounds.w);
+      assert.ok(decoration.bounds.y + decoration.bounds.h >= marker.bounds.y + marker.bounds.h);
+    }
+  }
+  assert.equal(resolve(options, { minorDignityCount: 0 }), undefined);
+  assert.deepEqual(resolve(options, { ...facts, hasTermDignity: false, hasFaceDignity: false }).markers.map(marker => marker.text), ["△"]);
+  for (const height of [14, 24, 48]) {
+    const ink = { x: 12, y: 31, w: height * 0.7, h: height };
+    const [term, face, triangle] = wheel.resolveMinorDignityDecoration(facts, ink, height, markerStyle, options).markers;
+    assert.ok(Math.abs(term.bounds.y + term.bounds.h - face.bounds.y - face.bounds.h) < 1e-8,
+      "Superscripts share an ink baseline despite different font bearings");
+    for (const script of [term, face]) {
+      assert.ok(script.bounds.x > ink.x + ink.w, "Superscripts clear the planet's visible ink");
+      assert.ok(script.bounds.y >= ink.y - height * 0.15, "Superscripts stay attached to the upper right");
+      assert.ok(script.bounds.y + script.bounds.h < ink.y + height / 2);
+    }
+    assert.ok(triangle.bounds.y > ink.y + height / 2, "The triangle sits at the lower right");
+    assert.ok(triangle.bounds.y + triangle.bounds.h > ink.y + height, "The triangle straddles the ink bottom");
+  }
+  const js = ts.transpileModule(await readFile(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exported = {};
+  new Function("require", "exports", js)(() => chartFonts, exported);
+  const calls = [], stack = [];
+  const ctx = { globalAlpha: 1, save() { stack.push({ ...this }); }, restore() { Object.assign(this, stack.pop()); },
+    measureText() {
+      assert.equal(this.textBaseline, "alphabetic", "Marker measurement must use the painting baseline");
+      return { actualBoundingBoxAscent: 7, actualBoundingBoxLeft: -2 };
+    },
+    fillText(text, x, y) { calls.push({ kind: "fill", text, color: this.fillStyle, x, y, font: this.font }); },
+    strokeText(text) { calls.push({ kind: "stroke", text, color: this.strokeStyle }); },
+    arc() { throw new Error("Dignity annotations must not add rings"); } };
+  new exported.CanvasDraw({ getContext: () => ctx }).text([10, 20], "G", {
+    fill: "#cd5c5c", font: "AriesMorinus", size: 24, markers: resolve(options).markers,
+  });
+  assert.deepEqual(calls.filter(call => call.text === "G").map(({kind, text, color, x, y}) => ({kind, text, color, x, y})), [{ kind: "fill", text: "G", color: "#cd5c5c", x: 10, y: 20 }]);
+  assert.deepEqual(calls.filter(call => call.kind === "fill").map(call => call.text), ["G", "*", "𝑭", "△"]);
+  assert.match(calls.find(call => call.text === "*").font, /^normal 700 /);
+  assert.match(calls.find(call => call.text === "𝑭").font, /^normal 400 \d+px AriesDignityFace$/);
+  for (const inheritedBaseline of ["top", "middle", "alphabetic"]) {
+    for (const marker of resolve(options).markers) {
+      ctx.textBaseline = inheritedBaseline;
+      exported.paintTextMarker(ctx, marker);
+      const painted = calls.at(-1), pad = (marker.strokeWidth ?? 0) / 2;
+      const ink = chartFonts.bundledGlyphInkBounds(marker.text, marker.font, marker.size, marker.weight);
+      assert.ok(Math.abs(painted.x + ink.x - marker.bounds.x - pad) < 1e-8,
+        "Marker ink starts at its measured left edge");
+      assert.ok(Math.abs(painted.y + ink.y - marker.bounds.y - pad) < 1e-8,
+        "Marker ink starts at its measured top, independent of inherited baseline");
+      assert.equal(ctx.textBaseline, inheritedBaseline, "Marker painting restores the planet's baseline");
+    }
+  }
+  let measurements = 0;
+  ctx.measureText = function () {
+    measurements++;
+    const shift = this.textAlign === "center" ? 10 : 0;
+    return { actualBoundingBoxLeft: 2 + shift, actualBoundingBoxRight: 18 - shift,
+      actualBoundingBoxAscent: 8, actualBoundingBoxDescent: 4 };
+  };
+  const draw = new exported.CanvasDraw({ getContext: () => ctx });
+  const measureOptions = { font: "AriesMorinus", size: 31, baseline: "middle" };
+  assert.deepEqual(draw.textbounds("centered-body-ink", measureOptions), { x: -2, y: -8, w: 20, h: 12 });
+  assert.deepEqual(draw.textbounds("centered-body-ink", { ...measureOptions, align: "center" }), { x: -12, y: -8, w: 20, h: 12 });
+  draw.textbounds("centered-body-ink", measureOptions);
+  assert.equal(measurements, 2, "Ink-bound caching distinguishes centered and left-aligned planet paint");
+});
+
+test("WebKit's clamped asterisk descent cannot shrink dignity annotations", async () => {
+  const js = ts.transpileModule(await readFile(new URL("../src/lib/chart/canvas-draw.ts", import.meta.url), "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exported = {};
+  new Function("require", "exports", js)(() => chartFonts, exported);
+  const context = {
+    save() {}, restore() {},
+    measureText() {
+      const size = Number(this.font.match(/(\d+)px/)[1]);
+      // WebKit reports the asterisk from its cap top to the baseline, although
+      // its ink ends well above it; its left/right boxes also include advance.
+      return { width: size * 0.389, actualBoundingBoxLeft: 0,
+        actualBoundingBoxRight: size * 0.389,
+        actualBoundingBoxAscent: size * 0.729, actualBoundingBoxDescent: 0 };
+    },
+  };
+  const draw = new exported.CanvasDraw({ getContext: () => context });
+  const star = draw.textbounds("*", { font: "FreeSans", weight: 700, size: 40, baseline: "alphabetic" });
+  assert.equal(star.h, 12.88, "Font outline ink excludes the empty space below the asterisk");
+  assert.ok(Math.abs(star.w - 13.36) < 1e-8);
+  assert.ok(Math.abs(star.x - 0.92) < 1e-8);
+  const body = { x: 20, y: 30, w: 20.15625, h: 34.53125 };
+  const markers = wheel.resolveMinorDignityDecoration(
+    { minorDignityCount: 3, hasTermDignity: true, hasFaceDignity: true, primaryTriplicityElement: "earth" },
+    body, 40,
+    { font: "FreeSans", dignityColor: "green", triplicityColor: "earth",
+      measure(text, size, font, weight) {
+        const ink = draw.textbounds(text, { font, size, weight, baseline: "alphabetic" });
+        return [ink.w, ink.h];
+      } },
+    { showDignityGlyphs: true, showTermGlyphs: true, showFaceGlyphs: true },
+  ).markers;
+  assert.ok(Math.abs(markers[0].bounds.h / body.h - 0.45) < 0.015);
+  assert.ok(Math.abs(markers[1].bounds.h / body.h - 0.4) < 0.015);
+  assert.ok(Math.abs((markers[2].bounds.h - markers[2].strokeWidth) / body.h - 0.4) < 0.015);
+  assert.equal(chartFonts.bundledGlyphInkBounds("D", "CustomSymbols, AriesMorinus", 40), undefined,
+    "Uploaded chart fonts retain their own measured outlines");
+  assert.equal(chartFonts.bundledGlyphInkBounds("D", "AriesMorinus", 40, 700), undefined,
+    "Synthetic chart weight retains the browser's actual measurement");
+});
+
+test('composed radius drags and numeric edits share solved values, limits, and thickness', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps'])
+  for (const mode of ['single', 'comparison'])
+  for (const reordered of [false, true])
+  for (const maxRadius of [200, 400, 800]) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts[profile].composition);
+    if (reordered) {
+      const a = composition.rings.findIndex(ring => ring.archetypeId === 'bodies');
+      const b = composition.rings.findIndex(ring => ring.archetypeId === 'houses');
+      [composition.rings[a], composition.rings[b]] = [composition.rings[b], composition.rings[a]];
+    }
+    const input = geometry(profile, mode, {composition, maxRadius});
+    const widthId = `authoring.wheel.${profile}.canvas.ring.${profile}-bodies.bandWidth`;
+    const radiusId = `authoring.wheel.${profile}.rings.innerBoundary.radius`;
+    const priorityId = `authoring.wheel.${profile}.canvas.chart.radiusPriority`;
+    const overrides = {};
+    const styleFor = patch => ({...wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      authoringOverrides: authoringAdapter.compileFlatWheelAuthoringOverrides(patch)});
+    let scene = sceneApi.buildWheelStyleScene({style: styleFor(overrides), geometry: input});
+    const width = scene.handles.find(handle => handle.binding?.semanticId === widthId);
+    assert.ok(width);
+    overrides[widthId] = width.binding.value + 2;
+    for (const movement of [2, -1, 1, -2]) {
+      scene = sceneApi.buildWheelStyleScene({style: styleFor(overrides), geometry: input});
+      const handle = scene.handles.find(item => item.binding?.semanticId === radiusId);
+      assert.ok(handle, `${profile}/${mode}/${reordered}: reachable diameter handle`);
+      const element = scene.elements.find(item => item.id === handle.elementId);
+      assert.equal(element.authoringDefaults.radiusPx, handle.binding.value);
+      assert.equal(element.authoringDefaults.diameterPx, handle.binding.value * 2);
+      assert.ok(handle.binding.value >= handle.binding.min - 1e-7 && handle.binding.value <= handle.binding.max + 1e-7);
+      const touch = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position, current: handle.position});
+      assert.equal(touch.value, handle.binding.value, 'grabbing a fractional diameter is an identity');
+      const patch = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position,
+        current: [handle.position[0] + movement / handle.binding.valuePerPixel, handle.position[1]]});
+      assert.equal(patch.semanticId, radiusId);
+      const numeric = {...overrides, [radiusId]: patch.value, [priorityId]: 'innerBoundaryRing'};
+      const graphical = {...overrides, [patch.semanticId]: patch.value, [priorityId]: 'innerBoundaryRing'};
+      const next = sceneApi.buildWheelStyleScene({style: styleFor(graphical), geometry: input});
+      assert.deepEqual(next.rings, sceneApi.buildWheelStyleScene({style: styleFor(numeric), geometry: input}).rings);
+      assert.ok(Math.abs(next.elements.find(item => item.classId === 'rings.innerBoundary')
+        .authoringDefaults.radiusPx - patch.value) < 1e-7, `${profile}/${mode}/${reordered}/${maxRadius}/${movement}: the painted diameter must answer the drag (${patch.value} vs ${next.elements.find(item => item.classId === 'rings.innerBoundary').authoringDefaults.radiusPx})`);
+      const nextWidth = next.handles.find(item => item.binding?.semanticId === widthId);
+      assert.ok(Math.abs(nextWidth.binding.value - overrides[widthId]) < 1e-7, 'diameter preserves saved thickness');
+      overrides[radiusId] = patch.value;
+      overrides[priorityId] = 'innerBoundaryRing';
+    }
+  }
+});
+
+test('persisted edit priority keeps paint, scene, and released handles on the same wheel', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const overrides = {
+    'authoring.wheel.anglo.rings.zodiacOuter.radius': 300,
+    'authoring.wheel.anglo.rings.zodiacOuter.radiusAuthored': true,
+    'authoring.wheel.anglo.rings.innerBoundary.radius': 320,
+    'authoring.wheel.anglo.rings.innerBoundary.radiusAuthored': true,
+    'authoring.wheel.anglo.canvas.chart.recipeVersion': 1,
+    'authoring.wheel.anglo.canvas.chart.radiusPriority': 'innerBoundaryRing',
+  };
+  for (const mode of ['single', 'comparison']) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+    for (const ring of composition.rings) if (['terms', 'decans', 'houses'].includes(ring.archetypeId)) ring.enabled = true;
+    const input = geometry('anglo', mode, {composition});
+    const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      authoringOverrides: authoringAdapter.compileFlatWheelAuthoringOverrides(overrides)};
+    const scene = sceneApi.buildWheelStyleScene({style, geometry: input});
+    assert.deepEqual(scene.rings, wheel.resolveWheelRingSet(style, input));
+    if (mode === 'single') {
+      assert.equal(scene.rings.r30, 379);
+      assert.equal(scene.rings.rInner, 320);
+    }
+    const handle = scene.handles.find(item => item.binding?.semanticId === 'authoring.wheel.anglo.rings.innerBoundary.radius');
+    assert.equal(handle.binding.value, scene.rings.rInner, mode);
+    const priorStyle = {...style, authoringOverrides: {...style.authoringOverrides, radiusPriority: {}}};
+    assert.ok(scene.rings.rInner > wheel.resolveWheelRingSet(priorStyle, input).rInner, mode);
+    const touched = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position, current: handle.position});
+    assert.equal(touched.value, handle.binding.value);
+    const reloaded = sceneApi.buildWheelStyleScene({style: {...wheel.DEFAULT_WHEEL_RENDER_STYLE,
+      authoringOverrides: authoringAdapter.compileFlatWheelAuthoringOverrides(JSON.parse(JSON.stringify(overrides)))}, geometry: input});
+    assert.deepEqual(reloaded.rings, scene.rings);
+    assert.equal(reloaded.handles.find(item => item.id === handle.id).binding.value, touched.value);
+  }
+});
+
+test('every composed boundary handle reports its painted circle after width edits', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  for (const profile of ['classic', 'compact', 'anglo', 'houses', 'cusps'])
+  for (const mode of ['single', 'comparison']) {
+    const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts[profile].composition);
+    const a = composition.rings.findIndex(ring => ring.archetypeId === 'bodies');
+    const b = composition.rings.findIndex(ring => ring.archetypeId === 'houses');
+    [composition.rings[a], composition.rings[b]] = [composition.rings[b], composition.rings[a]];
+    const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+      ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides,
+      ringWidths: {[profile]: {[`${profile}-bodies`]: 60}},
+    }};
+    const scene = sceneApi.buildWheelStyleScene({style, geometry: geometry(profile, mode, {composition})});
+    for (const handle of scene.handles.filter(item => item.binding?.semanticId.endsWith('.radius'))) {
+      const element = scene.elements.find(item => item.id === handle.elementId);
+      assert.ok(Math.abs(handle.radius - element.authoringDefaults.radiusPx) < 1e-7,
+        `${profile}/${mode}/${element.classId}: handle must sit on its own painted circle`);
+      assert.ok(handle.binding.value >= handle.binding.min - 1e-7 && handle.binding.value <= handle.binding.max + 1e-7);
+    }
+  }
+});
+
+test('outer-degree handle limits follow the displayed target when its legacy binding changes', async () => {
+  const {WHEEL_FACTORY_SETTINGS, moveWheelRing} = await import(compositionModuleUrl);
+  const composition = structuredClone(WHEEL_FACTORY_SETTINGS.layouts.anglo.composition);
+  for (const ring of composition.rings) if (['terms', 'decans', 'houses'].includes(ring.archetypeId)) ring.enabled = true;
+  const reordered = moveWheelRing(composition, 'anglo-cuspLabels', 'anglo-terms');
+  assert.ok(reordered);
+  for (const maxRadius of [200, 400, 800])
+  for (const [profile, input, previous, target] of [
+    ['anglo', geometry('anglo', 'single', {composition: reordered, maxRadius}), 'degree', 'cuspLabels'],
+    ['anglo', geometry('anglo', 'comparison', {maxRadius}), 'cuspLabels', 'degree'],
+  ]) {
+    const style = {...wheel.DEFAULT_WHEEL_RENDER_STYLE, authoringOverrides: {
+      ...wheel.DEFAULT_WHEEL_RENDER_STYLE.authoringOverrides, outerDegreeBinding: {[profile]: previous},
+    }};
+    const scene = sceneApi.buildWheelStyleScene({style, geometry: input});
+    const handle = scene.handles.find(item => item.binding?.semanticId === `authoring.wheel.${profile}.rings.outerDegree.radius`);
+    assert.ok(handle, `${profile}/${maxRadius}: displayed boundary remains editable`);
+    assert.equal(handle.binding.radiusTarget, target);
+    const range = wheel.resolveWheelPaintedRingRadiusRange({...style,
+      authoringOverrides: {...style.authoringOverrides, outerDegreeBinding: {[profile]: target}}}, input, 'outerDegreeRing');
+    assert.ok(range);
+    assert.ok(Math.abs(handle.binding.min - range.min * 400 / maxRadius) < 1e-8);
+    assert.ok(Math.abs(handle.binding.max - range.max * 400 / maxRadius) < 1e-8);
+    const patch = sceneApi.resolveWheelStyleHandleDrag(handle, {start: handle.position, current: handle.position});
+    assert.equal(patch.radiusTarget, target);
+    assert.equal(patch.value, handle.binding.value);
+  }
+});
+
+test('the existing chart-ring span remains live with a factory composition', async () => {
+  const {WHEEL_FACTORY_SETTINGS} = await import(compositionModuleUrl);
+  const input = geometry('classic', 'single', {composition: WHEEL_FACTORY_SETTINGS.layouts.classic.composition});
+  const scene = sceneApi.buildWheelStyleScene({style: wheel.DEFAULT_WHEEL_RENDER_STYLE, geometry: input});
+  const span = scene.elements.find(element => element.classId === 'canvas.span.chartRing');
+  const handle = span.handles.find(item => item.binding?.property === 'spanScale');
+  assert.ok(handle);
+  const authored = authoringAdapter.compileFlatWheelAuthoringOverrides({[handle.binding.semanticId]: 101});
+  const result = sceneApi.buildWheelStyleScene({style: {...wheel.DEFAULT_WHEEL_RENDER_STYLE,
+    authoringOverrides: authored}, geometry: input});
+  assert.notEqual(result.rings.rInner, scene.rings.rInner);
+});
+
+
+test("subdivision ruler ink follows the shared Colors switch and explicit tokens", () => {
+  const inherited = wheel.resolveWheelRenderStyleFromTokens();
+  const overridden = wheel.resolveWheelRenderStyleFromTokens(key => ({
+    "--aries-wheel-term-glyph-color": "#112233",
+    "--aries-wheel-decan-glyph-color": "#445566",
+  })[key]);
+  for (const [kind, explicit] of [["term", "#112233"], ["decan", "#445566"]]) {
+    for (const rulerColor of ["#ff0000", "#00ff00"]) {
+      assert.equal(wheel.subdivisionGlyphColor(inherited, kind, rulerColor, true), rulerColor);
+      assert.equal(wheel.subdivisionGlyphColor(inherited, kind, rulerColor, false), inherited.palette.signs);
+      for (const enabled of [true, false]) {
+        assert.equal(wheel.subdivisionGlyphColor(overridden, kind, rulerColor, enabled), explicit);
+      }
+    }
   }
 });

@@ -34,6 +34,7 @@ from webapp.daemon.astrolabe_service import (
 )
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.display_palette import (
+    minor_dignity_display_facts,
     chart_body_color_role,
     effective_display_options,
     sign_color_role,
@@ -529,13 +530,14 @@ class AstrologSphereService:
             )
             bodies.append({
                 "id": int(bid),
+                **minor_dignity_display_facts(chrt, bid),
                 "glyph": glyph,
                 "color": color,
                 "colorRole": chart_body_color_role(
                     opts,
                     chrt,
                     bid,
-                    is_fortune=bid == planets.Planets.PLANETS_NUM,
+                    is_fortune=bid == common.CHART_OBJECT_FORTUNE,
                     resolved_color=color,
                 ),
                 "ra": float(ra),
@@ -599,7 +601,7 @@ class AstrologSphereService:
                         opts,
                         chrt,
                         int(pid),
-                        is_fortune=int(pid) == planets.Planets.PLANETS_NUM,
+                        is_fortune=int(pid) == common.CHART_OBJECT_FORTUNE,
                         resolved_color=body_color,
                     ),
                     "lon": lon,
@@ -662,7 +664,7 @@ class AstrologSphereService:
                         opts,
                         chrt,
                         pid,
-                        is_fortune=pid == planets.Planets.PLANETS_NUM,
+                        is_fortune=pid == common.CHART_OBJECT_FORTUNE,
                         resolved_color=body_color,
                     ),
                     "lon": mid,

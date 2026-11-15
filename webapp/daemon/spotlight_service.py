@@ -14,9 +14,11 @@ import localcities
 
 from webapp.daemon.chart_picker_service import chart_picker_service
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.editor_service import editor_service
 from webapp.daemon.workspace_service import workspace_service
 from webapp.frontend.scripts import export_chart_json
 from engine import chart_factory
+from engine.geo_coordinates import parse_coordinate_pair
 
 
 _CHART_ROW_CACHE_SECONDS = 5.0
@@ -64,11 +66,19 @@ class SpotlightService:
             return chart_match
         return self._none()
 
-    def execute(self, text: str, action: str = "default") -> dict[str, Any]:
+    def execute(
+        self,
+        text: str,
+        action: str = "default",
+        chart: Optional[dict[str, Any]] = None,
+        place: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         query = (text or "").strip()
         if not query:
             raise ValueError("spotlight input is empty")
         preview = self.preview(query)
+        if chart is not None and preview.get("kind") != "chart":
+            raise ValueError("spotlight chart selection did not resolve")
         if preview.get("kind") == "synastry":
             if not preview["canConfirm"]:
                 raise ValueError("spotlight input did not resolve")
@@ -84,6 +94,14 @@ class SpotlightService:
             )
         if preview.get("kind") == "chart":
             chart_ref = preview.get("chart") or {}
+            if chart is not None:
+                chart_ref = next((
+                    match["chart"] for match in preview["chartMatches"]
+                    if all(match["chart"].get(key) == chart.get(key)
+                           for key in ("source", "recordIndex", "name"))
+                ), None)
+                if chart_ref is None:
+                    raise ValueError("spotlight chart selection did not resolve")
             return workspace_service.open_document(
                 kind="chart",
                 source_name=str(chart_ref.get("name") or ""),
@@ -94,6 +112,11 @@ class SpotlightService:
         parsed = datetime_parser.parse_spotlight(query)
         if parsed is None:
             raise ValueError("spotlight input did not resolve")
+        if place is not None:
+            if not parsed.location_query:
+                raise ValueError("spotlight location did not match the query")
+            if parse_coordinate_pair(parsed.location_query, spotlight=True) is not None:
+                place = None
         actions = self._action_specs(parsed)
         action_id = (action or "default").strip()
         if action_id == "default":
@@ -102,7 +125,10 @@ class SpotlightService:
             current_dt = self._current_merge_anchor(parsed)
             location_context = None
             if parsed.location_query:
-                location_context = self._location_context(parsed.location_query, current_dt)
+                location_context = (
+                    self._geocoded_location_context(parsed.location_query, place, current_dt)
+                    if place is not None else self._location_context(parsed.location_query, current_dt)
+                )
                 if location_context is None:
                     raise ValueError("spotlight location did not resolve")
             parsed_payload = self._serialize_parsed(parsed)
@@ -117,7 +143,10 @@ class SpotlightService:
         dt = self._datetime_from_parsed(parsed)
         if dt is None:
             raise ValueError("spotlight input needs a date or time")
-        location_context = self._effective_location_context(parsed, dt)
+        location_context = (
+            self._geocoded_location_context(parsed.location_query, place, dt)
+            if place is not None else self._effective_location_context(parsed, dt)
+        )
         if action_id == "radix":
             return self._open_radix(dt, location_context)
         if action_id == "horary":
@@ -143,7 +172,9 @@ class SpotlightService:
     def _datetime_preview(self, parsed: datetime_parser.ParsedDateTime) -> dict[str, Any]:
         has_temporal = self._parsed_has_temporal(parsed)
         primary = parsed.format() if has_temporal else ""
-        location_label = self._preview_location_label(parsed.location_query)
+        coordinates = parse_coordinate_pair(parsed.location_query, spotlight=True)
+        needs_exact_place_search = coordinates is None and self._needs_exact_place_search(parsed.location_query)
+        location_label = parsed.location_query if coordinates is not None else self._preview_location_label(parsed.location_query)
         if not primary:
             primary = location_label or parsed.location_query.strip()
             secondary = ""
@@ -160,6 +191,7 @@ class SpotlightService:
             "kind": "datetime",
             "primary": primary,
             "secondary": secondary,
+            "searchExactPlaceName": needs_exact_place_search,
             "parsed": self._serialize_parsed(parsed),
             "actions": actions,
             "defaultAction": default_action,
@@ -212,29 +244,34 @@ class SpotlightService:
         if not candidates:
             return None
 
-        _rank, _name_len, _name_key, row = min(
-            candidates,
-            key=lambda item: (item[0], item[1], item[2]),
-        )
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        matches = [self._chart_match(row) for _rank, _length, _key, row in candidates]
+        return {
+            "kind": "chart",
+            **matches[0],
+            "chartMatches": matches,
+            "parsed": None,
+            "actions": [],
+            "defaultAction": "open-chart",
+            "canConfirm": True,
+        }
+
+    @staticmethod
+    def _chart_match(row: dict[str, Any]) -> dict[str, Any]:
         date = str(row.get("date") or "").strip()
         chart_time = str(row.get("time") or "").strip()
         primary_meta = " ".join(part for part in (date, chart_time) if part).strip()
         name = str(row.get("name") or "").strip()
         primary = f"{name} - {primary_meta}" if primary_meta else name
         return {
-            "kind": "chart",
             "primary": primary,
             "secondary": str(row.get("collection") or "").strip(),
-            "parsed": None,
             "chart": {
                 "source": str(row.get("source") or ""),
                 "recordIndex": row.get("recordIndex"),
                 "name": name,
                 "collection": str(row.get("collection") or "").strip(),
             },
-            "actions": [],
-            "defaultAction": "open-chart",
-            "canConfirm": True,
         }
 
     def _chart_rows_for_preview(self) -> list[dict[str, Any]]:
@@ -373,6 +410,10 @@ class SpotlightService:
         query = (query or "").strip()
         if not query:
             return None
+        coordinates = parse_coordinate_pair(query, spotlight=True)
+        if coordinates is not None:
+            candidate = editor_service.coordinate_place(query, coordinates)
+            return self._candidate_location_context(query, candidate, dt)
         display_query, state_hint, hit, queries = self._resolve_location_hit(query)
         if hit is None:
             for candidate_query in queries:
@@ -392,7 +433,56 @@ class SpotlightService:
         altitude = int(altitude) if altitude not in (None, "") else int(
             chart_snapshot_service.options.deflocalt
         )
+        return self._point_location_context(label, lon, lat, altitude, dt)
+
+    def _geocoded_location_context(
+        self,
+        query: str,
+        place: dict[str, Any],
+        dt: datetime_parser.ResolvedCivilDateTime,
+    ) -> dict[str, Any]:
+        name = str(place.get("name") or "").strip()
+        if localcities.normalize_text(name) != localcities.normalize_text(query):
+            raise ValueError("spotlight location did not match the query")
+        lon = float(place["lon"])
+        lat = float(place["lat"])
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise ValueError("spotlight location coordinates are invalid")
+        return self._candidate_location_context(name, editor_service.place_at(lon, lat, name), dt)
+
+    def _candidate_location_context(
+        self,
+        name: str,
+        candidate: dict[str, Any],
+        dt: datetime_parser.ResolvedCivilDateTime,
+    ) -> dict[str, Any]:
+        place_obj = export_chart_json.chart_mod.Place(
+            name,
+            candidate["lonDeg"], candidate["lonMin"], candidate["lonSec"], candidate["east"],
+            candidate["latDeg"], candidate["latMin"], candidate["latSec"], candidate["north"],
+            candidate["altitude"],
+        )
+        if candidate.get("isCoordinate"):
+            place_obj.lon, place_obj.lat = candidate["lon"], candidate["lat"]
+        return self._place_location_context(place_obj, dt, candidate.get("tzid") or "")
+
+    def _point_location_context(
+        self,
+        label: str,
+        lon: float,
+        lat: float,
+        altitude: int,
+        dt: datetime_parser.ResolvedCivilDateTime,
+    ) -> dict[str, Any]:
         place = self._place_from_coords(label, lon, lat, altitude)
+        return self._place_location_context(place, dt)
+
+    @staticmethod
+    def _place_location_context(
+        place,
+        dt: datetime_parser.ResolvedCivilDateTime,
+        tzid: str = "",
+    ) -> dict[str, Any]:
         zone_info = geonames.Geonames.resolve_zone_fields(
             dt.year,
             dt.month,
@@ -401,7 +491,7 @@ class SpotlightService:
             dt.minute,
             dt.second,
             place,
-            "",
+            tzid,
         )
         opts = chart_snapshot_service.options
         return {
@@ -538,12 +628,19 @@ class SpotlightService:
         if active is None or not self._can_update_current_chart(parsed):
             return False
         try:
+            if active.get("launcherKind") in ("astrolabe", "ephemeris"):
+                return bool(workspace_service.spotlight_current_supported(
+                    temporal=self._parsed_has_temporal(parsed) and not parsed.location_query,
+                ))
             return bool(workspace_service.spotlight_current_supported())
         except Exception:
             return False
 
     @staticmethod
     def _can_update_current_chart(parsed: datetime_parser.ParsedDateTime) -> bool:
+        # A complete datetime creates a new chart, even when a place is supplied.
+        if parsed.has_date and parsed.has_time:
+            return False
         return bool(parsed.location_query or SpotlightService._has_partial_datetime(parsed))
 
     @staticmethod
@@ -644,6 +741,19 @@ class SpotlightService:
         if hit is None:
             return display_query
         return self._location_label(hit, display_query=display_query, state_hint=state_hint)
+
+    def _needs_exact_place_search(self, query: str) -> bool:
+        normalized = localcities.normalize_text(query)
+        if len(normalized) < 3:
+            return False
+        _, _, hit, _ = self._resolve_location_hit(query)
+        if hit is None:
+            return True
+        name = str(hit[geonames.Geonames.NAME] or "")
+        admin_name = str(hit[geonames.Geonames.ADMIN1NAME] or "") if len(hit) > geonames.Geonames.ADMIN1NAME else ""
+        admin_code = str(hit[geonames.Geonames.ADMIN1CODE] or "") if len(hit) > geonames.Geonames.ADMIN1CODE else ""
+        canonical_names = (name, f"{name} {admin_name}", f"{name} {admin_code}")
+        return not any(localcities.normalize_text(candidate) == normalized for candidate in canonical_names)
 
     @staticmethod
     def _normalize_query(value: str) -> str:

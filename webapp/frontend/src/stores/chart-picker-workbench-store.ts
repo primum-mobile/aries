@@ -24,7 +24,7 @@ type SessionState = {
 };
 
 const defaults: ChartPickerWorkbenchState = {
-  view: "list", filter: "", listSort: { column: "lastOpened", ascending: false },
+  view: "list", listSort: { column: "lastOpened", ascending: false },
   collectionPaths: null, collectionDrawerOpen: false,
   stationWindowDays: "2", includeAsteroids: false,
   placements: [{ objectIds: [], signIndices: [], degree: "", degreeOrb: "1", houseNumbers: [], motion: "" }],

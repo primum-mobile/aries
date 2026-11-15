@@ -10,28 +10,76 @@ import tempfile
 import uuid
 from pathlib import Path
 
+import pd_point_selection
+
 from .file_transaction import exclusive_file_transaction
 
 _READ_ONLY = {'pddefaultdirection', 'pdkeycoeff', 'pdFixStarCatalog',
-              'pdFixStarMaxSelected', 'arabicPartNames', 'userPresets'}
+              'pdFixStarMaxSelected', 'arabicPartNames', 'pdAsteroidCatalog', 'userPresets'}
 
 
 def snapshot(settings: dict, opts) -> dict:
+    """A preset: the PD settings plus the chart's node and Moon parallax
+    correction, which the PD engine directs and a preset overrides."""
     fields = {k: copy.deepcopy(v) for k, v in settings.items() if k not in _READ_ONLY}
     selection = fields.pop('pdfixstarssel', [])
     return {
         'primaryDirections': fields,
         'planetsPoints': {'meannode': bool(opts.meannode)},
+        'display': {'topocentric': bool(opts.topocentric)},
         'fixedStarCodes': sorted(code for i, code in enumerate(opts.fixstars)
                                  if i < len(selection) and selection[i]),
     }
 
 
+def migrate_snapshot(saved: dict) -> dict:
+    """The current shape of a stored preset.
+
+    A preset saved while the PD engine had its own node and Moon parallax
+    (``pdmeannode``, ``pdmoonparallax``) carries them as the chart's node and
+    Moon parallax correction.  An older preset without a parallax entry
+    leaves the chart's setting alone.
+    """
+    migrated = copy.deepcopy(saved)
+    fields = migrated.setdefault('primaryDirections', {})
+    node = fields.pop('pdmeannode', None)
+    parallax = fields.pop('pdmoonparallax', None)
+    if node is not None:
+        migrated.setdefault('planetsPoints', {}).setdefault('meannode', bool(node))
+    if parallax is not None:
+        migrated.setdefault('display', {}).setdefault('topocentric', bool(parallax))
+    return migrated
+
+
+def _matches(saved: dict, current: dict) -> bool:
+    """Whether the current settings are the preset's (global groups the preset
+    does not store are not compared)."""
+    saved = migrate_snapshot(saved)
+    shown = {key: value for key, value in current.items()
+             if key not in _GLOBAL_GROUPS or key in saved}
+    return saved == shown
+
+
+_GLOBAL_GROUPS = ('planetsPoints', 'display')
+
+
 def options_patch(saved: dict, opts) -> dict:
+    saved = migrate_snapshot(saved)
     fields = copy.deepcopy(saved['primaryDirections'])
+    # Old snapshots predate multi-selection; keep their original point scope.
+    for fields_for_role in pd_point_selection.ROLE_FIELDS.values():
+        if fields_for_role['partsEnabled'] not in fields:
+            continue
+        fields.setdefault(fields_for_role['asteroidsEnabled'], False)
+        fields.setdefault(fields_for_role['asteroidNumbers'], [])
+        fields.setdefault(fields_for_role['partNames'], None)
     codes = set(saved['fixedStarCodes'])
     fields['pdfixstarssel'] = [code in codes for code in opts.fixstars]
-    return {'primaryDirections': fields, 'planetsPoints': copy.deepcopy(saved['planetsPoints'])}
+    patch = {'primaryDirections': fields}
+    for group in _GLOBAL_GROUPS:
+        if group in saved:
+            patch[group] = copy.deepcopy(saved[group])
+    return patch
 
 
 class PrimaryDirectionPresetStore:
@@ -48,12 +96,13 @@ class PrimaryDirectionPresetStore:
             raise ValueError('Invalid primary-direction preset store')
         return data
 
-    def state(self, current: dict) -> dict:
+    def state(self, current: dict, opts=None) -> dict:
         selected = next((p for p in self._data['presets'] if p['id'] == self._data['selectedId']), None)
         return {
             'revision': self._data['revision'],
             'selectedId': selected['id'] if selected else None,
-            'dirty': bool(selected and selected['snapshot'] != current),
+            'dirty': bool(selected and not _matches(selected['snapshot'], current)),
+            'resetSettings': options_patch(selected['snapshot'], opts)['primaryDirections'] if selected and opts is not None else None,
             'presets': [{'id': p['id'], 'name': p['name']} for p in self._data['presets']],
         }
 

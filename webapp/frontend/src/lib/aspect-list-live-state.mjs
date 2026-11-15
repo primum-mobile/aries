@@ -290,6 +290,8 @@ const STABLE_UNAVAILABLE_PERFECTION_REASONS = new Set([
   "missing-trajectory-builder",
   "unsupported-endpoint-motion",
   "no-relative-motion",
+  // Ascensional-view rows list wheel contacts, which have no perfection search.
+  "ascensional-contact",
 ]);
 
 export function shouldDeferAspectListRefresh({

@@ -95,7 +95,7 @@ def _load_fixstars_cat():
         if not os.path.isfile(path):
             continue
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 is_sef = os.path.basename(path).lower().startswith('sefstars')
                 for line in f:
                     s = line.strip()

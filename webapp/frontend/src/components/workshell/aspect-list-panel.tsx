@@ -3,10 +3,13 @@
 
 "use client";
 
+import { TablePrecisionChoices, useTablePrecision } from "./table-precision-menu";
+import { formatTableDegrees } from "@/lib/table/angle-precision";
 import * as React from "react";
 import { Clipboard, RefreshCw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ListPaneSplit } from "./list-pane-split";
 import type { SplitAspectSelection } from "@/lib/chart/types";
 import { SideBySideAspectSources } from "./side-by-side-aspect-sources";
 import { AspectListExport } from "./aspect-list-export";
@@ -52,6 +55,7 @@ import {
 } from "@/lib/aspect-list-live-state.mjs";
 import {
   defaultAspectListSecondaryRingIncluded,
+  isAspectListAspectClassIncluded,
   isAspectListPhaseIncluded,
   isAspectListRowIncluded,
   isAspectListInclusionFilterId,
@@ -104,6 +108,17 @@ import {
 const CACHE_NAMESPACE = "aspect-list";
 const DEFAULT_MAX_ORB = 10;
 const ORB_OPTIONS = [1, 2, 3, 5, 7, 10, 15] as const;
+// Ascensional (mundane) contacts are minutes of arc wide; the daemon calculates
+// them out to the widest choice (ascensional_scene.LIST_MAX_ORB_ARCMIN).
+const DEFAULT_ASCENSIONAL_MAX_ORB_ARCMIN = 25;
+const ASCENSIONAL_ORB_OPTIONS_ARCMIN = [5, 10, 15, 25, 40, 60, 90] as const;
+
+function formatArcminOrb(arcmin: number): string {
+  const degrees = Math.floor(arcmin / 60);
+  const minutes = arcmin % 60;
+  if (degrees === 0) return `${minutes}′`;
+  return minutes === 0 ? `${degrees}°` : `${degrees}°${minutes}′`;
+}
 const OVERSCAN_ROWS = 8;
 const EMPTY_FILTER_IDS: readonly string[] = Object.freeze([]);
 const EMPTY_ROW_ID_SET: ReadonlySet<string> = new Set<string>();
@@ -476,12 +491,17 @@ function AspectListFilterDrawer({
   activeSecondaryRing,
   includeActiveSecondaryRing,
   includeHouseCusps,
+  includeMinorAspects,
+  includeDeclination,
+  aspectFamilies,
   onToggleFocus,
   onFocusMatchModeChange,
   onToggleRxFocus,
   onClearFocus,
   onToggleSecondaryRing,
   onToggleHouseCusps,
+  onToggleMinorAspects,
+  onToggleDeclination,
 }: {
   items: AspectListFilter[];
   focusedIds: ReadonlySet<string>;
@@ -490,12 +510,17 @@ function AspectListFilterDrawer({
   activeSecondaryRing: AspectListPayload["activeSecondaryRing"];
   includeActiveSecondaryRing: boolean;
   includeHouseCusps: boolean;
+  includeMinorAspects: boolean;
+  includeDeclination: boolean;
+  aspectFamilies: readonly ("minor" | "declination")[];
   onToggleFocus: (id: string) => void;
   onFocusMatchModeChange: (mode: "or" | "and") => void;
   onToggleRxFocus: () => void;
   onClearFocus: () => void;
   onToggleSecondaryRing: () => void;
   onToggleHouseCusps: () => void;
+  onToggleMinorAspects: () => void;
+  onToggleDeclination: () => void;
 }) {
   const t = useT();
   const focusItems = items.filter(
@@ -504,7 +529,7 @@ function AspectListFilterDrawer({
   const hasHouseCusps = items.some((item) => item.id === "house-cusps");
   const canUseAnd = focusedIds.size >= 2;
   return (
-    <div className="w-full max-h-48 overflow-auto border-t border-border/70 pt-2">
+    <div className="w-full">
       <div className="flex flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
@@ -568,37 +593,63 @@ function AspectListFilterDrawer({
             </Button>
           </div>
         </div>
-        {hasHouseCusps || activeSecondaryRing ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
-              {t("aspectList.include")}
-            </span>
-            {hasHouseCusps ? (
-              <Button
-                type="button"
-                size="xs"
-                variant={includeHouseCusps ? "default" : "outline"}
-                aria-pressed={includeHouseCusps}
-                onClick={onToggleHouseCusps}
-                className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-              >
-                {t("styleLab.variant.cusps")}
-              </Button>
-            ) : null}
-            {activeSecondaryRing ? (
-              <Button
-                type="button"
-                size="xs"
-                variant={includeActiveSecondaryRing ? "default" : "outline"}
-                aria-pressed={includeActiveSecondaryRing}
-                onClick={onToggleSecondaryRing}
-                className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
-              >
-                <span className="truncate">{activeSecondaryRing.label}</span>
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Minor and declination rows are always calculated; like Cusps,
+            these pills only project the retained rows. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="mr-1 min-w-14 text-[length:var(--aries-font-size-section)] text-muted-foreground">
+            {t("aspectList.include")}
+          </span>
+          {hasHouseCusps ? (
+            <Button
+              type="button"
+              size="xs"
+              variant={includeHouseCusps ? "default" : "outline"}
+              aria-pressed={includeHouseCusps}
+              onClick={onToggleHouseCusps}
+              className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+            >
+              {t("styleLab.variant.cusps")}
+            </Button>
+          ) : null}
+          {aspectFamilies.includes("minor") ? (
+            <Button
+              type="button"
+              size="xs"
+              variant={includeMinorAspects ? "default" : "outline"}
+              aria-pressed={includeMinorAspects}
+              title={t("aspectList.includeMinorTitle")}
+              onClick={onToggleMinorAspects}
+              className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+            >
+              {t("aspectList.includeMinor")}
+            </Button>
+          ) : null}
+          {aspectFamilies.includes("declination") ? (
+            <Button
+              type="button"
+              size="xs"
+              variant={includeDeclination ? "default" : "outline"}
+              aria-pressed={includeDeclination}
+              title={t("aspectList.includeDeclinationTitle")}
+              onClick={onToggleDeclination}
+              className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+            >
+              {t("aspectList.includeDeclination")}
+            </Button>
+          ) : null}
+          {activeSecondaryRing ? (
+            <Button
+              type="button"
+              size="xs"
+              variant={includeActiveSecondaryRing ? "default" : "outline"}
+              aria-pressed={includeActiveSecondaryRing}
+              onClick={onToggleSecondaryRing}
+              className="h-6 max-w-44 justify-start gap-1 px-2 text-[length:var(--aries-font-size-small)]"
+            >
+              <span className="truncate">{activeSecondaryRing.label}</span>
+            </Button>
+          ) : null}
+        </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span aria-hidden className="mr-1 min-w-14" />
           {focusItems.map((item) => (
@@ -698,6 +749,8 @@ function AspectListRowContextMenu({
             <Clipboard className="size-[var(--aries-control-icon-size)]" />
             {t("tlview.copyTimeDate")}
           </ContextMenuItem>
+          <ContextMenuSeparator />
+          <TablePrecisionChoices />
         </ContextMenuContent>
       ) : null}
     </ContextMenu>
@@ -764,7 +817,9 @@ export function AspectListPanel({
   const selectedMode =
     selectedModeByContext[modeContextKey] ??
     (aspectListDefaultMode(comparisonVisible) as AspectListMode | null);
-  const maxOrb = preferences?.maxOrb ?? DEFAULT_MAX_ORB;
+  const eclipticMaxOrb = preferences?.maxOrb ?? DEFAULT_MAX_ORB;
+  const ascensionalMaxOrbArcmin =
+    preferences?.ascensionalMaxOrbArcmin ?? DEFAULT_ASCENSIONAL_MAX_ORB_ARCMIN;
   const sortBy = preferences?.sortBy ?? "orb";
   const sortDirection = preferences?.sortDirection ?? "asc";
   const phaseFilter = preferences?.phaseFilter ?? "both";
@@ -883,6 +938,12 @@ export function AspectListPanel({
     ],
   );
   const payload = payloadState?.payload ?? null;
+  const ascensionalOrbScale = payload?.orbScale === "ascensional";
+  /** Effective row orb limit in degrees for whichever scale this view uses. */
+  const maxOrb = ascensionalOrbScale ? ascensionalMaxOrbArcmin / 60 : eclipticMaxOrb;
+  const maxOrbLabel = ascensionalOrbScale
+    ? formatArcminOrb(ascensionalMaxOrbArcmin)
+    : `${eclipticMaxOrb}°`;
   const payloadStateRef = React.useRef(payloadState);
   React.useLayoutEffect(() => {
     payloadStateRef.current = payloadState;
@@ -1049,13 +1110,9 @@ export function AspectListPanel({
     });
 
     const load = async () => {
-      let next: AspectListPayload;
-      try {
-        next = await fetchAspectList(documentId, requestedMode, controller.signal);
-      } catch (firstError) {
-        if (controller.signal.aborted || !requestedMode) throw firstError;
-        next = await fetchAspectList(documentId, null, controller.signal);
-      }
+      // A failed comparison request must not populate its retained world with
+      // singleton rows. The visible wheel already resolves compatible modes.
+      const next = await fetchAspectList(documentId, requestedMode, controller.signal);
       if (controller.signal.aborted || requestSeq !== requestSeqRef.current) return;
       const canonicalWorldIdentity = aspectListRetainedWorldIdentity({
         documentId,
@@ -1283,6 +1340,8 @@ export function AspectListPanel({
       )
     : false;
   const includeHouseCusps = preferences?.includeHouseCusps ?? true;
+  const includeMinorAspects = preferences?.includeMinorAspects ?? false;
+  const includeDeclination = preferences?.includeDeclination ?? false;
   const displayRows = React.useMemo(
     () =>
       filterRetainedRowsByHiddenIds(
@@ -1297,6 +1356,11 @@ export function AspectListPanel({
       displayRows.filter(
         (row) =>
           row.orb <= maxOrb &&
+          isAspectListAspectClassIncluded(
+            row.aspect.class,
+            includeMinorAspects,
+            includeDeclination,
+          ) &&
           isAspectListPhaseIncluded(row.phase, phaseFilter) &&
           isAspectListRowIncluded(
             row.filterIds,
@@ -1315,7 +1379,9 @@ export function AspectListPanel({
       displayRows,
       effectiveFocusedFilterIdSet,
       includeActiveSecondaryRing,
+      includeDeclination,
       includeHouseCusps,
+      includeMinorAspects,
       maxOrb,
       phaseFilter,
       rxFocusEnabled,
@@ -1692,7 +1758,13 @@ export function AspectListPanel({
             </Button>
             <h2 className={LIST_PANE_CLASSES.title}>{t("aspectList.title")}</h2>
           </div>
-          <span className={LIST_PANE_CLASSES.metadata} aria-live="polite">
+          <span
+            className={cn("min-w-0 flex-1 truncate", LIST_PANE_CLASSES.metadata)}
+            aria-live="polite"
+            title={loading && payload
+              ? t("aspectList.refreshing")
+              : t("aspectList.count", { count: rows.length })}
+          >
             {loading && payload
               ? t("aspectList.refreshing")
               : t("aspectList.count", { count: rows.length })}
@@ -1703,7 +1775,7 @@ export function AspectListPanel({
             retainedPerfectionByRow={retainedPerfectionByRow}
             modeLabel={modeOptions.find((option) => option.id === activeMode)?.label ?? t("aspectList.title")}
             sourceName={sourceName}
-            maxOrb={maxOrb}
+            maxOrbLabel={maxOrbLabel}
             disabled={!payload || !payloadIsCurrent || loading}
           />
         </div>
@@ -1726,17 +1798,33 @@ export function AspectListPanel({
           </label>
           <label className={LIST_PANE_CLASSES.labeledControl}>
             <span className={LIST_PANE_CLASSES.controlLabel}>{t("aspectList.maximumOrb")}</span>
-            <PaneSelect
-              value={maxOrb}
-              onChange={(event) =>
-                setPreferences(preferencesDocumentId, { maxOrb: Number(event.target.value) })
-              }
-              aria-label={t("aspectList.maximumOrb")}
-            >
-              {ORB_OPTIONS.map((orb) => (
-                <option key={orb} value={orb}>{orb}°</option>
-              ))}
-            </PaneSelect>
+            {ascensionalOrbScale ? (
+              <PaneSelect
+                value={ascensionalMaxOrbArcmin}
+                onChange={(event) =>
+                  setPreferences(preferencesDocumentId, {
+                    ascensionalMaxOrbArcmin: Number(event.target.value),
+                  })
+                }
+                aria-label={t("aspectList.maximumOrb")}
+              >
+                {ASCENSIONAL_ORB_OPTIONS_ARCMIN.map((orb) => (
+                  <option key={orb} value={orb}>{formatArcminOrb(orb)}</option>
+                ))}
+              </PaneSelect>
+            ) : (
+              <PaneSelect
+                value={eclipticMaxOrb}
+                onChange={(event) =>
+                  setPreferences(preferencesDocumentId, { maxOrb: Number(event.target.value) })
+                }
+                aria-label={t("aspectList.maximumOrb")}
+              >
+                {ORB_OPTIONS.map((orb) => (
+                  <option key={orb} value={orb}>{orb}°</option>
+                ))}
+              </PaneSelect>
+            )}
           </label>
           <ListSegmentedControl
             label={t("aspectList.phaseFilter")}
@@ -1757,7 +1845,12 @@ export function AspectListPanel({
             {t("aspectList.filter")}
           </Button>
         </div>
-        {filterDrawerOpen ? (
+      </div>
+      <ListPaneSplit
+        autoSaveId="aries.aspect-list-filters-vs-results"
+        label={t("aspectList.filter")}
+        onCloseControls={() => setPreferences(preferencesDocumentId, { filterDrawerOpen: false })}
+        controls={filterDrawerOpen ? (
           <AspectListFilterDrawer
             items={visibleFilterItems}
             focusedIds={effectiveFocusedFilterIdSet}
@@ -1766,6 +1859,9 @@ export function AspectListPanel({
             activeSecondaryRing={activeSecondaryRing}
             includeActiveSecondaryRing={includeActiveSecondaryRing}
             includeHouseCusps={includeHouseCusps}
+            includeMinorAspects={includeMinorAspects}
+            includeDeclination={includeDeclination}
+            aspectFamilies={payload?.aspectFamilies ?? []}
             onToggleFocus={toggleFocus}
             onFocusMatchModeChange={setFocusMatchMode}
             onToggleRxFocus={toggleRxFocus}
@@ -1784,59 +1880,70 @@ export function AspectListPanel({
                 includeHouseCusps: !includeHouseCusps,
               })
             }
+            onToggleMinorAspects={() =>
+              setPreferences(preferencesDocumentId, {
+                includeMinorAspects: !includeMinorAspects,
+              })
+            }
+            onToggleDeclination={() =>
+              setPreferences(preferencesDocumentId, {
+                includeDeclination: !includeDeclination,
+              })
+            }
           />
         ) : null}
-      </div>
-      {error && payload ? (
-        <div className={cn(LIST_PANE_CLASSES.error, "flex shrink-0 items-center gap-2 border-b border-border py-2")}>
-          <span className="min-w-0 flex-1 truncate">{t("aspectList.failed")}</span>
-          <Button
-            type="button"
-            {...LIST_BUTTON_PROPS.command}
-            onClick={() => {
-              forgetListPayload(CACHE_NAMESPACE, retainedWorldIdentity);
-              setLoading(true);
-              setError(null);
-              setRetrySeq((value) => value + 1);
-            }}
-          >
-            <RefreshCw />
-            {t("aspectList.retry")}
-          </Button>
-        </div>
-      ) : null}
-      {perfectionError ? (
-        <div className="shrink-0 border-b border-[color:var(--aries-border-subtle)] px-[var(--aries-pane-header-padding-x)] py-1.5 text-[length:var(--aries-font-size-small)] text-destructive">
-          {t("aspectList.perfectionFailed")}
-        </div>
-      ) : null}
-      {!payload ? (
-        <div className={error ? LIST_PANE_CLASSES.error : LIST_PANE_CLASSES.loading}>
-          {error ? t("aspectList.failed") : t("aspectList.loading")}
-        </div>
-      ) : (
-        <AspectListTable
-          rows={rows}
-          rowKeys={rowKeys}
-          maxOrb={maxOrb}
-          sortBy={sortBy}
-          sortDirection={sortDirection}
-          onSort={onSort}
-          perfectionByRow={perfectionByRow}
-          retainedPerfectionByRow={retainedPerfectionByRow}
-          pendingPerfectionRowIds={pendingPerfectionRowIds}
-          failedPerfectionRowIds={failedPerfectionRowIds}
-          perfectionsActive={payloadIsCurrent}
-          onVisibleRowsChange={onVisiblePerfectionRowsChange}
-          openingRowId={openingRowId}
-          actionsEnabled={payloadIsCurrent && !loading}
-          onOpenPerfection={onOpenPerfection}
-          perfectionLinkMode={perfectionLinkMode}
-          worldIdentity={displayedWorldIdentity}
-          initialScrollTop={displayedWorldScrollTop}
-          onScrollTopChange={rememberDisplayedWorldScrollTop}
-        />
-      )}
+      >
+        {error && payload ? (
+          <div className={cn(LIST_PANE_CLASSES.error, "flex shrink-0 items-center gap-2 border-b border-border py-2")}>
+            <span className="min-w-0 flex-1 truncate">{t("aspectList.failed")}</span>
+            <Button
+              type="button"
+              {...LIST_BUTTON_PROPS.command}
+              onClick={() => {
+                forgetListPayload(CACHE_NAMESPACE, retainedWorldIdentity);
+                setLoading(true);
+                setError(null);
+                setRetrySeq((value) => value + 1);
+              }}
+            >
+              <RefreshCw />
+              {t("aspectList.retry")}
+            </Button>
+          </div>
+        ) : null}
+        {perfectionError ? (
+          <div className="shrink-0 border-b border-[color:var(--aries-border-subtle)] px-[var(--aries-pane-header-padding-x)] py-1.5 text-[length:var(--aries-font-size-small)] text-destructive">
+            {t("aspectList.perfectionFailed")}
+          </div>
+        ) : null}
+        {!payload ? (
+          <div className={error ? LIST_PANE_CLASSES.error : LIST_PANE_CLASSES.loading}>
+            {error ? t("aspectList.failed") : t("aspectList.loading")}
+          </div>
+        ) : (
+          <AspectListTable
+            rows={rows}
+            rowKeys={rowKeys}
+            maxOrbLabel={maxOrbLabel}
+            sortBy={sortBy}
+            sortDirection={sortDirection}
+            onSort={onSort}
+            perfectionByRow={perfectionByRow}
+            retainedPerfectionByRow={retainedPerfectionByRow}
+            pendingPerfectionRowIds={pendingPerfectionRowIds}
+            failedPerfectionRowIds={failedPerfectionRowIds}
+            perfectionsActive={payloadIsCurrent}
+            onVisibleRowsChange={onVisiblePerfectionRowsChange}
+            openingRowId={openingRowId}
+            actionsEnabled={payloadIsCurrent && !loading}
+            onOpenPerfection={onOpenPerfection}
+            perfectionLinkMode={perfectionLinkMode}
+            worldIdentity={displayedWorldIdentity}
+            initialScrollTop={displayedWorldScrollTop}
+            onScrollTopChange={rememberDisplayedWorldScrollTop}
+          />
+        )}
+      </ListPaneSplit>
     </div>
   );
 }
@@ -1844,7 +1951,7 @@ export function AspectListPanel({
 const AspectListTable = React.memo(function AspectListTable({
   rows,
   rowKeys,
-  maxOrb,
+  maxOrbLabel,
   sortBy,
   sortDirection,
   onSort,
@@ -1864,7 +1971,7 @@ const AspectListTable = React.memo(function AspectListTable({
 }: {
   rows: AspectListRow[];
   rowKeys: string[];
-  maxOrb: number;
+  maxOrbLabel: string;
   sortBy: AspectListSort;
   sortDirection: SortDirection;
   onSort: (sort: AspectListSort) => void;
@@ -1883,6 +1990,7 @@ const AspectListTable = React.memo(function AspectListTable({
   onScrollTopChange: (scrollTop: number) => void;
 }) {
   const t = useT();
+  const precision = useTablePrecision();
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const rowHeight = useListRowHeight("symbolic");
   const [viewport, setViewport] = React.useState<{
@@ -2081,7 +2189,7 @@ const AspectListTable = React.memo(function AspectListTable({
                   </SidebarListCell>
                   <SidebarListCell className="text-right tabular-nums">
                     <span className="inline-flex items-baseline justify-end gap-[var(--aries-control-gap-compact)]">
-                      <span>{row.orbFormatted}</span>
+                      <span title={formatTableDegrees(row.orb, "seconds")}>{formatTableDegrees(row.orb, precision)}</span>
                       {compactPhase ? (
                         <span className="aries-list-secondary-text" title={phase}>
                           {compactPhase}
@@ -2155,7 +2263,7 @@ const AspectListTable = React.memo(function AspectListTable({
           {rows.length === 0 ? (
             <SidebarListRow>
               <SidebarListCell colSpan={4} className="py-[var(--aries-pane-state-padding)] text-center text-[color:var(--aries-text-muted)]">
-                {t("aspectList.empty", { orb: maxOrb })}
+                {t("aspectList.empty", { orb: maxOrbLabel })}
               </SidebarListCell>
             </SidebarListRow>
           ) : null}

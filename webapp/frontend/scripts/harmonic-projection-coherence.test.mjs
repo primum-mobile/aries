@@ -106,7 +106,7 @@ test("harmonic stepping waits on the document command barrier and rejects obsole
   );
   assert.match(
     homeClient,
-    /const startNavigationRequest = \(\) => \{[\s\S]*workspaceNavigateKey\(targetDocId/,
+    /const startNavigationRequest = \(\) => \{[\s\S]*workspaceNavigateKey\(\s*targetDocId/,
   );
   assert.match(
     homeClient,

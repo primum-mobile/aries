@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections import defaultdict
 import inspect
 import math
@@ -10,6 +12,7 @@ import sys
 import time
 
 import astrology
+import platform_compat
 
 from aries.astrology.ephemeris_context import EphemerisContext, resolve_ephemeris_context
 
@@ -37,6 +40,32 @@ _NATIVE_CONTEXT_PARAMETERS = frozenset(("sidereal_mode", "topocentric_position",
 # Match the kernel's native Swiss lock slice so the Python context lock never
 # widens an already-bounded native span back into one whole Search request.
 _NATIVE_CONTEXT_SPAN_DAYS = 14.0
+
+
+class TransitSearchCancelled(Exception):
+	"""Cooperative cancellation of a Search-owned calculation."""
+
+
+_search_cancellation = ContextVar("transit_search_cancellation", default=None)
+
+
+@contextmanager
+def search_cancellation_scope(should_cancel):
+	token = _search_cancellation.set(should_cancel)
+	try:
+		yield
+	finally:
+		_search_cancellation.reset(token)
+
+
+def search_is_cancelled():
+	callback = _search_cancellation.get()
+	return callback is not None and callback()
+
+
+def check_search_cancellation():
+	if search_is_cancelled():
+		raise TransitSearchCancelled()
 
 
 def _native_backend_compatibility_error(kernel) -> str | None:
@@ -80,10 +109,6 @@ def _backend(context: EphemerisContext | None = None):
 	return _kernel
 
 
-class _JumpSearchFallback(RuntimeError):
-	pass
-
-
 def _resolve_context(
 	context: EphemerisContext | None,
 	*,
@@ -95,7 +120,7 @@ def _resolve_context(
 
 def _backend_context_kwargs(context: EphemerisContext) -> dict:
 	return {
-		"ephe_path": context.ephe_path,
+		"ephe_path": platform_compat.native_library_path(context.ephe_path) if context.ephe_path else context.ephe_path,
 		"flags": context.flags,
 		"sidereal_mode": context.sidereal_mode,
 		"sidereal_epoch": context.sidereal_epoch,
@@ -141,16 +166,21 @@ def _call_native_backend_in_spans(
 	jd_end = float(args[2])
 	if jd_end - jd_start <= _NATIVE_CONTEXT_SPAN_DAYS:
 		with context.activate():
-			return method(*args, **kwargs)
+			check_search_cancellation()
+			result = method(*args, **kwargs)
+			check_search_cancellation()
+			return result
 
 	raw_hits: list[tuple] = []
 	span_start = jd_start
 	while span_start < jd_end:
+		check_search_cancellation()
 		span_end = min(jd_end, span_start + _NATIVE_CONTEXT_SPAN_DAYS)
 		span_args = list(args)
 		span_args[1] = span_start
 		span_args[2] = span_end
 		with context.activate():
+			check_search_cancellation()
 			raw_hits.extend(method(*span_args, **kwargs))
 		span_start = span_end
 		if span_start < jd_end:
@@ -161,12 +191,16 @@ def _call_native_backend_in_spans(
 
 
 def _call_backend(context: EphemerisContext, method_name: str, *args, **kwargs):
+	check_search_cancellation()
 	backend = _backend(context)
 	method = getattr(backend, method_name)
 	if backend is not python_reference:
 		return _call_native_backend_in_spans(context, method, *args, **kwargs)
 	with context.activate():
-		return method(*args, **kwargs)
+		check_search_cancellation()
+		result = method(*args, **kwargs)
+		check_search_cancellation()
+		return result
 
 
 def _validate_range(jd_start: float, jd_end: float) -> None:
@@ -300,151 +334,6 @@ def _dedupe_relative_raw_hits(raw_hits: list[tuple]) -> list[tuple]:
 		seen.add(key)
 		deduped.append((jd_ut, spec_idx, target_deg, aspect_deg, hit_kind, speed, retrograde))
 	return deduped
-
-
-def _normalize_body_code(body_code: int) -> int:
-	body_code = int(body_code)
-	if body_code >= 1000:
-		body_code -= 1000
-	return body_code
-
-
-def _is_slow_body(body_code: int) -> bool:
-	return default_step_days_for_planet(_normalize_body_code(body_code)) >= 2.0
-
-
-def _qualifies_for_jump_conjunction(body_codes: list[int], spec: tuple[int, int, float]) -> bool:
-	prom_idx, sig_idx, offset = spec
-	if float(offset) != 0.0:
-		return False
-	prom_code = int(body_codes[int(prom_idx)])
-	sig_code = int(body_codes[int(sig_idx)])
-	if prom_code >= 1000 or sig_code >= 1000:
-		return False
-	if not (_is_slow_body(prom_code) and _is_slow_body(sig_code)):
-		return False
-	prom_period = BODY_PERIOD_DAYS.get(_normalize_body_code(prom_code))
-	sig_period = BODY_PERIOD_DAYS.get(_normalize_body_code(sig_code))
-	return prom_period is not None and sig_period is not None and prom_code != sig_code
-
-
-def _relative_period_days(prom_code: int, sig_code: int) -> float | None:
-	prom_period = BODY_PERIOD_DAYS.get(_normalize_body_code(prom_code))
-	sig_period = BODY_PERIOD_DAYS.get(_normalize_body_code(sig_code))
-	if prom_period is None or sig_period is None:
-		return None
-	rate = abs((1.0 / float(prom_period)) - (1.0 / float(sig_period)))
-	if rate <= 0.0:
-		return None
-	return 1.0 / rate
-
-
-def _relative_rate_deg_per_day(prom_code: int, sig_code: int) -> float | None:
-	prom_period = BODY_PERIOD_DAYS.get(_normalize_body_code(prom_code))
-	sig_period = BODY_PERIOD_DAYS.get(_normalize_body_code(sig_code))
-	if prom_period is None or sig_period is None:
-		return None
-	return (360.0 / float(prom_period)) - (360.0 / float(sig_period))
-
-
-def _jump_window_half_days(prom_code: int, sig_code: int, synodic_days: float) -> float:
-	base = max(
-		120.0,
-		max(default_step_days_for_planet(_normalize_body_code(prom_code)), default_step_days_for_planet(_normalize_body_code(sig_code))) * 200.0,
-	)
-	return min(base, float(synodic_days) / 4.0)
-
-
-def _estimate_candidate_anchor_jd(
-	prom_code: int,
-	sig_code: int,
-	offset: float,
-	jd_start: float,
-	context: EphemerisContext,
-) -> float:
-	with context.activate():
-		prom_lon, _prom_speed = python_reference._eval_body_lon_speed(float(jd_start), int(prom_code), context.flags)
-		sig_lon, _sig_speed = python_reference._eval_body_lon_speed(float(jd_start), int(sig_code), context.flags)
-	delta = python_reference._relative_delta(prom_lon, sig_lon, float(offset))
-	rate = _relative_rate_deg_per_day(prom_code, sig_code)
-	if rate is None or abs(rate) < 1e-12:
-		raise _JumpSearchFallback("relative rate unavailable")
-	return float(jd_start) - (float(delta) / float(rate))
-
-
-def _candidate_centers(anchor_jd: float, synodic_days: float, jd_start: float, jd_end: float, half_window_days: float) -> list[float]:
-	first_k = int(math.floor(((float(jd_start) - float(half_window_days)) - float(anchor_jd)) / float(synodic_days))) - 1
-	last_k = int(math.ceil(((float(jd_end) + float(half_window_days)) - float(anchor_jd)) / float(synodic_days))) + 1
-	return [float(anchor_jd) + float(k) * float(synodic_days) for k in range(first_k, last_k + 1)]
-
-
-def _candidate_center_is_safe(
-	prom_code: int,
-	sig_code: int,
-	offset: float,
-	center_jd: float,
-	context: EphemerisContext,
-	half_window_days: float,
-) -> bool:
-	with context.activate():
-		prom_lon, _prom_speed = python_reference._eval_body_lon_speed(float(center_jd), int(prom_code), context.flags)
-		sig_lon, _sig_speed = python_reference._eval_body_lon_speed(float(center_jd), int(sig_code), context.flags)
-	delta = abs(python_reference._relative_delta(prom_lon, sig_lon, float(offset)))
-	rate = abs(_relative_rate_deg_per_day(prom_code, sig_code) or 0.0)
-	max_expected_delta = max(10.0, float(half_window_days) * max(rate, 1e-6) * 1.5)
-	return delta <= max_expected_delta
-
-
-def _search_relative_aspect_jump_raw(
-	body_codes: list[int],
-	jd_start: float,
-	jd_end: float,
-	spec: tuple[int, int, float],
-	*,
-	context: EphemerisContext,
-	step_days: float | None = None,
-	eps_deg: float = DEFAULT_EPS_DEG,
-	eps_days: float = DEFAULT_EPS_DAYS,
-) -> list[tuple]:
-	prom_idx, sig_idx, offset = (int(spec[0]), int(spec[1]), float(spec[2]))
-	prom_code = int(body_codes[prom_idx])
-	sig_code = int(body_codes[sig_idx])
-	synodic_days = _relative_period_days(prom_code, sig_code)
-	if synodic_days is None:
-		raise _JumpSearchFallback("synodic period unavailable")
-	half_window_days = _jump_window_half_days(prom_code, sig_code, synodic_days)
-	anchor_jd = _estimate_candidate_anchor_jd(prom_code, sig_code, offset, jd_start, context)
-	centers = _candidate_centers(anchor_jd, synodic_days, jd_start, jd_end, half_window_days)
-	if not centers:
-		return []
-	raw_hits = []
-	search_step = default_relative_step_days_for_bodies(body_codes, [(prom_idx, sig_idx, offset)]) if step_days is None else step_days
-	for center_jd in centers:
-		if not _candidate_center_is_safe(prom_code, sig_code, offset, center_jd, context, half_window_days):
-			raise _JumpSearchFallback("candidate center drifted too far")
-		window_start = max(float(jd_start), float(center_jd) - float(half_window_days))
-		window_end = min(float(jd_end), float(center_jd) + float(half_window_days))
-		if window_end <= window_start:
-			continue
-		window_hits = _call_backend(
-			context,
-			"search_relative_aspects_batch_raw",
-			body_codes,
-			window_start,
-			window_end,
-			[(prom_idx, sig_idx, offset)],
-			step_days=search_step,
-			eps_deg=float(eps_deg),
-			eps_days=float(eps_days),
-			**_backend_context_kwargs(context),
-		)
-		for hit in window_hits:
-			if float(hit[0]) < window_start - float(eps_days) or float(hit[0]) > window_end + float(eps_days):
-				raise _JumpSearchFallback("refined hit escaped candidate window")
-		raw_hits.extend(window_hits)
-	if not raw_hits:
-		raise _JumpSearchFallback("jump windows produced no hits")
-	return _dedupe_relative_raw_hits(raw_hits)
 
 
 def search_longitude_transits(
@@ -816,62 +705,24 @@ def search_relative_aspects_batch_raw(
 	step_days = _validate_optional_step(step_days)
 	eps_deg = _validate_positive(eps_deg, "eps_deg")
 	eps_days = _validate_positive(eps_days, "eps_days")
-	if step_days is not None:
-		return _call_backend(
-			context,
-			"search_relative_aspects_batch_raw",
-			normalized_codes,
-			float(jd_start),
-			float(jd_end),
-			normalized_specs,
-			step_days=step_days,
-			eps_deg=float(eps_deg),
-			eps_days=float(eps_days),
-			**_backend_context_kwargs(context),
-		)
-
-	raw_hits = []
-	fallback_specs = []
-	fallback_index_map = []
-	for spec_idx, spec in enumerate(normalized_specs):
-		if not _qualifies_for_jump_conjunction(normalized_codes, spec):
-			fallback_index_map.append(spec_idx)
-			fallback_specs.append(spec)
-			continue
-		try:
-			jump_hits = _search_relative_aspect_jump_raw(
-				normalized_codes,
-				float(jd_start),
-				float(jd_end),
-				spec,
-				context=context,
-				step_days=None,
-				eps_deg=float(eps_deg),
-				eps_days=float(eps_days),
-			)
-			raw_hits.extend((hit[0], spec_idx, hit[2], hit[3], hit[4], hit[5], hit[6]) for hit in jump_hits)
-		except _JumpSearchFallback:
-			fallback_index_map.append(spec_idx)
-			fallback_specs.append(spec)
-
-	if fallback_specs:
-		fallback_step = default_relative_step_days_for_bodies(normalized_codes, fallback_specs)
-		fallback_hits = _call_backend(
-			context,
-			"search_relative_aspects_batch_raw",
-			normalized_codes,
-			float(jd_start),
-			float(jd_end),
-			fallback_specs,
-			step_days=fallback_step,
-			eps_deg=float(eps_deg),
-			eps_days=float(eps_days),
-			**_backend_context_kwargs(context),
-		)
-		for hit in fallback_hits:
-			mapped_idx = fallback_index_map[int(hit[1])]
-			raw_hits.append((hit[0], mapped_idx, hit[2], hit[3], hit[4], hit[5], hit[6]))
-
+	# Mean synodic periods cannot certify empty geocentric intervals. Candidate
+	# windows skipped real slow-body conjunctions depending on the range anchor
+	# (including Jupiter/Saturn in May 2000). Scan every bounded interval once,
+	# sharing the body evaluations across all aspect specs. The native backend
+	# retains its body-specific steps and short Swiss context-lock slices.
+	search_step = default_relative_step_days_for_bodies(normalized_codes, normalized_specs) if step_days is None else step_days
+	raw_hits = _call_backend(
+		context,
+		"search_relative_aspects_batch_raw",
+		normalized_codes,
+		float(jd_start),
+		float(jd_end),
+		normalized_specs,
+		step_days=search_step,
+		eps_deg=float(eps_deg),
+		eps_days=float(eps_days),
+		**_backend_context_kwargs(context),
+	)
 	return _dedupe_relative_raw_hits(raw_hits)
 
 

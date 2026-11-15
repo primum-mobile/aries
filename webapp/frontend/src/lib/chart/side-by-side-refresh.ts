@@ -8,13 +8,13 @@ type RefreshState = Pick<DaemonWorkspaceState,
 
 /** Direct paired frames paint immediately. Events only recover external
  * changes or older responses without the visible peer payload. */
-export function createSplitPeerRefreshGate(documentId: string, relatedDocumentIds: () => readonly string[] = () => []) {
+export function createSplitPeerRefreshGate(documentId: string, relatedDocumentIds: () => readonly string[] = () => [], viewSide?: "left" | "right") {
   let pendingStep = false;
   return (state: RefreshState, previous: RefreshState): boolean => {
     const direct = state.steppedSnapshot !== previous.steppedSnapshot
       ? state.steppedSnapshot?.snapshot : state.commandSnapshot !== previous.commandSnapshot
         ? state.commandSnapshot?.snapshot : undefined;
-    if (direct?.sideBySideSnapshots?.[documentId]) {
+    if (direct && splitSnapshotForDocument(direct, documentId, viewSide)) {
       pendingStep = false;
       return false;
     }
@@ -45,8 +45,13 @@ export function createSplitPeerRefreshGate(documentId: string, relatedDocumentId
 export function splitSnapshotForDocument(
   snapshot: import("@/lib/chart/types").ChartRenderSnapshot,
   documentId: string | null,
+  viewSide?: "left" | "right",
 ) {
   if (!documentId) return null;
+  if (viewSide && snapshot.viewSide) {
+    const pane = snapshot.viewSide === viewSide ? snapshot : snapshot.sideBySideSnapshotsBySide?.[viewSide];
+    return pane?.document?.documentId === documentId ? pane : null;
+  }
   return snapshot.document?.documentId === documentId ? snapshot
     : snapshot.sideBySideSnapshots?.[documentId] ?? null;
 }

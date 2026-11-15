@@ -21,8 +21,8 @@ export function wasDocumentSnapshotPainted(
   snapshot: ChartRenderSnapshot | null,
 ): boolean {
   return snapshot !== null && paintedDocumentSnapshots.get(snapshot) === docId &&
-    Object.entries(snapshot.sideBySideSnapshots ?? {}).every(([peerId, peer]) =>
-      wasDocumentSnapshotPainted(peerId, peer),
+    Object.values(snapshot.sideBySideSnapshotsBySide ?? snapshot.sideBySideSnapshots ?? {}).every((peer) =>
+      Boolean(peer?.document?.documentId) && wasDocumentSnapshotPainted(peer!.document!.documentId, peer!),
     );
 }
 

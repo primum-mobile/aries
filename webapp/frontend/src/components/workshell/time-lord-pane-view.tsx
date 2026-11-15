@@ -4,19 +4,13 @@
 "use client";
 
 import * as React from "react";
+import { useRetainedTablePayload } from "@/lib/table/use-retained-table-payload";
 
 import {
-  fetchGenericTablePayload,
   patchOptions,
   workspaceUpdateTableBinding,
-  type GenericTablePayload,
   type OptionsPatch,
 } from "@/lib/daemon/client";
-import { isAbortError } from "@/lib/abort-error";
-import {
-  getCachedGenericTablePayload,
-  rememberGenericTablePayload,
-} from "@/lib/table/payload-cache";
 import type { ListFollowPolicy } from "@/lib/list-follow-policy";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
 import { useDaemonWorkspaceStore } from "@/stores/daemon-workspace-store";
@@ -76,28 +70,19 @@ export function TimeLordPaneView({
   onClose,
 }: Props) {
   const t = useT();
-  const cacheTableId = includeTemporal ? `${tableId}:temporal` : tableId;
-  const [payload, setPayload] = React.useState<GenericTablePayload | null>(() =>
-    getCachedGenericTablePayload(cacheTableId, documentId),
-  );
-  const [error, setError] = React.useState<string | null>(null);
-  const requestSeqRef = React.useRef(0);
   const setVimshottariPreferences = useWorkspaceStore(
     (state) => state.setVimshottariPreferences,
   );
   const lastSessionChange = useDaemonWorkspaceStore((s) => s.lastSessionChange);
   const lastOptionsChange = useDaemonWorkspaceStore((s) => s.lastRetainedDataOptionsChange);
-  const settledFocusDatetime = useStepSettledValue(
-    focusDatetime ?? null,
-    parentDocumentId ?? documentId,
-    lastSessionChange,
-  );
+  const settledFocusDatetime = useStepSettledValue(focusDatetime ?? null);
   const refreshSeq = useSettledWorkspaceRefreshSeq({
     documentId,
     parentDocumentId,
     lastSessionChange,
     lastOptionsChange,
   });
+  const { payload, error, refresh: refreshPayload } = useRetainedTablePayload(tableId, documentId, refreshSeq, settledFocusDatetime, includeTemporal);
   const reportTemporalLens = useTemporalConfluenceLensReporter();
   React.useEffect(() => {
     if (!payload) return;
@@ -105,60 +90,16 @@ export function TimeLordPaneView({
     reportTemporalLens({ binding: temporalTimeLordBinding(capabilities.bindings) });
   }, [payload, reportTemporalLens]);
 
-  const refreshPayload = React.useCallback(
-    async (signal?: AbortSignal) => {
-      const next = await fetchGenericTablePayload(
-        tableId,
-        documentId,
-        signal,
-        settledFocusDatetime,
-        includeTemporal,
-      );
-      rememberGenericTablePayload(cacheTableId, documentId, next);
-      setPayload(next);
-      setError(null);
-      return next;
-    },
-    [cacheTableId, documentId, includeTemporal, settledFocusDatetime, tableId],
-  );
-
-  React.useEffect(() => {
-    const controller = new AbortController();
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    fetchGenericTablePayload(
-      tableId,
-      documentId,
-      controller.signal,
-      settledFocusDatetime,
-      includeTemporal,
-    )
-      .then((next) => {
-        if (requestSeq !== requestSeqRef.current) return;
-        rememberGenericTablePayload(cacheTableId, documentId, next);
-        setPayload(next);
-        setError(null);
-      })
-      .catch((err) => {
-        if (isAbortError(err, controller.signal)) return;
-        if (requestSeq !== requestSeqRef.current) return;
-        setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => controller.abort();
-  }, [cacheTableId, documentId, includeTemporal, refreshSeq, settledFocusDatetime, tableId]);
-
   const updateBinding = React.useCallback(
     async (binding: Record<string, unknown>) => {
-      await workspaceUpdateTableBinding(documentId, binding, tableId);
-      await refreshPayload();
+      await refreshPayload(() => workspaceUpdateTableBinding(documentId, binding, tableId));
     },
     [documentId, refreshPayload, tableId],
   );
 
   const updateOptions = React.useCallback(
     async (patch: OptionsPatch) => {
-      await patchOptions(patch);
-      await refreshPayload();
+      await refreshPayload(() => patchOptions(patch));
     },
     [refreshPayload],
   );

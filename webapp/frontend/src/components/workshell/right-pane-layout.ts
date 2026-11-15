@@ -17,11 +17,11 @@ type ActiveRightPaneInput = {
   decennialsPane: unknown | null;
   profectionsPane: unknown | null;
   eclipsesPane: unknown | null;
+  pdPositionsPane?: unknown | null;
   lunarMansionsPane: unknown | null;
   synodicCyclesPane: unknown | null;
   chartEventsPane?: unknown | null;
   aspectListPane: unknown | null;
-  ascensionalTransitsPane: unknown | null;
   calendarPane: unknown | null;
   astrocartControlsPane?: AstrocartControlsPaneState | null;
   activeAstrocartDocumentId?: string | null;
@@ -45,11 +45,11 @@ export function activeRightPaneModule(input: ActiveRightPaneInput): RightPaneMod
   if (input.decennialsPane) return "decennials";
   if (input.profectionsPane) return "profections";
   if (input.eclipsesPane) return "eclipses";
+  if (input.pdPositionsPane) return "pd-positions";
   if (input.lunarMansionsPane) return "lunar-mansions";
   if (input.synodicCyclesPane) return "synodic-cycles";
   if (input.chartEventsPane) return "chart-events";
   if (input.aspectListPane) return "aspect-list";
-  if (input.ascensionalTransitsPane) return "ascensional-transits";
   if (input.calendarPane) return "calendar";
   if (input.styleEditorOpen) return "chart-style";
   if (input.inspectorOpen && input.notesOpen) return "inspector-notes";

@@ -54,15 +54,36 @@ const EXPECTED_DEFAULTS = {
   atmosphericFillOpacity: 0.32,
   sphereOutlineWidth: 0.75,
   bandWidthScale: 0.12,
+  divisionSignShare: 0.6,
+  termBandScale: 0.034,
+  decanBandScale: 0.026,
+  divisionGlyphScale: 0.72,
+  divisionGlyphMin: 5,
+  polarDivisionBandScale: 0.018,
+  polarDivisionOpacity: 0.4,
+  bareEclipticTickScale: 0.5,
+  bareSignGlyphScale: 0.5,
+  eclipticScaleTick1: 1,
+  eclipticScaleTick5: 1.8,
+  eclipticScaleTick10: 2.5,
+  eclipticScaleWeight: 0.8,
+  eclipticBandWidthSteps: 1,
+  eclipticBandBoxDegrees: 5,
+  eclipticBandTickShare: 1,
   tickStepScale: 0.008,
   innerRadiusMin: 1,
   starRadiusMin: 1,
-  starRadiusDivisor: 360,
+  starRadiusDivisor: 590,
+  starBrightLimit: 2.5,
+  starMagnitudeExponent: 0.3,
+  starScaleMin: 0.3,
+  starScaleMax: 1.6,
+  starFaintOpacity: 0.35,
   signFontDivisor: 24,
   signCullScale: 0.03,
   sphereRadiusMin: 1.5,
   sphereRadiusDivisor: 190,
-  planetFontDivisor: 18,
+  planetFontDivisor: 22.22,
   bodyLabelPadScale: 0.018,
   bodyCullScale: 1.1,
   collisionMarginScale: 0.15,
@@ -77,13 +98,39 @@ const EXPECTED_DEFAULTS = {
   circleLabelOffsetY: 2,
   cardinalPadScale: 0.04,
   cardinalFontDivisor: 24,
-  infoFontDivisor: 16,
-  infoFontScale: 0.75,
-  infoInsetDivisor: 25,
-  infoLineHeightScale: 1.2,
-  pdRowFontDivisor: 30,
-  pdRowHeightScale: 1.3,
-  pdTokenGapScale: 0.35,
+  polarRimFill: 0.78,
+  polarLaneGapScale: 0.012,
+  polarRingFontScale: 0.5,
+  polarAngleFontScale: 0.62,
+  polarStarLabelScale: 0.62,
+  polarLeaderOpacity: 0.72,
+  zoomRampStart: 2,
+  zoomRampEnd: 4,
+  zoomLatticeFade: 0.55,
+  zoomHouseNumberExponent: 0.5,
+  zoomHouseNumberCap: 2.6,
+  zoomSphereExponent: 0.5,
+  zoomSphereCap: 4,
+  zoomGlyphExponent: 0.4,
+  zoomGlyphCap: 2.5,
+  zoomStarExponent: 0.2,
+  zoomStarCap: 1.6,
+  zoomStarLabelExponent: 0.12,
+  zoomStarLabelCap: 1.3,
+  notchHalfLength: 5,
+  notchZoomExponent: 0.3,
+  notchZoomCap: 1.8,
+  notchRampStart: 2,
+  notchRampEnd: 3,
+  notchWidthScale: 1.6,
+  diskThreshold: 1.2,
+  diskFillOpacity: 0.14,
+  diskOutlineOpacity: 0.55,
+  angleTickScale: 0.6,
+  angleLabelScale: 0.7,
+  contactHalfLength: 40,
+  contactGlow: 6,
+  notchContactWidthScale: 2.4,
 };
 
 const EXPECTED_PALETTE = {
@@ -95,15 +142,23 @@ const EXPECTED_PALETTE = {
   tropic: "rgb(138 139 141 / 58%)",
   meridian: "rgb(205 205 209 / 62%)",
   regio: "rgb(138 139 141 / 46%)",
+  regioZoomed: "rgb(138 139 141 / 86%)",
+  contact: "rgb(246 0 206)",
   almucantar: "rgb(138 139 141 / 34%)",
   azimuth: "rgb(138 139 141 / 28%)",
   hour: "rgb(205 205 209 / 25%)",
   capricorn: "rgb(220 220 221)",
   star: "rgb(255 255 255 / 88%)",
+  starFaint: "rgb(138 139 141)",
   cardinal: "rgb(205 205 209)",
   sunFill: "rgb(255 215 0)",
-  infoAtmospheric: "rgb(255 255 255)",
-  infoSchematic: "rgb(255 255 255)",
+  primeVertical: "rgb(138 139 141 / 52%)",
+  earth: "rgb(255 255 255 / 40%)",
+  declination: "rgb(138 139 141 / 50%)",
+  termRing: "rgb(220 220 221)",
+  termBoundary: "rgb(220 220 221)",
+  decanBoundary: "rgb(220 220 221)",
+  subdivisionGlyph: "rgb(215 215 217)",
 };
 
 function assertDeepFrozen(value) {
@@ -138,10 +193,31 @@ function flattenStyle(style) {
     atmosphericFillOpacity: style.effects.atmosphericFillOpacity,
     sphereOutlineWidth: style.strokes.sphereOutlineWidth,
     bandWidthScale: style.layout.bandWidthScale,
+    divisionSignShare: style.layout.divisionSignShare,
+    termBandScale: style.layout.termBandScale,
+    decanBandScale: style.layout.decanBandScale,
+    divisionGlyphScale: style.layout.divisionGlyphScale,
+    divisionGlyphMin: style.layout.divisionGlyphMin,
+    polarDivisionBandScale: style.layout.polarDivisionBandScale,
+    polarDivisionOpacity: style.layout.polarDivisionOpacity,
+    bareEclipticTickScale: style.layout.bareEclipticTickScale,
+    bareSignGlyphScale: style.layout.bareSignGlyphScale,
+    eclipticScaleTick1: style.layout.eclipticScaleTick1,
+    eclipticScaleTick5: style.layout.eclipticScaleTick5,
+    eclipticScaleTick10: style.layout.eclipticScaleTick10,
+    eclipticScaleWeight: style.layout.eclipticScaleWeight,
+    eclipticBandWidthSteps: style.layout.eclipticBandWidthSteps,
+    eclipticBandBoxDegrees: style.layout.eclipticBandBoxDegrees,
+    eclipticBandTickShare: style.layout.eclipticBandTickShare,
     tickStepScale: style.layout.tickStepScale,
     innerRadiusMin: style.layout.innerRadiusMin,
     starRadiusMin: style.markers.starRadiusMin,
     starRadiusDivisor: style.markers.starRadiusDivisor,
+    starBrightLimit: style.markers.starBrightLimit,
+    starMagnitudeExponent: style.markers.starMagnitudeExponent,
+    starScaleMin: style.markers.starScaleMin,
+    starScaleMax: style.markers.starScaleMax,
+    starFaintOpacity: style.markers.starFaintOpacity,
     signFontDivisor: style.typography.signFontDivisor,
     signCullScale: style.layout.signCullScale,
     sphereRadiusMin: style.markers.sphereRadiusMin,
@@ -161,22 +237,57 @@ function flattenStyle(style) {
     circleLabelOffsetY: style.layout.circleLabelOffsetY,
     cardinalPadScale: style.layout.cardinalPadScale,
     cardinalFontDivisor: style.typography.cardinalFontDivisor,
-    infoFontDivisor: style.typography.infoFontDivisor,
-    infoFontScale: style.typography.infoFontScale,
-    infoInsetDivisor: style.layout.infoInsetDivisor,
-    infoLineHeightScale: style.layout.infoLineHeightScale,
-    pdRowFontDivisor: style.typography.pdRowFontDivisor,
-    pdRowHeightScale: style.layout.pdRowHeightScale,
-    pdTokenGapScale: style.layout.pdTokenGapScale,
+    polarRimFill: style.layout.polarRimFill,
+    polarLaneGapScale: style.layout.polarLaneGapScale,
+    polarRingFontScale: style.layout.polarRingFontScale,
+    polarAngleFontScale: style.layout.polarAngleFontScale,
+    polarStarLabelScale: style.layout.polarStarLabelScale,
+    polarLeaderOpacity: style.layout.polarLeaderOpacity,
+    zoomRampStart: style.zoom.rampStart,
+    zoomRampEnd: style.zoom.rampEnd,
+    zoomLatticeFade: style.zoom.latticeFade,
+    zoomHouseNumberExponent: style.zoom.houseNumber.exponent,
+    zoomHouseNumberCap: style.zoom.houseNumber.cap,
+    zoomSphereExponent: style.zoom.sphere.exponent,
+    zoomSphereCap: style.zoom.sphere.cap,
+    zoomGlyphExponent: style.zoom.glyph.exponent,
+    zoomGlyphCap: style.zoom.glyph.cap,
+    zoomStarExponent: style.zoom.star.exponent,
+    zoomStarCap: style.zoom.star.cap,
+    zoomStarLabelExponent: style.zoom.starLabel.exponent,
+    zoomStarLabelCap: style.zoom.starLabel.cap,
+    notchHalfLength: style.zoom.notch.halfLength,
+    notchZoomExponent: style.zoom.notch.exponent,
+    notchZoomCap: style.zoom.notch.cap,
+    notchRampStart: style.zoom.notch.rampStart,
+    notchRampEnd: style.zoom.notch.rampEnd,
+    notchWidthScale: style.zoom.notch.widthScale,
+    diskThreshold: style.zoom.disk.threshold,
+    diskFillOpacity: style.zoom.disk.fillOpacity,
+    diskOutlineOpacity: style.zoom.disk.outlineOpacity,
+    angleTickScale: style.zoom.angle.tickScale,
+    angleLabelScale: style.zoom.angle.labelScale,
+    contactHalfLength: style.zoom.contact.halfLength,
+    contactGlow: style.zoom.contact.glow,
+    notchContactWidthScale: style.zoom.contact.notchWidthScale,
   };
 }
 
 test("schema v3 preserves the refined Astrolabe paint hierarchy", () => {
-  assert.equal(Object.keys(ASTROLABE_RENDER_TOKEN_SPECS).length, 53);
-  assert.equal(new Set(Object.values(ASTROLABE_RENDER_TOKEN_SPECS).map(([name]) => name)).size, 53);
-  assert.equal(Object.keys(ASTROLABE_RENDER_PALETTE_SPECS).length, 17);
+  assert.equal(Object.keys(ASTROLABE_RENDER_TOKEN_SPECS).length, 100);
+  assert.equal(new Set(Object.values(ASTROLABE_RENDER_TOKEN_SPECS).map(([name]) => name)).size, 100);
+  assert.equal(Object.keys(ASTROLABE_RENDER_PALETTE_SPECS).length, 25);
   assert.deepEqual(DEFAULT_ASTROLABE_RENDER_TOKENS, EXPECTED_DEFAULTS);
   assert.deepEqual(DEFAULT_ASTROLABE_RENDER_PALETTE, EXPECTED_PALETTE);
+  // Chart information and PD rows moved to DOM corner overlays; their canvas
+  // tokens are retired rather than left as editable no-ops.
+  for (const retired of [
+    "infoFontDivisor", "infoFontScale", "infoInsetDivisor", "infoLineHeightScale",
+    "pdRowFontDivisor", "pdRowHeightScale", "pdTokenGapScale",
+  ]) assert.ok(!(retired in ASTROLABE_RENDER_TOKEN_SPECS), retired);
+  for (const retired of ["infoAtmospheric", "infoSchematic"]) {
+    assert.ok(!(retired in ASTROLABE_RENDER_PALETTE_SPECS), retired);
+  }
 
   assert.ok(Object.values(ASTROLABE_RENDER_PALETTE_SPECS).every(([, fallback]) => (
     fallback.startsWith("var(--morinus-")
@@ -282,10 +393,19 @@ test("host resolution reads computed style once and returns one immutable paint 
 });
 
 test("one style feeds retained Astrolabe paint while interaction mechanics stay intact", async () => {
-  const source = await readFile(
+  const view = await readFile(
     new URL("../src/components/workshell/astrolabe-view.tsx", import.meta.url),
     "utf8",
   );
+  const shared = await readFile(
+    new URL("../src/components/workshell/astrolabe-canvas.ts", import.meta.url),
+    "utf8",
+  );
+  const polar = await readFile(
+    new URL("../src/components/workshell/astrolabe-polar-render.ts", import.meta.url),
+    "utf8",
+  );
+  const source = `${view}\n${shared}`;
   assert.equal((source.match(/resolveAstrolabeRenderStyle\(/g) ?? []).length, 1);
   assert.match(source, /const renderStyle = resolveAstrolabeRenderStyle\(wrap,/);
   assert.match(source, /astrolabeTitlebarTopBoundary\(rect\)/);
@@ -298,8 +418,12 @@ test("one style feeds retained Astrolabe paint while interaction mechanics stay 
   assert.match(source, /color: resolveColor\(b\.colorRole, b\.color\) \?\? b\.color/);
   assert.doesNotMatch(source, /const CLR_|const CAPRICORN_FILL/);
 
-  assert.match(source, /const degPerPx = 360 \/ \(ds\.w \|\| 1\)/);
-  assert.match(source, /Math\.max\(0, Math\.round\(next \* 4\) \/ 4\)/);
+  // Rete grabs use renderer geometry and continuous angular motion; updates
+  // remain frame-batched and cannot turn the directed arc below zero.
+  assert.match(source, /!hitAstrolabeRete\(surface, x, y\)/);
+  assert.match(source, /ds\.turn \+= astrolabeReteTurn\(ds\.lastAngle, angle\)/);
+  assert.match(source, /const clamped = Math\.max\(0, next\)/);
+  assert.match(source, /dragFrameRef\.current = window\.requestAnimationFrame\(/);
   assert.match(source, /const snap = geo\.pd\.snapArcs/);
   assert.match(source, /if \(arc > next \+ 0\.001\)/);
   assert.match(source, /drawGraduatedLimb\(/);
@@ -307,30 +431,37 @@ test("one style feeds retained Astrolabe paint while interaction mechanics stay 
   assert.match(source, /ctx\.moveTo\(cx \+ cos \* plateR, cy \+ sin \* plateR\)/);
   assert.match(source, /ctx\.lineTo\(cx \+ cos \* \(plateR \+ length\), cy \+ sin \* \(plateR \+ length\)\)/);
   assert.match(source, /const limbOuterR = chartRpx \+ tickStep \* 3/);
-  assert.match(
-    source,
-    /resolveChartPaintTarget\(cssW, cssH, 1, paintTopBoundary, true\)/,
-  );
-  assert.match(source, /cy: target\.centerY/);
+  // Both plates put their limb on the common chart ring (Anglo outer zodiac).
+  assert.match(source, /resolveChartPaintTarget\(cssW, cssH, 1\)/);
+  assert.match(source, /--aries-wheel-anglo-zodiac-single/);
+  assert.match(source, /ANGLO_WHEEL_GEOMETRY_PROFILE\.zodiacSingle/);
+  assert.match(source, /limbFill: capFill \+ style\.layout\.tickStepScale \* 3/);
+  assert.match(source, /topBoundary: paintTopBoundary/);
+  assert.match(source, /Math\.max\(target\.centerY, top \+ paintR\)/);
+  assert.match(source, /cy: plate\.centerY/);
   assert.match(source, /const bodyLabelTop = Math\.max\(paintTopBoundary, 0\) \+ viewportClearance/);
   assert.match(source, /const labelDirection = outwardCrossesLimb \? -1 : 1/);
   assert.match(source, /chartRpx - limbClearance - Math\.hypot\(item\.tw, item\.th\) \/ 2/);
   assert.match(source, /clampBodyLabel\(si\);\s*clampBodyLabel\(sj\);/);
   assert.match(source, /fetchAstrolabeViewState\(documentId/);
   assert.match(source, /storeAstrolabeViewState\(documentId, state\)/);
-  assert.match(
-    source,
-    /<ContextMenuGroup>\s*<ContextMenuLabel>\{t\("astrolabe\.viewSettings"\)\}<\/ContextMenuLabel>/,
-  );
+  // The view menu folds its layers into topic submenus.
+  for (const key of ["ecliptic", "plateLines", "fixedStars", "skyAndEarth"]) {
+    assert.match(source, new RegExp(`<ContextMenuSubTrigger>\\{t\\("astrolabe\\.${key}"\\)\\}<\/ContextMenuSubTrigger>`));
+  }
+  assert.match(source, /<ContextMenuLabel>\{t\("astrolabe\.backgroundOpacity"\)\}<\/ContextMenuLabel>/);
   assert.doesNotMatch(source, /function LayerBar/);
 
   const fetchBlock = source.slice(
     source.indexOf("// Geometry fetch"),
     source.indexOf("// Draw on geometry"),
   );
-  assert.match(source, /const geometryRevision = String\(sessionRefreshSeq\)/);
+  assert.match(
+    source,
+    /const geometryRevision = `\$\{sessionRefreshSeq\}:\$\{projection\}:\$\{lattice \? 1 : 0\}:\$\{fullSphere \? 1 : 0\}`/,
+  );
   assert.match(fetchBlock, /\}, \[sourceName, source, documentId\]\);/);
-  assert.match(fetchBlock, /\}, \[delta, geometryRevision, pumpFetch\]\);/);
+  assert.match(fetchBlock, /\}, \[asterisms, delta, fullSphere, geometryRevision, lattice, markedStars, pdFocus, pdOverlay, projection, pumpFetch,\s+starField\]\);/);
   assert.doesNotMatch(fetchBlock, /\bstyleRevision\b/);
   assert.doesNotMatch(fetchBlock, /\bpaintRevision\b/);
   assert.doesNotMatch(fetchBlock, /\bliveStylePreviewRevision\b/);
@@ -342,9 +473,29 @@ test("one style feeds retained Astrolabe paint while interaction mechanics stay 
   assert.match(paintBlock, /revision: paintRevision/);
   assert.match(
     paintBlock,
-    /\}, \[chartSymbolFont, chartTextFont, geo, fontsReady, toggles, t, paintRevision\]\);/,
+    /\}, \[geo, earth, fontsReady, paintToggles, t, resolvePaintStyle, clearInspectorHover\]\);/,
   );
+  assert.match(paintBlock, /geo\.projection === "polarEquidistant"/);
+  assert.match(paintBlock, /renderPolarAzimuthal\(/);
+
+  // The polar plate paints from the same resolved style and daemon colours.
+  assert.match(polar, /resolveAstrolabeStrokeWidths\(style, size\)/);
+  assert.match(polar, /style\.layout\.polarRimFill \+ style\.layout\.tickStepScale \* 3/);
+  assert.match(polar, /topBoundary: paintTopBoundary/);
+  assert.match(polar, /cy: plate\.centerY/);
+  assert.match(polar, /ctx\.fillStyle = geo\.atmospheric\.ground/);
+  assert.match(polar, /ctx\.fillStyle = geo\.atmospheric\.sky/);
+  assert.match(polar, /createResolvedSemanticChartColorResolver\(\)/);
+  assert.match(polar, /drawGraduatedLimb\(draw, layout\.cx, layout\.cy, rimPx/);
+  assert.match(polar, /drawReteArcSpan\(draw, layout\.cx, layout\.cy, rimPx, tickStep/);
+  assert.match(source, /drawReteArcSpan\(draw, layout\.cx, layout\.cy, chartRpx, tickStep/);
+  // Hosted in the chart area beside right panes: the canvas stays out of flow
+  // so its backing store can never grow the shared row.
+  assert.match(source, /className="absolute inset-0 block h-full w-full cursor-grab/);
+  // Chart information and PD rows are the wheel's DOM corner overlays.
+  assert.match(source, /<AstrolabeCorners/);
+  assert.doesNotMatch(polar, /#[0-9a-f]{3,6}\b|rgb\(/i);
   assert.match(source, /state\.liveAppThemePreview \? `live:\$\{state\.revision\}` : "live:off"/);
-  assert.match(source, /const ro = new ResizeObserver\(schedulePaint\)/);
+  assert.match(source, /const observer = new ResizeObserver\(\(\) => requestFrameRef\.current\?\.\(\)\)/);
   assert.match(source, /window\.requestAnimationFrame\(paint\)/);
 });

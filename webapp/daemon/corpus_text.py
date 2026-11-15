@@ -29,7 +29,7 @@ verbatim source text.
 from __future__ import annotations
 
 import re
-from typing import List, TypedDict
+from typing import List, NotRequired, TypedDict
 
 # ── Unicode → Morinus PUA glyph map (mirror of corpuspane._UNICODE_TO_MORINUS) ──
 _UNICODE_TO_MORINUS = {
@@ -61,6 +61,10 @@ _UNICODE_TO_MORINUS = {
     "⚹": "Q",  # ⚹ Sextile
 }
 _GLYPH_CHARS = set(_UNICODE_TO_MORINUS.keys())
+_SIGN_INDEX = {
+    char: ord(glyph) - ord("a") for char, glyph in _UNICODE_TO_MORINUS.items()
+    if "a" <= glyph <= "l"
+}
 
 # Run kinds (mirror corpuspane._RUN_*).
 NORMAL = "normal"
@@ -97,6 +101,7 @@ _LEAD_LABEL_RE = re.compile(
 class TextRun(TypedDict):
     kind: str
     text: str
+    signIndex: NotRequired[int]
 
 
 class PassageParagraph(TypedDict):
@@ -120,6 +125,20 @@ def clean_display_text(text: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n\s*\n", "\n\n", text)
     return text.strip()
+
+
+def main_passage_text(text: str) -> str:
+    """Omit annotation spans for the decan card, leaving stored prose intact."""
+    # Peel nested brackets from the inside out, including footnote markers,
+    # translator parentheticals, and the corpus parser's editorial spans.
+    annotations = re.compile(r"\([^()]*\)|\[[^\[\]]*\]|<[^<>]*>")
+    while True:
+        cleaned = annotations.sub("", text)
+        if cleaned == text:
+            break
+        text = cleaned
+    text = re.sub(r"[ \t]+([,.;:!?])", r"\1", text)
+    return clean_display_text(text)
 
 
 def _strip_planet_heading(text: str) -> tuple[str, bool]:
@@ -166,6 +185,11 @@ def _clean_single_line(text: str) -> str:
     return re.sub(r"\s+", " ", clean_display_text(text)).strip()
 
 
+def _clean_footnote(text: str) -> str:
+    """Footnotes keep the translators' LaTeX quote pairs; typeset them."""
+    return _clean_single_line(text).replace("``", "\u201c").replace("''", "\u201d")
+
+
 def _strip_emphasis_markers(text: str) -> str:
     return _EMPH_STRIP_RE.sub("", text or "")
 
@@ -210,6 +234,10 @@ def _section_body_paragraphs(section: dict | None) -> tuple[list[str], list[str]
 def section_citation(section: dict | None) -> str:
     """Mirror corpuspane._section_citation without importing wx."""
     s = section or {}
+    if s.get('citation_label'):
+        return str(s['citation_label'])
+    if s.get('citation'):
+        return str(s['citation'])
     book = s.get("book_title") or ""
     chapter = s.get("chapter") or ""
     heading = s.get("heading") or ""
@@ -260,7 +288,7 @@ def structured_section(section: dict | None) -> dict:
     """JSON-ready display structure matching corpuspane.QuoteTextPane."""
     paragraphs, inline_footnotes = structured_paragraphs(section)
     footnotes = [
-        _clean_single_line(str(fn))
+        _clean_footnote(str(fn))
         for fn in list((section or {}).get("footnotes") or []) + list(inline_footnotes)
         if str(fn).strip()
     ]
@@ -270,6 +298,9 @@ def structured_section(section: dict | None) -> dict:
         "citation_runs": segment_text_styled(citation),
         "paragraphs": paragraphs,
         "footnotes": footnotes,
+        # Same glyph segmentation as the body, so ♋ etc. render in Morinus
+        # rather than falling back to the system emoji font.
+        "footnote_runs": [segment_text_styled(fn) for fn in footnotes],
     }
 
 
@@ -285,24 +316,31 @@ def _segment_glyph_normal(text: str) -> List[TextRun]:
     runs: List[TextRun] = []
     current = ""
     current_type = GLYPH if text[0] in _GLYPH_CHARS else NORMAL
+    current_sign = _SIGN_INDEX.get(text[0])
     for ch in text:
         t = GLYPH if ch in _GLYPH_CHARS else NORMAL
-        if t == current_type:
+        sign = _SIGN_INDEX.get(ch)
+        if (t, sign) == (current_type, current_sign):
             current += ch
         else:
             if current:
                 runs.append(_emit(current_type, current))
             current = ch
             current_type = t
+            current_sign = sign
     if current:
         runs.append(_emit(current_type, current))
     return runs
 
 
 def _emit(kind: str, text: str) -> TextRun:
+    sign = _SIGN_INDEX.get(text[0]) if kind == GLYPH and text else None
     if kind == GLYPH:
         text = "".join(_UNICODE_TO_MORINUS.get(ch, ch) for ch in text)
-    return {"kind": kind, "text": text}
+    run: TextRun = {"kind": kind, "text": text}
+    if sign is not None:
+        run["signIndex"] = sign
+    return run
 
 
 def _segment_emphasis(text: str):

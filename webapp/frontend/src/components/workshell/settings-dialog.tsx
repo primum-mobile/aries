@@ -7,12 +7,22 @@
 
 import { WheelPresetControls } from "./wheel-preset-controls";
 import { useShallow } from "zustand/react/shallow";
-import { flushWheelGeometry } from "@/lib/daemon/wheel-preset-sync";
+import { applyWheelTheme } from "@/lib/daemon/wheel-theme-transition";
 import { wheelTypographyProfileForTheme } from "@/lib/chart/wheel-render-style";
 import { settingsColorPreviewMatchesTheme } from "@/lib/chart/palette";
+import {
+  ECLIPSE_MARKER,
+  FORTUNE_GLYPH,
+  PLANET_GLYPHS,
+  SE_CHIRON,
+  SE_MEAN_APOG,
+  SE_MEAN_NODE,
+  SYZYGY_MARKER,
+  VERTEX_GLYPH,
+} from "@/lib/chart/glyphs";
 import * as React from "react";
 
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, FloatingDialogContent, NativeDialogContent } from "@/components/ui/dialog";
@@ -20,7 +30,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createAstrocartStyleMessage } from "@/lib/chart/astrocart-style";
 import { appUiFontStack } from "@/lib/chart/astrocart-ui-font";
 import {
-  applyThemePreset,
+  FORTUNE_REVERSED_BY_NIGHT,
+  FORTUNE_SAME_DAY_NIGHT,
   corpusDisciplinesCached,
   daemonBaseUrl,
   deleteCustomCorpusSemanticProfile,
@@ -36,7 +47,6 @@ import {
   patchOptions,
   previewArabicPart,
   recoverSavedSettings,
-  resolvePlace,
   setDefaultLocationFromMap,
   upsertCustomCorpusSemanticProfile,
   type ArabicPartMeta,
@@ -48,8 +58,8 @@ import {
   type CorpusSemanticProfile,
   type CorpusSemanticProfileSemantics,
   type CorpusSemanticProfilesPayload,
-  type DefaultLocationFieldMeta,
   type FixedStarCatalogRow,
+  type FixedStarKind,
   type OptionsAlmutens,
   type OptionsDefaultLocation,
   type OptionsDisplay,
@@ -63,6 +73,8 @@ import {
   type RGB,
 } from "@/lib/daemon/client";
 import { PrimDirSettingsBody, PD_PLANET_GLYPHS } from "./primdir-settings";
+import { PlaceSearchField } from "./place-search-field";
+import { AsteroidSelectionControls } from "./asteroid-selection-controls";
 import { StyleLabColorPicker } from "./style-lab-color-picker";
 import { SETTINGS_COLOR_PREVIEW, useColorSettingsPreviewStore, type SettingsColorPreview, type SettingsColorPreviewEvent } from "@/stores/color-settings-preview-store";
 import { resolveShellHost } from "@/lib/shell-host";
@@ -73,7 +85,13 @@ import { useChartStyleEditorStore } from "@/stores/chart-style-editor-store";
 import { useFrameLayoutStore } from "@/stores/frame-layout-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncLocale, useT } from "@/lib/i18n/i18n";
+import { isSettingsTabId, readLastSettingsTab, rememberSettingsTab, type SettingsTabId } from "@/lib/settings-navigation";
+import { buildSettingsSearchIndex, searchSettings, type SettingsSearchResult } from "@/lib/settings-search";
+import { COLOR_GROUP_TITLE_KEYS } from "@/lib/settings-search-fields";
+import { SettingsHeader, SettingsSearchResults } from "./settings-search";
+export { isSettingsTabId, type SettingsTabId } from "@/lib/settings-navigation";
 import { useFixedRowHeightAnchor, useListRowHeight } from "@/lib/list-tokens";
+import { formatCoordinate, parseCoordinate } from "@/lib/coordinate-input";
 
 // ---------------------------------------------------------------------------
 // Settings / Appearance surface — a thin skin over the daemon options catalog.
@@ -90,6 +108,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: SettingsTabId;
+  tabRequestGeneration?: number;
+  focusSearch?: boolean;
   onOptionsPatched?: (next?: OptionsPayload) => void;
   onSemanticProfileSelect: (
     profileId: string,
@@ -100,6 +120,11 @@ type Props = {
   getSemanticProfileRevision: () => number;
 };
 
+function changesAppThemeAppearance(patch: OptionsPatch): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, "colors")
+    || patch.display?.fontfamily !== undefined;
+}
+
 export function SettingsDialog({
   nativeWindow = false,
   onReady,
@@ -107,20 +132,18 @@ export function SettingsDialog({
   onBeforeWheelAction,
   open,
   onOpenChange,
-  initialTab = "colors",
+  initialTab,
+  tabRequestGeneration = 0,
+  focusSearch = false,
   onOptionsPatched,
   onSemanticProfileSelect,
   onSemanticProfilesCommitted,
   getSemanticProfileRevision,
 }: Props) {
-  const t = useT();
   const Content = nativeWindow ? NativeDialogContent : FloatingDialogContent;
   return (
     <Dialog open={nativeWindow || open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal>
-      <Content size="workspace" data-settings-surface="" data-aries-surface="popover" className={`flex ${nativeWindow ? "" : "max-h-[var(--aries-dialog-viewport-height)] shadow-md"} flex-col gap-0 overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-0 text-[color:var(--aries-popover-text)]`}>
-        <DialogHeader data-tauri-drag-region={nativeWindow ? "" : undefined} className="shrink-0 select-none border-b border-border/40 px-[var(--aries-dialog-padding)] pb-[var(--aries-pane-header-padding-y)] pt-[var(--aries-dialog-padding)]">
-          <DialogTitle data-tauri-drag-region={nativeWindow ? "" : undefined} className="text-[length:var(--aries-font-size-large)] font-medium tracking-tight">{t("settings.title")}</DialogTitle>
-        </DialogHeader>
+      <Content size="workspace" data-settings-surface="" data-aries-surface="popover" className={`flex ${nativeWindow ? "" : "max-h-[var(--aries-dialog-viewport-height)]"} flex-col gap-0 overflow-hidden rounded-[var(--aries-radius-popover)] bg-[var(--aries-popover-background)] p-0 text-[color:var(--aries-popover-text)]`}>
         <SettingsBody
           prepare={nativeWindow}
           active={open}
@@ -128,6 +151,8 @@ export function SettingsDialog({
           onEndThemePreview={onEndThemePreview}
           onBeforeWheelAction={onBeforeWheelAction}
           initialTab={initialTab}
+          tabRequestGeneration={tabRequestGeneration}
+          focusSearch={focusSearch}
           onOptionsPatched={onOptionsPatched}
           onSemanticProfileSelect={onSemanticProfileSelect}
           onSemanticProfilesCommitted={onSemanticProfilesCommitted}
@@ -138,21 +163,6 @@ export function SettingsDialog({
   );
 }
 
-const SUPPORTED_SETTINGS_TAB_IDS = [
-  "appearance", "interpretation", "astrocartography", "colors", "export", "houses", "ayanamsha",
-  "location", "planets", "orbs", "dignities", "speculum", "fixstars", "asteroids",
-  "mansions", "almutens", "primarydirections", "revolutions", "supplementary",
-  "timelords", "eclipses", "relationship", "languages",
-] as const;
-
-export type SettingsTabId = (typeof SUPPORTED_SETTINGS_TAB_IDS)[number];
-
-const SUPPORTED_SETTINGS_TABS = new Set<string>(SUPPORTED_SETTINGS_TAB_IDS);
-
-export function isSettingsTabId(value: string): value is SettingsTabId {
-  return SUPPORTED_SETTINGS_TABS.has(value);
-}
-
 function SettingsBody({
   prepare,
   active,
@@ -160,6 +170,8 @@ function SettingsBody({
   onEndThemePreview,
   onBeforeWheelAction,
   initialTab,
+  tabRequestGeneration,
+  focusSearch,
   onOptionsPatched,
   onSemanticProfileSelect,
   onSemanticProfilesCommitted,
@@ -170,7 +182,9 @@ function SettingsBody({
   onReady?: () => void;
   onEndThemePreview?: () => Promise<void>;
   onBeforeWheelAction?: () => Promise<void>;
-  initialTab: SettingsTabId;
+  initialTab?: SettingsTabId;
+  tabRequestGeneration: number;
+  focusSearch: boolean;
   onOptionsPatched?: (next?: OptionsPayload) => void;
   onSemanticProfileSelect: (
     profileId: string,
@@ -189,12 +203,94 @@ function SettingsBody({
   const [recoveryError, setRecoveryError] = React.useState<string | null>(null);
   const applyThemeState = useThemeStore((state) => state.applyThemeState);
   const syncLocale = useSyncLocale();
-  const [selectedTab, setSelectedTab] = React.useState(initialTab);
-  const [tabIntent, setTabIntent] = React.useState({ initialTab, active });
-  if (initialTab !== tabIntent.initialTab || active !== tabIntent.active) {
-    setTabIntent({ initialTab, active });
-    if (initialTab !== tabIntent.initialTab || active) setSelectedTab(initialTab);
+  const [selectedTab, setSelectedTab] = React.useState(() => initialTab ?? readLastSettingsTab());
+  const [query, setQuery] = React.useState("");
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [searchTarget, setSearchTarget] = React.useState<SettingsSearchResult | null>(null);
+  const searchInput = React.useRef<HTMLInputElement>(null);
+  const settingsPane = React.useRef<HTMLDivElement>(null);
+  const resultsId = React.useId();
+  const [tabIntent, setTabIntent] = React.useState({ initialTab, active, tabRequestGeneration });
+  if (initialTab !== tabIntent.initialTab || active !== tabIntent.active || tabRequestGeneration !== tabIntent.tabRequestGeneration) {
+    setTabIntent({ initialTab, active, tabRequestGeneration });
+    if (active && initialTab) setSelectedTab(initialTab);
+    setQuery("");
+    setActiveIndex(0);
+    setSearchTarget(null);
   }
+  const searching = opts !== null && query.trim().length > 0;
+  const searchIndex = React.useMemo(() => searching && opts ? buildSettingsSearchIndex(opts, t) : [], [searching, opts, t]);
+  const results = React.useMemo(() => searchSettings(searchIndex, query), [searchIndex, query]);
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    setActiveIndex(0);
+    setSearchTarget(null);
+  };
+  const selectResult = (result: SettingsSearchResult) => {
+    changeQuery("");
+    setSelectedTab(result.tab);
+    setSearchTarget({ ...result });
+  };
+  React.useEffect(() => {
+    if (!active) return;
+    const handleFind = (event: KeyboardEvent) => {
+      const input = searchInput.current;
+      if (!input || event.isComposing || event.altKey || event.shiftKey
+        || (!event.metaKey && !event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+      if (!prepare && !input.closest("[data-settings-surface]")?.contains(document.activeElement)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener("keydown", handleFind, true);
+    return () => window.removeEventListener("keydown", handleFind, true);
+  }, [active, prepare]);
+  React.useEffect(() => {
+    if (!active || !focusSearch || error) return;
+    const focus = () => {
+      if (!document.hasFocus() || !searchInput.current) return;
+      searchInput.current.focus();
+      window.removeEventListener("focus", focus);
+    };
+    const frame = requestAnimationFrame(focus);
+    window.addEventListener("focus", focus);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("focus", focus);
+    };
+  }, [active, focusSearch, error, tabRequestGeneration]);
+  React.useLayoutEffect(() => {
+    if (!searchTarget) return;
+    const pane = settingsPane.current;
+    if (!pane) return;
+    const findAnchor = (anchor?: string) => anchor ? Array.from(
+      pane.querySelectorAll<HTMLElement>(`[data-settings-search-anchor="${CSS.escape(anchor)}"]`),
+    ).find(element => !element.closest("[inert]") && element.getClientRects().length > 0) : undefined;
+    const tab = pane.closest(".aries-settings-tabs")?.querySelector<HTMLElement>(
+      `[data-settings-tab="${searchTarget.tab}"]`,
+    );
+    const target = findAnchor(searchTarget.anchor) ?? findAnchor(searchTarget.sectionAnchor)
+      ?? (searchTarget.directionsTab ? findAnchor(`pd-tab:${searchTarget.directionsTab}`) : undefined);
+    tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (!target) {
+      pane.scrollTop = 0;
+      tab?.focus({ preventScroll: true });
+      return;
+    }
+    if (!target.matches("button, input, select, textarea, a[href]")) target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "center", inline: "nearest" });
+    target.setAttribute("data-settings-search-highlight", "");
+    const timer = window.setTimeout(() => target.removeAttribute("data-settings-search-highlight"), 1600);
+    return () => {
+      window.clearTimeout(timer);
+      target.removeAttribute("data-settings-search-highlight");
+    };
+  }, [searchTarget]);
+  React.useEffect(() => {
+    if (active) rememberSettingsTab(selectedTab);
+  }, [active, selectedTab]);
   const tabs = opts?.settingsRegistry.tabs.filter((tab) => isSettingsTabId(tab.id)) ?? [];
   const optionsLoaded = React.useRef(false);
   const applyOptionsPayload = React.useCallback((next: OptionsPayload) => {
@@ -235,7 +331,7 @@ function SettingsBody({
       while (patchQueueRef.current.length > 0) {
         const patch = patchQueueRef.current.shift()!;
         try {
-          if (Object.prototype.hasOwnProperty.call(patch, "colors")) await onEndThemePreview?.();
+          if (changesAppThemeAppearance(patch)) await onEndThemePreview?.();
           latest = await patchOptions(patch);
           onOptionsPatched?.(latest);
           presetRepliesRef.current.get(patch)?.(true);
@@ -285,12 +381,12 @@ function SettingsBody({
   // queued asteroid selections into their newest state; one active write and
   // one trailing write suffice for a burst of checkbox clicks.
   const sendPatch = React.useCallback((patch: OptionsPatch, optimistic: OptionsPayload) => {
-    if (Object.prototype.hasOwnProperty.call(patch, "colors")) {
+    if (changesAppThemeAppearance(patch)) {
       // Appearance changes made outside Style Lab intentionally switch away
       // from its parked working preview without discarding that draft.
       useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
     }
-    const reply = patch.primaryDirectionPreset
+    const reply = patch.primaryDirectionPreset || patch.asteroidSelection
       ? new Promise<boolean>(resolve => presetRepliesRef.current.set(patch, resolve))
       : undefined;
     setOpts(optimistic);
@@ -309,6 +405,10 @@ function SettingsBody({
       queued[queued.length - 1] = {
         colors: { ...last.colors, ...patch.colors },
       };
+    } else if (last && canCoalesceOrbPatch(last, patch)) {
+      // Stepping or typing an orb emits a value per keystroke; whole rows and
+      // repeated edits of one cell keep only the latest queued write.
+      queued[queued.length - 1] = { orbs: { ...last.orbs, ...patch.orbs } };
     } else if (selectionOnly && last?.asteroids?.selectedNumbers !== undefined
       && Object.keys(last).length === 1 && Object.keys(last.asteroids).length === 1) {
       queued[queued.length - 1] = patch;
@@ -322,7 +422,7 @@ function SettingsBody({
   const applyPreset = React.useCallback((name: string) => {
     clearSettingsColorPreview();
     useChartStyleEditorStore.getState().setLiveAppThemePreview(false);
-    flushWheelGeometry().then(() => onEndThemePreview?.()).then(() => applyThemePreset(name))
+    applyWheelTheme(name, onEndThemePreview)
       .then((next) => {
         applyOptionsPayload(next);
         onOptionsPatched?.(next);
@@ -332,6 +432,10 @@ function SettingsBody({
 
   if (error) {
     return (
+      <>
+      <DialogHeader data-tauri-drag-region={prepare ? "" : undefined} className="border-b border-border/40 p-[var(--aries-dialog-padding)]">
+        <DialogTitle>{t("settings.title")}</DialogTitle>
+      </DialogHeader>
       <div className="flex min-h-0 flex-col items-center gap-[var(--aries-section-gap)] overflow-y-auto px-[var(--aries-dialog-padding)] py-[var(--aries-section-gap)] text-center text-[length:var(--aries-font-size-base)] text-foreground/70">
         <p className="max-w-full break-all">{t("settings.loadFailed")}: {error}</p>
         {recovered ? (
@@ -360,30 +464,48 @@ function SettingsBody({
           </>
         )}
       </div>
+      </>
     );
   }
 
+  const highlightedResult = Math.max(0, Math.min(activeIndex, results.length - 1));
   return (
     <>
+      <SettingsHeader
+        nativeWindow={prepare} query={query} inputRef={searchInput} resultsId={resultsId}
+        searching={searching} results={results} activeIndex={highlightedResult}
+        setActiveIndex={setActiveIndex} onQueryChange={changeQuery} onSelect={selectResult}
+      />
       {opts === null ? (
         <div className="px-[var(--aries-dialog-padding)] py-[calc(var(--aries-section-gap)*2)] text-center text-[length:var(--aries-font-size-base)] text-foreground/55">{t("settings.loading")}</div>
       ) : (
-        <Tabs value={selectedTab} onValueChange={value => { if (isSettingsTabId(String(value))) setSelectedTab(value as SettingsTabId); }} orientation="vertical" className="min-h-0 max-h-[var(--aries-dialog-content-height-workspace)] gap-[var(--aries-tabs-rail-gap)] overflow-hidden">
+        <Tabs value={selectedTab} onValueChange={value => {
+          if (!isSettingsTabId(String(value))) return;
+          changeQuery("");
+          setSelectedTab(value as SettingsTabId);
+        }} orientation="vertical" className={`aries-settings-tabs min-h-0 gap-[var(--aries-tabs-rail-gap)] overflow-hidden ${searching || selectedTab === "asteroids" ? prepare ? "flex-1" : "h-[var(--aries-dialog-content-height-workspace)]" : "max-h-[var(--aries-dialog-content-height-workspace)]"}`}>
           <TabsList
             variant="line"
-            className="min-h-0 w-[var(--aries-tabs-rail-width)] shrink-0 items-stretch justify-start gap-[var(--aries-tabs-rail-gap)] overflow-y-auto border-r border-border/40 bg-transparent p-[var(--aries-tabs-rail-padding)] group-data-vertical/tabs:h-auto"
+            className="aries-settings-tab-list min-h-0 w-[var(--aries-tabs-rail-width)] shrink-0 items-stretch justify-start gap-[var(--aries-tabs-rail-gap)] overflow-y-auto border-r border-border/40 bg-transparent p-[var(--aries-tabs-rail-padding)] data-vertical:h-auto"
           >
             {tabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}
                 value={tab.id}
+                data-settings-tab={tab.id}
+                onClick={() => { if (searching) changeQuery(""); }}
                 className="h-auto flex-none justify-start rounded-[var(--aries-radius-menu-item)] px-[var(--aries-tabs-rail-trigger-padding-x)] py-[var(--aries-tabs-rail-trigger-padding-y)] text-[length:var(--aries-font-size-base)] text-foreground/60"
               >
                 {t(tab.labelKey)}
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          {searching && (
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+              <SettingsSearchResults resultsId={resultsId} results={results} activeIndex={highlightedResult} onSelect={selectResult} />
+            </div>
+          )}
+          <div ref={settingsPane} className={`min-h-0 min-w-0 flex-1 ${searching ? "hidden" : selectedTab === "asteroids" ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}>
             <TabsContent value="colors" className="m-0 p-[var(--aries-dialog-padding)]">
               <ColorsTab
                 opts={opts}
@@ -404,7 +526,7 @@ function SettingsBody({
             </TabsContent>
             <TabsContent value="astrocartography" className="m-0 p-[var(--aries-dialog-padding)]">
               <MirroredSettingsTab tabId="astrocartography" opts={opts} sendPatch={sendPatch} />
-              <Row label={t("astrocart.ruler.units")}>
+              <Row searchAnchor="astrocart.ruler.units" label={t("astrocart.ruler.units")}>
                 <Select
                   value={opts.display.astrocart_distance_units ?? "metric"}
                   onChange={(value) => {
@@ -420,17 +542,8 @@ function SettingsBody({
             <TabsContent value="export" className="m-0 p-[var(--aries-dialog-padding)]">
               <ExportTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="mansions" className="m-0 p-[var(--aries-dialog-padding)]">
-              <LunarMansionsTab opts={opts} sendPatch={sendPatch} />
-            </TabsContent>
             <TabsContent value="speculum" className="m-0 p-[var(--aries-dialog-padding)]">
               <SpeculumTab opts={opts} sendPatch={sendPatch} />
-            </TabsContent>
-            <TabsContent value="houses" className="m-0 p-[var(--aries-dialog-padding)]">
-              <HouseSystemTab opts={opts} sendPatch={sendPatch} />
-            </TabsContent>
-            <TabsContent value="ayanamsha" className="m-0 p-[var(--aries-dialog-padding)]">
-              <AyanamshaTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
             <TabsContent value="orbs" className="m-0 p-[var(--aries-dialog-padding)]">
               <OrbsTab opts={opts} sendPatch={sendPatch} />
@@ -470,15 +583,12 @@ function SettingsBody({
               <TimeLordsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
             <TabsContent value="primarydirections" className="m-0 p-[var(--aries-dialog-padding)]">
-              <PrimaryDirectionsTab opts={opts} sendPatch={sendPatch} />
-            </TabsContent>
-            <TabsContent value="eclipses" className="m-0 p-[var(--aries-dialog-padding)]">
-              <EclipsesTab opts={opts} sendPatch={sendPatch} />
+              <PrimaryDirectionsTab opts={opts} sendPatch={sendPatch} searchTarget={searchTarget} />
             </TabsContent>
             <TabsContent value="fixstars" className="m-0 p-[var(--aries-dialog-padding)]">
               <FixedStarsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
-            <TabsContent value="asteroids" className="m-0 p-[var(--aries-dialog-padding)]">
+            <TabsContent value="asteroids" className="m-0 flex min-h-0 min-w-0 flex-col p-[var(--aries-dialog-padding)]">
               <AsteroidsTab opts={opts} sendPatch={sendPatch} />
             </TabsContent>
             <TabsContent value="relationship" className="m-0 p-[var(--aries-dialog-padding)]">
@@ -498,17 +608,17 @@ function SettingsBody({
 // Shared primitives — dense, hairline, 10px section labels.
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children, searchAnchor }: { children: React.ReactNode; searchAnchor?: string }) {
   return (
-    <div className="mb-[var(--aries-control-gap)] mt-[var(--aries-section-gap)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45 first:mt-0">
+    <div data-settings-search-anchor={searchAnchor} className="mb-[var(--aries-control-gap)] mt-[var(--aries-section-gap)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45 first:mt-0">
       {children}
     </div>
   );
 }
 
-function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+function Row({ label, children, searchAnchor }: { label: React.ReactNode; children: React.ReactNode; searchAnchor?: string }) {
   return (
-    <div className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 last:border-b-0">
+    <div data-settings-search-anchor={searchAnchor} className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 last:border-b-0">
       <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/80">{label}</span>
       <span className="flex shrink-0 items-center">{children}</span>
     </div>
@@ -664,35 +774,60 @@ function Toggle({
  * server-driven value change remounts it with the fresh defaultValue — avoids a
  * setState-in-effect sync (react-hooks/set-state-in-effect). */
 function NumberField({
+  ariaLabel,
   value,
   step = 1,
   min,
   max,
   onCommit,
+  disabled = false,
 }: {
+  ariaLabel?: string;
   value: number;
   step?: number;
   min?: number;
   max?: number;
   onCommit: (n: number) => void;
+  disabled?: boolean;
 }) {
+  // Commit every valid in-range value as it is stepped or typed (Aries
+  // settings apply immediately); the draft keeps partial text such as "1."
+  // and an out-of-range entry is clamped when the field loses focus.
+  const [draft, setDraft] = React.useState(String(value));
+  const [synced, setSynced] = React.useState(value);
+  if (synced !== value) {
+    setSynced(value);
+    if (Number(draft) !== value) setDraft(String(value));
+  }
+  const inRange = (n: number) =>
+    (typeof min !== "number" || n >= min) && (typeof max !== "number" || n <= max);
+  const clamp = (n: number) =>
+    Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
   return (
     <input
       data-aries-control-appearance="local"
-      key={value}
+      aria-label={ariaLabel}
       type="number"
       step={step}
       min={min}
       max={max}
-      defaultValue={value}
-      onBlur={(e) => {
-        let n = Number(e.target.value);
-        if (Number.isFinite(n)) {
-          if (typeof min === "number") n = Math.max(min, n);
-          if (typeof max === "number") n = Math.min(max, n);
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        const n = Number(text);
+        if (text.trim() !== "" && Number.isFinite(n) && inRange(n) && n !== value) onCommit(n);
+      }}
+      onBlur={() => {
+        const n = Number(draft);
+        if (draft.trim() === "" || !Number.isFinite(n)) {
+          setDraft(String(value));
+          return;
         }
-        if (Number.isFinite(n) && n !== value) onCommit(n);
-        else e.target.value = String(value);
+        const clamped = clamp(n);
+        if (clamped !== value) onCommit(clamped);
+        setDraft(String(clamped));
       }}
       className="h-[var(--aries-control-height-micro)] w-[52px] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-right text-[length:var(--aries-font-size-base)] tabular-nums outline-none focus:border-border"
     />
@@ -703,18 +838,21 @@ function Select({
   value,
   onChange,
   children,
+  ariaLabel,
   width = 180,
   disabled = false,
 }: {
   value: string | number;
   onChange: (v: string) => void;
   children: React.ReactNode;
+  ariaLabel?: string;
   width?: number;
   disabled?: boolean;
 }) {
   return (
     <select
       data-aries-control-appearance="local"
+      aria-label={ariaLabel}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
@@ -726,10 +864,19 @@ function Select({
   );
 }
 
-function Glyph({ ch }: { ch: string }) {
+function Glyph({ ch, font = "morinus" }: { ch: string; font?: "morinus" | "text" }) {
   return (
-    <span className="font-symbols inline-block w-[var(--aries-control-icon-size-default)] text-center text-[length:var(--aries-font-size-reading)] text-foreground/70">
+    <span aria-hidden="true" className={`${font === "morinus" ? "font-symbols" : ""} inline-block w-[var(--aries-control-icon-size-default)] text-center text-[length:var(--aries-font-size-reading)] text-foreground/70`}>
       {ch}
+    </span>
+  );
+}
+
+function ObjectLabel({ glyph, children, font }: { glyph: string; children: React.ReactNode; font?: "morinus" | "text" }) {
+  return (
+    <span className="flex items-center gap-[var(--aries-control-gap)]">
+      <Glyph ch={glyph} font={font} />
+      {children}
     </span>
   );
 }
@@ -830,7 +977,7 @@ function MirroredSettingsTab({
     <>
       <SectionLabel>{t(section.labelKey)}</SectionLabel>
       {section.settings.map((setting) => (
-        <Row key={setting.id} label={t(setting.labelKey)}>
+        <Row key={setting.id} searchAnchor={`mirrored:${setting.id}`} label={t(setting.labelKey)}>
           <Toggle
             checked={Boolean(opts.display[setting.field])}
             onChange={(value) => {
@@ -1181,8 +1328,8 @@ function InterpretationTab({
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.semanticProfile")}</SectionLabel>
-      <Row label={t("settings.semanticProfile")}>
+      <SectionLabel searchAnchor="section:settings.semanticProfile">{t("settings.semanticProfile")}</SectionLabel>
+      <Row searchAnchor="settings.semanticProfile" label={t("settings.semanticProfile")}>
         <Select
           value={pendingProfileId ?? profiles?.active_profile_id ?? ""}
           width={220}
@@ -1198,7 +1345,7 @@ function InterpretationTab({
         </Select>
       </Row>
       {activeProfile && !draft ? (
-        <Row label={t("settings.customProfile")}>
+        <Row searchAnchor="settings.customProfile" label={t("settings.customProfile")}>
           <Button
             type="button"
             size="sm"
@@ -1222,7 +1369,7 @@ function InterpretationTab({
       ) : null}
       {draft ? (
         <div className="mt-[var(--aries-control-gap)] rounded-[var(--aries-radius-md)] border border-border/50 px-[var(--aries-panel-padding-x)] pb-[var(--aries-control-gap)]">
-          <SectionLabel>{t("settings.customProfile")}</SectionLabel>
+          <SectionLabel searchAnchor="section:settings.customProfile">{t("settings.customProfile")}</SectionLabel>
           <Row label={t("settings.profileId")}>
             <input
               data-aries-control-appearance="local"
@@ -1300,8 +1447,8 @@ function InterpretationTab({
         </div>
       ) : null}
 
-      <SectionLabel>{t("inspector.interpretation")}</SectionLabel>
-      <Row label={t("inspector.discipline")}>
+      <SectionLabel searchAnchor="section:inspector.interpretation">{t("inspector.interpretation")}</SectionLabel>
+      <Row searchAnchor="inspector.discipline" label={t("inspector.discipline")}>
         <Select value={discipline} width={220} onChange={selectDiscipline}>
           <option value="">—</option>
           {catalog?.map((item) => (
@@ -1311,7 +1458,7 @@ function InterpretationTab({
           ))}
         </Select>
       </Row>
-      <Row label={t("inspector.theme")}>
+      <Row searchAnchor="inspector.theme" label={t("inspector.theme")}>
         <Select
           value={lens?.discipline === discipline ? activeTheme?.label ?? "" : ""}
           width={220}
@@ -1328,7 +1475,7 @@ function InterpretationTab({
 
       {doctrineFields.length > 0 ? (
         <>
-          <SectionLabel>{t("settings.globalDoctrine")}</SectionLabel>
+          <SectionLabel searchAnchor="section:settings.globalDoctrine">{t("settings.globalDoctrine")}</SectionLabel>
           {doctrineFields.map((field) => (
             <Row key={doctrinePreferenceKey(field)} label={t(field.labelKey)}>
               <Select
@@ -1350,10 +1497,10 @@ function InterpretationTab({
 
       {lens?.discipline === "horary" || questionFields.length > 0 ? (
         <>
-          <SectionLabel>{t("settings.questionContext")}</SectionLabel>
+          <SectionLabel searchAnchor="section:settings.questionContext">{t("settings.questionContext")}</SectionLabel>
           {lens?.discipline === "horary" ? (
             <>
-              <Row label={t("inspector.quesitedHouse")}>
+              <Row searchAnchor="inspector.quesitedHouse" label={t("inspector.quesitedHouse")}>
                 <Select
                   value={contextHouse("quesited_house")}
                   width={100}
@@ -1365,7 +1512,7 @@ function InterpretationTab({
                   ))}
                 </Select>
               </Row>
-              <Row label={t("inspector.querentHouse")}>
+              <Row searchAnchor="inspector.querentHouse" label={t("inspector.querentHouse")}>
                 <Select
                   value={contextHouse("querent_house")}
                   width={100}
@@ -1409,8 +1556,8 @@ function ExportTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.pngCopy")}</SectionLabel>
-      <Row label={t("settings.pngAppearance")}>
+      <SectionLabel searchAnchor="section:settings.pngCopy">{t("settings.pngCopy")}</SectionLabel>
+      <Row searchAnchor="settings.pngAppearance" label={t("settings.pngAppearance")}>
         <Select
           value={e.pngChartAppearance}
           width={190}
@@ -1423,15 +1570,26 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.includeOverlays")}>
+      <Row searchAnchor="settings.includeOverlays" label={t("settings.includeOverlays")}>
         <Toggle checked={e.pngIncludeOverlays} onChange={(value) => setPatch({ pngIncludeOverlays: value })} />
       </Row>
-      <Row label={t("settings.pngFormat")}>
-        <span className="text-[length:var(--aries-font-size-base)] text-foreground/55">
-          {t("settings.pngSquare")}
-        </span>
+      <Row searchAnchor="settings.pngFormat" label={t("settings.pngFormat")}>
+        <Select
+          value={e.pngPageFormat}
+          width={190}
+          onChange={(value) => setPatch({ pngPageFormat: value as OptionsPayload["export"]["pngPageFormat"] })}
+        >
+          {e.pngPageFormatChoices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {t(choice.labelKey)}
+            </option>
+          ))}
+        </Select>
       </Row>
-      <Row label={t("settings.pngWatermarkStyle")}>
+      <p className="pb-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] text-muted-foreground">
+        {t("settings.pngFormatHint")}
+      </p>
+      <Row searchAnchor="settings.pngWatermarkStyle" label={t("settings.pngWatermarkStyle")}>
         <Select
           value={e.pngWatermarkStyle}
           width={190}
@@ -1442,7 +1600,7 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.pngWatermarkText")}>
+      <Row searchAnchor="settings.pngWatermarkText" label={t("settings.pngWatermarkText")}>
         <input
           key={e.pngWatermarkText}
           data-aries-control-appearance="local"
@@ -1465,8 +1623,8 @@ function ExportTab({ opts, sendPatch }: TabProps) {
       <p id="png-watermark-text-hint" className="pb-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] text-muted-foreground">
         {t("settings.pngWatermarkTextHint")}
       </p>
-      <SectionLabel>{t("settings.pdf")}</SectionLabel>
-      <Row label={t("settings.chartColors")}>
+      <SectionLabel searchAnchor="section:settings.pdf">{t("settings.pdf")}</SectionLabel>
+      <Row searchAnchor="settings.chartColors" label={t("settings.chartColors")}>
         <Select
           value={e.pdfChartColorMode}
           width={190}
@@ -1479,7 +1637,7 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.pdfRasterPreset")}>
+      <Row searchAnchor="settings.pdfRasterPreset" label={t("settings.pdfRasterPreset")}>
         <Select
           value={e.pdfChartRasterPreset}
           width={190}
@@ -1492,11 +1650,24 @@ function ExportTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.includeOverlays")}>
+      <Row searchAnchor="settings.pdfPageFormat" label={t("settings.pdfPageFormat")}>
+        <Select
+          value={e.pdfPageFormat}
+          width={190}
+          onChange={(value) => setPatch({ pdfPageFormat: value as OptionsPayload["export"]["pdfPageFormat"] })}
+        >
+          {e.pdfPageFormatChoices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {t(choice.labelKey)}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.includeOverlays#2" label={t("settings.includeOverlays")}>
         <Toggle checked={e.pdfIncludeOverlays} onChange={(value) => setPatch({ pdfIncludeOverlays: value })} />
       </Row>
-      <SectionLabel>{t("settings.listExports")}</SectionLabel>
-      <Row label={t("textExport.textAndClipboard")}>
+      <SectionLabel searchAnchor="section:settings.listExports">{t("settings.listExports")}</SectionLabel>
+      <Row searchAnchor="textExport.textAndClipboard" label={t("textExport.textAndClipboard")}>
         <Select
           value={e.listExportAspectSymbols ? "glyphs" : "aliases"}
           width={190}
@@ -1513,12 +1684,6 @@ function ExportTab({ opts, sendPatch }: TabProps) {
 // Section title per colour group — the only presentation glue between the
 // daemon `group` enum and a heading. Not an option catalog (no field/label/enum
 // data); the daemon owns which attrs land in each group.
-const COLOR_GROUP_TITLE_KEYS: Record<ColorFieldMeta["group"], string> = {
-  chart: "settings.colorGroupChart",
-  element: "settings.colorGroupElement",
-  dignity: "settings.colorGroupDignity",
-  chrome: "settings.colorGroupChrome",
-};
 const COLOR_GROUP_ORDER: ColorFieldMeta["group"][] = ["chart", "element", "dignity", "chrome"];
 
 function ColorsTab({
@@ -1552,6 +1717,8 @@ function ColorsTab({
   const setBool = (
     attr:
       | "useplanetcolors"
+      | "blendminordignities"
+      | "useplanetcolorsforsubdivisions"
       | "usezodiacelementcolors"
       | "usezodiacelementfieldcolors"
       | "follow_os_theme",
@@ -1600,6 +1767,11 @@ function ColorsTab({
       cat.aspectLabels.map((label, i) => [label, c.clraspect[i] ?? null]),
     );
     lines.push(`flags\t${t("settings.useIndividualColors")}\t${c.useplanetcolors ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.showTriplicityGlyphs")}\t${c.showdignityglyphs ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.showTermGlyphs")}\t${c.showtermglyphs ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.showFaceGlyphs")}\t${c.showfaceglyphs ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.usePlanetColorsForSubdivisions")}\t${c.useplanetcolorsforsubdivisions ? "1" : "0"}\t`);
+    lines.push(`flags\t${t("settings.blendMinorDignities")}\t${c.blendminordignities ? "1" : "0"}\t`);
     lines.push(`flags\t${t("settings.useZodiacElementGlyphColors")}\t${c.usezodiacelementcolors ? "1" : "0"}\t`);
     lines.push(`flags\t${t("settings.useZodiacElementFieldColors")}\t${c.usezodiacelementfieldcolors ? "1" : "0"}\t`);
     lines.push(`values\t${t("settings.zodiacElementFieldOpacity")}\t${Math.round(c.zodiacelementfieldopacity * 100)}%\t`);
@@ -1610,7 +1782,7 @@ function ColorsTab({
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.palettePreset")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.palettePreset">{t("settings.palettePreset")}</SectionLabel>
       <div className="flex flex-wrap gap-[var(--aries-control-gap)] pb-[var(--aries-segmented-control-padding)]">
         {opts.themePresets.map((preset) => (
           <button
@@ -1637,7 +1809,7 @@ function ColorsTab({
           {t("settings.copyTable")}
         </button>
       </div>
-      <Row label={t("settings.followOsTheme")}>
+      <Row searchAnchor="settings.followOsTheme" label={t("settings.followOsTheme")}>
         <Toggle checked={c.follow_os_theme} onChange={(v) => setBool("follow_os_theme", v)} />
       </Row>
 
@@ -1646,22 +1818,39 @@ function ColorsTab({
         if (fields.length === 0) return null;
         return (
           <React.Fragment key={group}>
-            <SectionLabel>{t(COLOR_GROUP_TITLE_KEYS[group])}</SectionLabel>
+            <SectionLabel searchAnchor={`section:${COLOR_GROUP_TITLE_KEYS[group]}`}>{t(COLOR_GROUP_TITLE_KEYS[group])}</SectionLabel>
+            {group === "dignity" ? (
+              <>
+                <Row searchAnchor="settings.blendMinorDignities" label={t("settings.blendMinorDignities")}>
+                  <Toggle
+                    checked={c.blendminordignities}
+                    disabled={c.useplanetcolors}
+                    onChange={(v) => setBool("blendminordignities", v)}
+                  />
+                </Row>
+              </>
+            ) : null}
             {group === "element" ? (
               <>
-                <Row label={t("settings.useZodiacElementGlyphColors")}>
+                <Row searchAnchor="settings.usePlanetColorsForSubdivisions" label={t("settings.usePlanetColorsForSubdivisions")}>
+                  <Toggle
+                    checked={c.useplanetcolorsforsubdivisions}
+                    onChange={(v) => setBool("useplanetcolorsforsubdivisions", v)}
+                  />
+                </Row>
+                <Row searchAnchor="settings.useZodiacElementGlyphColors" label={t("settings.useZodiacElementGlyphColors")}>
                   <Toggle
                     checked={c.usezodiacelementcolors}
                     onChange={(v) => setBool("usezodiacelementcolors", v)}
                   />
                 </Row>
-                <Row label={t("settings.useZodiacElementFieldColors")}>
+                <Row searchAnchor="settings.useZodiacElementFieldColors" label={t("settings.useZodiacElementFieldColors")}>
                   <Toggle
                     checked={c.usezodiacelementfieldcolors}
                     onChange={(v) => setBool("usezodiacelementfieldcolors", v)}
                   />
                 </Row>
-                <Row label={<SubLabel>{t("settings.zodiacElementFieldOpacity")}</SubLabel>}>
+                <Row searchAnchor="settings.zodiacElementFieldOpacity" label={<SubLabel>{t("settings.zodiacElementFieldOpacity")}</SubLabel>}>
                   <Slider
                     value={Math.round(c.zodiacelementfieldopacity * 100)}
                     min={0}
@@ -1677,7 +1866,7 @@ function ColorsTab({
               </>
             ) : null}
             {fields.map((f) => (
-              <Row key={f.attr} label={f.label}>
+              <Row key={f.attr} searchAnchor={`color:${f.attr}`} label={f.label}>
                 <Swatch value={c[f.attr] as RGB | null} label={f.label} attr={f.attr} onCommit={(rgb) => setColor(f.attr, rgb)} />
               </Row>
             ))}
@@ -1685,8 +1874,8 @@ function ColorsTab({
         );
       })}
 
-      <SectionLabel>{t("settings.individualBodies")}</SectionLabel>
-      <Row label={t("settings.useIndividualColors")}>
+      <SectionLabel searchAnchor="section:settings.individualBodies">{t("settings.individualBodies")}</SectionLabel>
+      <Row searchAnchor="settings.useIndividualColors" label={t("settings.useIndividualColors")}>
         <Toggle checked={c.useplanetcolors} onChange={(v) => setBool("useplanetcolors", v)} />
       </Row>
       {cat.individualColors.map((p) => (
@@ -1709,7 +1898,7 @@ function ColorsTab({
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.aspects")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.aspects">{t("settings.aspects")}</SectionLabel>
       {cat.aspectLabels.map((label, i) => (
         <Row
           key={label}
@@ -1744,6 +1933,9 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
   );
   type DisplayPatch = Partial<OptionsPayload["display"]>;
   type QuickChartsPatch = Partial<OptionsQuickCharts>;
+  const setSectAllowance = (patch: Pick<Partial<OptionsPlanetsPoints>, "daynightorbdeg" | "daynightorbmin">) => {
+    sendPatch({ planetsPoints: patch }, { ...opts, planetsPoints: { ...opts.planetsPoints, ...patch } });
+  };
   const setDisplayPatch = (patch: DisplayPatch) => {
     sendPatch({ display: patch }, { ...opts, display: { ...d, ...patch } });
   };
@@ -1828,6 +2020,9 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
       { ...opts, display: { ...d, showterms: v }, dignities: { ...opts.dignities, showterms: v } },
     );
   };
+  const setGlyphFlag = (attr: "showdignityglyphs" | "showtermglyphs" | "showfaceglyphs", v: boolean) => {
+    sendPatch({ colors: { [attr]: v } }, { ...opts, colors: { ...opts.colors, [attr]: v } });
+  };
   const setDignityLabelColors = (v: boolean) => {
     sendPatch(
       { dignities: { dignitylabelcolors: v } },
@@ -1837,16 +2032,283 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
 
   return (
     <div className="flex flex-col gap-0">
+      <SectionLabel searchAnchor="section:settings.zodiacAndHouses">{t("settings.zodiacAndHouses")}</SectionLabel>
+      <Row searchAnchor="settings.ayanamsha" label={t("settings.ayanamsha")}>
+        <Select
+          value={opts.ayanamsha.ayanamsha}
+          width={220}
+          onChange={(v) =>
+            sendPatch(
+              { ayanamsha: { ayanamsha: Number(v) } },
+              { ...opts, ayanamsha: { ...opts.ayanamsha, ayanamsha: Number(v) } },
+            )
+          }
+        >
+          {opts.ayanamsha.available.map((entry) => (
+            <option key={entry.index} value={entry.index}>{entry.label}</option>
+          ))}
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.houseSystem" label={t("settings.houseSystem")}>
+        <Select
+          value={opts.houseSystem.hsys}
+          width={220}
+          onChange={(code) =>
+            sendPatch(
+              { houseSystem: { hsys: code } },
+              { ...opts, houseSystem: { ...opts.houseSystem, hsys: code } },
+            )
+          }
+        >
+          {opts.houseSystem.available.map((entry) => (
+            <option key={entry.code} value={entry.code}>{entry.labelKey ? t(entry.labelKey) : entry.label}</option>
+          ))}
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.topocentricMoon" label={t("settings.topocentricMoon")}>
+        <Toggle checked={d.topocentric} onChange={(v) => setBool("topocentric", v)} />
+      </Row>
+      <Row searchAnchor="settings.houses" label={t("settings.houses")}>
+        <Toggle checked={d.houses} onChange={(v) => setBool("houses", v)} />
+      </Row>
+      <Row searchAnchor="settings.outerHouseLines" label={<SubLabel>{t("settings.outerHouseLines")}</SubLabel>}>
+        <Toggle
+          checked={d.houses && d.showouterhouselines}
+          disabled={!d.houses}
+          onChange={(v) => setBool("showouterhouselines", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.zodiacForManazil" label={t("settings.zodiacForManazil")}>
+        <Select
+          value={opts.lunarMansions.manazil_zodiac}
+          width={180}
+          onChange={(v) =>
+            sendPatch(
+              { lunarMansions: { manazil_zodiac: v } },
+              { ...opts, lunarMansions: { ...opts.lunarMansions, manazil_zodiac: v } },
+            )
+          }
+        >
+          {cat.mansionZodiacModes.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </Select>
+      </Row>
+
+      <SectionLabel searchAnchor="section:settings.sect">{t("settings.sect")}</SectionLabel>
+      <Row searchAnchor="settings.dayNightOrb" label={t("settings.dayNightOrb")}>
+        <span className="flex items-center gap-[var(--aries-form-field-gap)]">
+          <span className="flex items-center gap-[var(--aries-control-gap-compact)]" data-settings-search-anchor="settings.dayNightOrbDegrees">
+            <NumberField
+              ariaLabel={t("settings.dayNightOrbDegrees")}
+              value={opts.planetsPoints.daynightorbdeg}
+              min={0}
+              max={6}
+              onCommit={(n) => setSectAllowance({ daynightorbdeg: n })}
+            />
+            <span aria-hidden="true">°</span>
+          </span>
+          <span className="flex items-center gap-[var(--aries-control-gap-compact)]" data-settings-search-anchor="settings.dayNightOrbMinutes">
+            <NumberField
+              ariaLabel={t("settings.dayNightOrbMinutes")}
+              value={opts.planetsPoints.daynightorbmin}
+              min={0}
+              max={59}
+              onCommit={(n) => setSectAllowance({ daynightorbmin: n })}
+            />
+            <span aria-hidden="true">′</span>
+          </span>
+        </span>
+      </Row>
+      <Row searchAnchor="settings.dayNightOrbForLotsAlmutens" label={<SubLabel>{t("settings.dayNightOrbForLotsAlmutens")}</SubLabel>}>
+        <Toggle
+          checked={opts.almutens.usedaynightorb}
+          onChange={(v) =>
+            sendPatch({ almutens: { usedaynightorb: v } }, { ...opts, almutens: { ...opts.almutens, usedaynightorb: v } })
+          }
+        />
+      </Row>
+      <p className="mt-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] text-foreground/60">
+        {t("settings.dayNightOrbHint")}
+      </p>
+
+      <SectionLabel searchAnchor="section:settings.termsAndDecans">{t("settings.termsAndDecans")}</SectionLabel>
+      <Row searchAnchor="settings.terms" label={t("settings.terms")}>
+        <Toggle checked={d.showterms} onChange={setTerms} />
+      </Row>
+      <Row searchAnchor="settings.decans" label={t("settings.decans")}>
+        <Toggle checked={d.showdecans} onChange={(v) => setBool("showdecans", v)} />
+      </Row>
+      <Row searchAnchor="settings.colorDignityLabelsFromGlyph" label={t("settings.colorDignityLabelsFromGlyph")}>
+        <Toggle checked={opts.dignities.dignitylabelcolors} onChange={setDignityLabelColors} />
+      </Row>
+      <Row searchAnchor="settings.showTriplicityGlyphs" label={<SubLabel>{t("settings.showTriplicityGlyphs")}</SubLabel>}>
+        <Toggle checked={opts.colors.showdignityglyphs} onChange={(v) => setGlyphFlag("showdignityglyphs", v)} />
+      </Row>
+      <Row searchAnchor="settings.showTermGlyphs" label={<SubLabel>{t("settings.showTermGlyphs")}</SubLabel>}>
+        <Toggle checked={opts.colors.showtermglyphs} onChange={(v) => setGlyphFlag("showtermglyphs", v)} />
+      </Row>
+      <Row searchAnchor="settings.showFaceGlyphs" label={<SubLabel>{t("settings.showFaceGlyphs")}</SubLabel>}>
+        <Toggle checked={opts.colors.showfaceglyphs} onChange={(v) => setGlyphFlag("showfaceglyphs", v)} />
+      </Row>
+
+      <SectionLabel searchAnchor="section:settings.bodiesAndPoints">{t("settings.bodiesAndPoints")}</SectionLabel>
+      {/* Transcendental U/N/P — labels/glyphs from the catalog. */}
+      {cat.transcendentalLabels.map((item, i) => (
+        <Row
+          key={item.label}
+          label={
+            <ObjectLabel glyph={item.glyph}>
+              {item.label}
+            </ObjectLabel>
+          }
+        >
+          <Toggle
+            checked={Boolean(d.transcendental[i])}
+            onChange={(v) => setVec("transcendental", i, v)}
+          />
+        </Row>
+      ))}
+      <Row searchAnchor="settings.chiron" label={<ObjectLabel glyph={PLANET_GLYPHS[SE_CHIRON]}>{t("settings.chiron")}</ObjectLabel>}>
+        <Toggle checked={d.showchiron} onChange={(v) => setBool("showchiron", v)} />
+      </Row>
+      <Row searchAnchor="settings.apogee" label={<ObjectLabel glyph={PLANET_GLYPHS[SE_MEAN_APOG]}>{t("settings.apogee")}</ObjectLabel>}>
+        <div className="flex items-center gap-[var(--aries-control-gap)]">
+          <Select ariaLabel={t("settings.apogee")} value={d.meanapogee ? 1 : 0} width={110} onChange={(v) => setBool("meanapogee", Number(v) === 1)}>
+            <option value={1}>{t("settings.mean")}</option>
+            <option value={0}>{t("settings.true")}</option>
+          </Select>
+          <Toggle checked={d.showapogee} onChange={(v) => setBool("showapogee", v)} />
+        </div>
+      </Row>
+      <Row searchAnchor="settings.vertex" label={<ObjectLabel glyph={VERTEX_GLYPH}>{t("settings.vertex")}</ObjectLabel>}>
+        <Toggle checked={d.showvertex} onChange={setShowvertex} />
+      </Row>
+      <Row searchAnchor="settings.aspectsToVertex" label={<SubLabel>{t("settings.aspectsToVertex")}</SubLabel>}>
+        <Toggle
+          checked={d.aspects && d.showvertex && d.showaspectstovertex}
+          disabled={!d.aspects || !d.showvertex}
+          onChange={(v) => setBool("showaspectstovertex", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.nodes" label={<ObjectLabel glyph={PLANET_GLYPHS[SE_MEAN_NODE]}>{t("settings.nodes")}</ObjectLabel>}>
+        <div className="flex items-center gap-[var(--aries-control-gap)]">
+          <Select
+            ariaLabel={t("settings.nodeCalculation")}
+            value={opts.planetsPoints.meannode ? 1 : 0}
+            width={110}
+            onChange={(v) => {
+              const planetsPoints = { ...opts.planetsPoints, meannode: Number(v) === 1 };
+              sendPatch({ planetsPoints: { meannode: planetsPoints.meannode } }, { ...opts, planetsPoints });
+            }}
+          >
+            <option value={1}>{t("settings.mean")}</option>
+            <option value={0}>{t("settings.true")}</option>
+          </Select>
+          <Toggle checked={d.shownodes} onChange={setShownodes} />
+        </div>
+      </Row>
+      <Row searchAnchor="settings.aspectsToNodes" label={<SubLabel>{t("settings.aspectsToNodes")}</SubLabel>}>
+        <Toggle
+          checked={d.aspects && d.shownodes && d.aspectstonodes}
+          disabled={!d.aspects || !d.shownodes}
+          onChange={(v) => setBool("aspectstonodes", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.fortuna" label={<ObjectLabel glyph={FORTUNE_GLYPH}>{t("settings.fortuna")}</ObjectLabel>}>
+        <Toggle checked={d.showlof} onChange={setShowlof} />
+      </Row>
+      <Row searchAnchor="settings.aspectsToFortuna" label={<SubLabel>{t("settings.aspectsToFortuna")}</SubLabel>}>
+        <Toggle
+          checked={d.aspects && d.showlof && d.showaspectstolof}
+          disabled={!d.aspects || !d.showlof}
+          onChange={(v) => setBool("showaspectstolof", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.outerRingFortunaLabel" label={<SubLabel>{t("settings.outerRingFortunaLabel")}</SubLabel>}>
+        <Toggle
+          checked={d.showlof && d.showlofouterring}
+          disabled={!d.showlof}
+          onChange={(v) => setBool("showlofouterring", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.prenatalSyzygy" label={<ObjectLabel glyph={SYZYGY_MARKER} font="text">{t("settings.prenatalSyzygy")}</ObjectLabel>}>
+        <Toggle checked={d.showprenatalsyzygy} onChange={(v) => setBool("showprenatalsyzygy", v)} />
+      </Row>
+      <Row searchAnchor="settings.referencePoint" label={<SubLabel>{t("settings.referencePoint")}</SubLabel>}>
+        <Select
+          ariaLabel={t("settings.referencePoint")}
+          value={opts.planetsPoints.syzmoon}
+          width={280}
+          onChange={(v) => {
+            const planetsPoints = { ...opts.planetsPoints, syzmoon: Number(v) };
+            sendPatch({ planetsPoints: { syzmoon: planetsPoints.syzmoon } }, { ...opts, planetsPoints });
+          }}
+        >
+          {cat.syzygyModes.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.prenatalEclipseMarker" label={<ObjectLabel glyph={ECLIPSE_MARKER} font="text">{t("settings.prenatalEclipseMarker")}</ObjectLabel>}>
+        <Toggle checked={d.showprenataleclipse} onChange={(v) => setBool("showprenataleclipse", v)} />
+      </Row>
+      <Row searchAnchor="settings.prenatalEclipseKinds" label={<SubLabel>{t("settings.prenatalEclipseKinds")}</SubLabel>}>
+        <Select
+          ariaLabel={t("settings.prenatalEclipseKinds")}
+          value={opts.eclipses.prenatal_eclipse_mode}
+          width={200}
+          onChange={(v) => {
+            const prenatal_eclipse_mode = v as OptionsPayload["eclipses"]["prenatal_eclipse_mode"];
+            sendPatch({ eclipses: { prenatal_eclipse_mode } }, { ...opts, eclipses: { ...opts.eclipses, prenatal_eclipse_mode } });
+          }}
+        >
+          <option value="solar_only">{t("settings.prenatalEclipseSolarOnly")}</option>
+          <option value="solar_and_lunar">{t("settings.prenatalEclipseSolarAndLunar")}</option>
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.chartPositionLabels" label={t("settings.chartPositionLabels")}>
+        <Toggle checked={d.positions} onChange={(v) => setBool("positions", v)} />
+      </Row>
+      <Row searchAnchor="settings.showArcMinutes" label={<SubLabel>{t("settings.showArcMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.positions && d.positionsminutes}
+          disabled={!d.positions}
+          onChange={(v) => setBool("positionsminutes", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.outerRingPositions" label={t("settings.outerRingPositions")}>
+        <Toggle checked={d.showouterpositions} onChange={(v) => setBool("showouterpositions", v)} />
+      </Row>
+      <Row searchAnchor="settings.showArcMinutes#2" label={<SubLabel>{t("settings.showArcMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.showouterpositions && d.showouterminutes}
+          disabled={!d.showouterpositions}
+          onChange={(v) => setBool("showouterminutes", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.showMansionInMoonInspector" label={t("settings.showMansionInMoonInspector")}>
+        <Toggle
+          checked={opts.lunarMansions.show_manzil_in_inspector}
+          onChange={(v) =>
+            sendPatch(
+              { lunarMansions: { show_manzil_in_inspector: v } },
+              { ...opts, lunarMansions: { ...opts.lunarMansions, show_manzil_in_inspector: v } },
+            )
+          }
+        />
+      </Row>
+
       <SymbolsSection opts={opts} sendPatch={sendPatch} />
 
-      <SectionLabel>{t("settings.aspects")}</SectionLabel>
-      <Row label={t("settings.aspects")}>
+      <SectionLabel searchAnchor="section:settings.aspects">{t("settings.aspects")}</SectionLabel>
+      <Row searchAnchor="settings.aspects" label={t("settings.aspects")}>
         <Toggle checked={d.aspects} onChange={setAspects} />
       </Row>
-      <Row label={t("settings.withSymbols")}>
+      <Row searchAnchor="settings.withSymbols" label={t("settings.withSymbols")}>
         <Toggle checked={d.symbols} disabled={!d.aspects} onChange={(v) => setBool("symbols", v)} />
       </Row>
-      <Row label={t("settings.traditional")}>
+      <Row searchAnchor="settings.traditional" label={t("settings.traditional")}>
         <Toggle
           checked={d.traditionalaspects}
           disabled={!d.aspects}
@@ -1871,31 +2333,31 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           />
         </Row>
       ))}
-      <Row label={t("settings.aspectsToAngles")}>
+      <Row searchAnchor="settings.aspectsToAngles" label={t("settings.aspectsToAngles")}>
         <span />
       </Row>
-      <Row label={<SubLabel>{t("primdir.angleAsc")}</SubLabel>}>
+      <Row searchAnchor="primdir.angleAsc" label={<SubLabel>{t("primdir.angleAsc")}</SubLabel>}>
         <Toggle
           checked={d.showaspectstoasc}
           disabled={!d.aspects}
           onChange={(v) => setBool("showaspectstoasc", v)}
         />
       </Row>
-      <Row label={<SubLabel>{t("primdir.angleMC")}</SubLabel>}>
+      <Row searchAnchor="primdir.angleMC" label={<SubLabel>{t("primdir.angleMC")}</SubLabel>}>
         <Toggle
           checked={d.showaspectstomc}
           disabled={!d.aspects}
           onChange={(v) => setBool("showaspectstomc", v)}
         />
       </Row>
-      <Row label={<SubLabel>{t("primdir.angleDsc")}</SubLabel>}>
+      <Row searchAnchor="primdir.angleDsc" label={<SubLabel>{t("primdir.angleDsc")}</SubLabel>}>
         <Toggle
           checked={d.showaspectstodsc}
           disabled={!d.aspects}
           onChange={(v) => setBool("showaspectstodsc", v)}
         />
       </Row>
-      <Row label={<SubLabel>{t("primdir.angleIC")}</SubLabel>}>
+      <Row searchAnchor="primdir.angleIC" label={<SubLabel>{t("primdir.angleIC")}</SubLabel>}>
         <Toggle
           checked={d.showaspectstoic}
           disabled={!d.aspects}
@@ -1905,14 +2367,14 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
       {/* Aspect behaviour toggles (appearance1dlg.py). The exclusive-on-click subs
           are gated on their master (and the master on `aspects`) — mirrors
           _sync_dependent_aspect_toggles (appearance1dlg.py:726-730). */}
-      <Row label={t("settings.exclusiveAspectsOnClick")}>
+      <Row searchAnchor="settings.exclusiveAspectsOnClick" label={t("settings.exclusiveAspectsOnClick")}>
         <Toggle
           checked={d.exclusive_aspects_on_click}
           disabled={!d.aspects}
           onChange={setExclusiveAspects}
         />
       </Row>
-      <Row label={<SubLabel>{t("settings.showMinor")}</SubLabel>}>
+      <Row searchAnchor="settings.showMinor" label={<SubLabel>{t("settings.showMinor")}</SubLabel>}>
         <Toggle
           checked={d.exclusive_aspects_on_click_show_minor}
           disabled={
@@ -1928,7 +2390,7 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           }
         />
       </Row>
-      <Row label={<SubLabel>{t("settings.traditional")}</SubLabel>}>
+      <Row searchAnchor="settings.traditional#2" label={<SubLabel>{t("settings.traditional")}</SubLabel>}>
         <Toggle
           checked={d.exclusive_aspects_on_click_traditional}
           disabled={!d.aspects || !d.exclusive_aspects_on_click}
@@ -1940,147 +2402,30 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           }
         />
       </Row>
-      <Row label={t("settings.aspectDrawingStandard")}>
+      <Row searchAnchor="settings.aspectDrawingStandard" label={t("settings.aspectDrawingStandard")}>
         <Toggle
           checked={!d.aspect_thickness_mode && !d.aspect_opacity_mode}
           disabled={!d.aspects}
           onChange={(v) => v && setDisplayPatch({ aspect_thickness_mode: false, aspect_opacity_mode: false })}
         />
       </Row>
-      <Row label={<SubLabel>{t("settings.aspectDrawingLineThickness")}</SubLabel>}>
+      <Row searchAnchor="settings.aspectDrawingLineThickness" label={<SubLabel>{t("settings.aspectDrawingLineThickness")}</SubLabel>}>
         <Toggle
           checked={d.aspect_thickness_mode}
           disabled={!d.aspects}
           onChange={(v) => setBool("aspect_thickness_mode", v)}
         />
       </Row>
-      <Row label={<SubLabel>{t("settings.aspectDrawingOpacity")}</SubLabel>}>
+      <Row searchAnchor="settings.aspectDrawingOpacity" label={<SubLabel>{t("settings.aspectDrawingOpacity")}</SubLabel>}>
         <Toggle
           checked={d.aspect_opacity_mode}
           disabled={!d.aspects}
           onChange={(v) => setBool("aspect_opacity_mode", v)}
         />
       </Row>
-      <Row label={t("settings.showPlanetsInAspectHoverFlag")}>
-        <Toggle
-          checked={d.aspect_flag_show_parties}
-          disabled={!d.aspects}
-          onChange={(v) => setBool("aspect_flag_show_parties", v)}
-        />
-      </Row>
 
-      <SectionLabel>{t("settings.bodiesAndPoints")}</SectionLabel>
-      {/* Transcendental U/N/P — labels/glyphs from the catalog. */}
-      {cat.transcendentalLabels.map((item, i) => (
-        <Row
-          key={item.label}
-          label={
-            <span className="flex items-center gap-[var(--aries-control-gap)]">
-              <Glyph ch={item.glyph} />
-              {item.label}
-            </span>
-          }
-        >
-          <Toggle
-            checked={Boolean(d.transcendental[i])}
-            onChange={(v) => setVec("transcendental", i, v)}
-          />
-        </Row>
-      ))}
-      <Row label={t("settings.chiron")}>
-        <Toggle checked={d.showchiron} onChange={(v) => setBool("showchiron", v)} />
-      </Row>
-      <Row label={t("settings.vertex")}>
-        <Toggle checked={d.showvertex} onChange={setShowvertex} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.aspectsToVertex")}</SubLabel>}>
-        <Toggle
-          checked={d.aspects && d.showvertex && d.showaspectstovertex}
-          disabled={!d.aspects || !d.showvertex}
-          onChange={(v) => setBool("showaspectstovertex", v)}
-        />
-      </Row>
-      <Row label={t("settings.nodes")}>
-        <Toggle checked={d.shownodes} onChange={setShownodes} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.aspectsToNodes")}</SubLabel>}>
-        <Toggle
-          checked={d.aspects && d.shownodes && d.aspectstonodes}
-          disabled={!d.aspects || !d.shownodes}
-          onChange={(v) => setBool("aspectstonodes", v)}
-        />
-      </Row>
-      <Row label={t("settings.fortuna")}>
-        <Toggle checked={d.showlof} onChange={setShowlof} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.aspectsToFortuna")}</SubLabel>}>
-        <Toggle
-          checked={d.aspects && d.showlof && d.showaspectstolof}
-          disabled={!d.aspects || !d.showlof}
-          onChange={(v) => setBool("showaspectstolof", v)}
-        />
-      </Row>
-      <Row label={<SubLabel>{t("settings.outerRingFortunaLabel")}</SubLabel>}>
-        <Toggle
-          checked={d.showlof && d.showlofouterring}
-          disabled={!d.showlof}
-          onChange={(v) => setBool("showlofouterring", v)}
-        />
-      </Row>
-      <Row label={t("settings.prenatalSyzygy")}>
-        <Toggle checked={d.showprenatalsyzygy} onChange={(v) => setBool("showprenatalsyzygy", v)} />
-      </Row>
-      <Row label={t("settings.prenatalEclipseMarker")}>
-        <Toggle checked={d.showprenataleclipse} onChange={(v) => setBool("showprenataleclipse", v)} />
-      </Row>
-      <Row label={t("settings.houses")}>
-        <Toggle checked={d.houses} onChange={(v) => setBool("houses", v)} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.outerHouseLines")}</SubLabel>}>
-        <Toggle
-          checked={d.houses && d.showouterhouselines}
-          disabled={!d.houses}
-          onChange={(v) => setBool("showouterhouselines", v)}
-        />
-      </Row>
-      <Row label={t("settings.chartPositionLabels")}>
-        <Toggle checked={d.positions} onChange={(v) => setBool("positions", v)} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.chartPositionMinutes")}</SubLabel>}>
-        <Toggle
-          checked={d.positions && d.positionsminutes}
-          disabled={!d.positions}
-          onChange={(v) => setBool("positionsminutes", v)}
-        />
-      </Row>
-      <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60">
-        {t("settings.chartPositionLabelsHelp")}
-      </p>
-      <Row label={t("styleLab.class.outerObjectPositions")}>
-        <Toggle checked={d.showouterpositions} onChange={(v) => setBool("showouterpositions", v)} />
-      </Row>
-      <Row label={<SubLabel>{t("settings.outerObjectMinutes")}</SubLabel>}>
-        <Toggle
-          checked={d.showouterpositions && d.showouterminutes}
-          disabled={!d.showouterpositions}
-          onChange={(v) => setBool("showouterminutes", v)}
-        />
-      </Row>
-      <Row label={t("settings.terms")}>
-        <Toggle checked={d.showterms} onChange={setTerms} />
-      </Row>
-      <Row label={t("settings.decans")}>
-        <Toggle checked={d.showdecans} onChange={(v) => setBool("showdecans", v)} />
-      </Row>
-      <Row label={t("settings.colorDignityLabelsFromGlyph")}>
-        <Toggle checked={opts.dignities.dignitylabelcolors} onChange={setDignityLabelColors} />
-      </Row>
-      <Row label={t("settings.topocentricMoon")}>
-        <Toggle checked={d.topocentric} onChange={(v) => setBool("topocentric", v)} />
-      </Row>
-
-      <SectionLabel>{t("settings.outerRing")}</SectionLabel>
-      <Row label={t("settings.mode")}>
+      <SectionLabel searchAnchor="section:settings.outerRing">{t("settings.outerRing")}</SectionLabel>
+      <Row searchAnchor="settings.mode" label={t("settings.mode")}>
         <Select
           value={d.showfixstars}
           width={150}
@@ -2093,175 +2438,43 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           ))}
         </Select>
       </Row>
-      {/* FixStars conjunction sub-toggles. enableSubFixstars (appearance1dlg.py:796)
-          is on for FixStars(1)/Asteroids(6)/Midpoints(7)/HybridHits(8); gate the
-          subs to those modes. */}
+      <SectionLabel searchAnchor="section:settings.outerRingConjunctionTargets">{t("settings.outerRingConjunctionTargets")}</SectionLabel>
+      {/* Inner-object visibility is shared with the chart. Only structural
+          cusp inclusion is an independent outer-ring filter. */}
       {(() => {
         const subsEnabled = [1, 6, 7, 8].includes(d.showfixstars);
         return (
           <>
-            <Row label={<SubLabel>{t("settings.nodes")}</SubLabel>}>
+            <Row searchAnchor="settings.nodes#2" label={<SubLabel>{t("settings.nodes")}</SubLabel>}>
               <Toggle
-                checked={d.showfixstarsnodes}
+                checked={d.shownodes}
                 disabled={!subsEnabled}
-                onChange={(v) => setBool("showfixstarsnodes", v)}
+                onChange={setShownodes}
               />
             </Row>
-            <Row label={<SubLabel>{t("settings.intermHcs")}</SubLabel>}>
+            <Row searchAnchor="settings.intermediateHouseCusps" label={<SubLabel>{t("settings.intermediateHouseCusps")}</SubLabel>}>
               <Toggle
                 checked={d.showfixstarshcs}
                 disabled={!subsEnabled}
                 onChange={(v) => setBool("showfixstarshcs", v)}
               />
             </Row>
-            <Row label={<SubLabel>{t("settings.fortuna")}</SubLabel>}>
+            <Row searchAnchor="settings.fortuna#2" label={<SubLabel>{t("settings.fortuna")}</SubLabel>}>
               <Toggle
-                checked={d.showfixstarslof}
+                checked={d.showlof}
                 disabled={!subsEnabled}
-                onChange={(v) => setBool("showfixstarslof", v)}
+                onChange={setShowlof}
               />
             </Row>
           </>
         );
       })()}
-      <Row label={t("settings.morinAntiscia")}>
+      <Row searchAnchor="settings.morinAntiscia" label={t("settings.morinAntiscia")}>
         <Toggle checked={d.morin_antiscia} onChange={(v) => setBool("morin_antiscia", v)} />
       </Row>
 
-      <SectionLabel>{t("settings.chartLayout")}</SectionLabel>
-      <Row label={t("settings.subChartsAsBiwheels")}>
-        <Toggle
-          checked={q.subcharts_open_compound_default}
-          onChange={(v) => setQuickChartsPatch({ subcharts_open_compound_default: v })}
-        />
-      </Row>
-      <Row label={t("settings.multiwheelOpenAtThree")}>
-        <Toggle
-          checked={q.multiwheel_open_at_three}
-          onChange={(v) => setQuickChartsPatch({ multiwheel_open_at_three: v })}
-        />
-      </Row>
-      <WheelPresetControls profile={wheelTypographyProfileForTheme(d.theme)} surface="settings" beforeAction={onBeforeWheelAction} />
-      {d.theme === 2 ? (
-        <Row label={t("settings.angloDenseLabelLayout")}>
-          <Select
-            value={d.anglo_dense_label_layout}
-            width={180}
-            onChange={(v) => setStr("anglo_dense_label_layout", v)}
-          >
-            {cat.angloDenseLabelLayouts.map((layout) => (
-              <option key={layout.value} value={layout.value}>
-                {layout.value === "routed-cusps"
-                  ? t("settings.routedCuspLines")
-                  : layout.value === "sign-locked"
-                  ? t("settings.signLockedCusps")
-                  : t("settings.leaderColumns")}
-              </option>
-            ))}
-          </Select>
-        </Row>
-      ) : null}
-      <Row label={t("settings.angleArrowheads")}>
-        <Toggle
-          checked={d.showanglearrowheads}
-          onChange={(v) => setBool("showanglearrowheads", v)}
-        />
-      </Row>
-      <Row label={t("settings.cusplessAscMcLabels")}>
-        <Toggle
-          checked={d.showcusplessascmclabels}
-          onChange={(v) => setBool("showcusplessascmclabels", v)}
-        />
-      </Row>
-
-      <SectionLabel>{t("settings.multiwheel")}</SectionLabel>
-      <Row label={t("settings.chartRingZodiac")}>
-        <Select
-          value={q.chart_ring_zodiac}
-          width={150}
-          onChange={(v) => setQuickChartsPatch({ chart_ring_zodiac: v === "centre" ? "centre" : "rim" })}
-        >
-          <option value="rim">{t("chartmenu.zodiacOutermost")}</option>
-          <option value="centre">{t("chartmenu.zodiacInnermost")}</option>
-        </Select>
-      </Row>
-      <Row label={t("settings.multiwheelShowPositions")}>
-        <Toggle
-          checked={d.positions && d.multiwheel_show_positions}
-          disabled={!d.positions}
-          onChange={(v) => setBool("multiwheel_show_positions", v)}
-        />
-      </Row>
-      <Row label={<SubLabel>{t("settings.multiwheelShowMinutes")}</SubLabel>}>
-        <Toggle
-          checked={d.positions && d.multiwheel_show_positions && d.multiwheel_show_minutes}
-          disabled={!d.positions || !d.multiwheel_show_positions}
-          onChange={(v) => setBool("multiwheel_show_minutes", v)}
-        />
-      </Row>
-      <Row label={t("settings.multiwheelSignColors")}>
-        <Toggle
-          checked={d.multiwheel_sign_colors}
-          onChange={(v) => setBool("multiwheel_sign_colors", v)}
-        />
-      </Row>
-      <Row label={t("settings.multiwheelAngleLabels")}>
-        <Toggle
-          checked={d.multiwheel_show_angle_labels}
-          onChange={(v) => setBool("multiwheel_show_angle_labels", v)}
-        />
-      </Row>
-
-      <SectionLabel>{t("settings.sizes")}</SectionLabel>
-      {/* Numeric sliders rendered generically from catalog.sliders. */}
-      {cat.sliders.map((s) => (
-        <Row key={s.attr} label={s.label}>
-          <Slider
-            key={`${s.attr}:${Number(d[s.attr] ?? s.min)}`}
-            value={Number(d[s.attr] ?? s.min)}
-            min={s.min}
-            max={s.max}
-            step={s.step}
-            onCommit={(n) => setNum(s.attr, s.kind === "int" ? Math.round(n) : n)}
-          />
-        </Row>
-      ))}
-
-      <SectionLabel>{t("settings.chartHeader")}</SectionLabel>
-      <Row label={t("settings.planetaryHour")}>
-        <Toggle checked={d.planetarydayhour} onChange={(v) => setBool("planetarydayhour", v)} />
-      </Row>
-      <Row label={t("settings.housesystem")}>
-        <Toggle checked={d.housesystem} onChange={(v) => setBool("housesystem", v)} />
-      </Row>
-      <Row label={t("settings.information")}>
-        <Toggle checked={d.information} onChange={(v) => setBool("information", v)} />
-      </Row>
-      <Row label={t("settings.radixNameInCanvas")}>
-        <Toggle
-          checked={d.showradixnameincanvas}
-          onChange={(v) => setBool("showradixnameincanvas", v)}
-        />
-      </Row>
-      <Row label={t("settings.showSecondsInHeader")}>
-        <Toggle checked={d.showseconds} onChange={(v) => setBool("showseconds", v)} />
-      </Row>
-      <Row label={t("settings.dateFormat")}>
-        <Select
-          value={d.dateconvention}
-          width={170}
-          onChange={(v) => setStr("dateconvention", v)}
-        >
-          {cat.dateConventions.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </Select>
-      </Row>
-
-      <SectionLabel>{t("settings.combustion")}</SectionLabel>
-      <Row label={t("settings.doctrine")}>
+      <SectionLabel searchAnchor="section:settings.combustion">{t("settings.combustion")}</SectionLabel>
+      <Row searchAnchor="settings.doctrine" label={t("settings.doctrine")}>
         <Select
           value={d.solarconditionmode}
           width={180}
@@ -2283,8 +2496,8 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
         </p>
       ) : null}
 
-      <SectionLabel>{t("settings.phasisHeliacal")}</SectionLabel>
-      <Row label={t("settings.mode")}>
+      <SectionLabel searchAnchor="section:settings.phasisHeliacal">{t("settings.phasisHeliacal")}</SectionLabel>
+      <Row searchAnchor="settings.mode#2" label={t("settings.mode")}>
         <Select
           value={d.phasismode}
           width={150}
@@ -2297,15 +2510,30 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.modernPlanets")}>
+      <Row searchAnchor="settings.modernPlanets" label={t("settings.modernPlanets")}>
         <Toggle checked={d.extendedradixstations} onChange={(v) => setBool("extendedradixstations", v)} />
       </Row>
 
-      <SectionLabel>{t("settings.cazimi")}</SectionLabel>
-      <Row label={t("settings.display")}>
+      <SectionLabel searchAnchor="section:voc.title">{t("voc.title")}</SectionLabel>
+      <Row searchAnchor="settings.display" label={t("settings.display")}>
+        <Toggle checked={d.showvoidcourse} onChange={(v) => setBool("showvoidcourse", v)} />
+      </Row>
+      <Row searchAnchor="settings.doctrine#2" label={t("settings.doctrine")}>
+        <Select value={d.voidcoursepolicy} width={220} onChange={(v) => setNum("voidcoursepolicy", Number(v))}>
+          {cat.voidCoursePolicies.map((policy) => (
+            <option key={policy.value} value={policy.value}>{t(policy.labelKey)}</option>
+          ))}
+        </Select>
+      </Row>
+      <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60" aria-live="polite">
+        {t(cat.voidCoursePolicies.find((policy) => policy.value === d.voidcoursepolicy)?.descriptionKey ?? "voc.hellenisticDescription")}
+      </p>
+
+      <SectionLabel searchAnchor="section:settings.cazimi">{t("settings.cazimi")}</SectionLabel>
+      <Row searchAnchor="settings.display#2" label={t("settings.display")}>
         <Toggle checked={d.showcazimi} onChange={(v) => setBool("showcazimi", v)} />
       </Row>
-      <Row label={t("settings.mode")}>
+      <Row searchAnchor="settings.mode#3" label={t("settings.mode")}>
         <Select
           value={d.cazimimode}
           width={150}
@@ -2319,14 +2547,183 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
         </Select>
       </Row>
 
-      <SectionLabel>{t("settings.synodic")}</SectionLabel>
-      <Row label={t("settings.shiftArrow")}>
+      <SectionLabel searchAnchor="section:settings.eclipses">{t("settings.eclipses")}</SectionLabel>
+      <Row searchAnchor="settings.eclipseOverlay" label={t("settings.eclipseOverlay")}>
+        <Toggle checked={d.showeclipseoverlay} onChange={(v) => setBool("showeclipseoverlay", v)} />
+      </Row>
+      <Row searchAnchor="settings.openEclipseChartsAt" label={t("settings.openEclipseChartsAt")}>
         <Select
-          value={d.synodicmode}
-          width={150}
-          onChange={(v) => setNum("synodicmode", Number(v))}
+          value={opts.eclipses.eclipse_chart_moment}
+          width={180}
+          onChange={(v) =>
+            sendPatch(
+              { eclipses: { eclipse_chart_moment: v } },
+              { ...opts, eclipses: { ...opts.eclipses, eclipse_chart_moment: v } },
+            )
+          }
         >
-          {cat.synodicModes.map((m) => (
+          {cat.eclipseModes.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </Select>
+      </Row>
+
+      <SectionLabel searchAnchor="section:settings.chartLayout">{t("settings.chartLayout")}</SectionLabel>
+      <Row searchAnchor="settings.subChartsAsBiwheels" label={t("settings.subChartsAsBiwheels")}>
+        <Toggle
+          checked={q.subcharts_open_compound_default}
+          onChange={(v) => setQuickChartsPatch({ subcharts_open_compound_default: v })}
+        />
+      </Row>
+      <Row searchAnchor="settings.multiwheelOpenAtThree" label={t("settings.multiwheelOpenAtThree")}>
+        <Toggle
+          checked={q.multiwheel_open_at_three}
+          onChange={(v) => setQuickChartsPatch({ multiwheel_open_at_three: v })}
+        />
+      </Row>
+      <div data-settings-search-anchor="wheelPreset.title">
+        <WheelPresetControls profile={wheelTypographyProfileForTheme(d.theme)} surface="settings" beforeAction={onBeforeWheelAction} />
+      </div>
+      {d.theme === 2 ? (
+        <Row searchAnchor="settings.angloDenseLabelLayout" label={t("settings.angloDenseLabelLayout")}>
+          <Select
+            value={d.anglo_dense_label_layout}
+            width={180}
+            onChange={(v) => setStr("anglo_dense_label_layout", v)}
+          >
+            {cat.angloDenseLabelLayouts.map((layout) => (
+              <option key={layout.value} value={layout.value}>
+                {layout.value === "routed-cusps"
+                  ? t("settings.routedCuspLines")
+                  : layout.value === "sign-locked"
+                  ? t("settings.signLockedCusps")
+                  : t("settings.leaderColumns")}
+              </option>
+            ))}
+          </Select>
+        </Row>
+      ) : null}
+      <Row searchAnchor="settings.angleArrowheads" label={t("settings.angleArrowheads")}>
+        <Toggle
+          checked={d.showanglearrowheads}
+          onChange={(v) => setBool("showanglearrowheads", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.cusplessAscMcLabels" label={t("settings.cusplessAscMcLabels")}>
+        <Toggle
+          checked={d.showcusplessascmclabels}
+          onChange={(v) => setBool("showcusplessascmclabels", v)}
+        />
+      </Row>
+
+      <SectionLabel searchAnchor="section:chartmenu.ascensional">{t("chartmenu.ascensional")}</SectionLabel>
+      <Row searchAnchor="settings.ascensionalReadout" label={t("settings.ascensionalReadout")}>
+        <Select
+          ariaLabel={t("settings.ascensionalReadout")}
+          value={d.ascensional_readout}
+          onChange={(v) => setStr("ascensional_readout", v)}
+        >
+          <option value="mdo-quadrant">{t("chartmenu.mdoReadout")}</option>
+          <option value="absolute">{t("chartmenu.absoluteDegrees")}</option>
+          <option value="equatorial-signs">{t("chartmenu.equatorialNotation")}</option>
+        </Select>
+      </Row>
+      <Row searchAnchor="chartmenu.equatorialSigns" label={t("chartmenu.equatorialSigns")}>
+        <Toggle
+          checked={d.ascensional_equatorial_signs}
+          onChange={(v) => setBool("ascensional_equatorial_signs", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.ascensionalPrecessionMeasure" label={t("settings.ascensionalPrecessionMeasure")}>
+        <Select
+          ariaLabel={t("settings.ascensionalPrecessionMeasure")}
+          value={d.ascensional_precession_measure}
+          onChange={(v) => setStr("ascensional_precession_measure", v)}
+        >
+          <option value="ecliptic">{t("settings.ascensionalPrecessionEcliptic")}</option>
+          <option value="equatorial">{t("settings.ascensionalPrecessionEquatorial")}</option>
+        </Select>
+      </Row>
+
+      <SectionLabel searchAnchor="section:settings.multiwheel">{t("settings.multiwheel")}</SectionLabel>
+      <Row searchAnchor="settings.chartRingZodiac" label={t("settings.chartRingZodiac")}>
+        <Select
+          value={q.chart_ring_zodiac}
+          width={150}
+          onChange={(v) => setQuickChartsPatch({ chart_ring_zodiac: v === "centre" ? "centre" : "rim" })}
+        >
+          <option value="rim">{t("chartmenu.zodiacOutermost")}</option>
+          <option value="centre">{t("chartmenu.zodiacInnermost")}</option>
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.multiwheelShowPositions" label={t("settings.multiwheelShowPositions")}>
+        <Toggle
+          checked={d.positions && d.multiwheel_show_positions}
+          disabled={!d.positions}
+          onChange={(v) => setBool("multiwheel_show_positions", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.multiwheelShowMinutes" label={<SubLabel>{t("settings.multiwheelShowMinutes")}</SubLabel>}>
+        <Toggle
+          checked={d.positions && d.multiwheel_show_positions && d.multiwheel_show_minutes}
+          disabled={!d.positions || !d.multiwheel_show_positions}
+          onChange={(v) => setBool("multiwheel_show_minutes", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.multiwheelSignColors" label={t("settings.multiwheelSignColors")}>
+        <Toggle
+          checked={d.multiwheel_sign_colors}
+          onChange={(v) => setBool("multiwheel_sign_colors", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.multiwheelAngleLabels" label={t("settings.multiwheelAngleLabels")}>
+        <Toggle
+          checked={d.multiwheel_show_angle_labels}
+          onChange={(v) => setBool("multiwheel_show_angle_labels", v)}
+        />
+      </Row>
+
+      <SectionLabel searchAnchor="section:settings.sizes">{t("settings.sizes")}</SectionLabel>
+      {/* Numeric sliders rendered generically from catalog.sliders. */}
+      {cat.sliders.map((s) => (
+        <Row key={s.attr} searchAnchor={`slider:${s.attr}`} label={s.label}>
+          <Slider
+            key={`${s.attr}:${Number(d[s.attr] ?? s.min)}`}
+            value={Number(d[s.attr] ?? s.min)}
+            min={s.min}
+            max={s.max}
+            step={s.step}
+            onCommit={(n) => setNum(s.attr, s.kind === "int" ? Math.round(n) : n)}
+          />
+        </Row>
+      ))}
+
+      <SectionLabel searchAnchor="section:settings.chartHeader">{t("settings.chartHeader")}</SectionLabel>
+      <Row searchAnchor="settings.planetaryHour" label={t("settings.planetaryHour")}>
+        <Toggle checked={d.planetarydayhour} onChange={(v) => setBool("planetarydayhour", v)} />
+      </Row>
+      <Row searchAnchor="settings.housesystem" label={t("settings.housesystem")}>
+        <Toggle checked={d.housesystem} onChange={(v) => setBool("housesystem", v)} />
+      </Row>
+      <Row searchAnchor="settings.information" label={t("settings.information")}>
+        <Toggle checked={d.information} onChange={(v) => setBool("information", v)} />
+      </Row>
+      <Row searchAnchor="settings.radixNameInCanvas" label={t("settings.radixNameInCanvas")}>
+        <Toggle
+          checked={d.showradixnameincanvas}
+          onChange={(v) => setBool("showradixnameincanvas", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.showSecondsInHeader" label={t("settings.showSecondsInHeader")}>
+        <Toggle checked={d.showseconds} onChange={(v) => setBool("showseconds", v)} />
+      </Row>
+      <Row searchAnchor="settings.dateFormat" label={t("settings.dateFormat")}>
+        <Select
+          value={d.dateconvention}
+          width={170}
+          onChange={(v) => setStr("dateconvention", v)}
+        >
+          {cat.dateConventions.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
             </option>
@@ -2334,14 +2731,61 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
         </Select>
       </Row>
 
-      <SectionLabel>{t("settings.eclipses")}</SectionLabel>
-      <Row label={t("settings.eclipseOverlay")}>
-        <Toggle checked={d.showeclipseoverlay} onChange={(v) => setBool("showeclipseoverlay", v)} />
+      <SectionLabel searchAnchor="section:settings.dashboard.title">{t("settings.dashboard.title")}</SectionLabel>
+      <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60">
+        {t("settings.dashboard.description")}
+      </p>
+      <Row searchAnchor="settings.dashboard.aspectGrid" label={t("settings.dashboard.aspectGrid")}>
+        <Toggle checked={d.dashboard_aspect_grid} onChange={(v) => setBool("dashboard_aspect_grid", v)} />
+      </Row>
+      <Row searchAnchor="settings.dashboard.aspectGridLarge" label={t("settings.dashboard.aspectGridLarge")}>
+        <Toggle checked={d.dashboard_grid_large} disabled={!d.dashboard_aspect_grid} onChange={(v) => setBool("dashboard_grid_large", v)} />
+      </Row>
+      <Row searchAnchor="settings.dashboard.aspectGridOrbs" label={t("settings.dashboard.aspectGridOrbs")}>
+        <Toggle
+          checked={d.dashboard_grid_orbs}
+          disabled={!d.dashboard_aspect_grid}
+          onChange={(v) => setBool("dashboard_grid_orbs", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.dashboard.aspectGridParallels" label={t("settings.dashboard.aspectGridParallels")}>
+        <Toggle
+          checked={d.dashboard_grid_parallels}
+          disabled={!d.dashboard_aspect_grid}
+          onChange={(v) => setBool("dashboard_grid_parallels", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.dashboard.declination" label={t("settings.dashboard.declination")}>
+        <Toggle checked={d.dashboard_declination} onChange={(v) => setBool("dashboard_declination", v)} />
+      </Row>
+      <Row searchAnchor="settings.dashboard.declinationHorizontal" label={t("settings.dashboard.declinationHorizontal")}>
+        <Toggle
+          checked={d.dashboard_declination_horizontal}
+          disabled={!d.dashboard_declination}
+          onChange={(v) => setBool("dashboard_declination_horizontal", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.dashboard.declinationMirrored" label={t("settings.dashboard.declinationMirrored")}>
+        <Toggle
+          checked={d.dashboard_declination_mirrored}
+          disabled={!d.dashboard_declination}
+          onChange={(v) => setBool("dashboard_declination_mirrored", v)}
+        />
+      </Row>
+      <Row searchAnchor="settings.dashboard.moon" label={t("settings.dashboard.moon")}>
+        <Toggle checked={d.dashboard_moon} onChange={(v) => setBool("dashboard_moon", v)} />
+      </Row>
+      <Row searchAnchor="settings.dashboard.moonAllBodies" label={t("settings.dashboard.moonAllBodies")}>
+        <Toggle
+          checked={d.dashboard_moon_all_bodies}
+          disabled={!d.dashboard_moon}
+          onChange={(v) => setBool("dashboard_moon_all_bodies", v)}
+        />
       </Row>
 
-      <SectionLabel>{t("settings.display")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.display">{t("settings.display")}</SectionLabel>
       {cat.fontProfiles.length > 0 ? (
-        <Row label={t("settings.typeface")}>
+        <Row searchAnchor="settings.typeface" label={t("settings.typeface")}>
           <Select
             value={d.fontfamily}
             width={160}
@@ -2355,24 +2799,48 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           </Select>
         </Row>
       ) : null}
-      <Row label={t("settings.showTradFixStarNamesPdLists")}>
+      <Row searchAnchor="settings.inspectorTextSize" label={t("settings.inspectorTextSize")}>
+        <Select
+          value={d.inspector_text_size ?? "normal"}
+          width={160}
+          onChange={(value) => setStr("inspector_text_size", value)}
+        >
+          <option value="normal">{t("inspector.textSize.normal")}</option>
+          <option value="larger">{t("inspector.textSize.larger")}</option>
+          <option value="extra-large">{t("inspector.textSize.extraLarge")}</option>
+        </Select>
+      </Row>
+      <Row searchAnchor="settings.showTradFixStarNamesPdLists" label={t("settings.showTradFixStarNamesPdLists")}>
         <Toggle
           checked={d.usetradfixstarnamespdlist}
           onChange={(v) => setBool("usetradfixstarnamespdlist", v)}
         />
       </Row>
-      <Row label={t("settings.showChartNavigationBar")}>
+      <Row searchAnchor="settings.showChartNavigationBar" label={t("settings.showChartNavigationBar")}>
         <Toggle checked={d.show_help_chip} onChange={(v) => setBool("show_help_chip", v)} />
       </Row>
+      <Row searchAnchor="settings.shiftArrow" label={t("settings.shiftArrow")}>
+        <Select
+          value={d.synodicmode}
+          width={150}
+          onChange={(v) => setNum("synodicmode", Number(v))}
+        >
+          {cat.synodicModes.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </Row>
 
-      <SectionLabel>{t("aspectList.title")}</SectionLabel>
-      <Row label={t("settings.showAspectsForDerivedPoints")}>
+      <SectionLabel searchAnchor="section:aspectList.title">{t("aspectList.title")}</SectionLabel>
+      <Row searchAnchor="settings.showAspectsForDerivedPoints" label={t("settings.showAspectsForDerivedPoints")}>
         <Toggle
           checked={aspectList.showAspectsForDerivedPoints}
           onChange={(v) => setAspectListPatch({ showAspectsForDerivedPoints: v })}
         />
       </Row>
-      <Row label={t("settings.aspectListPerfectionLinkDefault")}>
+      <Row searchAnchor="settings.aspectListPerfectionLinkDefault" label={t("settings.aspectListPerfectionLinkDefault")}>
         <Select
           value={aspectList.perfectionLinkMode}
           width={200}
@@ -2385,47 +2853,6 @@ function AppearanceTab({ opts, sendPatch, onBeforeWheelAction }: TabProps & {onB
           <option value="transits">{t("dirview.openAsTransit")}</option>
           <option value="secondary">{t("aspectList.openAsSecondaryProgression")}</option>
         </Select>
-      </Row>
-    </div>
-  );
-}
-
-function LunarMansionsTab({ opts, sendPatch }: TabProps) {
-  const t = useT();
-  return (
-    <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.lunarMansions")}</SectionLabel>
-      <Row label={t("settings.zodiacForManazil")}>
-        <Select
-          value={opts.lunarMansions.manazil_zodiac}
-          width={180}
-          onChange={(v) =>
-            sendPatch(
-              { lunarMansions: { manazil_zodiac: v } },
-              { ...opts, lunarMansions: { ...opts.lunarMansions, manazil_zodiac: v } },
-            )
-          }
-        >
-          {opts.catalog.mansionZodiacModes.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </Select>
-      </Row>
-      <Row label={t("settings.showMansionInMoonInspector")}>
-        <Toggle
-          checked={opts.lunarMansions.show_manzil_in_inspector}
-          onChange={(v) =>
-            sendPatch(
-              { lunarMansions: { show_manzil_in_inspector: v } },
-              {
-                ...opts,
-                lunarMansions: { ...opts.lunarMansions, show_manzil_in_inspector: v },
-              },
-            )
-          }
-        />
       </Row>
     </div>
   );
@@ -2471,8 +2898,8 @@ function SpeculumTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.display")}</SectionLabel>
-      <Row label={t("settings.speculumSpeedDisplay")}>
+      <SectionLabel searchAnchor="section:settings.display">{t("settings.display")}</SectionLabel>
+      <Row searchAnchor="settings.speculumSpeedDisplay" label={t("settings.speculumSpeedDisplay")}>
         <Select
           value={s.speedMode}
           width={180}
@@ -2493,100 +2920,50 @@ function SpeculumTab({ opts, sendPatch }: TabProps) {
           />
         </Row>
       ))}
-      <Row label={t("settings.dodecatemorion")}>
+      <Row searchAnchor="settings.dodecatemorion" label={t("settings.dodecatemorion")}>
         <Toggle checked={s[activeDodec]} onChange={(v) => setFlag(activeDodec, v)} />
       </Row>
 
-      <SectionLabel>{t("settings.rectascension")}</SectionLabel>
-      <Row label={t("settings.inTime")}>
+      <SectionLabel searchAnchor="section:settings.rectascension">{t("settings.rectascension")}</SectionLabel>
+      <Row searchAnchor="settings.inTime" label={t("settings.inTime")}>
         <Toggle checked={s.intime} onChange={(v) => setFlag("intime", v)} />
       </Row>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 3 — House System  (onHouseSystem: radio list over houses.Houses.hsystems)
-// ---------------------------------------------------------------------------
+/** Label and cited hint of each daemon moiety preset (engine.orb_policy.PRESETS). */
+const ORB_PRESET_KEYS: Record<string, { label: string; hint: string }> = {
+  lilly: { label: "settings.orbRuleLilly", hint: "settings.orbRuleLillyHint" },
+  biruni: { label: "settings.orbRuleBiruni", hint: "settings.orbRuleBiruniHint" },
+  leo: { label: "settings.orbRuleLeo", hint: "settings.orbRuleLeoHint" },
+  morin: { label: "settings.orbRuleMorin", hint: "settings.orbRuleMorinHint" },
+};
 
-function HouseSystemTab({ opts, sendPatch }: TabProps) {
-  const hs = opts.houseSystem;
-  const pick = (code: string) => {
-    sendPatch(
-      { houseSystem: { hsys: code } },
-      { ...opts, houseSystem: { ...hs, hsys: code } },
-    );
-  };
-  const t = useT();
-  return (
-    <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.houseSystem")}</SectionLabel>
-      {hs.available.map((entry) => (
-        <button
-          key={entry.code}
-          type="button"
-          onClick={() => pick(entry.code)}
-          className="flex h-[var(--aries-control-height-small)] items-center justify-between border-b border-border/40 text-left last:border-b-0"
-        >
-          <span className="text-[length:var(--aries-font-size-base)] text-foreground/85">
-            {entry.labelKey ? t(entry.labelKey) : entry.label}
-          </span>
-          <span
-            className={
-              "flex h-3.5 w-3.5 items-center justify-center rounded-full border " +
-              (hs.hsys === entry.code ? "border-foreground/80" : "border-border")
-            }
-          >
-            {hs.hsys === entry.code ? <span className="h-1.5 w-1.5 rounded-full bg-foreground/80" /> : null}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
+const WHOLE_ORB_FIELDS = new Set([
+  "orbis", "orbisplanetspar", "orbisH", "orbisAscMC", "orbisparH", "orbisparAscMC",
+  "orbiscuspH", "orbiscuspAscMC", "exact", "orbPolicy",
+]);
 
-// ---------------------------------------------------------------------------
-// Tab 4 — Ayanamsha  (onAyanamshaPick: radio over mtexts.ayanamshalist)
-// ---------------------------------------------------------------------------
-
-function AyanamshaTab({ opts, sendPatch }: TabProps) {
-  const t = useT();
-  const a = opts.ayanamsha;
-  return (
-    <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.ayanamsha")}</SectionLabel>
-      <Row label={t("settings.mode")}>
-        <Select
-          value={a.ayanamsha}
-          width={220}
-          onChange={(v) =>
-            sendPatch(
-              { ayanamsha: { ayanamsha: Number(v) } },
-              { ...opts, ayanamsha: { ...a, ayanamsha: Number(v) } },
-            )
-          }
-        >
-          {a.available.map((entry) => (
-            <option key={entry.index} value={entry.index}>
-              {entry.label}
-            </option>
-          ))}
-        </Select>
-      </Row>
-    </div>
-  );
+/** Whether a queued orb write can absorb this one (latest value wins). */
+function canCoalesceOrbPatch(last: OptionsPatch, patch: OptionsPatch): boolean {
+  if (Object.keys(last).length !== 1 || Object.keys(patch).length !== 1 || !last.orbs || !patch.orbs) return false;
+  const whole = (orbs: object) => Object.keys(orbs).every((key) => WHOLE_ORB_FIELDS.has(key));
+  if (whole(last.orbs) && whole(patch.orbs)) return true;
+  // Typing in one cell sends a value per keystroke; same cell, latest wins.
+  const a = last.orbs.orbCell;
+  const b = patch.orbs.orbCell;
+  return Object.keys(last.orbs).length === 1 && Object.keys(patch.orbs).length === 1
+    && !!a && !!b && a.row === b.row && a.aspect === b.aspect;
 }
 
 // ---------------------------------------------------------------------------
 // Tab 5 — Orbs  (orbisdlg: target selector → 12 aspect orbs + par/contrapar)
 // ---------------------------------------------------------------------------
 
-type FixedStarOrbRow = { name: string; orb: number };
-type OrbsWithFixedStars = OptionsPayload["orbs"] & { fixstarsOrbs?: FixedStarOrbRow[] };
-
 function OrbsTab({ opts, sendPatch }: TabProps) {
   const t = useT();
-  const o = opts.orbs as OrbsWithFixedStars;
+  const o = opts.orbs;
   const cat = opts.catalog;
   // Target: 0..10 = planets/Nodes (orbis rows), "A" = Asc/MC (orbisAscMC),
   // "H" = Houses (orbisH). Mirrors orbisdlg's per-target radio list.
@@ -2597,8 +2974,15 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
   const ti = Number(target);
   const fixedStarRows = o.fixstarsOrbs ?? [];
   const selectedFixedStar = fixedStarRows.find((row) => row.name === fixedStarName) ?? fixedStarRows[0];
+  const fixedStarMode = o.fixstarsOrbMode ?? "individual";
 
-  const aspectVals = isHouses ? o.orbisH : isAscMC ? o.orbisAscMC : (o.orbis[ti] ?? []);
+  const preset = o.orbPresets?.includes(o.orbPolicy ?? "") ? o.orbPolicy : undefined;
+  // Every body cell is editable; an edit sits on the selected base and can be
+  // reset to it, cell by cell or all at once.
+  const edited = (aspectIdx: number) =>
+    !isHouses && !isAscMC && !!o.orbEdited?.some(([row, aspect]) => row === ti && aspect === aspectIdx);
+  const aspectVals = isHouses ? o.orbisH : isAscMC ? o.orbisAscMC
+    : (o.effectiveOrbis?.[ti] ?? o.orbis[ti] ?? []);
   const parVals = isHouses ? o.orbisparH : isAscMC ? o.orbisparAscMC : (o.orbisplanetspar[ti] ?? []);
 
   const setAspect = (aspectIdx: number, n: number) => {
@@ -2611,11 +2995,20 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
       next[aspectIdx] = n;
       sendPatch({ orbs: { orbisAscMC: next } }, { ...opts, orbs: { ...o, orbisAscMC: next } });
     } else {
-      const nextMatrix = o.orbis.map((row) => [...row]);
-      nextMatrix[ti][aspectIdx] = n;
-      sendPatch({ orbs: { orbis: nextMatrix } }, { ...opts, orbs: { ...o, orbis: nextMatrix } });
+      const effectiveOrbis = (o.effectiveOrbis ?? o.orbis).map((row) => [...row]);
+      effectiveOrbis[ti][aspectIdx] = n;
+      const orbEdited: [number, number][] = [
+        ...(o.orbEdited ?? []).filter(([row, aspect]) => row !== ti || aspect !== aspectIdx),
+        [ti, aspectIdx],
+      ];
+      sendPatch(
+        { orbs: { orbCell: { row: ti, aspect: aspectIdx, value: n } } },
+        { ...opts, orbs: { ...o, effectiveOrbis, orbEdited } },
+      );
     }
   };
+  const resetAspect = (aspectIdx: number) =>
+    sendPatch({ orbs: { orbCellReset: { row: ti, aspect: aspectIdx } } }, opts);
   const setPar = (col: 0 | 1, n: number) => {
     if (isHouses) {
       const next = [...o.orbisparH];
@@ -2631,21 +3024,44 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
       sendPatch({ orbs: { orbisplanetspar: next } }, { ...opts, orbs: { ...o, orbisplanetspar: next } });
     }
   };
-  const setScalar = (attr: "orbiscuspH" | "orbiscuspAscMC" | "exact" | "fixstarsOrbAll", n: number) => {
+  const setScalar = (attr: "orbiscuspH" | "orbiscuspAscMC" | "exact", n: number) => {
     sendPatch({ orbs: { [attr]: n } }, { ...opts, orbs: { ...o, [attr]: n } });
   };
   const setFixedStarOrb = (name: string, n: number) => {
     const nextRows = fixedStarRows.map((row) => (row.name === name ? { ...row, orb: n } : row));
     sendPatch(
-      { orbs: { fixstarsOrb: { name, orb: n } } } as OptionsPatch,
-      { ...opts, orbs: { ...o, fixstarsOrbs: nextRows } as OrbsWithFixedStars },
+      { orbs: { fixstarsOrb: { name, orb: n } } },
+      { ...opts, orbs: { ...o, fixstarsOrbMode: "individual", fixstarsOrbs: nextRows } },
     );
   };
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.target")}</SectionLabel>
-      <Row label={t("settings.bodyPoint")}>
+      <Row searchAnchor="settings.orbRule" label={t("settings.orbRule")}>
+        <Select
+          value={o.orbPolicy ?? "custom"}
+          width={180}
+          onChange={(orbPolicy) => sendPatch({ orbs: { orbPolicy } }, { ...opts, orbs: { ...o, orbPolicy } })}
+        >
+          <option value="custom">{t("settings.orbRuleDefault")}</option>
+          {(o.orbPresets ?? []).map((id) => (
+            <option key={id} value={id}>{t(ORB_PRESET_KEYS[id]?.label ?? "settings.orbRuleDefault")}</option>
+          ))}
+        </Select>
+      </Row>
+      <p className="border-b border-border/40 py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] leading-relaxed text-foreground/60">
+        {t((preset && ORB_PRESET_KEYS[preset]?.hint) || "settings.orbRuleCustomHint")}
+      </p>
+      {o.orbEdited?.length ? (
+        <Row label="">
+          <Button type="button" variant="outline" size="sm" onClick={() => sendPatch({ orbs: { orbResetAll: true } }, opts)}>
+            {t("settings.orbResetAll")}
+          </Button>
+        </Row>
+      ) : null}
+
+      <SectionLabel searchAnchor="section:settings.target">{t("settings.target")}</SectionLabel>
+      <Row searchAnchor="settings.bodyPoint" label={t("settings.bodyPoint")}>
         <Select value={target} width={150} onChange={setTarget}>
           {cat.orbTargets.map((opt) => (
             <option key={opt.value} value={String(opt.value)}>
@@ -2657,7 +3073,7 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
         </Select>
       </Row>
 
-      <SectionLabel>{t("settings.aspectOrbsDegrees")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.aspectOrbsDegrees">{t("settings.aspectOrbsDegrees")}</SectionLabel>
       {cat.aspectLabels.map((label, i) => (
         <Row
           key={label}
@@ -2668,59 +3084,96 @@ function OrbsTab({ opts, sendPatch }: TabProps) {
             </span>
           }
         >
+          {edited(i) ? (
+            <button
+              type="button"
+              className="mr-[var(--aries-control-gap-compact)] text-foreground/45 hover:text-foreground"
+              aria-label={t("settings.orbResetCell")}
+              title={t("settings.orbResetCell")}
+              onClick={() => resetAspect(i)}
+            >
+              <RotateCcw className="size-3" aria-hidden />
+            </button>
+          ) : null}
           <NumberField value={aspectVals[i] ?? 0} step={0.5} onCommit={(n) => setAspect(i, n)} />
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.declination")}</SectionLabel>
-      <Row label={t("settings.parallel")}>
+      <SectionLabel searchAnchor="section:settings.declination">{t("settings.declination")}</SectionLabel>
+      <Row searchAnchor="settings.parallel" label={t("settings.parallel")}>
         <NumberField value={parVals[0] ?? 0} step={0.5} onCommit={(n) => setPar(0, n)} />
       </Row>
-      <Row label={t("settings.contraparallel")}>
+      <Row searchAnchor="settings.contraparallel" label={t("settings.contraparallel")}>
         <NumberField value={parVals[1] ?? 0} step={0.5} onCommit={(n) => setPar(1, n)} />
       </Row>
 
-      <SectionLabel>{t("settings.cuspsExactness")}</SectionLabel>
-      <Row label={t("settings.ascMcCuspOrb")}>
+      <SectionLabel searchAnchor="section:settings.cuspsExactness">{t("settings.cuspsExactness")}</SectionLabel>
+      <Row searchAnchor="settings.ascMcCuspOrb" label={t("settings.ascMcCuspOrb")}>
         <NumberField value={o.orbiscuspAscMC} step={0.5} onCommit={(n) => setScalar("orbiscuspAscMC", n)} />
       </Row>
-      <Row label={t("settings.intermediateCuspOrb")}>
+      <Row searchAnchor="settings.intermediateCuspOrb" label={t("settings.intermediateCuspOrb")}>
         <NumberField value={o.orbiscuspH} step={0.5} onCommit={(n) => setScalar("orbiscuspH", n)} />
       </Row>
-      <Row label={t("settings.exactOrb")}>
+      <Row searchAnchor="settings.exactOrb" label={t("settings.exactOrb")}>
         <NumberField value={o.exact} step={0.5} onCommit={(n) => setScalar("exact", n)} />
       </Row>
 
-      <SectionLabel>{t("settings.fixedStars")}</SectionLabel>
-      <Row label={t("settings.conjunctionOrbAllStars")}>
-        <NumberField
-          value={o.fixstarsOrbAll}
-          step={0.5}
-          min={0}
-          max={6}
-          onCommit={(n) => setScalar("fixstarsOrbAll", n)}
-        />
+      <SectionLabel searchAnchor="section:settings.fixedStars">{t("settings.fixedStars")}</SectionLabel>
+      <Row searchAnchor="settings.fixedStarOrbRule" label={t("settings.fixedStarOrbRule")}>
+        <Select value={fixedStarMode} width={250}
+          ariaLabel={t("settings.fixedStarOrbRule")}
+          onChange={(value) => sendPatch({ orbs: {
+            fixstarsOrbMode: value as NonNullable<typeof o.fixstarsOrbMode>,
+          } }, opts)}>
+          <option value="uniform">{t("settings.fixedStarOrbUniform")}</option>
+          <option value="traditional">{t("settings.fixedStarOrbTraditional")}</option>
+          <option value="individual">{t("settings.fixedStarOrbIndividual")}</option>
+        </Select>
       </Row>
-      {selectedFixedStar ? (
+      {fixedStarMode === "uniform" ? (
+        <Row searchAnchor="settings.conjunctionOrbAllStars" label={t("settings.conjunctionOrbAllStars")}>
+          <NumberField value={o.fixstarsOrbAll} step={0.5} min={0} max={o.fixstarsOrbMax ?? 10}
+            onCommit={(n) => sendPatch({ orbs: { fixstarsOrbAll: n } }, {
+              ...opts, orbs: { ...o, fixstarsOrbAll: n,
+                fixstarsOrbs: fixedStarRows.map((row) => ({ ...row, orb: n })),
+              },
+            })} />
+        </Row>
+      ) : selectedFixedStar ? (
         <>
-          <Row label={t("settings.selectedStar")}>
-            <Select value={selectedFixedStar.name} width={180} onChange={setFixedStarName}>
+          {fixedStarMode === "traditional" ? (
+            <Row searchAnchor="settings.fixedStarMagnitudeScale" label={t("settings.fixedStarMagnitudeScale")}>
+              <span className="text-foreground/70 tabular-nums">
+                {(o.fixstarsOrbScale ?? []).map((entry) => `${entry.magnitude}: ${entry.orb}°`).join(" · ")}
+              </span>
+            </Row>
+          ) : null}
+          <Row searchAnchor="settings.selectedStar" label={t("settings.selectedStar")}>
+            <Select value={selectedFixedStar.name} width={250} ariaLabel={t("settings.selectedStar")}
+              onChange={setFixedStarName}>
               {fixedStarRows.map((row) => (
                 <option key={row.name} value={row.name}>
-                  {row.name}
+                  {fixedStarMode === "traditional" && row.magnitude != null
+                    ? t("settings.fixedStarMagnitudeName", { name: row.displayName ?? row.name, magnitude: row.magnitude })
+                    : row.displayName ?? row.name}
                 </option>
               ))}
             </Select>
           </Row>
-          <Row label={t("settings.selectedStarOrb")}>
+          <Row searchAnchor="settings.selectedStarOrb" label={t("settings.selectedStarOrb")}>
             <NumberField
               value={selectedFixedStar.orb}
               step={0.5}
               min={0}
-              max={6}
+              max={o.fixstarsOrbMax ?? 10}
               onCommit={(n) => setFixedStarOrb(selectedFixedStar.name, n)}
             />
           </Row>
+          {fixedStarMode === "traditional" && (selectedFixedStar.magnitude == null || selectedFixedStar.magnitude > 4) ? (
+            <p className="py-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] text-foreground/60">
+              {t("settings.fixedStarOrbFallback")}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -2740,9 +3193,6 @@ function DignitiesTab({ opts, sendPatch }: TabProps) {
   const t = useT();
   const g = opts.dignities;
   const cat = opts.catalog;
-  const setBool = (attr: "showterms" | "dignitylabelcolors", v: boolean) => {
-    sendPatch({ dignities: { [attr]: v } }, { ...opts, dignities: { ...g, [attr]: v } });
-  };
   const setScore = (i: number, n: number) => {
     const next = [...g.dignityscores];
     next[i] = Math.round(n);
@@ -2757,15 +3207,7 @@ function DignitiesTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.display")}</SectionLabel>
-      <Row label={t("settings.showTerms")}>
-        <Toggle checked={g.showterms} onChange={(v) => setBool("showterms", v)} />
-      </Row>
-      <Row label={t("settings.colorDignityLabels")}>
-        <Toggle checked={g.dignitylabelcolors} onChange={(v) => setBool("dignitylabelcolors", v)} />
-      </Row>
-
-      <SectionLabel>{t("settings.dignityScores")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.dignityScores">{t("settings.dignityScores")}</SectionLabel>
       {cat.dignityScoreLabels.map((label, i) => (
         <Row key={label} label={label}>
           <NumberField value={g.dignityscores[i] ?? 0} step={1} onCommit={(n) => setScore(i, n)} />
@@ -2776,8 +3218,8 @@ function DignitiesTab({ opts, sendPatch }: TabProps) {
 
       {cat.termSets.length > 0 ? (
         <>
-          <SectionLabel>{t("settings.termSet")}</SectionLabel>
-          <Row label={t("settings.activeTerms")}>
+          <SectionLabel searchAnchor="section:settings.termSet">{t("settings.termSet")}</SectionLabel>
+          <Row searchAnchor="settings.activeTerms" label={t("settings.activeTerms")}>
             <Select value={g.selterm} width={140} onChange={(v) => setTermSet(Number(v))}>
               {cat.termSets.map((ts) => (
                 <option key={ts.value} value={ts.value}>
@@ -2821,7 +3263,7 @@ function DignityGridEditor({ opts, sendPatch }: TabProps) {
 
   return (
     <>
-      <SectionLabel>{t("settings.essentialDignities")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.essentialDignities">{t("settings.essentialDignities")}</SectionLabel>
       <div className="overflow-x-auto pb-1">
         <table className="border-separate border-spacing-0 text-[length:var(--aries-font-size-small)]">
           <thead>
@@ -2918,7 +3360,7 @@ function TermsGridEditor({ opts, sendPatch }: TabProps) {
 
   return (
     <>
-      <SectionLabel>{t("settings.termsBoundsActiveSet")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.termsBoundsActiveSet">{t("settings.termsBoundsActiveSet")}</SectionLabel>
       <div className="overflow-x-auto pb-1 text-[length:var(--aries-font-size-small)]">
         <table className="border-separate border-spacing-x-1 border-spacing-y-0.5">
           <tbody>
@@ -3059,15 +3501,15 @@ function SymbolsSection({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.glyphVariants")}</SectionLabel>
-      <Row label={t("settings.uranus")}>
+      <SectionLabel searchAnchor="section:settings.glyphVariants">{t("settings.glyphVariants")}</SectionLabel>
+      <Row searchAnchor="settings.uranus" label={t("settings.uranus")}>
         <GlyphChoiceRow
           choices={cat.symbolUranus as { value: boolean; glyph: string }[]}
           current={s.uranus}
           onPick={(v) => setSymbol("uranus", v)}
         />
       </Row>
-      <Row label={t("settings.pluto")}>
+      <Row searchAnchor="settings.pluto" label={t("settings.pluto")}>
         <GlyphChoiceRow
           choices={cat.symbolPluto as { value: number; glyph: string }[]}
           current={s.pluto}
@@ -3089,32 +3531,27 @@ function SymbolsSection({ opts, sendPatch }: TabProps) {
 // def* field each. Persistence + Here-and-Now reconstruction are daemon-side.
 // ---------------------------------------------------------------------------
 
-/** A two-state segmented toggle for `sign` fields (E/W, N/S, +/-). true ==
- * positive (left) value. */
-function SignToggle({
+/** A segmented choice between a few short labelled values. */
+function SegmentedChoice<T extends string>({
   value,
-  positive,
-  negative,
+  options,
   onChange,
 }: {
-  value: boolean;
-  positive: string;
-  negative: string;
-  onChange: (next: boolean) => void;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (next: T) => void;
 }) {
   return (
     <span className="flex overflow-hidden rounded-[var(--aries-radius-control-compact)] border border-border/60 text-[length:var(--aries-font-size-base)]">
-      {[
-        { v: true, label: positive },
-        { v: false, label: negative },
-      ].map((o) => (
+      {options.map((o) => (
         <button
-          key={o.label}
+          key={o.value}
           type="button"
-          onClick={() => onChange(o.v)}
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
           className={
-            "w-[var(--aries-control-height-small)] py-[var(--aries-segmented-control-padding)] text-center " +
-            (value === o.v ? "bg-foreground/80 text-background" : "text-foreground/70")
+            "whitespace-nowrap px-[var(--aries-control-padding-x)] py-[var(--aries-segmented-control-padding)] text-center " +
+            (value === o.value ? "bg-foreground/80 text-background" : "text-foreground/70")
           }
         >
           {o.label}
@@ -3147,86 +3584,6 @@ function TextField({
       style={{ width }}
       className="h-[var(--aries-control-height-micro)] rounded-[var(--aries-radius-xs)] border border-border/60 bg-transparent px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
     />
-  );
-}
-
-/** Place search reusing the editor's resolve-place flow. Type ≥3 chars + Enter
- * (or the Search button) → daemon-form-shaped candidates; picking one fills the
- * def* fields via `onPick`. The daemon does all geo math (decToDeg split, sign,
- * GMT offset, tzid) — this control only assigns the returned fields. */
-function PlaceSearch({ onPick }: { onPick: (c: PlaceCandidate) => void }) {
-  const t = useT();
-  const [query, setQuery] = React.useState("");
-  const [candidates, setCandidates] = React.useState<PlaceCandidate[] | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [err, setErr] = React.useState<string | null>(null);
-
-  const run = React.useCallback(() => {
-    const q = query.trim();
-    if (q.length < 3) {
-      setErr(t("settings.typeAtLeast3Chars"));
-      return;
-    }
-    setErr(null);
-    setBusy(true);
-    resolvePlace(q)
-      .then((rows) => {
-        setCandidates(rows);
-        if (rows.length === 0) setErr(t("settings.noMatchingPlace"));
-      })
-      .catch((e) => setErr(String(e)))
-      .finally(() => setBusy(false));
-  }, [query, t]);
-
-  const pick = (c: PlaceCandidate) => {
-    onPick(c);
-    setCandidates(null);
-    setQuery(c.name);
-  };
-
-  return (
-    <div className="flex flex-col gap-[var(--aries-control-gap)]">
-      <div className="flex items-center gap-[var(--aries-control-gap)]">
-        <input
-          data-aries-control-appearance="local"
-          type="text"
-          value={query}
-          placeholder={t("settings.searchCity")}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              run();
-            }
-          }}
-          className="h-[var(--aries-control-height-compact)] flex-1 rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
-        />
-        <button
-          type="button"
-          onClick={run}
-          disabled={busy}
-          className="h-[var(--aries-control-height-compact)] rounded-[var(--aries-radius-control-compact)] border border-border/60 px-[var(--aries-control-padding-x)] text-[length:var(--aries-font-size-base)] text-foreground/80 hover:border-border hover:text-foreground disabled:opacity-50"
-        >
-          {busy ? "…" : t("settings.search")}
-        </button>
-      </div>
-      {err ? <div className="text-[length:var(--aries-font-size-small)] text-foreground/55">{err}</div> : null}
-      {candidates && candidates.length > 0 ? (
-        <div className="max-h-40 overflow-y-auto rounded-[var(--aries-radius-control-compact)] border border-border/50">
-          {candidates.map((c, i) => (
-            <button
-              key={`${c.label}-${i}`}
-              type="button"
-              onClick={() => pick(c)}
-              className="flex w-full items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 px-[var(--aries-control-padding-x-compact)] py-[var(--aries-control-padding-y)] text-left last:border-b-0 hover:bg-muted"
-            >
-              <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/85">{c.label}</span>
-              <span className="shrink-0 text-[length:var(--aries-font-size-small)] text-foreground/50">{c.countryName}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -3388,7 +3745,7 @@ function DefaultLocationMapSheet({
             {t("settings.pickDefaultLocation")}
           </DialogTitle>
           <p className="text-[length:var(--aries-font-size-small)] text-foreground/50">
-            {t("settings.rightClickSetDefaultLocation")}
+            {t("settings.defaultLocationMapHint")}
           </p>
         </DialogHeader>
         <div className="relative h-[60vh] w-full bg-background">
@@ -3405,7 +3762,9 @@ function DefaultLocationMapSheet({
         </div>
         <div className="flex h-11 items-center gap-[var(--aries-dialog-footer-gap)] border-t border-border/40 bg-muted/20 px-[var(--aries-dialog-padding)]">
           <span className="min-w-0 flex-1 truncate text-[length:var(--aries-font-size-small)] text-foreground/55">
-            {selection?.placeName ?? ""}
+            {selection
+              ? selection.placeName || `${selection.lat.toFixed(4)}°, ${selection.lon.toFixed(4)}°`
+              : ""}
           </span>
           <Button
             type="button"
@@ -3442,8 +3801,17 @@ function DefaultLocationTab({
 }) {
   const t = useT();
   const loc = opts.defaultLocation;
-  const fields = opts.catalog.defaultLocationFields;
+  const r = opts.revolutions;
+  const altitudeLabel = opts.catalog.defaultLocationFields.find((f) => f.attr === "deflocalt")?.label;
   const [mapOpen, setMapOpen] = React.useState(false);
+  // The search bar shows the saved place name and follows it whenever the
+  // default location changes (search pick, map pick, coordinate edit).
+  const [placeQuery, setPlaceQuery] = React.useState(loc.deflocname);
+  const [shownName, setShownName] = React.useState(loc.deflocname);
+  if (shownName !== loc.deflocname) {
+    setShownName(loc.deflocname);
+    setPlaceQuery(loc.deflocname);
+  }
   const exactLongitude = loc.defloclon ?? (
     (loc.defloceast ? 1 : -1) * (loc.defloclondeg + loc.defloclonmin / 60)
   );
@@ -3451,21 +3819,10 @@ function DefaultLocationTab({
     (loc.deflocnorth ? 1 : -1) * (loc.defloclatdeg + loc.defloclatmin / 60)
   );
 
-  // Patch one def* field (manual edit) — optimistic, like the other tabs.
-  const setField = <K extends keyof OptionsDefaultLocation>(
-    attr: K,
-    value: OptionsDefaultLocation[K],
-  ) => {
-    sendPatch(
-      { defaultLocation: { [attr]: value } },
-      { ...opts, defaultLocation: { ...loc, [attr]: value } },
-    );
-  };
-
   // Picking a resolved place fills the def* fields in ONE grouped patch — the
   // candidate is already form-shaped by the daemon (resolve-place), so map its
   // fields straight onto the def* keys (name, deg/min + E/W·N/S, altitude, GMT
-  // offset, tzid). Auto-DST/TZ is left to the user's existing toggle.
+  // offset, tzid).
   const applyPlace = (c: PlaceCandidate) => {
     const patch: Partial<OptionsDefaultLocation> = {
       deflocname: c.name,
@@ -3489,51 +3846,47 @@ function DefaultLocationTab({
     );
   };
 
-  const renderControl = (f: DefaultLocationFieldMeta) => {
-    switch (f.kind) {
-      case "name":
-        return <TextField value={loc.deflocname} width={140} onCommit={(s) => setField("deflocname", s.slice(0, 20))} />;
-      case "text":
-        return (
-          <TextField
-            value={String(loc[f.attr] ?? "")}
-            width={140}
-            onCommit={(s) => setField(f.attr, s as never)}
-          />
-        );
-      case "int":
-        return (
-          <NumberField
-            value={Number(loc[f.attr] ?? 0)}
-            step={1}
-            onCommit={(n) => setField(f.attr, (Number.isFinite(n) ? Math.trunc(n) : 0) as never)}
-          />
-        );
-      case "sign":
-        return (
-          <SignToggle
-            value={Boolean(loc[f.attr])}
-            positive={f.positive ?? "+"}
-            negative={f.negative ?? "-"}
-            onChange={(v) => setField(f.attr, v as never)}
-          />
-        );
-      case "bool":
-        return <Toggle checked={Boolean(loc[f.attr])} onChange={(v) => setField(f.attr, v as never)} />;
-      default:
-        return null;
-    }
+  // Typed coordinates go through the map-pick write: the daemon names the
+  // place and resolves its time zone, so manual entry never needs zone fields.
+  const coordinateController = React.useRef<AbortController | null>(null);
+  React.useEffect(() => () => coordinateController.current?.abort(), []);
+  const applyCoordinates = (lon: number, lat: number) => {
+    coordinateController.current?.abort();
+    const controller = new AbortController();
+    coordinateController.current = controller;
+    void setDefaultLocationFromMap(lon, lat, "", controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) onDefaultLocationApplied(res.defaultLocation);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) console.error("[defloc-coordinates]", err);
+      });
   };
+
+  const setLocationMode = (
+    attr: "revolutions_solarlocationmode" | "revolutions_lunarlocationmode" | "revolutions_planetslocationmode",
+    ask: boolean,
+  ) => {
+    const value = ask ? 1 : 0;
+    sendPatch(
+      { revolutions: { [attr]: value } },
+      { ...opts, revolutions: { ...r, [attr]: value } },
+    );
+  };
+  const supplementaryLocation = opts.quickCharts.supplementary_location;
 
   return (
     <div className="flex flex-col gap-0">
-      <div className="pb-2">
-        <PlaceSearch onPick={applyPlace} />
-      </div>
-      <div className="flex items-center justify-between pb-2">
-        <p className="text-[length:var(--aries-font-size-small)] text-foreground/50">
-          {t("settings.usedByHereAndNow")}
-        </p>
+      <div className="flex items-center gap-[var(--aries-control-gap)]">
+        <PlaceSearchField
+          value={placeQuery}
+          onValueChange={setPlaceQuery}
+          onPick={applyPlace}
+          bias={{ lat: exactLatitude, lon: exactLongitude, zoom: 9 }}
+          placeholder={t("placeSearch.placeholder")}
+          ariaLabel={t("placeSearch.placeholder")}
+          inputClassName="h-[var(--aries-control-height-compact)] w-full rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-gap)] text-[length:var(--aries-font-size-base)] outline-none focus:border-border"
+        />
         <button
           type="button"
           onClick={() => setMapOpen(true)}
@@ -3542,6 +3895,11 @@ function DefaultLocationTab({
           {t("settings.pickOnMap")}
         </button>
       </div>
+      {loc.defloctzid ? (
+        <p className="pt-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] text-foreground/50">
+          {loc.defloctzid}
+        </p>
+      ) : null}
       {mapOpen ? (
         <DefaultLocationMapSheet
           open={mapOpen}
@@ -3553,41 +3911,80 @@ function DefaultLocationTab({
         />
       ) : null}
 
-      <SectionLabel>{t("settings.place")}</SectionLabel>
-      <Row label={t("common.longitude")}>
-        <span className="font-mono text-[length:var(--aries-font-size-base)] tabular-nums text-foreground/80">
-          {exactLongitude.toFixed(6)}°
-        </span>
+      <SectionLabel searchAnchor="section:settings.supplementaryCharts">{t("settings.supplementaryCharts")}</SectionLabel>
+      <Row searchAnchor="settings.castAt" label={t("settings.castAt")}>
+        <SegmentedChoice
+          value={supplementaryLocation}
+          options={[
+            { value: "radix", label: t("settings.natalPlace") },
+            { value: "default", label: t("settings.tabDefaultLocation") },
+          ]}
+          onChange={(next) => {
+            sendPatch(
+              { quickCharts: { supplementary_location: next } },
+              { ...opts, quickCharts: { ...opts.quickCharts, supplementary_location: next } },
+            );
+          }}
+        />
       </Row>
-      <Row label={t("common.latitude")}>
-        <span className="font-mono text-[length:var(--aries-font-size-base)] tabular-nums text-foreground/80">
-          {exactLatitude.toFixed(6)}°
-        </span>
+      <Row searchAnchor="settings.askPlaceSolarReturn" label={t("settings.askPlaceSolarReturn")}>
+        <Toggle checked={r.revolutions_solarlocationmode === 1} onChange={(v) => setLocationMode("revolutions_solarlocationmode", v)} />
       </Row>
-      {fields
-        .filter((f) => f.kind === "name" || f.attr.startsWith("defloclon") || f.attr.startsWith("defloclat") || f.attr === "deflocalt" || f.attr === "defloceast" || f.attr === "deflocnorth")
-        .map((f) => (
-          <Row key={f.attr} label={f.label}>
-            {renderControl(f)}
-          </Row>
-        ))}
+      <Row searchAnchor="settings.askPlaceLunarReturn" label={t("settings.askPlaceLunarReturn")}>
+        <Toggle checked={r.revolutions_lunarlocationmode === 1} onChange={(v) => setLocationMode("revolutions_lunarlocationmode", v)} />
+      </Row>
+      <Row searchAnchor="settings.askPlacePlanetaryReturn" label={t("settings.askPlacePlanetaryReturn")}>
+        <Toggle checked={r.revolutions_planetslocationmode === 1} onChange={(v) => setLocationMode("revolutions_planetslocationmode", v)} />
+      </Row>
 
-      <SectionLabel>{t("settings.timeZone")}</SectionLabel>
-      {fields
-        .filter(
-          (f) =>
-            f.attr === "defloctzauto" ||
-            f.attr === "deflocplus" ||
-            f.attr === "defloczhour" ||
-            f.attr === "defloczminute" ||
-            f.attr === "deflocdst" ||
-            f.attr === "defloctzid",
-        )
-        .map((f) => (
-          <Row key={f.attr} label={f.label}>
-            {renderControl(f)}
-          </Row>
-        ))}
+      <SectionLabel searchAnchor="section:settings.manualEntry">{t("settings.manualEntry")}</SectionLabel>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(calc(var(--aries-control-height-small)*6),1fr))] gap-x-[var(--aries-section-gap)]">
+        <GridRow searchAnchor="common.latitude" label={t("common.latitude")}>
+          <TextField
+            value={formatCoordinate(exactLatitude, "lat")}
+            width={110}
+            onCommit={(s) => {
+              const lat = parseCoordinate(s, "lat");
+              if (lat !== null) applyCoordinates(exactLongitude, lat);
+            }}
+          />
+        </GridRow>
+        <GridRow searchAnchor="common.longitude" label={t("common.longitude")}>
+          <TextField
+            value={formatCoordinate(exactLongitude, "lon")}
+            width={110}
+            onCommit={(s) => {
+              const lon = parseCoordinate(s, "lon");
+              if (lon !== null) applyCoordinates(lon, exactLatitude);
+            }}
+          />
+        </GridRow>
+        {altitudeLabel ? (
+          <GridRow label={altitudeLabel}>
+            <NumberField
+              value={loc.deflocalt}
+              step={1}
+              onCommit={(n) => {
+                const deflocalt = Number.isFinite(n) ? Math.trunc(n) : 0;
+                sendPatch(
+                  { defaultLocation: { deflocalt } },
+                  { ...opts, defaultLocation: { ...loc, deflocalt } },
+                );
+              }}
+            />
+          </GridRow>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** A settings row inside a wrapping grid; every cell keeps its own rule. */
+function GridRow({ label, children, searchAnchor }: { label: React.ReactNode; children: React.ReactNode; searchAnchor?: string }) {
+  return (
+    <div data-settings-search-anchor={searchAnchor} className="flex h-[var(--aries-control-height-small)] min-w-0 items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40">
+      <span className="truncate text-[length:var(--aries-font-size-base)] text-foreground/80">{label}</span>
+      <span className="flex shrink-0 items-center">{children}</span>
     </div>
   );
 }
@@ -3644,52 +4041,52 @@ function RevolutionsTab({ opts, sendPatch }: TabProps) {
   const locationSelect = (
     attr: "revolutions_solarlocationmode" | "revolutions_lunarlocationmode" | "revolutions_planetslocationmode",
   ) => (
-    <Select value={r[attr]} width={150} onChange={(v) => setInt(attr, v)}>
-      <option value={0}>{t("settings.useNatal")}</option>
+    <Select value={r[attr]} width={200} onChange={(v) => setInt(attr, v)}>
+      <option value={0}>{t("settings.useSupplementaryLocation")}</option>
       <option value={1}>{t("settings.ask")}</option>
     </Select>
   );
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.solarReturn")}</SectionLabel>
-      <Row label={t("settings.precessedSidereal")}>
+      <SectionLabel searchAnchor="section:settings.solarReturn">{t("settings.solarReturn")}</SectionLabel>
+      <Row searchAnchor="settings.precessedSidereal" label={t("settings.precessedSidereal")}>
         <Toggle checked={r.revsidereal_marr_solar} onChange={(v) => setBool("revsidereal_marr_solar", v)} />
       </Row>
-      <Row label={t("settings.year")}>
+      <Row searchAnchor="settings.year" label={t("settings.year")}>
         <Select value={r.revolutions_solaryearmode} width={150} onChange={(v) => setInt("revolutions_solaryearmode", v)}>
           <option value={0}>{t("settings.currentYear")}</option>
           <option value={1}>{t("settings.nextYear")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.location")}>{locationSelect("revolutions_solarlocationmode")}</Row>
-      <Row label={t("chartmenu.tithiPravesha")}>
+      <Row searchAnchor="settings.location" label={t("settings.location")}>{locationSelect("revolutions_solarlocationmode")}</Row>
+      <Row searchAnchor="chartmenu.tithiPravesha" label={t("chartmenu.tithiPravesha")}>
         <Toggle checked={r.revolutions_solarreturnmode === "tithi_pravesha"} onChange={(v) => setReturnMode("revolutions_solarreturnmode", v ? "tithi_pravesha" : "standard")} />
       </Row>
 
-      <SectionLabel>{t("settings.lunarReturn")}</SectionLabel>
-      <Row label={t("settings.precessedSidereal")}>
+      <SectionLabel searchAnchor="section:settings.lunarReturn">{t("settings.lunarReturn")}</SectionLabel>
+      <Row searchAnchor="settings.precessedSidereal#2" label={t("settings.precessedSidereal")}>
         <Toggle checked={r.revsidereal_marr_lunar} onChange={(v) => setBool("revsidereal_marr_lunar", v)} />
       </Row>
-      <Row label={t("settings.location")}>{locationSelect("revolutions_lunarlocationmode")}</Row>
-      <Row label={t("settings.parentChart")}>
+      <Row searchAnchor="settings.location#2" label={t("settings.location")}>{locationSelect("revolutions_lunarlocationmode")}</Row>
+      <Row searchAnchor="settings.parentChart" label={t("settings.parentChart")}>
         <Select value={r.revolutions_lunarparentmode} width={170} onChange={(v) => setInt("revolutions_lunarparentmode", v)}>
           <option value={0}>{t("settings.useRadixMoon")}</option>
           <option value={1}>{t("settings.useSolarReturnMoon")}</option>
         </Select>
       </Row>
-      <Row label={t("chartmenu.lunarPhaseEmbolismic")}>
+      <Row searchAnchor="chartmenu.lunarPhaseEmbolismic" label={t("chartmenu.lunarPhaseEmbolismic")}>
         <Toggle checked={r.revolutions_lunarreturnmode === "soli_lunar"} onChange={(v) => setReturnMode("revolutions_lunarreturnmode", v ? "soli_lunar" : "lunar")} />
       </Row>
-      <Row label={t("chartmenu.jonasArc")}>
+      <Row searchAnchor="chartmenu.jonasArc" label={t("chartmenu.jonasArc")}>
         <Toggle checked={r.revolutions_lunarreturnmode === "jonas_arc"} onChange={(v) => setReturnMode("revolutions_lunarreturnmode", v ? "jonas_arc" : "lunar")} />
       </Row>
 
-      <SectionLabel>{t("settings.planetaryReturns")}</SectionLabel>
-      <Row label={t("settings.precessedSidereal")}>
+      <SectionLabel searchAnchor="section:settings.planetaryReturns">{t("settings.planetaryReturns")}</SectionLabel>
+      <Row searchAnchor="settings.precessedSidereal#3" label={t("settings.precessedSidereal")}>
         <Toggle checked={r.revsidereal_marr_planet} onChange={(v) => setBool("revsidereal_marr_planet", v)} />
       </Row>
-      <Row label={t("settings.location")}>{locationSelect("revolutions_planetslocationmode")}</Row>
+      <Row searchAnchor="settings.location#3" label={t("settings.location")}>{locationSelect("revolutions_planetslocationmode")}</Row>
     </div>
   );
 }
@@ -3711,15 +4108,15 @@ function SolarArcTab({ opts, sendPatch }: TabProps) {
   };
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.tabSolarArcDirections")}</SectionLabel>
-      <Row label={t("settings.method")}>
+      <SectionLabel searchAnchor="section:settings.tabSolarArcDirections">{t("settings.tabSolarArcDirections")}</SectionLabel>
+      <Row searchAnchor="settings.method" label={t("settings.method")}>
         <Select value={q.solar_arc_angle_mode} width={200}
           onChange={(v) => patch({ solar_arc_angle_mode: v as "progressed" | "zodiacal" })}>
           <option value="zodiacal">{t("optmenu.zodiacalDirectionsUniform")}</option>
           <option value="progressed">{t("settings.calculatedAngles")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.calculatedAngles")}>
+      <Row searchAnchor="settings.calculatedAngles" label={t("settings.calculatedAngles")}>
         <Select value={q.solar_arc_angle_method} width={200}
           onChange={(v) => patch({ solar_arc_angle_method: Number(v) })}>
           {opts.catalog.progressionAngleMethods.map((m) => (
@@ -3745,8 +4142,8 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.progressionCalculation")}</SectionLabel>
-      <Row label={t("settings.progressedAngles")}>
+      <SectionLabel searchAnchor="section:settings.progressionCalculation">{t("settings.progressionCalculation")}</SectionLabel>
+      <Row searchAnchor="settings.progressedAngles" label={t("settings.progressedAngles")}>
         <Select
           value={q.progressed_angle_method}
           width={200}
@@ -3757,7 +4154,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.dayType")}>
+      <Row searchAnchor="settings.dayType" label={t("settings.dayType")}>
         <Select
           value={q.progression_day_type}
           width={200}
@@ -3768,7 +4165,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.prebirthPerfectionsConverse")}>
+      <Row searchAnchor="settings.prebirthPerfectionsConverse" label={t("settings.prebirthPerfectionsConverse")}>
         <Toggle
           checked={q.aspectlist_prebirth_secondary_converse}
           onChange={(v) => patch({ aspectlist_prebirth_secondary_converse: v })}
@@ -3777,8 +4174,8 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
 
       <SolarArcTab opts={opts} sendPatch={sendPatch} />
 
-      <SectionLabel>{t("settings.harmonicCharts")}</SectionLabel>
-      <Row label={t("settings.defaultDivisionMethod")}>
+      <SectionLabel searchAnchor="section:settings.harmonicCharts">{t("settings.harmonicCharts")}</SectionLabel>
+      <Row searchAnchor="settings.defaultDivisionMethod" label={t("settings.defaultDivisionMethod")}>
         <Select
           value={q.harmonic_chart_mode}
           width={200}
@@ -3788,7 +4185,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           <option value="varga">{t("chartmenu.vargas")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.vargaDrishti")}>
+      <Row searchAnchor="settings.vargaDrishti" label={t("settings.vargaDrishti")}>
         <Select
           value={q.varga_drishti_mode}
           width={200}
@@ -3799,7 +4196,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           <option value="jaimini">{t("settings.vargaDrishtiJaimini")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.vargaNodeDrishti")}>
+      <Row searchAnchor="settings.vargaNodeDrishti" label={t("settings.vargaNodeDrishti")}>
         <Toggle
           checked={q.varga_node_special_drishti}
           disabled={q.varga_drishti_mode !== "parashari"}
@@ -3807,8 +4204,8 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
         />
       </Row>
 
-      <SectionLabel>{t("settings.launcher")}</SectionLabel>
-      <Row label={t("settings.progressionsTransits")}>
+      <SectionLabel searchAnchor="section:settings.launcher">{t("settings.launcher")}</SectionLabel>
+      <Row searchAnchor="settings.progressionsTransits" label={t("settings.progressionsTransits")}>
         <Select
           value={q.secondary_progression_launch_mode}
           width={150}
@@ -3819,7 +4216,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.tableTimes")}>
+      <Row searchAnchor="settings.tableTimes" label={t("settings.tableTimes")}>
         <Select
           value={q.event_table_time_basis}
           width={170}
@@ -3830,7 +4227,7 @@ function ProgressionsTab({ opts, sendPatch }: TabProps) {
           ))}
         </Select>
       </Row>
-      <Row label={t("settings.timedRowsShowRadix")}>
+      <Row searchAnchor="settings.timedRowsShowRadix" label={t("settings.timedRowsShowRadix")}>
         <Toggle
           checked={q.timed_chart_show_radix_default}
           onChange={(v) => patch({ timed_chart_show_radix_default: v })}
@@ -3932,13 +4329,7 @@ function StepAlertsTab({ opts, sendPatch }: TabProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab — Planets/Points (wx Options > Planets/Points remainder: Nodes radio
-// pair morin.py:14389-14393/19846, fortunedlg.py, syzygydlg.py, and the
-// arabicpartsdlg scalar + list state). Catalogs and labels come from the
-// daemon (opts.catalog nodeModes/fortunaModes/syzygyModes/arabicPartsRefs);
-// the parts list is daemon-rendered (formula text included). The full lot
-// formula calculator (add/modify/female/import-export) is deferred — see
-// doc/migration/wiring/options-planets-points.md.
+// Tab — Lots. The daemon provides the Fortune choices and configured part formulas.
 // ---------------------------------------------------------------------------
 
 function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
@@ -3989,8 +4380,6 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
     );
   };
 
-  // wx OnRemoveAll keeps the synthetic LoF row and asks AreYouSure
-  // (arabicpartsdlg.py:2170-2217).
   const removeAll = () => {
     if (p.parts.length === 0) return;
     setRemoveAllPending(true);
@@ -4044,93 +4433,20 @@ function PlanetsPointsTab({ opts, sendPatch }: TabProps) {
       .catch((err) => setImportStatus(`${t("settings.exportFailed")}: ${String(err)}`));
   };
 
-  const fortunaMode = cat.fortunaModes.find((m) => m.value === p.lotoffortune);
-
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.nodes")}</SectionLabel>
-      <Row label={t("settings.nodeCalculation")}>
-        <Select
-          value={p.meannode ? 1 : 0}
-          width={170}
-          onChange={(v) => patch({ meannode: Number(v) === 1 })}
-        >
-          {cat.nodeModes.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </Select>
-      </Row>
-
-      <SectionLabel>{t("settings.lotOfFortune")}</SectionLabel>
-      <Row label={t("settings.formula")}>
-        <Select
-          value={p.lotoffortune}
-          width={280}
-          onChange={(v) => patch({ lotoffortune: Number(v) })}
-        >
-          {cat.fortunaModes.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </Select>
-      </Row>
-      {fortunaMode?.sublabel ? (
-        <div className="pb-1 pt-0.5 text-right text-[length:var(--aries-font-size-small)] text-foreground/50">
-          {fortunaMode.sublabel}
-        </div>
-      ) : null}
-
-      <SectionLabel>{t("settings.syzygy")}</SectionLabel>
-      <Row label={t("settings.referencePoint")}>
-        <Select
-          value={p.syzmoon}
-          width={200}
-          onChange={(v) => patch({ syzmoon: Number(v) })}
-        >
-          {cat.syzygyModes.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </Select>
-      </Row>
-
-      <SectionLabel>{t("settings.arabicParts")}</SectionLabel>
-      <Row label={t("settings.ascendantReference")}>
-        <Select
-          value={p.arabicpartsref}
-          width={150}
-          onChange={(v) => patch({ arabicpartsref: Number(v) })}
-        >
-          {cat.arabicPartsRefs.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </Select>
-      </Row>
-      <Row label={t("settings.dayNightOrbDegrees")}>
-        <NumberField
-          value={p.daynightorbdeg}
-          min={0}
-          max={6}
-          onCommit={(n) => patch({ daynightorbdeg: n })}
+      <SectionLabel searchAnchor="section:settings.lotOfFortune">{t("settings.lotOfFortune")}</SectionLabel>
+      <Row searchAnchor="settings.reverseByNight" label={t("settings.reverseByNight")}>
+        <Toggle
+          checked={p.lotoffortune !== FORTUNE_SAME_DAY_NIGHT}
+          onChange={(v) => patch({ lotoffortune: v ? FORTUNE_REVERSED_BY_NIGHT : FORTUNE_SAME_DAY_NIGHT })}
         />
       </Row>
-      <Row label={t("settings.dayNightOrbMinutes")}>
-        <NumberField
-          value={p.daynightorbmin}
-          min={0}
-          max={59}
-          onCommit={(n) => patch({ daynightorbmin: n })}
-        />
-      </Row>
+      <p className="mt-[var(--aries-control-gap)] text-[length:var(--aries-font-size-small)] text-foreground/60">
+        {t("settings.fortuneReverseHint")}
+      </p>
 
-      <SectionLabel>{t("settings.parts")}</SectionLabel>
-      {/* Synthetic locked Fortuna row — the wx list pins LoF as #1 and blocks
-          edit/remove/deactivate (arabicpartsdlg.py:791-803). */}
-      <div className="flex h-[var(--aries-control-height-small)] items-center justify-between gap-[var(--aries-form-row-gap)] border-b border-border/40 text-[length:var(--aries-font-size-base)]">
-        <span className="truncate text-foreground/80">
-          #1 {t("settings.fortuna")}
-          <span className="ml-2 text-foreground/45">{fortunaMode?.label ?? ""}</span>
-        </span>
-        <span className="shrink-0 text-[length:var(--aries-font-size-small)] text-foreground/40">{t("settings.locked")}</span>
-      </div>
+      <SectionLabel searchAnchor="section:settings.arabicParts">{t("settings.arabicParts")}</SectionLabel>
       {p.parts.map((part) => {
         const isEditing = editor?.mode === "edit" && editor.index === part.index;
         return (
@@ -4788,8 +5104,8 @@ function AlmutensTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.triplicityRulers")}</SectionLabel>
-      <Row label={t("settings.rulersCounted")}>
+      <SectionLabel searchAnchor="section:settings.triplicityRulers">{t("settings.triplicityRulers")}</SectionLabel>
+      <Row searchAnchor="settings.rulersCounted" label={t("settings.rulersCounted")}>
         <Select
           value={a.oneruler ? 1 : 0}
           width={150}
@@ -4799,19 +5115,16 @@ function AlmutensTab({ opts, sendPatch }: TabProps) {
           <option value={0}>{t("settings.allThree")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.useDayNightOrb")}>
-        <Toggle checked={a.usedaynightorb} onChange={(v) => patch({ usedaynightorb: v })} />
-      </Row>
 
-      <SectionLabel>{t("settings.essentialDignityWeights")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.essentialDignityWeights">{t("settings.essentialDignityWeights")}</SectionLabel>
       {cat.almutenDignityLabels.map((label, i) => (
         <Row key={`dig-${i}`} label={label}>
           <NumberField value={a.dignityscores[i] ?? 0} min={0} max={5} onCommit={(n) => setVec("dignityscores", i, n)} />
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.accidentalDignity")}</SectionLabel>
-      <Row label={t("settings.useAccidental")}>
+      <SectionLabel searchAnchor="section:settings.accidentalDignity">{t("settings.accidentalDignity")}</SectionLabel>
+      <Row searchAnchor="settings.useAccidental" label={t("settings.useAccidental")}>
         <Toggle checked={a.useaccidental} onChange={(v) => patch({ useaccidental: v })} />
       </Row>
       {ALMUTEN_HOUSE_LABELS.map((_, i) => (
@@ -4820,22 +5133,22 @@ function AlmutensTab({ opts, sendPatch }: TabProps) {
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.sunPhaseWeights")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.sunPhaseWeights">{t("settings.sunPhaseWeights")}</SectionLabel>
       {ALMUTEN_SUNPHASE_LABELS.map((_, i) => (
         <Row key={`sun-${i}`} label={t(sunPhaseKeys[i])}>
           <NumberField value={a.sunphases[i] ?? 0} min={0} max={5} onCommit={(n) => setVec("sunphases", i, n)} />
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.dayHourRulerWeights")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.dayHourRulerWeights">{t("settings.dayHourRulerWeights")}</SectionLabel>
       {ALMUTEN_DAYHOUR_LABELS.map((_, i) => (
         <Row key={`dh-${i}`} label={t(dayHourKeys[i])}>
           <NumberField value={a.dayhourscores[i] ?? 0} min={0} max={10} onCommit={(n) => setVec("dayhourscores", i, n)} />
         </Row>
       ))}
 
-      <SectionLabel>{t("settings.mercury")}</SectionLabel>
-      <Row label={t("settings.useExaltationMercury")}>
+      <SectionLabel searchAnchor="section:settings.mercury">{t("settings.mercury")}</SectionLabel>
+      <Row searchAnchor="settings.useExaltationMercury" label={t("settings.useExaltationMercury")}>
         <Toggle checked={a.useexaltationmercury} onChange={(v) => patch({ useexaltationmercury: v })} />
       </Row>
     </div>
@@ -4860,8 +5173,8 @@ function TimeLordsTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.profectionChart")}</SectionLabel>
-      <Row label={t("settings.method")}>
+      <SectionLabel searchAnchor="section:settings.profectionChart">{t("settings.profectionChart")}</SectionLabel>
+      <Row searchAnchor="settings.method" label={t("settings.method")}>
         <Select
           value={p.zodiacal ? 1 : 0}
           width={170}
@@ -4871,7 +5184,7 @@ function TimeLordsTab({ opts, sendPatch }: TabProps) {
           <option value={0}>{t("settings.placidianMundane")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.motion")}>
+      <Row searchAnchor="settings.motion" label={t("settings.motion")}>
         <Select
           value={p.wholeSign ? "sign" : "continuous"}
           width={170}
@@ -4881,19 +5194,19 @@ function TimeLordsTab({ opts, sendPatch }: TabProps) {
           <option value="sign">{t("settings.bySign")}</option>
         </Select>
       </Row>
-      <Row label={t("settings.useZodiacalProjections")}>
+      <Row searchAnchor="settings.useZodiacalProjections" label={t("settings.useZodiacalProjections")}>
         <Toggle
           checked={p.useZodProjs}
           disabled={p.zodiacal}
           onChange={(v) => patchProf({ useZodProjs: v })}
         />
       </Row>
-      <Row label={t("settings.snapStepsToSr")}>
+      <Row searchAnchor="settings.snapStepsToSr" label={t("settings.snapStepsToSr")}>
         <Toggle checked={p.solarReturnSnap} onChange={(v) => patchProf({ solarReturnSnap: v })} />
       </Row>
 
-      <SectionLabel>{t("settings.firdaria")}</SectionLabel>
-      <Row label={t("settings.nocturnalOrder")}>
+      <SectionLabel searchAnchor="section:settings.firdaria">{t("settings.firdaria")}</SectionLabel>
+      <Row searchAnchor="settings.nocturnalOrder" label={t("settings.nocturnalOrder")}>
         <Select
           value={f.isfirbonatti ? "1" : "0"}
           width={150}
@@ -4919,16 +5232,17 @@ function TimeLordsTab({ opts, sendPatch }: TabProps) {
 // surface as the directions-view Settings sheet — no rebuild.
 // ---------------------------------------------------------------------------
 
-function PrimaryDirectionsTab({ opts, sendPatch }: TabProps) {
+function PrimaryDirectionsTab({ opts, sendPatch, searchTarget }: TabProps & { searchTarget: SettingsSearchResult | null }) {
   const s = opts.primaryDirections;
   const paneDock = useFrameLayoutStore((state) => state.primaryDirectionsSettingsDock);
   const setPaneDock = useFrameLayoutStore((state) => state.setPrimaryDirectionsSettingsDock);
   return (
     <PrimDirSettingsBody
       settings={s}
+      globals={{ meannode: opts.planetsPoints.meannode, topocentric: opts.display.topocentric }}
       planetGlyphs={PD_PLANET_GLYPHS}
-      presetGlobalState={{ planetsPoints: { meannode: opts.planetsPoints.meannode } }}
       paneDock={paneDock}
+      searchTarget={searchTarget}
       onPaneDockChange={setPaneDock}
       onPatch={(fields, optionsPatch) =>
         sendPatch(
@@ -4936,59 +5250,12 @@ function PrimaryDirectionsTab({ opts, sendPatch }: TabProps) {
           {
             ...opts,
             primaryDirections: { ...s, ...fields },
-            planetsPoints: optionsPatch?.planetsPoints
-              ? { ...opts.planetsPoints, ...optionsPatch.planetsPoints }
-              : opts.planetsPoints,
+            planetsPoints: { ...opts.planetsPoints, ...optionsPatch?.planetsPoints },
+            display: { ...opts.display, ...optionsPatch?.display },
           },
         )
       }
     />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tab — Eclipses (eclipse chart-moment radio, morin._set_eclipse_chart_moment_mode).
-// ---------------------------------------------------------------------------
-
-function EclipsesTab({ opts, sendPatch }: TabProps) {
-  const t = useT();
-  const e = opts.eclipses;
-  const cat = opts.catalog;
-  return (
-    <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.eclipseChartMoment")}</SectionLabel>
-      <Row label={t("settings.openEclipseChartsAt")}>
-        <Select
-          value={e.eclipse_chart_moment}
-          width={180}
-          onChange={(v) =>
-            sendPatch(
-              { eclipses: { eclipse_chart_moment: v } },
-              { ...opts, eclipses: { ...e, eclipse_chart_moment: v } },
-            )
-          }
-        >
-          {cat.eclipseModes.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </Select>
-      </Row>
-      <Row label={t("settings.prenatalEclipseMarker")}>
-        <Select
-          value={e.prenatal_eclipse_mode}
-          width={200}
-          onChange={(v) =>
-            sendPatch(
-              { eclipses: { prenatal_eclipse_mode: v as typeof e.prenatal_eclipse_mode } },
-              { ...opts, eclipses: { ...e, prenatal_eclipse_mode: v as typeof e.prenatal_eclipse_mode } },
-            )
-          }
-        >
-          <option value="solar_only">{t("settings.prenatalEclipseSolarOnly")}</option>
-          <option value="solar_and_lunar">{t("settings.prenatalEclipseSolarAndLunar")}</option>
-        </Select>
-      </Row>
-    </div>
   );
 }
 
@@ -5038,7 +5305,7 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
       if (cq && !(row.code || "").toLowerCase().includes(cq)) return false;
       return true;
     });
-    return sortFixedStarRows(filtered, sort, selected);
+    return groupFixedStarRows(sortFixedStarRows(filtered, sort, selected));
   }, [fs.catalog, nameQuery, codeQuery, selected, sort]);
 
   React.useEffect(() => {
@@ -5074,6 +5341,9 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
   };
 
   const deselectAll = () => commit([]);
+  const restoreDefaults = () => commit(fs.defaultCodes);
+  const isDefaultSelection =
+    selected.size === new Set(fs.defaultCodes).size && fs.defaultCodes.every((code) => selected.has(code));
 
   // Windowed slice — render only the visible rows plus overscan.
   const total = visible.length;
@@ -5094,13 +5364,13 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
 
   return (
     <div className="flex flex-col gap-0">
-      <Row label={t("settings.useIndianFixedStarNames")}>
+      <Row searchAnchor="settings.useIndianFixedStarNames" label={t("settings.useIndianFixedStarNames")}>
         <Toggle
           checked={fs.useIndianFixstarNames}
           onChange={setUseIndianNames}
         />
       </Row>
-      <SectionLabel>{t("settings.whichFixedStarsActive")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.whichFixedStarsActive">{t("settings.whichFixedStarsActive")}</SectionLabel>
       {fs.catalog.length === 0 ? (
         <div className="py-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">
           {t("settings.fixStarCatalogNotFound")}
@@ -5141,8 +5411,20 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
             onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           >
             <div style={{ height: total * rowHeight, position: "relative" }}>
-              {slice.map((row, i) => {
+              {slice.map((item, i) => {
                 const rowIndex = first + i;
+                if (item.type === "group") {
+                  return (
+                    <div
+                      key={`group-${item.kind}`}
+                      className="absolute left-0 right-0 flex items-end border-b border-border/60 px-[var(--aries-control-gap-compact)] pb-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45"
+                      style={{ top: rowIndex * rowHeight, height: rowHeight }}
+                    >
+                      {t(FIXED_STAR_GROUP_LABEL_KEYS[item.kind])}
+                    </div>
+                  );
+                }
+                const row = item.row;
                 const checked = selected.has(row.code);
                 const disabled = !row.code || (!checked && remaining <= 0);
                 return (
@@ -5170,7 +5452,10 @@ function FixedStarsTab({ opts, sendPatch }: TabProps) {
           </div>
 
           <div className="mt-2 flex items-center justify-between">
-            <ActionButton onClick={deselectAll}>{t("settings.deselectAll")}</ActionButton>
+            <div className="flex items-center gap-[var(--aries-form-field-gap)]">
+              <ActionButton onClick={deselectAll} disabled={selected.size === 0}>{t("settings.deselectAll")}</ActionButton>
+              <ActionButton onClick={restoreDefaults} disabled={isDefaultSelection}>{t("settings.fixedStarDefaults")}</ActionButton>
+            </div>
             <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">
               {t("settings.fixStarSelectedCount", { selected: selected.size, remaining })}
             </span>
@@ -5222,6 +5507,30 @@ function FixedStarSortHeader({
   );
 }
 
+const FIXED_STAR_KIND_ORDER: readonly FixedStarKind[] = ["star", "deepSky", "reference"];
+const FIXED_STAR_GROUP_LABEL_KEYS: Record<FixedStarKind, string> = {
+  star: "settings.fixedStarGroupStars",
+  deepSky: "settings.fixedStarGroupDeepSky",
+  reference: "settings.fixedStarGroupReference",
+};
+
+type FixedStarListItem =
+  | { type: "group"; kind: FixedStarKind }
+  | { type: "row"; row: FixedStarCatalogRow };
+
+// Stars first, then deep-sky objects, then Swiss reference points, each keeping
+// the active sort. Headings appear only when more than one stratum is listed.
+function groupFixedStarRows(rows: FixedStarCatalogRow[]): FixedStarListItem[] {
+  const groups = FIXED_STAR_KIND_ORDER
+    .map((kind) => ({ kind, rows: rows.filter((row) => row.kind === kind) }))
+    .filter((group) => group.rows.length > 0);
+  const headed = groups.length > 1;
+  return groups.flatMap(({ kind, rows: groupRows }) => [
+    ...(headed ? [{ type: "group" as const, kind }] : []),
+    ...groupRows.map((row) => ({ type: "row" as const, row })),
+  ]);
+}
+
 function sortFixedStarRows(
   rows: FixedStarCatalogRow[],
   sort: FixedStarSortState,
@@ -5266,7 +5575,6 @@ function compareFixedStarSortValue(left: string | number, right: string | number
 // installed only when selected, before the canonical options patch is sent.
 // ---------------------------------------------------------------------------
 
-const ASTEROID_VIEWPORT_H = 320;
 const ASTEROID_OVERSCAN = 8;
 type AsteroidSortKey = "number" | "name";
 type AsteroidSortState = { key: AsteroidSortKey; ascending: boolean };
@@ -5283,7 +5591,9 @@ function AsteroidsTab({ opts, sendPatch }: TabProps) {
   const [loading, setLoading] = React.useState(false);
   const [installing, setInstalling] = React.useState<number | null>(null);
   const [installError, setInstallError] = React.useState<number | null>(null);
+  const [selectionBusy, setSelectionBusy] = React.useState(false);
   const [scrollTop, setScrollTop] = React.useState(0);
+  const [viewportHeight, setViewportHeight] = React.useState(0);
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const selectionRef = React.useRef(asteroidOptions.selectedNumbers);
   const selectionVersionRef = React.useRef(0);
@@ -5292,6 +5602,14 @@ function AsteroidsTab({ opts, sendPatch }: TabProps) {
     () => new Set(asteroidOptions.selectedNumbers),
     [asteroidOptions.selectedNumbers],
   );
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new ResizeObserver(() => setViewportHeight(viewport.clientHeight));
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     selectionRef.current = asteroidOptions.selectedNumbers;
@@ -5336,13 +5654,15 @@ function AsteroidsTab({ opts, sendPatch }: TabProps) {
 
   const visible = React.useMemo(() => {
     return [...rows].sort((left, right) => {
+      const selectionOrder = Number(selected.has(right.number)) - Number(selected.has(left.number));
+      if (selectionOrder !== 0) return selectionOrder;
       const compared = sort.key === "number"
         ? left.number - right.number
         : left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
       if (compared !== 0) return sort.ascending ? compared : -compared;
       return left.number - right.number;
     });
-  }, [rows, sort]);
+  }, [rows, selected, sort]);
 
   React.useEffect(() => {
     viewportRef.current?.scrollTo({ top: 0 });
@@ -5408,77 +5728,87 @@ function AsteroidsTab({ opts, sendPatch }: TabProps) {
 
   const total = visible.length;
   const first = Math.max(0, Math.floor(scrollTop / rowHeight) - ASTEROID_OVERSCAN);
-  const count = Math.ceil(ASTEROID_VIEWPORT_H / rowHeight) + ASTEROID_OVERSCAN * 2;
+  const count = Math.ceil(viewportHeight / rowHeight) + ASTEROID_OVERSCAN * 2;
   const slice = visible.slice(first, first + count);
   useFixedRowHeightAnchor(viewportRef, total, rowHeight);
 
   return (
-    <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.asteroidAspectOrbs")}</SectionLabel>
-      <Row label={t("settings.conjunctionOrb")}>
-        <NumberField
-          value={asteroidOptions.conjunctionOrb}
-          step={0.5}
-          min={0}
-          max={6}
-          onCommit={(value) => setOrb("conjunctionOrb", value)}
-        />
-      </Row>
-      <Row label={t("settings.oppositionOrb")}>
-        <NumberField
-          value={asteroidOptions.oppositionOrb}
-          step={0.5}
-          min={0}
-          max={6}
-          onCommit={(value) => setOrb("oppositionOrb", value)}
-        />
-      </Row>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
+      <div className="flex shrink-0 flex-col">
+        <SectionLabel searchAnchor="section:settings.asteroidAspectOrbs">{t("settings.asteroidAspectOrbs")}</SectionLabel>
+        <Row searchAnchor="settings.conjunctionOrb" label={t("settings.conjunctionOrb")}>
+          <NumberField
+            value={asteroidOptions.conjunctionOrb}
+            step={0.5}
+            min={0}
+            max={6}
+            onCommit={(value) => setOrb("conjunctionOrb", value)}
+          />
+        </Row>
+        <Row searchAnchor="settings.oppositionOrb" label={t("settings.oppositionOrb")}>
+          <NumberField
+            value={asteroidOptions.oppositionOrb}
+            step={0.5}
+            min={0}
+            max={6}
+            onCommit={(value) => setOrb("oppositionOrb", value)}
+          />
+        </Row>
 
-      <SectionLabel>{t("settings.whichAsteroidsActive")}</SectionLabel>
-      <input
-        data-aries-control-appearance="local"
-        type="text"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder={t("settings.searchAsteroidNameOrNumber")}
-        className="mb-[var(--aries-form-field-gap)] h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
-      />
-      <div className="mb-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">
-        {t("settings.asteroidDownloadNote")}
-      </div>
+        <SectionLabel searchAnchor="section:settings.whichAsteroidsActive">{t("settings.whichAsteroidsActive")}</SectionLabel>
+        <AsteroidSelectionControls options={asteroidOptions} disabled={installing !== null}
+          onCommand={async command => {
+            selectionVersionRef.current += 1;
+            setSelectionBusy(true);
+            setInstallError(null);
+            try {
+              return await sendPatch({ asteroidSelection: command }, opts) !== false;
+            } finally { setSelectionBusy(false); }
+          }} />
+        <input
+          data-aries-control-appearance="local"
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("settings.searchAsteroidNameOrNumber")}
+          className="mb-[var(--aries-form-field-gap)] h-[var(--aries-control-height-small)] rounded-[var(--aries-radius-control-compact)] border border-border/60 bg-transparent px-[var(--aries-control-padding-x-compact)] text-[length:var(--aries-font-size-base)] outline-none focus:border-foreground/40"
+        />
+        <div className="mb-[var(--aries-form-field-gap)] text-[length:var(--aries-font-size-small)] text-foreground/45">
+          {t("settings.asteroidDownloadNote")}
+        </div>
 
-      <div className="flex h-[var(--aries-control-height-compact)] items-center gap-[var(--aries-form-field-gap)] border-b border-border/60 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
-        <span className="w-[var(--aries-control-height-micro)] shrink-0" />
-        {(["number", "name"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            aria-label={t("settings.sortBy", { label: t(`settings.${key}`) })}
-            onClick={() => setSort((current) => ({
-              key,
-              ascending: current.key === key ? !current.ascending : true,
-            }))}
-            className={`flex min-w-0 items-center gap-[var(--aries-control-gap-compact)] text-left hover:text-foreground/80 ${key === "number" ? "w-20 shrink-0" : "flex-1"}`}
-          >
-            <span className="truncate">{t(`settings.${key}`)}</span>
-            {sort.key === key ? sort.ascending
-              ? <ArrowUp className="size-3 shrink-0" />
-              : <ArrowDown className="size-3 shrink-0" /> : null}
-          </button>
-        ))}
-        <span className="w-24 shrink-0 text-right">{loading ? t("settings.loading") : ""}</span>
+        <div className="flex h-[var(--aries-control-height-compact)] items-center gap-[var(--aries-form-field-gap)] border-b border-border/60 px-[var(--aries-control-gap-compact)] text-[length:var(--aries-font-size-section)] font-medium text-foreground/45">
+          <span className="w-[var(--aries-control-height-micro)] shrink-0" />
+          {(["number", "name"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-label={t("settings.sortBy", { label: t(`settings.${key}`) })}
+              onClick={() => setSort((current) => ({
+                key,
+                ascending: current.key === key ? !current.ascending : true,
+              }))}
+              className={`flex min-w-0 items-center gap-[var(--aries-control-gap-compact)] text-left hover:text-foreground/80 ${key === "number" ? "w-20 shrink-0" : "flex-1"}`}
+            >
+              <span className="truncate">{t(`settings.${key}`)}</span>
+              {sort.key === key ? sort.ascending
+                ? <ArrowUp className="size-3 shrink-0" />
+                : <ArrowDown className="size-3 shrink-0" /> : null}
+            </button>
+          ))}
+          <span className="w-24 shrink-0 text-right">{loading ? t("settings.loading") : ""}</span>
+        </div>
       </div>
       <div
         ref={viewportRef}
-        className="relative overflow-y-auto"
-        style={{ height: ASTEROID_VIEWPORT_H }}
+        className="relative min-h-0 flex-1 overflow-y-auto"
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >
         <div style={{ height: total * rowHeight, position: "relative" }}>
           {slice.map((row, index) => {
             const checked = selected.has(row.number);
             const busy = installing === row.number;
-            const disabled = (installing !== null && !row.installed)
+            const disabled = selectionBusy || (installing !== null && !row.installed)
               || (!checked && selected.size >= asteroidOptions.maxSelected);
             return (
               <div
@@ -5510,14 +5840,14 @@ function AsteroidsTab({ opts, sendPatch }: TabProps) {
         </div>
       </div>
       {installError !== null ? (
-        <div className="mt-2 text-[length:var(--aries-font-size-small)] text-destructive">
+        <div className="mt-2 shrink-0 text-[length:var(--aries-font-size-small)] text-destructive">
           {t("settings.asteroidInstallFailed", { number: installError })}
         </div>
       ) : null}
-      <div className="mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-[var(--aries-form-field-gap)]">
-          <ActionButton onClick={() => commitSelection([])}>{t("settings.deselectAll")}</ActionButton>
-          <ActionButton onClick={() => commitSelection(asteroidOptions.defaultNumbers)}>{t("settings.restoreDefaultSelection")}</ActionButton>
+      <div className="mt-2 flex shrink-0 flex-wrap items-center justify-between gap-[var(--aries-form-field-gap)]">
+        <div className="flex flex-wrap items-center gap-[var(--aries-form-field-gap)]">
+          <ActionButton disabled={selectionBusy} onClick={() => commitSelection([])}>{t("settings.deselectAll")}</ActionButton>
+          <ActionButton disabled={selectionBusy} onClick={() => commitSelection(asteroidOptions.defaultNumbers)}>{t("settings.restoreDefaultSelection")}</ActionButton>
         </div>
         <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">
           {t("settings.asteroidSelectedCount", {
@@ -5547,7 +5877,7 @@ function RelationshipChartsTab({ opts, sendPatch }: TabProps) {
   };
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.compositeConstruction")}</SectionLabel>
+      <SectionLabel searchAnchor="section:settings.compositeConstruction">{t("settings.compositeConstruction")}</SectionLabel>
       <Row label={cat.compositeMCNote}>
         <span className="text-[length:var(--aries-font-size-small)] text-foreground/45">{t("settings.fixed")}</span>
       </Row>
@@ -5563,8 +5893,8 @@ function RelationshipChartsTab({ opts, sendPatch }: TabProps) {
         </Select>
       </Row>
 
-      <SectionLabel>{t("settings.launcher")}</SectionLabel>
-      <Row label={t("settings.openFirst")}>
+      <SectionLabel searchAnchor="section:settings.launcher">{t("settings.launcher")}</SectionLabel>
+      <Row searchAnchor="settings.openFirst" label={t("settings.openFirst")}>
         <Select
           value={r.synastry_opens_composite_first ? "1" : "0"}
           width={180}
@@ -5591,8 +5921,8 @@ function LanguagesTab({ opts, sendPatch }: TabProps) {
   const l = opts.languages;
   return (
     <div className="flex flex-col gap-0">
-      <SectionLabel>{t("settings.language")}</SectionLabel>
-      <Row label={t("settings.activeLanguage")}>
+      <SectionLabel searchAnchor="section:settings.language">{t("settings.language")}</SectionLabel>
+      <Row searchAnchor="settings.activeLanguage" label={t("settings.activeLanguage")}>
         <Select
           value={l.langid}
           width={180}

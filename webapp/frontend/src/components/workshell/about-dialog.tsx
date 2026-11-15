@@ -116,6 +116,9 @@ export function AboutDialog() {
               <div className="mb-[var(--aries-form-row-gap)] font-medium">
                 {t(about.creditsHeadingKey)}
               </div>
+              <div className="mb-[var(--aries-form-row-gap)] text-muted-foreground">
+                {t("about.morinusOrigin")}
+              </div>
               {about.swissEphemerisVersion ? (
                 <div className="mb-[var(--aries-form-row-gap)] text-muted-foreground">
                   {t(about.swissEphemerisKey, {

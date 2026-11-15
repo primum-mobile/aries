@@ -4,6 +4,14 @@
 
 set -euo pipefail
 
+# Concurrent `make run`s used to kill the
+# stack each other was starting. Serialize them; a waiter then reuses the stack.
+LAUNCH_LOCK="${TMPDIR:-/tmp}/aries-smoke-launch.lock"
+if [ -z "${ARIES_SMOKE_LAUNCH_LOCKED:-}" ]; then
+  export ARIES_SMOKE_LAUNCH_LOCKED=1
+  exec lockf -t 600 "$LAUNCH_LOCK" bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_DIR="$(cd "$APP_DIR/../.." && pwd)"
@@ -22,6 +30,10 @@ IGNORE_FILE="$APP_DIR/.taurignore"
 # smokes side by side means templating that config per checkout first.
 PORT="${PORT:-3000}"
 DAEMON_PORT="${ARIES_DAEMON_PORT:-8765}"
+# The smoke app keeps its own settings folder (Opts-dev, first seeded from the
+# installed app's Opts) so it never overwrites an installed build's settings.
+export ARIES_DEV_PROFILE="${ARIES_DEV_PROFILE:-1}"
+export ARIES_DEV_RELOAD=1
 
 mkdir -p "$LOG_DIR"
 cd "$APP_DIR"
@@ -33,33 +45,15 @@ import os
 from pathlib import Path
 
 project = Path(os.environ["PROJECT_DIR_ENV"]).resolve()
+# Source edits belong to Next, the Python reloader, and Tauri's Rust watcher.
+# Only changes to launch configuration require replacing the complete stack.
 roots = [
-    "webapp/daemon",
-    "webapp/frontend/src",
-    "webapp/frontend/src-tauri/src",
+    "webapp/frontend/scripts/tauri-dev-up.sh",
     "webapp/frontend/src-tauri/tauri.conf.json",
-    "webapp/frontend/src-tauri/native-menu-manifest.json",
-    "webapp/frontend/.tmp/daemon-build.stamp",
+    "webapp/frontend/src-tauri/tauri.dev.conf.json",
+    "webapp/frontend/.taurignore",
     "webapp/frontend/package.json",
     "webapp/frontend/package-lock.json",
-    "Res",
-    "Data/rt_0p5.txt",
-    "parsers/query_corpus.py",
-    "corpus/parsed",
-    "corpus/valens",
-    "corpus/hephaistion",
-    "corpus/dorotheus",
-    "corpus/lilly",
-    "scripts/stage_corpus_resources.py",
-    "scripts/stage_corpus_pack_seed.py",
-    "scripts/stage_tauri_runtime_resources.py",
-    "scripts/staging_tree.py",
-    "notes_web/src",
-    "notes_web/vite.config.js",
-    "notes_web/package.json",
-    "notes_web/package-lock.json",
-    "triplicitydirections.py",
-    "workspace_model.py",
 ]
 ignored_parts = {
     ".git",
@@ -71,9 +65,20 @@ ignored_parts = {
     "out",
     "target",
 }
+import json
+
+digest = hashlib.sha256()
+# Test-script registrations in package.json must not restart the smoke; only
+# dependencies and the commands that launch it do.
+package = json.loads((project / "webapp/frontend/package.json").read_text())
+launch_scripts = {k: v for k, v in package.get("scripts", {}).items() if k in ("dev", "tauri", "tauri:dev")}
+digest.update(json.dumps([package.get("dependencies"), package.get("devDependencies"), launch_scripts],
+                         sort_keys=True).encode())
 files = []
 for root in roots:
     path = project / root
+    if root == "webapp/frontend/package.json":
+        continue
     if path.is_file():
         files.append(path)
         continue
@@ -89,7 +94,6 @@ for root in roots:
             continue
         files.append(child)
 
-digest = hashlib.sha256()
 for path in sorted(files):
     stat = path.stat()
     rel = path.relative_to(project).as_posix()
@@ -279,22 +283,39 @@ PY
 )"
 echo "$TAURI_PID" >"$PID_FILE"
 
-for _ in $(seq 1 60); do
-  if frontend_ready && daemon_ready && tauri_app_ready; then
+# The smoke is ready once the window and frontend are up. A daemon that fails to
+# start (for example a Python error) is reported, not fatal: it reloads on save.
+ERR_LOG_START="$(wc -c <"$ERR_LOG" 2>/dev/null || echo 0)"
+show_launch_errors() {
+  tail -c +"$((ERR_LOG_START + 1))" "$ERR_LOG" 2>/dev/null \
+    | perl -pe 's/\e\[[0-9;]*[A-Za-z]//g; s/\r/\n/g' | grep -v '^[[:space:]]*$' | tail -n 15 || true
+}
+for _ in $(seq 1 300); do
+  if frontend_ready && tauri_app_ready; then
+    for _ in $(seq 1 15); do
+      daemon_ready && break
+      sleep 1
+    done
     echo "$CURRENT_SOURCE_STAMP" >"$SOURCE_STAMP_FILE"
     echo "tauri dev ready"
     echo "pid: $TAURI_PID"
     echo "frontend: http://127.0.0.1:${PORT}"
-    echo "daemon:   http://127.0.0.1:${DAEMON_PORT}"
+    if daemon_ready; then
+      echo "daemon:   http://127.0.0.1:${DAEMON_PORT}"
+    else
+      echo "warning: daemon is not healthy yet; it restarts on the next Python save. Recent errors:"
+      show_launch_errors
+    fi
     exit 0
   fi
   if ! kill -0 "$TAURI_PID" >/dev/null 2>&1; then
-    echo "tauri dev exited early; see $ERR_LOG"
+    echo "tauri dev exited before the window opened. Recent errors ($ERR_LOG):"
+    show_launch_errors
     rm -f "$PID_FILE"
     exit 1
   fi
   sleep 1
 done
 
-echo "tauri dev did not become ready; see $OUT_LOG and $ERR_LOG"
+echo "tauri dev did not open a window within 5 minutes; see $OUT_LOG and $ERR_LOG"
 exit 1

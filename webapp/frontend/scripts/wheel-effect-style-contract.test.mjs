@@ -77,13 +77,13 @@ test("effects stay on retained canvas compositing and out of chart geometry", ()
 });
 
 test("fill textures are deterministic cached assets that repaint with live steps", () => {
-  assert.match(drawChart, /const fillTextureTileCache = new Map/);
+  assert.match(drawChart, /const fillTextureCanvasCache = new Map/);
+  assert.match(drawChart, /fillTextureCanvasCache\.get\(key\)/);
   const textureStart = drawChart.indexOf("function fillTexturePattern(");
   const textureEnd = drawChart.indexOf("function paintFillRegion(", textureStart);
   assert.ok(textureStart >= 0 && textureEnd > textureStart);
   const textureSource = drawChart.slice(textureStart, textureEnd);
   assert.doesNotMatch(textureSource, /Math\.random/);
-  assert.match(textureSource, /fillTextureTileCache\.get/);
   assert.match(drawChart, /if \(layer === "fill"\)[\s\S]*?drawRetainedFillLayer/);
   assert.match(
     drawChart,

@@ -3,6 +3,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -16,6 +17,9 @@ DEFAULT_EXACT_ASC_SOUND = _resource_path('Res', 'Sounds', 'Tink.aiff')
 def play_sound(path=None):
 	sound_path = path or DEFAULT_EXACT_ASC_SOUND
 	if not os.path.exists(sound_path):
+		return False
+	# ``afplay`` is the macOS player; elsewhere there is nothing to start.
+	if sys.platform != 'darwin':
 		return False
 
 	try:

@@ -16,10 +16,13 @@ import {
 import {
   spotlightPreview,
   type SpotlightActionId,
+  type SpotlightChartMatch,
   type SpotlightPreview,
 } from "@/lib/daemon/client";
+import { searchPhoton } from "@/lib/geocode/photon";
+import { isExactPlaceName } from "@/lib/geocode/place-name-match";
 import { cn } from "@/lib/utils";
-import { useT } from "@/lib/i18n/i18n";
+import { useLocale, useT } from "@/lib/i18n/i18n";
 import { noteSpotlightDismissed } from "@/shortcuts/spotlight-cooldown";
 
 type AmbientSpotlightProps = {
@@ -61,6 +64,34 @@ const EMPTY_PREVIEW: SpotlightPreview = {
 // The bundled Morinus font maps the custom armillary sphere to the tilde slot.
 const ARMILLARY_GLYPH = "~";
 
+async function resolveSpotlightPreview(text: string, locale: string, signal?: AbortSignal): Promise<SpotlightPreview> {
+  const preview = await spotlightPreview(text, signal);
+  const query = preview.parsed?.locationQuery?.trim();
+  if (!preview.searchExactPlaceName || !query) return preview;
+  try {
+    const rows = await searchPhoton(query, { locale, limit: 8, signal });
+    const exact = rows.find((row) => isExactPlaceName(query, row.name));
+    if (!exact) return preview;
+    return {
+      ...preview,
+      primary: preview.parsed?.hasDate || preview.parsed?.hasTime ? preview.primary : exact.name,
+      secondary: preview.parsed?.hasDate || preview.parsed?.hasTime ? exact.name : exact.secondary,
+      geocodedPlace: { name: exact.name, lon: exact.lon, lat: exact.lat },
+      canConfirm: Boolean(preview.defaultAction),
+    };
+  } catch {
+    // The city result may be an unrelated alternate name. When the exact-name
+    // search is unavailable, do not let Enter silently apply that candidate.
+    const hasTemporal = Boolean(preview.parsed?.hasDate || preview.parsed?.hasTime);
+    return {
+      ...preview,
+      primary: hasTemporal ? preview.primary : query,
+      secondary: hasTemporal ? query : "",
+      canConfirm: false,
+    };
+  }
+}
+
 export function AmbientSpotlight({
   open,
   initialText,
@@ -69,6 +100,7 @@ export function AmbientSpotlight({
   disabledActions = [],
 }: AmbientSpotlightProps) {
   const t = useT();
+  const locale = useLocale();
   const [value, setValue] = useState(() => initialText);
   const [previewState, setPreviewState] = useState<{ text: string; result: SpotlightPreview }>({
     text: "",
@@ -98,7 +130,7 @@ export function AmbientSpotlight({
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void spotlightPreview(text, controller.signal)
+      void resolveSpotlightPreview(text, locale, controller.signal)
         .then((next) => {
           if (!controller.signal.aborted) setPreviewState({ text, result: next });
         })
@@ -115,7 +147,7 @@ export function AmbientSpotlight({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, value]);
+  }, [open, value, locale]);
 
   const handleValueChange = useCallback((next: string) => {
     setValue(next);
@@ -141,7 +173,7 @@ export function AmbientSpotlight({
   const effectiveDefaultAction = chooseDefaultAction(preview);
 
   const commit = useCallback(
-    async (action: "open-chart" | SpotlightActionId | null | undefined) => {
+    async (action: "open-chart" | SpotlightActionId | null | undefined, chart?: SpotlightChartMatch) => {
       if (!onCommit || committingRef.current) return;
       const text = value.trim();
       if (!text) return;
@@ -150,10 +182,10 @@ export function AmbientSpotlight({
       try {
         // Enter may arrive before the debounced preview, or while a preview
         // for older text is still displayed. Resolve the exact submitted text.
-        const result = previewState.text === text ? previewState.result : await spotlightPreview(text);
+        const result = previewState.text === text ? previewState.result : await resolveSpotlightPreview(text, locale);
         const selectedAction = action ?? chooseDefaultAction(result);
         if (!result.canConfirm || !selectedAction || disabledActionSet.has(selectedAction as SpotlightActionId)) return;
-        await onCommit(selectedAction, result, text);
+        await onCommit(selectedAction, chart ? { ...result, chart } : result, text);
       } catch (err) {
         console.error("[spotlight-commit]", err);
       } finally {
@@ -161,7 +193,7 @@ export function AmbientSpotlight({
         setCommitting(false);
       }
     },
-    [chooseDefaultAction, disabledActionSet, onCommit, previewState, value],
+    [chooseDefaultAction, disabledActionSet, locale, onCommit, previewState, value],
   );
 
   const handleOpenChange = useCallback(
@@ -205,14 +237,45 @@ export function AmbientSpotlight({
           }
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              // Chart rows use cmdk's selected item, including arrow navigation.
+              if (preview.kind === "chart" && preview.chartMatches?.length) return;
               event.preventDefault();
               void commit(null);
               return;
             }
           }}
         />
-        <CommandList className="max-h-none overflow-visible">
-          {(preview.primary || loading) && (
+        <CommandList
+          label={t("palette.ambientInput")}
+          className={preview.kind === "chart" ? undefined : "max-h-none overflow-visible"}
+        >
+          {preview.kind === "chart" && preview.chartMatches?.length ? (
+            <CommandGroup>
+              {preview.chartMatches.map((match) => (
+                <CommandItem
+                  key={JSON.stringify([match.chart.source, match.chart.recordIndex])}
+                  value={JSON.stringify([match.chart.source, match.chart.recordIndex])}
+                  disabled={!onCommit || committing}
+                  onSelect={() => void commit("open-chart", match.chart)}
+                  className="aries-ambient-spotlight-preview gap-[var(--aries-form-row-gap)] px-[var(--aries-sidebar-row-padding-x)] py-[var(--aries-pane-header-padding-y)]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="aries-ambient-spotlight-primary break-words">
+                      {match.primary}
+                    </div>
+                    {match.secondary && (
+                      <div className="aries-ambient-spotlight-secondary break-words">
+                        {match.secondary}
+                      </div>
+                    )}
+                  </div>
+                  <div className="aries-ambient-spotlight-kind shrink-0">
+                    {t("palette.kindChart")}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : (preview.primary || loading) && (
             <CommandGroup>
               <div
                 className={cn(
@@ -254,6 +317,7 @@ export function AmbientSpotlight({
                     disabled={
                       !onCommit ||
                       committing ||
+                      !preview.canConfirm ||
                       disabledActionSet.has(action.id)
                     }
                     aria-label={

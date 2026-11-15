@@ -3,6 +3,9 @@
 
 "use client";
 
+import { formatTableAngleText } from "@/lib/table/angle-precision";
+import { CellView } from "./generic-table-view";
+import { TablePrecisionMenu, useTablePrecision } from "./table-precision-menu";
 import * as React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -12,8 +15,9 @@ import type {
   GenericTableRow,
   OptionsPatch,
 } from "@/lib/daemon/client";
-import { LIST_ROLE_CLASSES, useListRowHeight } from "@/lib/list-tokens";
+import { LIST_PANE_CLASSES, LIST_ROLE_CLASSES, LIST_ROW_CLASSES, useListRowHeight } from "@/lib/list-tokens";
 import { useT, type TFunc } from "@/lib/i18n/i18n";
+import { renderTemplate } from "@/lib/i18n/template-nodes";
 import { semanticChartColor } from "@/lib/theme/semantic-color";
 import { cn } from "@/lib/utils";
 import type { VimshottariPreferences } from "@/stores/workspace-store";
@@ -58,6 +62,8 @@ type ViewportAnchor = {
 
 const OVERSCAN_ROWS = 10;
 const TIME_LORD_VIRTUAL_SCROLL_SYNC_EVENT = "aries:time-lord-virtual-scroll-sync";
+const ACTIVE_PERIOD_ANCHOR = 0.25;
+const ACTIVE_PERIOD_SYSTEMS = new Set(["firdaria", "zodiacal_releasing", "decennials", "vimshottari"]);
 
 export function TimeLordTableView({
   documentId,
@@ -74,6 +80,9 @@ export function TimeLordTableView({
   const isZodiacalReleasing = system === "zodiacal_releasing";
   const isTriplicityDirections = system === "triplicity_directions";
   const isVimshottari = system === "vimshottari";
+  // These daemon tables ship children only for the current path and the
+  // rows the viewer opened (binding expanded_row_ids).
+  const lazyChildRows = system === "decennials" || system === "profections_table";
   const preservesExpandedAcrossBinding = isZodiacalReleasing || isTriplicityDirections;
   const [expandedState, setExpandedState] = React.useState<{
     documentId: string;
@@ -119,6 +128,15 @@ export function TimeLordTableView({
     );
     return ids.length ? ids[ids.length - 1] : null;
   }, [payload.capabilities]);
+  const visibleCurrentRowId = React.useMemo(
+    () => deepestVisibleCurrentRowId((payload.capabilities ?? {}).currentRowIds, visibleRows),
+    [payload.capabilities, visibleRows],
+  );
+  const highlightedCurrentRowId = ACTIVE_PERIOD_SYSTEMS.has(system) ? visibleCurrentRowId : null;
+  const majorCurrentIndex = React.useMemo(() => {
+    if (!ACTIVE_PERIOD_SYSTEMS.has(system)) return -1;
+    return visibleRows.findIndex((row) => row.current && asNumber(row.meta?.level, 1) === 1);
+  }, [system, visibleRows]);
   const pinnedTemporalRowId = useTemporalPinnedRowId();
   const focusIndex = React.useMemo(
     () => {
@@ -128,25 +146,36 @@ export function TimeLordTableView({
         );
         if (pinnedIndex >= 0) return pinnedIndex;
       }
-      return currentRowId ? visibleRows.findIndex((row) => row.id === currentRowId) : -1;
+      return visibleCurrentRowId
+        ? visibleRows.findIndex((row) => row.id === visibleCurrentRowId)
+        : -1;
     },
-    [currentRowId, pinnedTemporalRowId, visibleRows],
+    [pinnedTemporalRowId, visibleCurrentRowId, visibleRows],
   );
   const effectiveFocusKey = `${focusKey}|temporal:${pinnedTemporalRowId ?? ""}`;
   const scrollerRef = React.useRef<HTMLDivElement | null>(null);
   const focusedForKeyRef = React.useRef<string | null>(null);
+  const lastCurrentRowIdRef = React.useRef(currentRowId);
 
   React.useEffect(() => {
     manualViewportRef.current = false;
     viewportAnchorRef.current = null;
     pendingViewportRestoreFromKeyRef.current = null;
     focusedForKeyRef.current = null;
+    lastCurrentRowIdRef.current = currentRowId;
   }, [documentId]);
+
+  React.useLayoutEffect(() => {
+    if (lastCurrentRowIdRef.current === currentRowId) return;
+    lastCurrentRowIdRef.current = currentRowId;
+    manualViewportRef.current = false;
+    pendingViewportRestoreFromKeyRef.current = null;
+  }, [currentRowId]);
 
   const captureViewportAnchor = React.useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller || visibleRows.length === 0) return;
-    const viewportAnchor = scroller.clientHeight * 0.35;
+    const viewportAnchor = scroller.clientHeight * ACTIVE_PERIOD_ANCHOR;
     const anchorY = scroller.scrollTop + viewportAnchor;
     const anchorUnits = anchorY / rowHeight;
     const index = Math.max(
@@ -176,7 +205,7 @@ export function TimeLordTableView({
     if (previousRowHeight === rowHeight) return;
     const scroller = scrollerRef.current;
     if (!scroller || visibleRows.length === 0) return;
-    const viewportAnchor = scroller.clientHeight * 0.35;
+    const viewportAnchor = scroller.clientHeight * ACTIVE_PERIOD_ANCHOR;
     const anchorUnits = (scroller.scrollTop + viewportAnchor) / previousRowHeight;
     setProgrammaticScrollTop(
       scroller,
@@ -194,10 +223,13 @@ export function TimeLordTableView({
       if (cancelled) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
-      const target = Math.max(
-        0,
-        focusIndex * previousRowHeightRef.current - scroller.clientHeight * 0.35,
-      );
+      const headerHeight = scroller.querySelector<HTMLElement>("thead")?.offsetHeight ?? 0;
+      const target = activePeriodScrollTop({
+        focusIndex,
+        majorIndex: pinnedTemporalRowId ? -1 : majorCurrentIndex,
+        rowHeight: previousRowHeightRef.current,
+        viewportHeight: scroller.clientHeight - headerHeight,
+      });
       setProgrammaticScrollTop(scroller, target);
       focusedForKeyRef.current = effectiveFocusKey;
     };
@@ -206,7 +238,7 @@ export function TimeLordTableView({
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [effectiveFocusKey, focusIndex, isZodiacalReleasing, pinnedTemporalRowId, setProgrammaticScrollTop]);
+  }, [effectiveFocusKey, focusIndex, isZodiacalReleasing, majorCurrentIndex, pinnedTemporalRowId, setProgrammaticScrollTop]);
 
   React.useLayoutEffect(() => {
     if (!isZodiacalReleasing || !manualViewportRef.current) return undefined;
@@ -225,7 +257,7 @@ export function TimeLordTableView({
       const rowFraction = Number.isFinite(anchor.rowFraction) ? anchor.rowFraction : 0;
       const target = Math.max(
         0,
-        (index + rowFraction) * currentRowHeight - scroller.clientHeight * 0.35,
+        (index + rowFraction) * currentRowHeight - scroller.clientHeight * ACTIVE_PERIOD_ANCHOR,
       );
       setProgrammaticScrollTop(scroller, target);
       pendingViewportRestoreFromKeyRef.current = null;
@@ -360,6 +392,24 @@ export function TimeLordTableView({
         }
         return;
       }
+      if (lazyChildRows) {
+        const expandedRows = expandedBindingRows(payload);
+        const isExplicit = expandedRows.includes(rowId);
+        const withRows = (rows: string[]) =>
+          system === "decennials"
+            ? decennialsBindingPayload(payload, { expanded_row_ids: rows })
+            : profectionsBindingPayload(payload, { expanded_row_ids: rows });
+        if (isOpening && !isExplicit && (childCountByParent.get(rowId) ?? 0) === 0) {
+          void updateBinding(withRows([...expandedRows, rowId]), false);
+        } else if (!isOpening && isExplicit) {
+          const descendantPrefix = `${rowId}:`;
+          void updateBinding(
+            withRows(expandedRows.filter((item) => item !== rowId && !item.startsWith(descendantPrefix))),
+            false,
+          );
+        }
+        return;
+      }
       if (
         (payload.capabilities ?? {}).timeLordSystem !== "zodiacal_releasing" ||
         asNumber(row.meta?.level, 0) !== 2
@@ -390,9 +440,11 @@ export function TimeLordTableView({
       initialIds,
       isTriplicityDirections,
       isVimshottari,
+      lazyChildRows,
       payload,
       payloadKey,
       preservesExpandedAcrossBinding,
+      system,
       updateBinding,
     ],
   );
@@ -408,7 +460,7 @@ export function TimeLordTableView({
       />
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-auto"
+        className={LIST_PANE_CLASSES.scroller}
         onPointerDownCapture={markViewportUserControlled}
         onScroll={handleScrollerScroll}
       >
@@ -453,6 +505,7 @@ export function TimeLordTableView({
                 documentId={documentId}
                 payload={payload}
                 row={row}
+                highlightedCurrentRowId={highlightedCurrentRowId}
                 rowById={rowById}
                 expanded={expanded.has(row.id)}
                 onToggle={toggleExpanded}
@@ -476,9 +529,10 @@ export function TimeLordTableView({
 
 function TimeLordHeader({ payload }: { payload: GenericTablePayload }) {
   const t = useT();
+  const precision = useTablePrecision();
   const capabilities = payload.capabilities ?? {};
   const system = String(capabilities.timeLordSystem ?? payload.tableId);
-  const title = headerTitle(payload, system, t);
+  const title = headerTitle(payload, system, t, precision);
   if (!title) return null;
   return (
     <PaneInfoBar className="gap-[var(--aries-pane-control-gap-y)]">
@@ -487,7 +541,7 @@ function TimeLordHeader({ payload }: { payload: GenericTablePayload }) {
   );
 }
 
-function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): React.ReactNode {
+function headerTitle(payload: GenericTablePayload, system: string, t: TFunc, precision: ReturnType<typeof useTablePrecision>): React.ReactNode {
   const capabilities = payload.capabilities ?? {};
   if (system === "firdaria") {
     const header = asRecord(capabilities.firdaria);
@@ -565,31 +619,24 @@ function headerTitle(payload: GenericTablePayload, system: string, t: TFunc): Re
     return (
       <>
         <span>
-          {String(header.releaserHeading ?? t("timelord.releaser"))}: {String(header.releaserLabel ?? "")}
-        </span>
-        <span className="text-[color:var(--aries-text-muted)]">{String(header.inLabel ?? t("timelord.in"))}</span>
-        <span
-          style={{
-            fontFamily: "'AriesMorinus'",
-            color: semanticChartColor(
-              colorAt(header.signColorRoles, asNumber(header.signIndex, 0)),
-              colorAt(header.signColors, asNumber(header.signIndex, 0)),
+          {renderTemplate(t("zrview.releaserLine"), {
+            releaser: String(header.releaserLabel ?? ""),
+            sign: (
+              <span
+                style={{
+                  color: semanticChartColor(
+                    colorAt(header.signColorRoles, asNumber(header.signIndex, 0)),
+                    colorAt(header.signColors, asNumber(header.signIndex, 0)),
+                  ),
+                }}
+              >
+                <span style={{ fontFamily: "'AriesMorinus'" }}>{String(header.signGlyph ?? "")}</span>{" "}
+                {String(header.signName ?? "")}
+              </span>
             ),
-          }}
-        >
-          {String(header.signGlyph ?? "")}
+            degree: formatTableAngleText(String(header.degreeText ?? ""), precision),
+          })}
         </span>
-        <span
-          style={{
-            color: semanticChartColor(
-              colorAt(header.signColorRoles, asNumber(header.signIndex, 0)),
-              colorAt(header.signColors, asNumber(header.signIndex, 0)),
-            ),
-          }}
-        >
-          {String(header.signName ?? "")}
-        </span>
-        {header.degreeText ? <span>{String(header.degreeText)}</span> : null}
       </>
     );
   }
@@ -720,13 +767,9 @@ function BindingControls({
     const aphetaHouseSystemOptions = asOptions(options.aphetaHouseSystem);
     const overlapResolutionOptions = asOptions(options.overlapResolution);
     const lowerLevelOptions = asOptions(options.lowerLevelMethod);
-    const nextBinding = (patch: Record<string, unknown>) => ({
-      start_token: String(bindings.start_token ?? "valens_apheta"),
-      apheta_house_system: String(bindings.apheta_house_system ?? "whole_sign"),
-      overlap_resolution: String(bindings.overlap_resolution ?? "table"),
-      lower_level_method: String(bindings.lower_level_method ?? "proportional"),
-      ...patch,
-    });
+    // Selector changes rebuild the period tree, so opened branches reset.
+    const nextBinding = (patch: Record<string, unknown>) =>
+      decennialsBindingPayload(payload, { expanded_row_ids: [], ...patch });
     const valensAphetaSelected = String(bindings.start_token ?? "valens_apheta") === "valens_apheta";
     return (
       <PaneControlBar density="compact">
@@ -937,12 +980,9 @@ function BindingControls({
     const monthlySteps12 = Boolean(bindings.monthly_steps12 ?? true);
     const ageOffset = asNumber(bindings.age_offset, 0);
     const zodprof = Boolean(header.zodprof ?? true);
-    const nextBinding = (patch: Record<string, unknown>) => ({
-      mainsigs,
-      monthly_steps12: monthlySteps12,
-      age_offset: ageOffset,
-      ...patch,
-    });
+    // Control changes reset opened years (the age window can move).
+    const nextBinding = (patch: Record<string, unknown>) =>
+      profectionsBindingPayload(payload, { expanded_row_ids: [], ...patch });
     return (
       <PaneControlBar surface>
         <label className="text-[length:var(--aries-font-size-small)] text-[color:var(--aries-text-muted)]" htmlFor="prof-mode">
@@ -1042,6 +1082,7 @@ function TimeLordRow({
   documentId,
   payload,
   row,
+  highlightedCurrentRowId,
   rowById,
   expanded,
   onToggle,
@@ -1050,18 +1091,21 @@ function TimeLordRow({
   documentId: string;
   payload: GenericTablePayload;
   row: GenericTableRow;
+  highlightedCurrentRowId: string | null;
   rowById: Map<string, GenericTableRow>;
   expanded: boolean;
   onToggle: (row: GenericTableRow) => void;
   rowHeight: number;
 }) {
   const t = useT();
+  const precision = useTablePrecision();
   const meta = row.meta ?? {};
   const level = asNumber(meta.level, 1);
   const parentId = typeof meta.parentId === "string" ? meta.parentId : null;
   const parentRow = parentId ? rowById.get(parentId) ?? null : null;
   const hasChildren = Boolean(meta.hasChildren);
   const isCurrent = Boolean(row.current || meta.current);
+  const isHighlightedCurrent = row.id === highlightedCurrentRowId;
   const isStrong = row.emphasis === "strong" || level === 1 || level === 3;
   const colorHex = stringOrUndefined(meta.colorHex);
   const colorRole = stringOrUndefined(meta.colorRole);
@@ -1084,7 +1128,8 @@ function TimeLordRow({
         "aries-list-row aries-list-row--flagged cursor-context-menu",
         hasChildren && "cursor-pointer",
         isStrong && "font-semibold",
-        isCurrent && "text-accent-foreground",
+        isHighlightedCurrent && LIST_ROW_CLASSES.current,
+        isCurrent && !ACTIVE_PERIOD_SYSTEMS.has(system) && "text-accent-foreground",
       )}
       style={{ height: rowHeight, ...temporalHighlight.style }}
       onClick={(event) => {
@@ -1107,7 +1152,7 @@ function TimeLordRow({
               quietCell && "text-[color:var(--aries-text-muted)]",
             )}
           >
-            <CellView cell={cell} />
+            <CellView cell={cell} precision={precision} />
           </span>
         );
         return (
@@ -1118,11 +1163,14 @@ function TimeLordRow({
               alignClass(cell?.align ?? column.align),
               index === 0 && "whitespace-nowrap",
             )}
-            style={
-              cell?.glyph && (colorRole || colorHex)
+            style={{
+              ...(isHighlightedCurrent && index === 0
+                ? { boxShadow: "inset var(--aries-list-hover-flag-width) 0 0 var(--primary)" }
+                : {}),
+              ...(cell?.glyph && (colorRole || colorHex)
                 ? { color: semanticChartColor(colorRole, colorHex) }
-                : undefined
-            }
+                : {}),
+            }}
           >
             {index === hierarchyColumnIndex ? (
               <div className="flex items-center gap-1" style={{ paddingLeft: `${Math.max(0, level - 1) * 14}px` }}>
@@ -1169,11 +1217,13 @@ function TimeLordRow({
       })}
     </tr>
   );
+  const angularTable = system === "profections_table" || system === "zodiacal_releasing";
   if (!hasTimedRowActions(meta)) {
-    return rowElement;
+    return angularTable ? <TablePrecisionMenu>{rowElement}</TablePrecisionMenu> : rowElement;
   }
   return (
     <TimedChartContextMenu
+      anglePrecision={angularTable}
       documentId={documentId}
       eventDatetime={eventDatetime}
     >
@@ -1207,6 +1257,42 @@ function expandedVimshottariRows(payload: GenericTablePayload): string[] {
   return Array.from(new Set(
     asArray(bindings.expanded_row_ids).filter((item): item is string => typeof item === "string" && item.length > 0),
   ));
+}
+
+function expandedBindingRows(payload: GenericTablePayload): string[] {
+  const bindings = asRecord((payload.capabilities ?? {}).bindings);
+  return Array.from(new Set(
+    asArray(bindings.expanded_row_ids).filter((item): item is string => typeof item === "string" && item.length > 0),
+  ));
+}
+
+function decennialsBindingPayload(
+  payload: GenericTablePayload,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const bindings = asRecord((payload.capabilities ?? {}).bindings);
+  return {
+    start_token: String(bindings.start_token ?? "valens_apheta"),
+    apheta_house_system: String(bindings.apheta_house_system ?? "whole_sign"),
+    overlap_resolution: String(bindings.overlap_resolution ?? "table"),
+    lower_level_method: String(bindings.lower_level_method ?? "proportional"),
+    expanded_row_ids: expandedBindingRows(payload),
+    ...patch,
+  };
+}
+
+function profectionsBindingPayload(
+  payload: GenericTablePayload,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const bindings = asRecord((payload.capabilities ?? {}).bindings);
+  return {
+    mainsigs: Boolean(bindings.mainsigs ?? true),
+    monthly_steps12: Boolean(bindings.monthly_steps12 ?? true),
+    age_offset: asNumber(bindings.age_offset, 0),
+    expanded_row_ids: expandedBindingRows(payload),
+    ...patch,
+  };
 }
 
 function vimshottariAyanamshaBinding(value: unknown): "follow_chart" | number {
@@ -1293,7 +1379,7 @@ function expansionKey(payload: GenericTablePayload): string {
   return JSON.stringify({
     tableId: payload.tableId,
     bindings: capabilities.bindings ?? null,
-    currentRowIds: focusRowIds(system, capabilities.currentRowIds),
+    currentRowIds: system === "zodiacal_releasing" ? null : capabilities.currentRowIds ?? null,
   });
 }
 
@@ -1305,13 +1391,19 @@ function currentFocusKey(documentId: string, payload: GenericTablePayload): stri
     tableId: payload.tableId,
     system,
     bindings: focusBindings(system, capabilities.bindings),
-    currentRowIds: focusRowIds(system, capabilities.currentRowIds),
+    currentRowIds: capabilities.currentRowIds ?? null,
   });
 }
 
 function focusBindings(system: string, value: unknown): Record<string, unknown> | unknown {
   const bindings = asRecord(value);
-  if (system !== "zodiacal_releasing" && system !== "triplicity_directions" && system !== "vimshottari") return value ?? null;
+  if (
+    system !== "zodiacal_releasing" &&
+    system !== "triplicity_directions" &&
+    system !== "vimshottari" &&
+    system !== "decennials" &&
+    system !== "profections_table"
+  ) return value ?? null;
   const stableBindings = { ...bindings };
   delete stableBindings.drill_l2_start;
   delete stableBindings.expanded_l2_starts;
@@ -1321,8 +1413,43 @@ function focusBindings(system: string, value: unknown): Record<string, unknown> 
   return stableBindings;
 }
 
-function focusRowIds(system: string, value: unknown): unknown {
-  return system === "zodiacal_releasing" ? null : value ?? null;
+export function deepestVisibleCurrentRowId(
+  currentRowIds: unknown,
+  visibleRows: ReadonlyArray<Pick<GenericTableRow, "id">>,
+): string | null {
+  const visibleIds = new Set(visibleRows.map((row) => row.id));
+  const ids = asArray(currentRowIds);
+  for (let index = ids.length - 1; index >= 0; index -= 1) {
+    const id = ids[index];
+    if (typeof id === "string" && visibleIds.has(id)) return id;
+  }
+  return null;
+}
+
+export function activePeriodScrollTop({
+  focusIndex,
+  majorIndex,
+  rowHeight,
+  viewportHeight,
+}: {
+  focusIndex: number;
+  majorIndex: number;
+  rowHeight: number;
+  viewportHeight: number;
+}): number {
+  const bodyHeight = Math.max(rowHeight, viewportHeight);
+  const preferred = focusIndex * rowHeight - bodyHeight * ACTIVE_PERIOD_ANCHOR;
+  if (majorIndex < 0 || majorIndex >= focusIndex) return Math.max(0, preferred);
+  const majorLatestTop = majorIndex * rowHeight;
+  const focusEarliestTop = (focusIndex + 1) * rowHeight - bodyHeight;
+  // When both rows fit, keep the major row visible while placing the active
+  // subperiod as close as possible to the normal quarter-height anchor.
+  if (focusEarliestTop <= majorLatestTop) {
+    return Math.max(0, Math.min(preferred, majorLatestTop));
+  }
+  // A deeply expanded branch can exceed the viewport; keep the active row in
+  // view until the user collapses or scrolls the intervening periods.
+  return Math.max(0, focusEarliestTop);
 }
 
 function visibleTreeRows(rows: GenericTableRow[], expanded: Set<string>) {
@@ -1506,47 +1633,6 @@ function VirtualSpacerRow({ colSpan, height }: { colSpan: number; height: number
       <td colSpan={colSpan} className="border-0 p-0" style={{ height }} />
     </tr>
   );
-}
-
-function CellView({ cell }: { cell?: GenericTableCell }) {
-  if (!cell) return null;
-  const color = semanticChartColor(cell.colorRole, cell.color);
-  const channelStyle: React.CSSProperties | undefined =
-    color || cell.emphasis === "strong"
-      ? {
-          color,
-          fontWeight: cell.emphasis === "strong" ? 600 : undefined,
-        }
-      : undefined;
-  if (cell.runs?.length) {
-    return (
-      <span style={channelStyle}>
-        {cell.runs.map((run, index) => (
-          <span
-            key={`${index}:${run.text}`}
-            style={{
-              fontFamily: run.glyph ? "'AriesMorinus'" : undefined,
-              color: semanticChartColor(run.colorRole, run.color),
-            }}
-          >
-            {run.text}
-          </span>
-        ))}
-      </span>
-    );
-  }
-  if (cell.glyph) {
-    return (
-      <span style={channelStyle}>
-        <span style={{ fontFamily: "'AriesMorinus'" }}>{cell.glyph}</span>
-        {cell.text ? <span>{cell.text}</span> : null}
-      </span>
-    );
-  }
-  if (channelStyle) {
-    return <span style={channelStyle}>{cell.text ?? ""}</span>;
-  }
-  return <>{cell.text ?? ""}</>;
 }
 
 function alignClass(align?: string) {

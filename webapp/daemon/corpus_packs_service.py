@@ -110,6 +110,10 @@ def _label_to_slug(discipline: str) -> dict:
 def _pack_to_dict(pack_id: str, pack, active_ids) -> dict:
     """Flatten a corpus_loader.Pack (corpus_loader.py:43-56) for JSON."""
     manifest_pack = (pack.manifest or {}).get("pack", {})
+    provenance = (pack.manifest or {}).get("provenance") or {}
+    if not isinstance(provenance, dict):
+        provenance = {}
+    copyright_note = provenance.get("copyright_note") or ""
     return {
         "id": pack_id,
         # wx shows just the display name; the id rides as tooltip
@@ -118,6 +122,8 @@ def _pack_to_dict(pack_id: str, pack, active_ids) -> dict:
         "era": pack.era or "",
         "short_label": pack.short_label or "",
         "disciplines": list(manifest_pack.get("disciplines") or []),
+        "license": manifest_pack.get("license") or "",
+        "copyright_note": copyright_note if isinstance(copyright_note, str) else "",
         # active filter: None == all on (rule_engine.py:91-106).
         "active": (active_ids is None) or (pack_id in active_ids),
     }

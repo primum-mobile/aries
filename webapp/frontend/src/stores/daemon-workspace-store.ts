@@ -10,22 +10,31 @@ import {
   workspaceState,
   type DaemonDocumentSummary,
   type DaemonEvent,
+  type ListDataDomain,
   type RetainedListDisplay,
   type WorkspaceEventSubscription,
 } from "@/lib/daemon/client";
 import { isAbortError } from "@/lib/abort-error";
 import { perfNow, recordChartPerf, recordStartupPerfOnce } from "@/lib/chart/perf";
+import { isSettledStepEcho, isStepBurstActive, subscribeStepBurst } from "@/lib/chart/step-burst";
 import type { ChartRenderSnapshot } from "@/lib/chart/types";
 import { normalizeOptionsStyleIdentity } from "@/lib/theme/style-state.mjs";
 import {
+  hasPendingWorkspaceDocumentSnapshotCommand,
   hasPendingWorkspaceSnapshotCommand,
   waitForWorkspaceSnapshotCommands,
 } from "@/stores/workspace-command-snapshot-gate";
 import {
+  getDocumentSnapshot,
+  retainedHouseVisibility,
+  setRetainedHouseVisibility,
   invalidateDocumentSnapshots,
   rememberDocumentSnapshot,
   retainDocumentSnapshots,
 } from "@/lib/chart/document-snapshot-cache";
+
+import { snapshotHouseVisibility, withHouseVisibility } from "@/lib/chart/house-visibility";
+import { publishStyleDraftChange } from "@/lib/style-lab/draft-events";
 
 // ---------------------------------------------------------------------------
 // Daemon-mirrored workspace tree (slice 3).
@@ -47,7 +56,11 @@ export type DaemonWorkspaceOptionsChange = {
   styleOnly: boolean;
   listDataChanged: boolean;
   retainedListTarget?: "aspect-list" | "speculum" | null;
+  /** The one chart input this change alters, when the daemon knows it. */
+  listDataDomain?: ListDataDomain | null;
   retainedListDataKey?: string;
+  /** Content key of the options the secondary progression list reads. */
+  secondaryProgressionsDataKey?: string;
   /** Content identity for every option that changes Graphic Ephemeris data,
    * labels, glyphs, or retained daemon colours. */
   ephemerisDataKey?: string;
@@ -61,6 +74,8 @@ export type DaemonWorkspaceOptionsChange = {
   wheelPresetRevision?: number;
   paletteHash: string;
   styleHash: string;
+  /** `patchOptions` origin of the write that caused this event, if any. */
+  origin?: string;
   seq: number;
 };
 
@@ -70,6 +85,9 @@ export type DaemonWorkspaceState = {
   activeDocumentId: string | null;
   /** WS connection status. "connecting" until the first open. */
   connection: "connecting" | "open" | "closed";
+  /** Bumps when a radix branch's primary-direction time moves
+   * (`pd_branch.changed`); the directed speculum reads that time. */
+  pdBranchRevision: number;
   /** Bumps whenever a session.changed carries rebuilt child ids — child
    * surfaces subscribe to this to live-refresh their charts (step C). */
   lastSessionChange: {
@@ -79,9 +97,25 @@ export type DaemonWorkspaceState = {
     /** False when this tick exists only to repaint chart presentation. Retained
      * list/table data must not treat it as a semantic mutation. */
     listDataChanged: boolean;
+    /** Echo of this document's own snapshot command, applied after that command
+     * published its snapshot; the active chart must not refetch for it. */
+    commandEcho: boolean;
+    /** Late daemon echo of a completed step burst's final cursor. Surfaces
+     * already refreshed on the burst's completion edge (lib/chart/step-burst). */
+    stepEcho: boolean;
     /** Monotonic counter so identical successive events still trigger. */
     seq: number;
   } | null;
+  /** Per-document seq of the latest session change that altered retained list
+   * data. Unlike lastSessionChange it survives while no list is mounted, so a
+   * remounted list keys its cache on the document's current data identity. */
+  listDataRevisionByDocument: Record<string, number>;
+  /** As `listDataRevisionByDocument`, plus steps that replaced the radix
+   * itself (`listDataChanged: true`), for lists whose rows read the radix. A
+   * step burst changes it once, on the burst's completion edge, never per step. */
+  radixListDataRevisionByDocument: Record<string, number>;
+  /** Fold the radix steps held during a burst into one revision (completion edge). */
+  _settleRadixStepRevisions: () => void;
   /** Latest daemon options event. ThemeProvider uses this to update root CSS
    * variables once per style identity, without polling. */
   lastOptionsChange: DaemonWorkspaceOptionsChange | null;
@@ -93,8 +127,14 @@ export type DaemonWorkspaceState = {
   lastAspectListOptionsChange: DaemonWorkspaceOptionsChange | null;
   /** Latest semantic options transaction relevant to the Speculum table. */
   lastSpeculumOptionsChange: DaemonWorkspaceOptionsChange | null;
+  /** Retained-data changes for lists that never read houses or cusps: a
+   * house-system switch leaves it untouched. */
+  lastHouseFreeListOptionsChange: DaemonWorkspaceOptionsChange | null;
   /** Daemon-owned display facets applied to retained source rows in memory. */
   retainedListDisplay: RetainedListDisplay;
+  /** Latest options part of the secondary progression list's data key, from
+   * the options payload and every options event; null until first known. */
+  secondaryProgressionsDataKey: string | null;
   /** The snapshot a navigate POST returned for a stepped doc, pushed by the
    * navigate handler so the active surface paints from the POST result (in
    * ``step_fast`` overlay mode) instead of waiting for session.changed -> a
@@ -112,6 +152,14 @@ export type DaemonWorkspaceState = {
     snapshot: ChartRenderSnapshot;
     seq: number;
   } | null;
+
+  pendingHouseToggles: number;
+  confirmedHouseVisibility: boolean | null;
+  houseVisibilityRevision: number;
+  previewHouseToggle: (snapshot: ChartRenderSnapshot) => void;
+  finishHouseToggle: (result?: { houses: boolean; wheelPresetRevision: number }) => void;
+  _confirmHouseVisibility: (value: boolean, revision: number) => void;
+  _paintHouseVisibility: (value: boolean, source?: ChartRenderSnapshot) => void;
 
   // Internal mirror mutations (only called by the subscription manager).
   _applyState: (documents: DaemonDocumentSummary[], activeDocumentId: string | null) => void;
@@ -136,6 +184,7 @@ export type DaemonWorkspaceState = {
     listDataChanged?: boolean;
     displayDatetime?: string | null;
     tabSuffix?: string | null;
+    commandEcho?: boolean;
   }) => void;
   _applyOptionsChange: (change: {
     refreshedDocumentIds: string[];
@@ -143,7 +192,9 @@ export type DaemonWorkspaceState = {
     styleOnly?: boolean;
     listDataChanged?: boolean;
     retainedListTarget?: "aspect-list" | "speculum" | null;
+    listDataDomain?: ListDataDomain | null;
     retainedListDataKey?: string;
+    secondaryProgressionsDataKey?: string;
     ephemerisDataKey?: string;
     retainedListDisplay?: RetainedListDisplay;
     inspectorDataChanged?: boolean;
@@ -154,8 +205,10 @@ export type DaemonWorkspaceState = {
     wheelPresetRevision?: number;
     paletteHash: string;
     styleHash: string;
+    origin?: string;
   }) => void;
   _applyRetainedListDisplay: (display: RetainedListDisplay) => void;
+  _applySecondaryProgressionsDataKey: (key: string | null | undefined) => void;
   /** Push a navigate-POST snapshot for an immediate step paint (no second GET). */
   pushSteppedSnapshot: (docId: string, snapshot: ChartRenderSnapshot) => void;
   /** Commit the daemon's map-child cursor once its held-key burst has closed. */
@@ -198,6 +251,7 @@ function sameRetainedListDisplay(
   const current = left.hiddenObjectIds;
   const next = right.hiddenObjectIds;
   return (
+    left.directionGlyphColors === right.directionGlyphColors &&
     current.length === next.length &&
     current.every((objectId, index) => objectId === next[index])
   );
@@ -211,16 +265,146 @@ function isRetainedListDisplay(value: unknown): value is RetainedListDisplay {
   );
 }
 
-export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => ({
+/** Session ticks that change retained list rows: not presentation-only ticks,
+ * display overlays, or cursor steps (lists follow the cursor by focus). */
+function sessionChangeAltersListData(change: {
+  changeReason: string;
+  listDataChanged?: boolean;
+}): boolean {
+  return change.listDataChanged !== false
+    && change.changeReason !== "display-overlay"
+    && change.changeReason !== "step";
+}
+
+/** A step the daemon flags `listDataChanged: true` replaced the radix itself
+ * (a stepped saved chart); ordinary cursor and derived-chart steps carry no flag. */
+function sessionChangeReplacesRadix(change: { changeReason: string; listDataChanged?: boolean }): boolean {
+  return change.changeReason === "step" && change.listDataChanged === true;
+}
+
+type SessionChangeIds = { docId: string | null; rebuiltChildIds: string[] };
+
+function sessionChangeIds(change: SessionChangeIds): string[] {
+  return change.docId == null ? change.rebuiltChildIds : [change.docId, ...change.rebuiltChildIds];
+}
+
+function withRevisions(revisions: Record<string, number>, ids: readonly string[], seq: number): Record<string, number> {
+  if (ids.length === 0) return revisions;
+  const next = { ...revisions };
+  for (const id of ids) next[id] = seq;
+  return next;
+}
+
+function listDataRevisionsAfterSessionChange(
+  revisions: Record<string, number>,
+  change: SessionChangeIds & { changeReason: string; listDataChanged?: boolean },
+  seq: number,
+): Record<string, number> {
+  if (!sessionChangeAltersListData(change)) return revisions;
+  return withRevisions(revisions, sessionChangeIds(change), seq);
+}
+
+// Radix steps held while a step burst runs, folded in on its completion edge,
+// and the documents that edge settled: the daemon's trailing echo of the
+// burst's final step then carries nothing new.
+let heldRadixStepRevisions: Record<string, number> = {};
+let settledRadixStepDocuments = new Set<string>();
+
+function radixListDataRevisionsAfterSessionChange(
+  revisions: Record<string, number>,
+  change: SessionChangeIds & { changeReason: string; listDataChanged?: boolean; displayDatetime?: string | null },
+  seq: number,
+): Record<string, number> {
+  const ids = sessionChangeIds(change);
+  if (sessionChangeAltersListData(change)) {
+    for (const id of ids) settledRadixStepDocuments.delete(id);
+    return withRevisions(revisions, ids, seq);
+  }
+  if (!sessionChangeReplacesRadix(change)) return revisions;
+  if (isStepBurstActive()) {
+    for (const id of ids) heldRadixStepRevisions[id] = seq;
+    return revisions;
+  }
+  if (
+    isSettledStepEcho(change.docId, change.displayDatetime) &&
+    ids.every((id) => settledRadixStepDocuments.has(id))
+  ) {
+    for (const id of ids) settledRadixStepDocuments.delete(id);
+    return revisions;
+  }
+  return withRevisions(revisions, ids, seq);
+}
+
+export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set, get) => ({
   documents: [],
   activeDocumentId: null,
   connection: "connecting",
   lastSessionChange: null,
+  pdBranchRevision: 0,
+  listDataRevisionByDocument: {},
+  radixListDataRevisionByDocument: {},
+  _settleRadixStepRevisions: () => {
+    const held = heldRadixStepRevisions;
+    const ids = Object.keys(held);
+    if (ids.length === 0) return;
+    heldRadixStepRevisions = {};
+    settledRadixStepDocuments = new Set(ids);
+    set((state) => ({
+      radixListDataRevisionByDocument: { ...state.radixListDataRevisionByDocument, ...held },
+    }));
+  },
   lastOptionsChange: null,
+  pendingHouseToggles: 0,
+  confirmedHouseVisibility: null,
+  houseVisibilityRevision: -1,
+  _paintHouseVisibility: (value, source) => {
+    setRetainedHouseVisibility(value);
+    set((state) => {
+      const update = (entry: typeof state.commandSnapshot) => {
+        if (!entry) return entry;
+        const snapshot = withHouseVisibility(entry.snapshot, value);
+        return snapshot === entry.snapshot ? entry : { ...entry, snapshot, seq: entry.seq + 1 };
+      };
+      const steppedSnapshot = update(state.steppedSnapshot);
+      let commandSnapshot = update(state.commandSnapshot);
+      if (steppedSnapshot?.docId !== state.activeDocumentId && commandSnapshot?.docId !== state.activeDocumentId && state.activeDocumentId) {
+        const snapshot = source ?? getDocumentSnapshot(state.activeDocumentId);
+        if (snapshot) commandSnapshot = {
+          docId: state.activeDocumentId, snapshot: withHouseVisibility(snapshot, value), seq: 1,
+        };
+      }
+      return { steppedSnapshot, commandSnapshot };
+    });
+  },
+  previewHouseToggle: (snapshot) => {
+    const initial = snapshotHouseVisibility(snapshot);
+    const value = !(retainedHouseVisibility() ?? initial);
+    set((state) => ({
+      pendingHouseToggles: state.pendingHouseToggles + 1,
+      confirmedHouseVisibility: state.confirmedHouseVisibility ?? initial,
+    }));
+    get()._paintHouseVisibility(value, snapshot);
+  },
+  _confirmHouseVisibility: (value, revision) => {
+    const state = get();
+    if (revision < state.houseVisibilityRevision) return;
+    set({ confirmedHouseVisibility: value, houseVisibilityRevision: revision });
+    if (state.pendingHouseToggles === 0) get()._paintHouseVisibility(value);
+  },
+  finishHouseToggle: (result) => {
+    if (result) get()._confirmHouseVisibility(result.houses, result.wheelPresetRevision);
+    set((state) => ({ pendingHouseToggles: Math.max(0, state.pendingHouseToggles - 1) }));
+    const state = get();
+    if (state.pendingHouseToggles === 0 && state.confirmedHouseVisibility !== null) {
+      state._paintHouseVisibility(state.confirmedHouseVisibility);
+    }
+  },
   lastRetainedDataOptionsChange: null,
   lastAspectListOptionsChange: null,
   lastSpeculumOptionsChange: null,
+  lastHouseFreeListOptionsChange: null,
   retainedListDisplay: { hiddenObjectIds: [] },
+  secondaryProgressionsDataKey: null,
   steppedSnapshot: null,
   commandSnapshot: null,
 
@@ -317,12 +501,28 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
     set((state) => {
       const pureSelfStep =
         change.changeReason === "step" && change.rebuiltChildIds.length === 0;
+      const seq = (state.lastSessionChange?.seq ?? 0) + 1;
       return {
+        listDataRevisionByDocument: listDataRevisionsAfterSessionChange(
+          state.listDataRevisionByDocument,
+          change,
+          seq,
+        ),
+        radixListDataRevisionByDocument: radixListDataRevisionsAfterSessionChange(
+          state.radixListDataRevisionByDocument,
+          change,
+          seq,
+        ),
         // A pure chart self-step already paints from the navigate POST snapshot.
         // Do not rewrite the daemon document mirror just to carry the moving
         // datetime; that wakes sidebar/menu/native chrome on every arrow repeat.
+        // A presentation-only tick carries neither field; keep the mirror's
+        // identity so sidebar and chrome do not re-render for it.
         documents:
           pureSelfStep || change.docId == null
+            || !state.documents.some((doc) => doc.documentId === change.docId
+              && ((change.displayDatetime !== undefined && change.displayDatetime !== doc.displayDatetime)
+                || (change.tabSuffix !== undefined && change.tabSuffix !== doc.tabSuffix)))
             ? state.documents
             : state.documents.map((doc) =>
                 doc.documentId === change.docId
@@ -342,7 +542,10 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
           changeReason: change.changeReason,
           rebuiltChildIds: change.rebuiltChildIds,
           listDataChanged: change.listDataChanged !== false,
-          seq: (state.lastSessionChange?.seq ?? 0) + 1,
+          commandEcho: change.commandEcho === true,
+          stepEcho: change.changeReason === "step"
+            && isSettledStepEcho(change.docId, change.displayDatetime),
+          seq,
         },
       };
     }),
@@ -362,15 +565,21 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
         styleOnly,
         listDataChanged,
         retainedListTarget: change.retainedListTarget ?? null,
+        listDataDomain: change.listDataDomain ?? null,
         ephemerisDataKey: change.ephemerisDataKey,
         inspectorDataChanged: change.inspectorDataChanged === true,
         seq: (state.lastOptionsChange?.seq ?? 0) + 1,
       };
       return {
         lastOptionsChange: optionsChange,
-        lastRetainedDataOptionsChange: listDataChanged && !change.retainedListTarget
+        // Style edits repaint retained rows; they never become a data revision.
+        lastRetainedDataOptionsChange: listDataChanged && !styleOnly && !change.retainedListTarget
           ? optionsChange
           : state.lastRetainedDataOptionsChange,
+        lastHouseFreeListOptionsChange:
+          listDataChanged && !styleOnly && !change.retainedListTarget && change.listDataDomain !== "houses"
+            ? optionsChange
+            : state.lastHouseFreeListOptionsChange,
         lastAspectListOptionsChange:
           listDataChanged &&
           (!change.retainedListTarget || change.retainedListTarget === "aspect-list")
@@ -381,6 +590,10 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
           (!change.retainedListTarget || change.retainedListTarget === "speculum")
             ? optionsChange
             : state.lastSpeculumOptionsChange,
+        secondaryProgressionsDataKey:
+          typeof change.secondaryProgressionsDataKey === "string"
+            ? change.secondaryProgressionsDataKey
+            : state.secondaryProgressionsDataKey,
         retainedListDisplay:
           isRetainedListDisplay(change.retainedListDisplay) &&
           !sameRetainedListDisplay(state.retainedListDisplay, change.retainedListDisplay)
@@ -405,6 +618,11 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
       if (sameRetainedListDisplay(state.retainedListDisplay, display)) return state;
       return { retainedListDisplay: display };
     }),
+  _applySecondaryProgressionsDataKey: (key) =>
+    set((state) =>
+      typeof key === "string" && key !== state.secondaryProgressionsDataKey
+        ? { secondaryProgressionsDataKey: key }
+        : state),
   pushSteppedSnapshot: (docId, snapshot) => {
     // Normalize the partial overlay before publishing. React renders this exact
     // object directly, so remembering it in a later effect would expose the raw
@@ -449,6 +667,11 @@ export const useDaemonWorkspaceStore = create<DaemonWorkspaceState>()((set) => (
 }));
 
 // ---------------------------------------------------------------------------
+// One radix-list revision per step burst, on its completion edge.
+subscribeStepBurst(() => {
+  if (!isStepBurstActive()) useDaemonWorkspaceStore.getState()._settleRadixStepRevisions();
+});
+
 // Subscription manager — singleton. Syncs the mirror on connect and keeps it in
 // sync. Reference-counted so multiple mounts share one socket; the React hook
 // below drives ref counts.
@@ -463,6 +686,7 @@ let syncInFlight: Promise<void> | null = null;
 let syncGeneration = 0;
 let deferredTree: DaemonDocumentSummary[] | null = null;
 let deferredActive: string | null | undefined;
+let deferredSessionEchoes: Parameters<DaemonWorkspaceState["_applySessionChange"]>[0][] = [];
 let deferredWorkspaceEventFlushScheduled = false;
 
 function scheduleDeferredWorkspaceEventFlush(): void {
@@ -473,14 +697,17 @@ function scheduleDeferredWorkspaceEventFlush(): void {
     const store = useDaemonWorkspaceStore.getState();
     const tree = deferredTree;
     const active = deferredActive;
+    const echoes = deferredSessionEchoes;
     deferredTree = null;
     deferredActive = undefined;
+    deferredSessionEchoes = [];
     if (tree) {
       store._applyTree(tree);
     }
     if (active !== undefined) {
       store._applyActive(active);
     }
+    for (const echo of echoes) store._applySessionChange(echo);
   });
 }
 
@@ -489,6 +716,9 @@ function handleEvent(event: DaemonEvent): void {
   switch (event.type) {
     case "chart.event-tags.changed":
       useChartEventsStore.getState().applyTagCatalog(event.tagCatalog, event.catalogVersion);
+      break;
+    case "style.draft.changed":
+      publishStyleDraftChange({ draftId: event.draftId ?? null, revision: event.revision ?? null });
       break;
     case "chart.events.changed":
       useChartEventsStore.getState().invalidate(event.documentIds);
@@ -515,6 +745,11 @@ function handleEvent(event: DaemonEvent): void {
         stepDirty: event.stepDirty,
       });
       break;
+    case "pd_branch.changed":
+      // A radix branch's PD time moved: followers re-derived in the daemon.
+      invalidateDocumentSnapshots(event.pdChartIds);
+      useDaemonWorkspaceStore.setState((state) => ({ pdBranchRevision: state.pdBranchRevision + 1 }));
+      break;
     case "active_document.changed":
       if (hasPendingWorkspaceSnapshotCommand()) {
         deferredActive = event.docId;
@@ -530,20 +765,41 @@ function handleEvent(event: DaemonEvent): void {
           displayDatetime: event.displayDatetime ?? null,
         });
       }
-      store._applySessionChange({
-        docId: event.docId,
-        changeReason: event.changeReason,
-        rebuiltChildIds: event.rebuiltChildIds ?? [],
-        listDataChanged: event.listDataChanged,
-        displayDatetime: event.displayDatetime,
-        tabSuffix: event.tabSuffix,
-      });
+      {
+        const change = {
+          docId: event.docId,
+          changeReason: event.changeReason,
+          rebuiltChildIds: event.rebuiltChildIds ?? [],
+          listDataChanged: event.listDataChanged,
+          displayDatetime: event.displayDatetime,
+          tabSuffix: event.tabSuffix,
+        };
+        // A display-only command on this document returns its own snapshot.
+        // Apply its echo after that paint, never as competing main-thread work.
+        if (event.changeReason === "display-overlay" && change.rebuiltChildIds.length === 0
+          && event.docId && hasPendingWorkspaceDocumentSnapshotCommand(event.docId)) {
+          deferredSessionEchoes.push({ ...change, commandEcho: true });
+          scheduleDeferredWorkspaceEventFlush();
+          break;
+        }
+        store._applySessionChange(change);
+      }
       break;
     case "options.changed":
       {
         const refreshedIds = event.refreshedDocumentIds ?? [];
         const refreshMode = event.refreshMode || "recalc";
-        const styleOnly = event.styleOnly === true;
+        const housesOnly = typeof event.houseVisibility === "boolean";
+        if (housesOnly) {
+          store._confirmHouseVisibility(event.houseVisibility!, event.wheelPresetRevision ?? 0);
+        } else if (store.pendingHouseToggles === 0 && !event.styleOnly) {
+          setRetainedHouseVisibility(null);
+          useDaemonWorkspaceStore.setState({ confirmedHouseVisibility: null });
+        }
+        // A typed visibility delta projects existing geometry. Keep the normal
+        // options notification for settings/specialist surfaces, without making
+        // wheel consumers invalidate, fetch or rebuild retained snapshots.
+        const styleOnly = event.styleOnly === true || housesOnly;
         const listDataChanged = event.listDataChanged !== false;
         const inspectorDataChanged = event.inspectorDataChanged === true;
         const styleIdentity = normalizeOptionsStyleIdentity(event);
@@ -566,12 +822,15 @@ function handleEvent(event: DaemonEvent): void {
           styleOnly,
           listDataChanged,
           retainedListTarget: event.retainedListTarget,
+          listDataDomain: event.listDataDomain,
           retainedListDataKey: event.retainedListDataKey,
+          secondaryProgressionsDataKey: event.secondaryProgressionsDataKey,
           ephemerisDataKey: event.ephemerisDataKey,
           retainedListDisplay: event.retainedListDisplay,
           inspectorDataChanged,
           langid: event.langid,
           wheelPresetRevision: event.wheelPresetRevision,
+          origin: event.origin,
           ...styleIdentity,
         });
         // A semantic settings change re-rendered every open chart. Profile-only
@@ -579,7 +838,10 @@ function handleEvent(event: DaemonEvent): void {
         // session tick for them would defeat the paint-only contract and force
         // snapshots/data geometry to refetch. For real option changes, bump the
         // active-doc tick only when that document is actually in the touched set.
-        if (!styleOnly && touchedIds.length > 0) {
+        const specialistActive = housesOnly && store.documents.some(doc =>
+          doc.documentId === store.activeDocumentId
+          && ["square_chart", "mundane_chart", "astrolabe", "astrolog_sphere"].includes(doc.launcherKind ?? ""));
+        if ((!styleOnly || specialistActive) && touchedIds.length > 0) {
           const activeTouched =
             store.activeDocumentId != null && touchedIds.includes(store.activeDocumentId);
           store._applySessionChange({
@@ -672,6 +934,7 @@ export function acquireDaemonWorkspace(): () => void {
           recordStartupPerfOnce("workspace-ws-open");
           // Resync on every (re)open to recover missed events.
           void syncState("socket-open");
+          publishStyleDraftChange(null);
         }
       },
     });

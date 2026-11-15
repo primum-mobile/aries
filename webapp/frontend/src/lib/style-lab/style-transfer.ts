@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { StyleLabTokenValue } from "./client";
+import { isWheelGeometryKey } from "@/lib/chart/wheel-geometry-ownership";
 import {
   WHEEL_AUTHORING_OVERRIDE_PREFIX,
   type WheelAuthoringEditScope,
@@ -11,8 +12,16 @@ import {
 export type StyleTransferControl = Readonly<{
   semanticId: string;
   property: string;
+  /** Token value type; a colour only ever travels as RGB(A) or a role alias. */
+  kind?: "color" | "number" | "font-family";
   value: StyleLabTokenValue;
 }>;
+
+function writableColor(value: StyleLabTokenValue): boolean {
+  if (typeof value === "string") return /^\{[^{}]+\}$/.test(value);
+  return Array.isArray(value) && (value.length === 3 || value.length === 4)
+    && value.slice(0, 3).every((channel) => Number.isInteger(channel) && channel >= 0 && channel <= 255);
+}
 
 export type ElementStyleClipboard = Readonly<{
   sourceClassId: string;
@@ -119,19 +128,25 @@ function transferSlot(control: StyleTransferControl): string {
   return `binding:${control.property}`;
 }
 
-function uniqueControlSlots(
+/**
+ * Controls grouped by what they mean. Size and position (geometry) never
+ * travel: copying a band's look must not move or resize the target. A generic
+ * binding slot shared by unrelated tokens is ambiguous and dropped; an
+ * authoring property shown twice (a band and its fill class) is one slot.
+ */
+function transferSlots(
   controls: readonly StyleTransferControl[],
-): Map<string, StyleTransferControl> {
-  const slots = new Map<string, StyleTransferControl | null>();
+): Map<string, StyleTransferControl[]> {
+  const slots = new Map<string, StyleTransferControl[]>();
   for (const control of controls) {
+    if (isWheelGeometryKey(control.semanticId)) continue;
     const slot = transferSlot(control);
-    slots.set(slot, slots.has(slot) ? null : control);
+    slots.set(slot, [...(slots.get(slot) ?? []), control]);
   }
-  return new Map(
-    [...slots.entries()].flatMap(([slot, control]) =>
-      control ? [[slot, control] as const] : []
-    ),
-  );
+  for (const [slot, members] of slots) {
+    if (!slot.startsWith("authoring:") && members.length > 1) slots.delete(slot);
+  }
+  return slots;
 }
 
 export function copyElementStyle(
@@ -140,7 +155,7 @@ export function copyElementStyle(
 ): ElementStyleClipboard {
   return {
     ...source,
-    entries: [...uniqueControlSlots(controls)].map(([slot, control]) => ({
+    entries: [...transferSlots(controls)].map(([slot, [control]]) => ({
       slot,
       value: cloneValue(control.value),
     })),
@@ -153,14 +168,27 @@ export function buildElementStylePastePatch(
 ): Record<string, StyleLabTokenValue> {
   const sourceValues = new Map(clipboard.entries.map((entry) => [entry.slot, entry.value]));
   const patch: Record<string, StyleLabTokenValue> = {};
-  for (const [slot, control] of uniqueControlSlots(targetControls)) {
+  for (const [slot, controls] of transferSlots(targetControls)) {
     const value = sourceValues.get(slot);
-    if (value === undefined || sameValue(value, control.value)) continue;
-    patch[control.semanticId] = cloneValue(value);
+    if (value === undefined) continue;
+    for (const control of controls) {
+      // A value the target cannot store is never sent: one bad key would
+      // reject the whole write.
+      if (control.kind === "color" && !writableColor(value)) continue;
+      if (control.kind === "number" && (typeof value !== "number" || !Number.isFinite(value))) continue;
+      if (!sameValue(value, control.value)) patch[control.semanticId] = cloneValue(value);
+    }
   }
   return patch;
 }
 
+/**
+ * Give each target wheel style the source style's look for one class. The
+ * look is what the source paints: its own per-style edit, else the edit shared
+ * by all wheel styles, else the factory value. A target that already shows
+ * that value is left alone; a target whose own edit masks it gets the value,
+ * or loses its edit (null) when the source shows the factory value.
+ */
 export function buildWheelVariantSyncPatch(
   overrides: Readonly<Record<string, StyleLabTokenValue>>,
   options: Readonly<{
@@ -176,25 +204,58 @@ export function buildWheelVariantSyncPatch(
       >
     >;
   }>,
-): Record<string, StyleLabTokenValue> {
-  const sourcePrefix = `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${options.source}.${options.classId}.`;
-  const sourceEntries = Object.entries(overrides).flatMap(([semanticId, value]) => {
-    if (!semanticId.startsWith(sourcePrefix)) return [];
-    const parsed = parseWheelAuthoringOverrideId(semanticId);
-    return parsed ? [[parsed.property, value] as const] : [];
-  });
-  const patch: Record<string, StyleLabTokenValue> = {};
+): Record<string, StyleLabTokenValue | null> {
+  const classProperties = (scope: WheelAuthoringEditScope) => {
+    const prefix = `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${scope}.${options.classId}.`;
+    return new Map(Object.entries(overrides).flatMap(([semanticId, value]) => {
+      if (!semanticId.startsWith(prefix)) return [];
+      const parsed = parseWheelAuthoringOverrideId(semanticId);
+      return parsed ? [[parsed.property, value] as const] : [];
+    }));
+  };
+  const shared = classProperties("base");
+  const source = classProperties(options.source);
+  const patch: Record<string, StyleLabTokenValue | null> = {};
   for (const target of new Set(options.targets)) {
     if (target === options.source) continue;
     const allowed = options.allowedProperties[target];
     if (!allowed) continue;
-    for (const [property, value] of sourceEntries) {
+    const own = classProperties(target);
+    for (const property of new Set([...shared.keys(), ...source.keys(), ...own.keys()])) {
       if (!allowed.has(property)) continue;
+      const desired = source.get(property) ?? shared.get(property);
+      const shown = own.get(property) ?? shared.get(property);
+      if (desired === undefined ? shown === undefined : shown !== undefined && sameValue(shown, desired)) continue;
       const semanticId = `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${target}.${options.classId}.${property}`;
-      const current = overrides[semanticId];
-      if (current !== undefined && sameValue(current, value)) continue;
-      patch[semanticId] = cloneValue(value);
+      // With no shared edit, dropping the target's own edit shows the factory
+      // value, which is what the source shows.
+      patch[semanticId] = desired === undefined ? null : cloneValue(desired);
     }
   }
   return patch;
+}
+
+export type WheelClassSyncScope = Readonly<{
+  classId: string;
+  targets: readonly Exclude<WheelAuthoringEditScope, "base">[];
+  allowedProperties: Readonly<
+    Partial<
+      Record<
+        Exclude<WheelAuthoringEditScope, "base">,
+        ReadonlySet<WheelAuthoringFlatProperty>
+      >
+    >
+  >;
+}>;
+
+/** Sync every class at once: the whole wheel's look onto the other wheel styles. */
+export function buildWholeWheelSyncPatch(
+  overrides: Readonly<Record<string, StyleLabTokenValue>>,
+  source: Exclude<WheelAuthoringEditScope, "base">,
+  classes: readonly WheelClassSyncScope[],
+): Record<string, StyleLabTokenValue | null> {
+  return Object.assign({}, ...classes.map((scope) => buildWheelVariantSyncPatch(overrides, {
+    ...scope,
+    source,
+  })));
 }

@@ -4,6 +4,7 @@
 "use client";
 
 import * as React from "react";
+import { Menu as MenuIcon } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -25,8 +26,21 @@ import {
   subscribeShellMenuState,
   type ShellMenuStateSnapshot,
 } from "@/lib/shell-host";
+import {
+  acceleratorAvailable,
+  menuAcceleratorLabel,
+  useAppleShortcuts,
+  useShortcutModifierLabels,
+} from "@/lib/shortcut-display";
+import {
+  SUPPORT_DIAGNOSTICS_COMMAND,
+  SUPPORT_OPEN_LOGS_COMMAND,
+  supportDiagnosticsAvailable,
+} from "@/lib/shell/support-diagnostics";
 import { cn } from "@/lib/utils";
+import { useMenuKeyActivation } from "@/shortcuts/menu-key-activation";
 import { useT, useTFallback } from "@/lib/i18n/i18n";
+import { refreshWorkspaceManifest } from "@/stores/use-workspace-manifest";
 
 type Props = {
   manifest: WorkspaceManifest | null;
@@ -35,58 +49,132 @@ type Props = {
   isCommandEnabled: (command: string) => boolean;
 };
 
-type RenderableNode = NativeMenuNode;
+type SubmenuNode = Extract<NativeMenuNode, { type: "submenu" }>;
 
-function BrowserMenuBarComponent({
-  manifest,
-  recentCharts,
-  onCommand,
-  isCommandEnabled,
-}: Props) {
-  const enabled = useBrowserMenuEnabled();
+/** File > Exit, appended where the desktop app has no native menu bar. */
+export const APP_EXIT_COMMAND = "menu.file.exit";
+
+/**
+ * In-page application menu.
+ *
+ * Tauri on macOS and Linux renders the daemon's menu tree as the native OS
+ * menu bar. A browser tab has no such bar, and Windows draws its menu inside
+ * the unified titlebar, so there the same daemon tree folds into one titlebar
+ * button: each top-level menu (File, Tables, Charts, ...) becomes a submenu of
+ * this popup. Command ids, order, labels, checked state, and enablement are
+ * the manifest's, and dispatch goes through the same manifest command path as
+ * the native menu. The desktop variant adds File > Exit, which the native
+ * app menu provides elsewhere.
+ */
+function BrowserAppMenuComponent({ manifest, recentCharts, onCommand, isCommandEnabled }: Props) {
+  const enabled = useBrowserHostMenu();
   const t = useT();
+  const tf = useTFallback();
+  const appleShortcuts = useAppleShortcuts();
+  const modifierLabels = useShortcutModifierLabels();
+  const acceleratorLabel = React.useCallback(
+    (accelerator: string) => acceleratorAvailable(accelerator, appleShortcuts)
+      ? menuAcceleratorLabel(accelerator, appleShortcuts, modifierLabels)
+      : "",
+    [appleShortcuts, modifierLabels],
+  );
+  const [open, setOpen] = React.useState(false);
   const menuState = React.useSyncExternalStore(
     subscribeShellMenuState,
     getShellMenuStateSnapshot,
     getServerShellMenuStateSnapshot,
   );
+
+  React.useEffect(() => {
+    if (!open) return;
+    // Retained workspace iframes swallow outside presses; focusing one blurs
+    // the shell window, so close the transient menu at that boundary.
+    const dismissOnWindowBlur = () => setOpen(false);
+    window.addEventListener("blur", dismissOnWindowBlur);
+    return () => window.removeEventListener("blur", dismissOnWindowBlur);
+  }, [open]);
+
+  const handleOpenChange = React.useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    // Open from the retained tree immediately, then refresh it quietly (as the
+    // quick-options drawer does) so profiles saved elsewhere appear.
+    if (nextOpen) void refreshWorkspaceManifest();
+  }, []);
+  // The desktop app on Windows: a lone Alt tap or F10 opens this menu, as
+  // it would a native menu bar.
+  const toggleFromKeyboard = React.useCallback(
+    () => handleOpenChange(!open),
+    [handleOpenChange, open],
+  );
+  useMenuKeyActivation(
+    enabled && !appleShortcuts && resolveShellHost().kind === "tauri",
+    toggleFromKeyboard,
+  );
+
   if (!enabled) return null;
-  const menus = manifest?.nativeMenu?.menus ?? [];
+  const menus = withDesktopSupport(withDesktopExit(
+    (manifest?.nativeMenu?.menus ?? []).filter(
+      (node): node is SubmenuNode => node.type === "submenu",
+    ),
+  ));
   if (menus.length === 0) return null;
+  const label = t("a11y.applicationMenu");
 
   return (
-    <nav
-      className="no-scrollbar fixed left-[calc(var(--titlebar-left-controls-x)+2rem)] right-[9rem] top-0 z-[60] flex h-[var(--titlebar-h)] items-center gap-0.5 overflow-x-auto overflow-y-visible px-1 text-[length:var(--aries-font-size-base)] text-[color:var(--aries-titlebar-text)]"
-      aria-label={t("a11y.applicationMenu")}
-    >
-      {menus.map((node) =>
-        node.type === "submenu" ? (
-          <TopMenu
-            key={node.id}
-            node={node}
-            recentCharts={recentCharts}
-            onCommand={onCommand}
-            isCommandEnabled={isCommandEnabled}
-            menuState={menuState}
-          />
-        ) : null,
-      )}
-    </nav>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
+      <DropdownMenuTrigger
+        aria-label={label}
+        title={label}
+        data-aries-browser-app-menu=""
+        className={cn(
+          "flex h-[var(--morinus-header-btn-h)] w-[var(--morinus-header-btn-w)] items-center justify-center rounded-[var(--morinus-header-btn-radius)] text-[color:var(--aries-titlebar-icon)] outline-none transition-colors duration-[var(--aries-motion-shell-duration)] ease-[var(--aries-motion-shell-ease)] hover:bg-sidebar-accent hover:text-[color:var(--aries-titlebar-icon-hover)] focus-visible:bg-sidebar-accent focus-visible:text-[color:var(--aries-titlebar-icon-hover)]",
+          open && "bg-sidebar-accent text-[color:var(--aries-titlebar-icon-active)]",
+        )}
+      >
+        <MenuIcon className="size-[var(--morinus-header-icon-size)]" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        aria-label={label}
+        className="w-max min-w-[min(var(--aries-menu-dropdown-min-width),var(--available-width))] max-w-(--available-width) whitespace-nowrap rounded-[var(--aries-radius-control)]"
+      >
+        {menus.map((node) => {
+          const disabled = !manifestSubmenuHasEnabledItem(node, recentCharts, isCommandEnabled, menuState);
+          return (
+            <DropdownMenuSub key={node.id}>
+              <DropdownMenuSubTrigger disabled={disabled} className="data-disabled:opacity-50">
+                {node.labelKey ? tf(node.labelKey, node.label) : node.label}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-max min-w-[min(var(--aries-menu-dropdown-submenu-min-width),var(--available-width))] max-w-(--available-width) overflow-x-auto whitespace-nowrap rounded-[var(--aries-radius-control)]">
+                <ManifestMenuItems
+                  items={manifestMenuChildren(node, recentCharts)}
+                  recentCharts={recentCharts}
+                  acceleratorLabel={acceleratorLabel}
+                  onCommand={onCommand}
+                  isCommandEnabled={isCommandEnabled}
+                  menuState={menuState}
+                />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-export const BrowserMenuBar = React.memo(BrowserMenuBarComponent);
+export const BrowserAppMenu = React.memo(BrowserAppMenuComponent);
 
-function browserShellSnapshot(): boolean {
-  return !resolveShellHost().capabilities.nativeMenu;
-}
-
-function useBrowserMenuEnabled(): boolean {
+/** True only for hosts without a native OS menu bar (the browser/WASM build
+ * and the Windows desktop app). */
+function useBrowserHostMenu(): boolean {
   const [enabled, setEnabled] = React.useState(false);
   React.useEffect(() => {
     let cancelled = false;
+    // Tauri injects its runtime globals early but not necessarily before the
+    // first effect; re-check briefly so desktop never flashes the web menu.
     const update = () => {
-      if (!cancelled) setEnabled(browserShellSnapshot());
+      if (!cancelled) setEnabled(!resolveShellHost().capabilities.nativeMenu);
     };
     update();
     const animationFrame = window.requestAnimationFrame(update);
@@ -100,52 +188,61 @@ function useBrowserMenuEnabled(): boolean {
   return enabled;
 }
 
-function TopMenu({
-  node,
-  recentCharts,
-  onCommand,
-  isCommandEnabled,
-  menuState,
-}: {
-  node: Extract<NativeMenuNode, { type: "submenu" }>;
-  recentCharts: RecentChartItem[];
-  onCommand: (command: string) => void;
-  isCommandEnabled: (command: string) => boolean;
-  menuState: ShellMenuStateSnapshot;
-}) {
-  const disabled = !submenuHasEnabledItem(node, recentCharts, isCommandEnabled, menuState);
-  const tf = useTFallback();
-  const label = node.labelKey ? tf(node.labelKey, node.label) : node.label;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        disabled={disabled}
-        className={cn(
-          "h-6 whitespace-nowrap rounded-xs px-2 leading-6 outline-none transition-colors",
-          "hover:bg-[color:var(--aries-list-hover-bg)] focus-visible:bg-[color:var(--aries-list-hover-bg)] data-disabled:opacity-50",
-        )}
-      >
-        {label}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-56 rounded-[var(--aries-radius-control)]">
-        <ManifestMenuItems
-          items={menuChildren(node, recentCharts)}
-          onCommand={onCommand}
-          isCommandEnabled={isCommandEnabled}
-          menuState={menuState}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+/** The desktop app without a native menu bar quits from File > Exit. */
+function withDesktopExit(menus: SubmenuNode[]): SubmenuNode[] {
+  if (resolveShellHost().kind !== "tauri") return menus;
+  return menus.map((node) => node.id !== "menu.file" ? node : {
+    ...node,
+    children: [
+      ...node.children,
+      { type: "separator" },
+      { type: "item", id: APP_EXIT_COMMAND, label: "Exit", labelKey: "nativeMenu.exit", enabled: true },
+    ],
+  });
 }
+
+/** The Windows desktop app: Help > Diagnostics… and Open logs folder, so a
+ * tester can send what cannot be reproduced without a Windows machine. */
+export function withDesktopSupport(menus: SubmenuNode[]): SubmenuNode[] {
+  if (!supportDiagnosticsAvailable()) return menus;
+  return menus.map((node) => node.id !== "menu.help" ? node : {
+    ...node,
+    children: [
+      ...node.children,
+      { type: "separator" },
+      {
+        type: "item",
+        id: SUPPORT_DIAGNOSTICS_COMMAND,
+        label: "Diagnostics…",
+        labelKey: "supportDiagnostics.menuItem",
+        enabled: true,
+      },
+      {
+        type: "item",
+        id: SUPPORT_OPEN_LOGS_COMMAND,
+        label: "Open logs folder",
+        labelKey: "supportDiagnostics.openLogsMenuItem",
+        enabled: true,
+      },
+    ],
+  });
+}
+
+const NO_RECENT_CHARTS: RecentChartItem[] = [];
+const rawAccelerator = (accelerator: string) => accelerator;
 
 export function ManifestMenuItems({
   items,
+  recentCharts = NO_RECENT_CHARTS,
+  acceleratorLabel = rawAccelerator,
   onCommand,
   isCommandEnabled,
   menuState,
 }: {
-  items: RenderableNode[];
+  items: NativeMenuNode[];
+  recentCharts?: RecentChartItem[];
+  /** In-page display of a manifest accelerator; defaults to the raw string. */
+  acceleratorLabel?: (accelerator: string) => string;
   onCommand: (command: string) => void;
   isCommandEnabled: (command: string) => boolean;
   menuState: ShellMenuStateSnapshot;
@@ -154,6 +251,8 @@ export function ManifestMenuItems({
     <MenuNode
       key={item.type === "separator" ? `separator-${index}` : item.id}
       item={item}
+      recentCharts={recentCharts}
+      acceleratorLabel={acceleratorLabel}
       onCommand={onCommand}
       isCommandEnabled={isCommandEnabled}
       menuState={menuState}
@@ -163,11 +262,15 @@ export function ManifestMenuItems({
 
 function MenuNode({
   item,
+  recentCharts,
+  acceleratorLabel,
   onCommand,
   isCommandEnabled,
   menuState,
 }: {
-  item: RenderableNode;
+  item: NativeMenuNode;
+  recentCharts: RecentChartItem[];
+  acceleratorLabel: (accelerator: string) => string;
   onCommand: (command: string) => void;
   isCommandEnabled: (command: string) => boolean;
   menuState: ShellMenuStateSnapshot;
@@ -176,13 +279,15 @@ function MenuNode({
   if (item.type === "separator") return <DropdownMenuSeparator />;
   const label = item.labelKey ? tf(item.labelKey, item.label) : item.label;
   if (item.type === "submenu") {
-    const disabled = !submenuHasEnabledItem(item, [], isCommandEnabled, menuState);
+    const disabled = !manifestSubmenuHasEnabledItem(item, recentCharts, isCommandEnabled, menuState);
     return (
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={disabled}>{label}</DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="min-w-56 rounded-[var(--aries-radius-control)]">
+        <DropdownMenuSubContent className="w-max min-w-[min(var(--aries-menu-dropdown-submenu-min-width),var(--available-width))] max-w-(--available-width) overflow-x-auto whitespace-nowrap rounded-[var(--aries-radius-control)]">
           <ManifestMenuItems
-            items={item.children}
+            items={manifestMenuChildren(item, recentCharts)}
+            recentCharts={recentCharts}
+            acceleratorLabel={acceleratorLabel}
             onCommand={onCommand}
             isCommandEnabled={isCommandEnabled}
             menuState={menuState}
@@ -198,6 +303,7 @@ function MenuNode({
   const run = () => {
     if (enabled) onCommand(item.id);
   };
+  const shortcut = item.accelerator ? acceleratorLabel(item.accelerator) : "";
   if (item.type === "check") {
     const checked = menuState.checked[item.id] ?? Boolean(item.checked);
     return (
@@ -206,37 +312,51 @@ function MenuNode({
         disabled={!enabled}
         onCheckedChange={run}
       >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {item.accelerator ? <DropdownMenuShortcut>{item.accelerator}</DropdownMenuShortcut> : null}
+        {item.glyph ? (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-block w-[var(--aries-control-icon-size-default)] shrink-0 text-center text-foreground/70",
+              item.glyphFont !== "text" && "font-symbols",
+            )}
+          >
+            {item.glyph}
+          </span>
+        ) : null}
+        <span className="flex-1 whitespace-nowrap">{label}</span>
+        {shortcut ? <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut> : null}
       </DropdownMenuCheckboxItem>
     );
   }
   return (
     <DropdownMenuItem disabled={!enabled} onClick={run}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {item.accelerator ? <DropdownMenuShortcut>{item.accelerator}</DropdownMenuShortcut> : null}
+      <span className="flex-1 whitespace-nowrap">{label}</span>
+      {shortcut ? <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut> : null}
     </DropdownMenuItem>
   );
 }
 
-function submenuHasEnabledItem(
-  node: Extract<NativeMenuNode, { type: "submenu" }>,
+export function manifestSubmenuHasEnabledItem(
+  node: SubmenuNode,
   recentCharts: RecentChartItem[],
   isCommandEnabled: (command: string) => boolean,
   menuState: ShellMenuStateSnapshot,
 ): boolean {
-  return menuChildren(node, recentCharts).some((child) => {
+  return manifestMenuChildren(node, recentCharts).some((child) => {
     if (child.type === "separator") return false;
-    if (child.type === "submenu") return submenuHasEnabledItem(child, [], isCommandEnabled, menuState);
+    if (child.type === "submenu") {
+      return manifestSubmenuHasEnabledItem(child, recentCharts, isCommandEnabled, menuState);
+    }
     if (child.id.startsWith("menu.recent-charts.entry:")) return true;
     return menuState.enabled[child.id] ?? isCommandEnabled(child.id);
   });
 }
 
-function menuChildren(
-  node: Extract<NativeMenuNode, { type: "submenu" }>,
+/** The runtime recent-chart entries replace the manifest's placeholder child. */
+export function manifestMenuChildren(
+  node: SubmenuNode,
   recentCharts: RecentChartItem[],
-): RenderableNode[] {
+): NativeMenuNode[] {
   if (node.id !== "menu.recent-charts") return node.children;
   if (recentCharts.length === 0) return node.children;
   return recentCharts.map((item, index) => ({

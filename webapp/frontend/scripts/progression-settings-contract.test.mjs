@@ -14,6 +14,11 @@ const js = ts.transpileModule(functions.map((node) => node.getText(ast)).join('\
 const patch = new Function(`${js}; return nativeQuickOptionPatch;`)();
 const opts = { quickCharts: { progressed_angle_method: 4, solar_arc_angle_method: 3, solar_arc_angle_mode: 'zodiacal' } };
 
+test('house-system cycling sends intent without deriving from cached settings', () => {
+  assert.deepEqual(patch('quick.options.house:next', opts), { houseSystem: { cycle: true } });
+  assert.deepEqual(patch('quick.options.house:R', opts), { houseSystem: { hsys: 'R' } });
+});
+
 test('progression methods never change Solar Arc mode or remembered choice', () => {
   for (let method = 0; method < 5; method++) {
     assert.deepEqual(patch(`quick.options.progressed-angle:${method}`, opts), { quickCharts: { progressed_angle_method: method } });

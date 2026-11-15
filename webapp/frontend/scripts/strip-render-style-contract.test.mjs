@@ -283,7 +283,8 @@ test("one Strip style drives SVG paint, layout, collision, and body-title presen
   assert.match(source, /stroke=\{palette\.axis\}/);
   assert.match(source, /fill=\{palette\.textPrimary\}/);
   assert.match(source, /semanticChartColor\([\s\S]*?b\.body\.colorRole,[\s\S]*?b\.body\.colorHex \?\? palette\.textPrimary/);
-  assert.match(source, /<title>\{`\$\{b\.body\.label\} \$\{b\.body\.signGlyph\} \$\{b\.body\.minuteLabel\}`\}<\/title>/);
+  // The body title follows the table precision menu (degrees, minutes or seconds).
+  assert.match(source, /<title>\{`\$\{b\.body\.label\} \$\{b\.body\.signGlyph\} \$\{formatTableDegrees\([^`]*, precision\)\}`\}<\/title>/);
   const componentBody = source.slice(source.indexOf("export function StripView"));
   assert.match(source, /const BOOTSTRAP_STRIP_STYLE = createStripRenderStyle/);
   assert.equal((source.match(/var\(--aries-/g) ?? []).length, 6);

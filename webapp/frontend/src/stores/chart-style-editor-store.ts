@@ -5,12 +5,16 @@ import { create } from "zustand";
 import { isWheelGeometryKey, wheelGeometryOverrides, wheelAppearanceOverrides } from "@/lib/chart/wheel-geometry-ownership";
 import type { WheelComposition } from "@/lib/chart/wheel-composition";
 import type { WheelTypographyProfile } from "@/lib/chart/wheel-render-style";
+import type { WheelGeometryReceipts } from "@/lib/chart/wheel-geometry-preset";
+import { wheelPresetAppearanceForLayout, wheelPresetAppearanceDelta } from '@/lib/chart/wheel-preset-appearance';
 import type { ThemeState } from "@/lib/daemon/client";
 import type { WheelPresetsState } from "@/lib/daemon/wheel-presets-client";
 
 import type { StyleSceneElement } from "@/lib/style-lab/style-scene";
 import { resolveStyleTokenAliases } from "@/lib/style-lab/token-alias";
-import { WHEEL_AUTHORING_OVERRIDE_PREFIX } from "@/lib/style-lab/wheel-authoring-adapter";
+import { WHEEL_AUTHORING_OVERRIDE_PREFIX, WHEEL_VINTAGE_AUTHORING_SCOPE, wheelRingRoleForClass } from "@/lib/style-lab/wheel-authoring-adapter";
+import { isVintageClass } from "@/lib/chart/vintage-magazine-wheel";
+import { WHEEL_SEMANTIC_CLASS_MANIFEST, getWheelSemanticClass } from "@/lib/style-lab/semantic-class-manifest";
 import {
   styleLabDraftEditorOverrides,
   type StyleLabDraft,
@@ -75,7 +79,6 @@ export type ChartStyleSyncStatus =
   | "connecting"
   | "synced"
   | "saving"
-  | "local"
   | "conflict"
   | "error";
 
@@ -298,10 +301,14 @@ export type ChartStyleEditorState = {
   geometryTransition: boolean;
   syncedGeometryOverrides: ChartStyleSemanticOverrides;
   wheelPresetState: WheelPresetsState | null;
+  wheelGeometryReceipts: WheelGeometryReceipts;
+  wheelAppearanceBaseline: {profile: WheelTypographyProfile; overrides: Record<string, unknown>} | null;
   themeWheelBaseline: StyleLabWheelBaseline | null;
   pendingWheelCompositions: Partial<Record<WheelTypographyProfile, WheelComposition>>;
   acceptWheelPresets: (presets: WheelPresetsState, profile: WheelTypographyProfile,
-    options?: {preserveLocalChanges?: boolean; clearHistory?: boolean; metadataOnly?: boolean}) => void;
+    options?: {preserveLocalChanges?: boolean; clearHistory?: boolean; metadataOnly?: boolean; acknowledgeGeometry?: boolean;
+      appearanceBaseline?: Record<string, unknown>}) => void;
+  clearWheelGeometryContext: () => void;
   markWheelGeometrySynced: (presets: WheelPresetsState, profile: WheelTypographyProfile,
     sent: ChartStyleSemanticOverrides) => void;
   tokenMetadata: Record<string, ChartStyleTokenMetadata>;
@@ -347,7 +354,7 @@ export type ChartStyleEditorState = {
   setTokenMetadata: (tokens: readonly ChartStyleTokenMetadata[]) => void;
 
   beginGesture: (ownerId: string) => void;
-  setOverride: (semanticId: string, value: StyleLabTokenValue) => void;
+  setOverride: (semanticId: string, value: StyleLabTokenValue, radiusTarget?: 'degree' | 'cuspLabels') => void;
   /**
    * Write one explicit value per family member in a single step.
    *
@@ -363,6 +370,8 @@ export type ChartStyleEditorState = {
   ) => void;
   endGesture: (ownerId: string) => void;
   cancelGesture: (ownerId: string) => void;
+  /** Restore sparse authoring at the pointer origin while the gesture stays open. */
+  restoreGestureProperty: (semanticId: string, ownerId: string) => void;
   resetProperty: (semanticId: string) => void;
   resetProperties: (semanticIds: readonly string[]) => void;
   applyOverrides: (
@@ -391,6 +400,19 @@ export type ChartStyleEditorState = {
   markSynced: (draft: StyleLabDraft, overrides?: Readonly<ChartStyleSemanticOverrides>) => void;
 };
 
+function capabilitiesOf(definition: (typeof WHEEL_SEMANTIC_CLASS_MANIFEST)[number]): readonly string[] {
+  return [...definition.capabilities, ...Object.values(definition.variantCapabilities ?? {}).flat()];
+}
+
+/** Properties the class manifest governs; anything else (radius recipes, band widths) it does not. */
+const MANIFEST_PROPERTIES = new Set(WHEEL_SEMANTIC_CLASS_MANIFEST.flatMap(capabilitiesOf));
+
+function classSupportsProperty(classId: string, property: string): boolean {
+  const definition = getWheelSemanticClass(classId);
+  if (!definition || !MANIFEST_PROPERTIES.has(property)) return true;
+  return capabilitiesOf(definition).includes(property);
+}
+
 /**
  * Retarget one authoring override id onto every class in a family.
  *
@@ -414,7 +436,12 @@ export function expandFamilyOverrideIds(
   const classId = body.slice(scopeCut + 1, propertyCut);
   const property = body.slice(propertyCut + 1);
   if (!family.includes(classId)) return [semanticId];
-  return family.map(
+  // The Vintage wheel's scope holds only the classes its port paints, and a
+  // member that has no such property (a ray's font size) is left alone: the
+  // daemon would refuse it.
+  const members = (scope === WHEEL_VINTAGE_AUTHORING_SCOPE ? family.filter(isVintageClass) : family)
+    .filter((member) => member === classId || classSupportsProperty(member, property));
+  return members.map(
     (member) => `${WHEEL_AUTHORING_OVERRIDE_PREFIX}${scope}.${member}.${property}`,
   );
 }
@@ -424,6 +451,141 @@ export function geometryEditId(id: string, profile: WheelTypographyProfile | nul
   return profile && isWheelGeometryKey(id)
     ? id.replace(/^authoring\.wheel\.(?:base|variant)\./, `authoring.wheel.${profile}.`)
     : id;
+}
+
+const RADIUS_EDIT = /^authoring\.wheel\.(classic|compact|anglo|houses|cusps)\.(rings\..+)\.radius$/;
+const RADIUS_INTENT = /\.(?:canvas\.chart\.(?:radiusPriority|outerDegreeBinding|recipeVersion)|rings\..+\.(?:recipeRadius|radiusAuthored))$/;
+
+function radiusUnchanged(overrides: ChartStyleSemanticOverrides, id: string, value: StyleLabTokenValue) {
+  if (!sameValue(overrides[id], value)) return false;
+  const match = RADIUS_EDIT.exec(id);
+  if (!match) return true;
+  return overrides[id.replace(/\.radius$/, '.radiusAuthored')] === true
+    || (overrides[`authoring.wheel.${match[1]}.canvas.chart.recipeVersion`] !== 1
+      && overrides[`authoring.wheel.${match[1]}.canvas.chart.radiusPriority`] === wheelRingRoleForClass(match[2]));
+}
+
+function captureRadiusRecipe(overrides: ChartStyleSemanticOverrides,
+  before: ChartStyleSemanticOverrides, profile: string) {
+  const versionId = `authoring.wheel.${profile}.canvas.chart.recipeVersion`;
+  if (overrides[versionId] === 1) return;
+  const priorPriority = before[`authoring.wheel.${profile}.canvas.chart.radiusPriority`];
+  for (const [id, value] of Object.entries(before)) {
+    const match = RADIUS_EDIT.exec(id);
+    if (match?.[1] !== profile || typeof value !== 'number') continue;
+    const role = wheelRingRoleForClass(match[2]);
+    if (!role) continue;
+    if (role === priorPriority) {
+      overrides[id.replace(/\.radius$/, '.radiusAuthored')] = true;
+    } else overrides[id.replace(/\.radius$/, '.recipeRadius')] = value;
+  }
+  overrides[versionId] = 1;
+}
+
+/** Restoring a sparse origin also restores the entire first-conversion basis.
+ * Other explicit edits in the same gesture keep their own captured basis. */
+function restoreRadiusRecipeOrigin(overrides: ChartStyleSemanticOverrides,
+  origin: ChartStyleSemanticOverrides, profile: string) {
+  const prefix = `authoring.wheel.${profile}.`;
+  const radiusIds = new Set([...Object.keys(overrides), ...Object.keys(origin)]
+    .filter(id => id.startsWith(prefix) && (RADIUS_EDIT.test(id) || id.endsWith('.radiusAuthored'))));
+  if ([...radiusIds].some(id => !sameValue(overrides[id], origin[id]))) return;
+  for (const id of Object.keys(overrides)) {
+    if (id.startsWith(prefix) && RADIUS_INTENT.test(id)) delete overrides[id];
+  }
+  for (const [id, value] of Object.entries(origin)) {
+    if (id.startsWith(prefix) && RADIUS_INTENT.test(id)) overrides[id] = cloneValue(value);
+  }
+}
+
+function editRadiusRecipe(overrides: ChartStyleSemanticOverrides, ids: readonly string[],
+  before: ChartStyleSemanticOverrides, reset: boolean) {
+  for (const id of ids) {
+    const match = RADIUS_EDIT.exec(id);
+    if (!match || !wheelRingRoleForClass(match[2])) continue;
+    const recipeId = id.replace(/\.radius$/, '.recipeRadius');
+    const authoredId = id.replace(/\.radius$/, '.radiusAuthored');
+    const legacyLive = before[`authoring.wheel.${match[1]}.canvas.chart.recipeVersion`] !== 1
+      && before[`authoring.wheel.${match[1]}.canvas.chart.radiusPriority`] === wheelRingRoleForClass(match[2]);
+    if (reset) {
+      if (before[authoredId] === true || legacyLive) {
+        captureRadiusRecipe(overrides, before, match[1]);
+        if (typeof overrides[recipeId] === 'number') overrides[id] = overrides[recipeId];
+        else delete overrides[id];
+      } else delete overrides[recipeId];
+      delete overrides[authoredId];
+      continue;
+    }
+    captureRadiusRecipe(overrides, before, match[1]);
+    if (typeof overrides[id] === 'number') overrides[authoredId] = true;
+  }
+}
+
+function radiusPriorityEdit(overrides: ChartStyleSemanticOverrides, changedIds: readonly string[],
+  radiusTarget?: 'degree' | 'cuspLabels',
+  scene?: Pick<ChartStyleEditorState, 'sceneElements' | 'geometryProfile' | 'semanticOverrides'>,
+  authoredIds: readonly string[] = changedIds, reset = false): void {
+  editRadiusRecipe(overrides, changedIds, scene?.semanticOverrides ?? {}, reset);
+  for (const id of changedIds) {
+    const match = RADIUS_EDIT.exec(id);
+    const role = match ? wheelRingRoleForClass(match[2]) : undefined;
+    if (!match || !role) continue;
+    const priorityId = `authoring.wheel.${match[1]}.canvas.chart.radiusPriority`;
+    if (reset || overrides[id] === undefined) {
+      if (overrides[priorityId] === role) delete overrides[priorityId];
+    } else overrides[priorityId] = role;
+    if (role === 'outerDegreeRing') {
+      const bindingId = `authoring.wheel.${match[1]}.canvas.chart.outerDegreeBinding`;
+      if (reset || overrides[id] === undefined) delete overrides[bindingId];
+      else {
+        const authoredTarget = authoredIds.includes(bindingId)
+          && (overrides[bindingId] === 'degree' || overrides[bindingId] === 'cuspLabels')
+          ? overrides[bindingId] : undefined;
+        const sceneTarget = scene?.geometryProfile === match[1]
+          ? scene.sceneElements.find(element => element.classId === match[2])
+              ?.tokenBindings.find(binding => binding.property === 'radius' && binding.radiusTarget)?.radiusTarget
+          : undefined;
+        const target = radiusTarget ?? authoredTarget ?? sceneTarget;
+        if (target) overrides[bindingId] = target;
+      }
+    }
+  }
+}
+
+function wheelGeometryReceipt(presets: WheelPresetsState, profile: WheelTypographyProfile) {
+  const draft = presets.drafts[profile];
+  const preset = presets.activePresets?.[profile] ?? presets.presets.find(item => item.id === presets.selected[profile]);
+  const presetId = draft?.sourcePresetId ?? presets.selected[profile];
+  const composition = draft?.composition ?? preset?.composition;
+  return presetId && composition ? {presetId, revision: presets.revision,
+    sourceThemeName: presets.context?.sourceThemeName,
+    overrides: cloneChartStyleOverrides(draft?.overrides ?? preset?.overrides ?? {}),
+    appearance: draft?.appearance ?? preset?.appearance,
+    appearanceRoles: draft?.appearanceRoles ?? preset?.appearanceRoles, composition} : undefined;
+}
+
+export function wheelPresetAppearanceEdits(state: Pick<ChartStyleEditorState,
+  'semanticOverrides' | 'resolvedOverrides' | 'tokenMetadata' | 'wheelAppearanceBaseline'>,
+  profile: WheelTypographyProfile) {
+  const baseline = state.wheelAppearanceBaseline;
+  return baseline?.profile === profile ? wheelPresetAppearanceDelta(
+    wheelPresetAppearanceForLayout(state.semanticOverrides, profile, state.tokenMetadata), baseline.overrides,
+    wheelPresetAppearanceForLayout(state.resolvedOverrides, profile, state.tokenMetadata)) : {};
+}
+
+function wheelGeometryReply(state: Pick<ChartStyleEditorState, 'wheelPresetState' | 'wheelGeometryReceipts'>,
+  presets: WheelPresetsState, profile: WheelTypographyProfile, acknowledge: boolean) {
+  const wheelPresetState = !state.wheelPresetState || presets.revision >= state.wheelPresetState.revision
+    ? presets : state.wheelPresetState;
+  const staleContext = wheelPresetState.revision > presets.revision && (
+    wheelPresetState.selected[profile] !== presets.selected[profile]
+    || (wheelPresetState.context && presets.context
+      && wheelPresetState.context.sourceThemeName !== presets.context.sourceThemeName));
+  const candidate = acknowledge && !staleContext ? wheelGeometryReceipt(presets, profile) : undefined;
+  const previous = state.wheelGeometryReceipts[profile];
+  const receipt = candidate && (!previous || candidate.revision >= previous.revision) ? candidate : undefined;
+  return {wheelPresetState, receipt, wheelGeometryReceipts: receipt
+    ? {...state.wheelGeometryReceipts, [profile]: receipt} : state.wheelGeometryReceipts};
 }
 
 /** Theme dirtiness compares saved values, never preset ids/revisions or whether
@@ -442,6 +604,7 @@ export function themeWheelModified(state: Pick<ChartStyleEditorState,
     if (!draft) continue;
     const composition = state.pendingWheelCompositions[profile] ?? draft.composition;
     if (design) {
+      if (!equalChartStyleOverrides(draft.appearance ?? {}, design.appearance ?? {})) return true;
       const overrides = state.geometryProfile === profile ? state.geometryOverrides : draft.overrides;
       if (!equalChartStyleOverrides(overrides, design.overrides)) return true;
       if (composition.projection !== design.composition.projection
@@ -461,6 +624,52 @@ export function themeWheelModified(state: Pick<ChartStyleEditorState,
     }
   }
   return false;
+}
+
+/**
+ * One property edit, as the store applies it: geometry retargeting, family
+ * expansion and ring-priority carry included. Pure, so a canvas drag can paint
+ * exactly what the edit will become without writing the store on every move.
+ */
+export function applyOverrideEdit(
+  state: ChartStyleEditorState,
+  semanticId: string,
+  value: StyleLabTokenValue,
+  radiusTarget?: 'degree' | 'cuspLabels',
+): ChartStyleEditorState | Partial<ChartStyleEditorState> {
+  semanticId = geometryEditId(semanticId, state.geometryProfile);
+  // With a family selected the same edit is written to every member, so a
+  // reading that is read as one thing moves as one thing. The ids differ only
+  // in their class segment, so the write is a straight retarget; anything
+  // that is not an addressable class id is left alone.
+  const targets = expandFamilyOverrideIds(semanticId, state.selectedFamily);
+  if (targets.length > 1) {
+    const semanticOverrides = { ...state.semanticOverrides };
+    const changedIds: string[] = [];
+    for (const target of targets) {
+      if (radiusUnchanged(state.semanticOverrides, target, value)) continue;
+      semanticOverrides[target] = cloneValue(value);
+      changedIds.push(target);
+    }
+    if (!changedIds.length) return state;
+    radiusPriorityEdit(semanticOverrides, changedIds, radiusTarget, state);
+    return {
+      ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
+      revision: state.revision + 1,
+      activePropertyId: semanticId,
+    };
+  }
+  if (radiusUnchanged(state.semanticOverrides, semanticId, value)) return state;
+  const semanticOverrides = {
+    ...state.semanticOverrides,
+    [semanticId]: cloneValue(value),
+  };
+  radiusPriorityEdit(semanticOverrides, [semanticId], radiusTarget, state);
+  return {
+    ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
+    revision: state.revision + 1,
+    activePropertyId: semanticId,
+  };
 }
 
 export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, get) => ({
@@ -485,6 +694,8 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
   geometryTransition: false,
   syncedGeometryOverrides: {},
   wheelPresetState: null,
+  wheelGeometryReceipts: {},
+  wheelAppearanceBaseline: null,
   themeWheelBaseline: null,
   pendingWheelCompositions: {},
   tokenMetadata: {},
@@ -591,49 +802,19 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
         gestureOwner: ownerId,
       }
   )),
-  setOverride: (semanticId, value) => set((state) => {
-    semanticId = geometryEditId(semanticId, state.geometryProfile);
-    // With a family selected the same edit is written to every member, so a
-    // reading that is read as one thing moves as one thing. The ids differ only
-    // in their class segment, so the write is a straight retarget; anything
-    // that is not an addressable class id is left alone.
-    const targets = expandFamilyOverrideIds(semanticId, state.selectedFamily);
-    if (targets.length > 1) {
-      const semanticOverrides = { ...state.semanticOverrides };
-      let changed = false;
-      for (const target of targets) {
-        if (sameValue(semanticOverrides[target], value)) continue;
-        semanticOverrides[target] = cloneValue(value);
-        changed = true;
-      }
-      if (!changed) return state;
-      return {
-        ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
-        revision: state.revision + 1,
-        activePropertyId: semanticId,
-      };
-    }
-    if (sameValue(state.semanticOverrides[semanticId], value)) return state;
-    const semanticOverrides = {
-      ...state.semanticOverrides,
-      [semanticId]: cloneValue(value),
-    };
-    return {
-      ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
-      revision: state.revision + 1,
-      activePropertyId: semanticId,
-    };
-  }),
+  setOverride: (semanticId, value, radiusTarget) => set((state) => applyOverrideEdit(state, semanticId, value, radiusTarget)),
   setFamilyOverrides: (values, activeSemanticId) => set((state) => {
     const semanticOverrides = { ...state.semanticOverrides };
-    let changed = false;
+    const changedIds: string[] = [];
     for (const [sourceId, value] of Object.entries(values)) {
       const semanticId = geometryEditId(sourceId, state.geometryProfile);
-      if (sameValue(semanticOverrides[semanticId], value)) continue;
+      if (radiusUnchanged(state.semanticOverrides, semanticId, value)) continue;
       semanticOverrides[semanticId] = cloneValue(value);
-      changed = true;
+      changedIds.push(semanticId);
     }
-    if (!changed) return state;
+    if (!changedIds.length) return state;
+    radiusPriorityEdit(semanticOverrides, changedIds, undefined, state,
+      Object.keys(values).map(id => geometryEditId(id, state.geometryProfile)));
     return {
       ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
       revision: state.revision + 1,
@@ -662,12 +843,36 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       revision: state.revision + 1,
     };
   }),
+  restoreGestureProperty: (semanticId, ownerId) => set((state) => {
+    if (!state.gestureStart || state.gestureOwner !== ownerId) return state;
+    semanticId = geometryEditId(semanticId, state.geometryProfile);
+    const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
+    const restore = (id: string) => {
+      const value = state.gestureStart![id];
+      if (value === undefined) delete semanticOverrides[id];
+      else semanticOverrides[id] = cloneValue(value);
+    };
+    restore(semanticId);
+    const match = RADIUS_EDIT.exec(semanticId);
+    if (match) {
+      restore(semanticId.replace(/\.radius$/, '.radiusAuthored'));
+      const priorityId = `authoring.wheel.${match[1]}.canvas.chart.radiusPriority`;
+      if (semanticOverrides[priorityId] === wheelRingRoleForClass(match[2])) restore(priorityId);
+      restoreRadiusRecipeOrigin(semanticOverrides, state.gestureStart, match[1]);
+    }
+    if (match && wheelRingRoleForClass(match[2]) === 'outerDegreeRing') {
+      restore(`authoring.wheel.${match[1]}.canvas.chart.outerDegreeBinding`);
+    }
+    if (equalChartStyleOverrides(semanticOverrides, state.semanticOverrides)) return state;
+    return {...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme), revision: state.revision + 1};
+  }),
   resetProperty: (semanticId) => set((state) => {
     semanticId = geometryEditId(semanticId, state.geometryProfile);
     if (!Object.hasOwn(state.semanticOverrides, semanticId)) return state;
     const before = cloneChartStyleOverrides(state.semanticOverrides);
     const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
     delete semanticOverrides[semanticId];
+    radiusPriorityEdit(semanticOverrides, [semanticId], undefined, state, undefined, true);
     return {
       ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
       undoStack: [...state.undoStack.slice(-(HISTORY_LIMIT - 1)), before],
@@ -686,6 +891,7 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
     const before = cloneChartStyleOverrides(state.semanticOverrides);
     const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
     for (const semanticId of resetIds) delete semanticOverrides[semanticId];
+    radiusPriorityEdit(semanticOverrides, resetIds, undefined, state, undefined, true);
     return {
       ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
       undoStack: [...state.undoStack.slice(-(HISTORY_LIMIT - 1)), before],
@@ -699,18 +905,23 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
   applyOverrides: (patch) => set((state) => {
     const semanticOverrides = cloneChartStyleOverrides(state.semanticOverrides);
     const changedIds: string[] = [];
+    const resetIds: string[] = [];
     for (const [sourceId, value] of Object.entries(patch)) {
       const semanticId = geometryEditId(sourceId, state.geometryProfile);
       if (value === null) {
         if (!Object.hasOwn(semanticOverrides, semanticId)) continue;
         delete semanticOverrides[semanticId];
+        resetIds.push(semanticId);
       } else {
-        if (sameValue(semanticOverrides[semanticId], value)) continue;
+        if (radiusUnchanged(state.semanticOverrides, semanticId, value)) continue;
         semanticOverrides[semanticId] = cloneValue(value);
       }
       changedIds.push(semanticId);
     }
     if (!changedIds.length) return state;
+    radiusPriorityEdit(semanticOverrides, changedIds.filter(id => !resetIds.includes(id)), undefined, state,
+      Object.keys(patch).map(id => geometryEditId(id, state.geometryProfile)));
+    radiusPriorityEdit(semanticOverrides, resetIds, undefined, state, undefined, true);
     return {
       ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
       undoStack: [
@@ -787,22 +998,33 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
   acceptRemoteDraft: (draft, options) => set((state) => {
     const remote = cloneChartStyleOverrides(wheelAppearanceOverrides(styleLabDraftEditorOverrides(draft)));
     let semanticOverrides = {...remote, ...wheelGeometryOverrides(state.semanticOverrides)};
+    let gestureStart: ChartStyleSemanticOverrides | null = null;
     if (options?.preserveLocalChanges) {
-      semanticOverrides = {...cloneChartStyleOverrides(remote), ...wheelGeometryOverrides(state.semanticOverrides)};
-      const localIds = new Set([
-        ...Object.keys(state.syncedOverrides),
-        ...Object.keys(state.semanticOverrides),
-      ]);
-      for (const semanticId of localIds) {
-        if (isWheelGeometryKey(semanticId)) continue;
-        if (sameValue(state.syncedOverrides[semanticId], state.semanticOverrides[semanticId])) continue;
-        const value = state.semanticOverrides[semanticId];
-        if (value === undefined) delete semanticOverrides[semanticId];
-        else semanticOverrides[semanticId] = cloneValue(value);
+      const rebase = (local: ChartStyleSemanticOverrides): ChartStyleSemanticOverrides => {
+        const merged = {...cloneChartStyleOverrides(remote), ...wheelGeometryOverrides(local)};
+        for (const semanticId of new Set([...Object.keys(state.syncedOverrides), ...Object.keys(local)])) {
+          if (isWheelGeometryKey(semanticId) || sameValue(state.syncedOverrides[semanticId], local[semanticId])) continue;
+          const value = local[semanticId];
+          if (value === undefined) delete merged[semanticId];
+          else merged[semanticId] = cloneValue(value);
+        }
+        return merged;
+      };
+      semanticOverrides = rebase(state.semanticOverrides);
+      // A revision refresh is not the end of a live numeric/colour gesture.
+      // Rebase its origin too, so Escape/Undo keep unrelated remote edits.
+      if (!options.clearHistory && state.gestureStart
+        && (state.remoteDraftId === draft.id || state.remoteDraftId == null)) {
+        gestureStart = rebase(state.gestureStart);
       }
     }
+    const resolved = overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme);
     return {
-      ...overrideState(semanticOverrides, state.tokenMetadata, state.styleLabBaseTheme),
+      ...resolved,
+      ...(state.wheelAppearanceBaseline && state.remoteDraftId !== draft.id ? {
+        wheelAppearanceBaseline: {profile: state.wheelAppearanceBaseline.profile,
+          overrides: wheelPresetAppearanceForLayout(resolved.semanticOverrides, state.wheelAppearanceBaseline.profile, state.tokenMetadata)},
+      } : {}),
       syncedOverrides: remote,
       remoteRevision: draft.revision,
       remoteEtag: draft.etag ?? null,
@@ -813,14 +1035,17 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
       syncStatus: equalChartStyleOverrides(remote, wheelAppearanceOverrides(semanticOverrides)) ? "synced" : "saving",
       syncDetail: null,
       revision: state.revision + 1,
-      gestureStart: null,
-      gestureOwner: null,
+      gestureStart,
+      gestureOwner: gestureStart ? state.gestureOwner : null,
       ...(options?.clearHistory ? { undoStack: [], redoStack: [] } : {}),
     };
   }),
   acceptWheelPresets: (presets, profile, options) => set((state) => {
-    if (state.wheelPresetState && presets.revision < state.wheelPresetState.revision) return state;
-    if (options?.metadataOnly) return {wheelPresetState: presets};
+    const {wheelPresetState, wheelGeometryReceipts, receipt} = wheelGeometryReply(state, presets, profile,
+      options?.acknowledgeGeometry ?? !options?.metadataOnly);
+    if (options?.metadataOnly || !receipt) {
+      return {wheelPresetState, wheelGeometryReceipts};
+    }
     const draft = presets.drafts[profile];
     const preset = presets.activePresets?.[profile] ?? presets.presets.find(item => item.id === presets.selected[profile]);
     const previousPreset = state.wheelPresetState?.activePresets?.[profile]
@@ -840,23 +1065,31 @@ export const useChartStyleEditorStore = create<ChartStyleEditorState>()((set, ge
     }
     const history = options?.clearHistory || replaced || state.geometryProfile !== profile
       ? {undoStack: [], redoStack: [], gestureStart: null, gestureOwner: null} : {};
+    const appearanceChanged = Object.keys(wheelPresetAppearanceDelta(
+      state.wheelGeometryReceipts[profile]?.appearance ?? {}, receipt.appearance ?? {})).length > 0;
+    const appearanceBaseline = options?.appearanceBaseline || options?.clearHistory || replaced || appearanceChanged
+      || state.wheelAppearanceBaseline?.profile !== profile
+      ? {wheelAppearanceBaseline: {profile,
+        overrides: options?.appearanceBaseline ?? wheelPresetAppearanceForLayout(state.semanticOverrides, profile, state.tokenMetadata)}} : {};
     // A ring toggle/order acknowledgement changes composition metadata only.
     // Keep semantic maps stable instead of rebuilding and waking every editor row.
     if (state.geometryProfile === profile && equalChartStyleOverrides(geometry, state.geometryOverrides)) {
-      return {wheelPresetState: presets, ...history,
+      return {wheelPresetState, wheelGeometryReceipts, ...history, ...appearanceBaseline,
         syncedGeometryOverrides: equalChartStyleOverrides(remote, state.syncedGeometryOverrides)
           ? state.syncedGeometryOverrides : remote};
     }
     return {
       ...overrideState({...wheelAppearanceOverrides(state.semanticOverrides), ...geometry}, state.tokenMetadata, state.styleLabBaseTheme),
-      geometryProfile: profile, syncedGeometryOverrides: remote, wheelPresetState: presets,
-      revision: state.revision + 1, ...history,
+      geometryProfile: profile, syncedGeometryOverrides: remote, wheelPresetState, wheelGeometryReceipts,
+      revision: state.revision + 1, ...history, ...appearanceBaseline,
     };
   }),
-  markWheelGeometrySynced: (presets, profile, sent) => set((state) => ({
-    wheelPresetState: !state.wheelPresetState || presets.revision >= state.wheelPresetState.revision ? presets : state.wheelPresetState,
-    ...(state.geometryProfile === profile ? {syncedGeometryOverrides: cloneChartStyleOverrides(sent)} : {}),
-  })),
+  clearWheelGeometryContext: () => set({wheelGeometryReceipts: {}, pendingWheelCompositions: {}, wheelAppearanceBaseline: null}),
+  markWheelGeometrySynced: (presets, profile, sent) => set((state) => {
+    const {wheelPresetState, wheelGeometryReceipts, receipt} = wheelGeometryReply(state, presets, profile, true);
+    return {wheelPresetState, wheelGeometryReceipts,
+      ...(receipt && state.geometryProfile === profile ? {syncedGeometryOverrides: cloneChartStyleOverrides(sent)} : {})};
+  }),
   setSyncStatus: (syncStatus, syncDetail = null) => set({ syncStatus, syncDetail }),
   setRemoteDraftMeta: (remoteRevision, remoteEtag, remoteDraftId) => set((state) => ({
     remoteRevision,

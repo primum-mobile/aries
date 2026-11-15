@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 SETTINGS_STORES = (
+    "settings.json",
     "arabic_parts.json",
     "astrocartography.opt",
     "sidebar_lists.opt",

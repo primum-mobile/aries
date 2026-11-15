@@ -42,6 +42,7 @@ from webapp.daemon.style_profile_service import (
     StyleProfileError,
     normalize_imported_style_profile,
     validate_style_profile,
+    validate_style_token_value,
     appearance_style_profile,
 )
 from webapp.daemon.app_style_authoring_service import (
@@ -79,6 +80,43 @@ class StyleDraftConflictError(StyleDraftError):
     def __init__(self, current: dict) -> None:
         super().__init__(mtexts.txts.get("StyleDraftRevisionStale", "The style draft changed elsewhere."))
         self.current = current
+
+
+class StyleDraftRejectedError(StyleDraftError):
+    """Named edits were refused; nothing in the patch was applied.
+
+    ``rejected`` maps every refused semantic id to its reason, so the editor
+    can undo exactly those edits and resend the rest.
+    """
+
+    def __init__(self, rejected: Mapping[str, str]) -> None:
+        super().__init__(next(iter(rejected.values())))
+        self.rejected = dict(rejected)
+
+
+def _rejected_patch_ids(
+    overrides: Mapping[str, Any],
+    authoring_overrides: Mapping[str, Any],
+    app_authoring_overrides: Mapping[str, Any],
+) -> dict[str, str]:
+    """Check every edit on its own, so one bad value names itself."""
+    rejected: dict[str, str] = {}
+    def check_token(key: str, value: Any) -> None:
+        if value is not None or key not in STYLE_PROFILE_TOKENS:
+            validate_style_token_value(key, value)
+
+    checks = (
+        (overrides, check_token),
+        (authoring_overrides, lambda key, value: apply_authoring_patch({}, {key: value})),
+        (app_authoring_overrides, lambda key, value: apply_app_authoring_patch({}, {key: value})),
+    )
+    for channel, check in checks:
+        for raw_id, value in channel.items():
+            try:
+                check(str(raw_id), value)
+            except ValueError as exc:
+                rejected[str(raw_id)] = str(exc)
+    return rejected
 
 
 def _utc_timestamp(timestamp: float) -> str:
@@ -631,11 +669,14 @@ class StyleDraftService:
         with self._lock:
             return self._public(self._record(draft_id))
 
-    def export_profile(self, draft_id: str) -> dict:
+    def export_profile(self, draft_id: str, *, source_theme_name: Optional[str] = None) -> dict:
         """Return the exact validated profile behind a draft for serialization."""
         with self._lock:
+            record = self._record(draft_id)
+            if source_theme_name is not None and record.get('sourceThemeName') != source_theme_name:
+                raise StyleDraftConflictError(self._public(record))
             return validate_style_profile(
-                self._profile_from_record(self._record(draft_id))
+                self._profile_from_record(record)
             )
 
     @staticmethod
@@ -655,6 +696,10 @@ class StyleDraftService:
     ]:
         if not isinstance(overrides, Mapping):
             raise StyleDraftError("draft overrides patch must be an object")
+        rejected = _rejected_patch_ids(
+            overrides, authoring_overrides or {}, app_authoring_overrides or {})
+        if rejected:
+            raise StyleDraftRejectedError(rejected)
         current = record["profile"]
         merged = deepcopy(current["overrides"])
         changed: list[str] = []
@@ -839,11 +884,14 @@ class StyleDraftService:
                 "profileId": draft["profileId"],
             }
 
-    def revert_draft(self, draft_id: str, *, expected: str | int, restore_wheel: Optional[Callable[[dict], dict]] = None) -> dict:
+    def revert_draft(self, draft_id: str, *, expected: str | int, restore_wheel: Optional[Callable[[dict], dict]] = None,
+                     source_theme_name: Optional[str] = None) -> dict:
         """Restore the immutable saved/source snapshot without persisting."""
         with self._lock:
             record = self._record(draft_id)
             self._assert_expected(record, expected)
+            if source_theme_name is not None and record.get('sourceThemeName') != source_theme_name:
+                raise StyleDraftConflictError(self._public(record))
             baseline = validate_style_profile(
                 deepcopy(record.get("baselineProfile") or record["profile"])
             )
@@ -871,11 +919,14 @@ class StyleDraftService:
         *,
         expected: str | int,
         persist: Callable[[dict], Any],
+        source_theme_name: Optional[str] = None,
     ) -> dict:
         """Replace and persist a draft with its daemon-owned factory profile."""
         with self._lock:
             record = self._record(draft_id)
             self._assert_expected(record, expected)
+            if source_theme_name is not None and record.get('sourceThemeName') != source_theme_name:
+                raise StyleDraftConflictError(self._public(record))
             restored = validate_style_profile(profile)
             if restored["id"] != record["profile"]["id"]:
                 raise StyleDraftError("factory profile identity does not match the open theme")
@@ -907,6 +958,7 @@ class StyleDraftService:
         expected: str | int,
         persist: Callable[[dict], Any],
         discard: bool = False,
+        source_theme_name: Optional[str] = None,
     ) -> dict:
         """Persist exactly the revision checked while holding the draft lock.
 
@@ -917,6 +969,8 @@ class StyleDraftService:
         with self._lock:
             record = self._record(draft_id)
             self._assert_expected(record, expected)
+            if source_theme_name is not None and record.get('sourceThemeName') != source_theme_name:
+                raise StyleDraftConflictError(self._public(record))
             profile = validate_style_profile(self._profile_from_record(record))
             persistence = persist(deepcopy(profile))
             if not discard:
@@ -946,6 +1000,24 @@ class StyleDraftService:
                 "persistence": persistence,
             }
 
+    def rename_source(self, source_theme_name: str, name: str) -> list[dict]:
+        """Carry a theme rename into its drafts so a later commit keeps it."""
+        source = str(source_theme_name or "").strip()
+        renamed = []
+        with self._lock:
+            for record in self._drafts.values():
+                if not source or record.get("sourceThemeName") != source:
+                    continue
+                record["profile"] = validate_style_profile({**record["profile"], "name": name})
+                if record.get("baselineProfile"):
+                    record["baselineProfile"] = validate_style_profile(
+                        {**record["baselineProfile"], "name": name})
+                record["revision"] += 1
+                record["updatedAt"] = time.time()
+                self._schedule_persist_locked(record)
+                renamed.append(self._public(record))
+        return renamed
+
     def save_draft_as(
         self,
         draft_id: str,
@@ -957,6 +1029,7 @@ class StyleDraftService:
         app_authoring_overrides: Optional[Mapping[str, Any]] = None,
         persist: Callable[[dict], Any],
         clear_source: bool = False,
+        source_theme_name: Optional[str] = None,
     ) -> dict:
         """Fork and persist the checked revision plus a pending editor patch.
 
@@ -971,6 +1044,8 @@ class StyleDraftService:
         with self._lock:
             source_record = self._record(draft_id)
             self._assert_expected(source_record, expected)
+            if source_theme_name is not None and source_record.get('sourceThemeName') != source_theme_name:
+                raise StyleDraftConflictError(self._public(source_record))
             if len(self._drafts) >= MAX_OPEN_DRAFTS:
                 raise StyleDraftError(f"at most {MAX_OPEN_DRAFTS} style drafts may be open")
             profile_id = _new_profile_id(clean_name)

@@ -14,7 +14,6 @@ license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.10"
 dependencies = [
   "Pillow>=10",
-  "wxPython>=4.2.0",
   "numpy>=2.0",
   "reportlab>=4.0",
 ]
@@ -26,14 +25,14 @@ geo = [
 opt = [
 ]
 dev = [
-  "pytest>=8.0",
+  "pytest >= 8.0",
   "pyinstaller>=6.0",
   "setuptools>=61",
   "wheel",
   "fonttools>=4.0",
   "brotli>=1.1",
 ]
-
-[tool.pytest.ini_options]
+# pytest reads its defaults from this table.
+[tool."pytest".ini_options]
 testpaths = ["aries/astrology/transit_fast/tests"]
 pythonpath = ["SWEP/src"]

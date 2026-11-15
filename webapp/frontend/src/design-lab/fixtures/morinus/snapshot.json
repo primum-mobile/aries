@@ -1,0 +1,6390 @@
+{
+ "comparisonChart": null,
+ "comparisonLayout": "standard",
+ "comparisonWholeSign": false,
+ "displayAnchorChart": null,
+ "displayDatetime": "1583-02-23T08:47:00",
+ "interChartAspects": [],
+ "interChartBodyAspects": {},
+ "multiwheelConjunctions": [],
+ "outerRingItems": {
+  "antiscia": [
+   {
+    "degText": "15",
+    "family": "antiscia",
+    "id": "antiscia-planet-15-primary",
+    "label": "Chiron",
+    "longitude": 15.192641169488404,
+    "minText": "11",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 15,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:15:primary"
+   },
+   {
+    "degText": "8",
+    "family": "antiscia",
+    "id": "antiscia-planet-8-primary",
+    "label": "Neptune",
+    "longitude": 68.24196207010817,
+    "minText": "14",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 8,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:8:primary"
+   },
+   {
+    "degText": "1",
+    "family": "antiscia",
+    "id": "antiscia-planet-11-primary",
+    "label": "South Node (T)",
+    "longitude": 91.64439542550868,
+    "minText": "38",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 1,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 11,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:11:primary"
+   },
+   {
+    "degText": "21",
+    "family": "antiscia",
+    "id": "antiscia-planet-8-secondary",
+    "label": "Neptune",
+    "longitude": 111.75803792989183,
+    "minText": "45",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 8,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:8:secondary"
+   },
+   {
+    "degText": "19",
+    "family": "antiscia",
+    "id": "antiscia-fortune",
+    "label": "Fortuna",
+    "listLabel": "Fortuna",
+    "longitude": 139.96241443641816,
+    "minText": "57",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "antiscia",
+     "source": {
+      "kind": "fortune"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "glyph",
+      "text": "4"
+     }
+    ],
+    "semanticId": "antiscia:fortune"
+   },
+   {
+    "degText": "2",
+    "family": "antiscia",
+    "id": "antiscia-asc",
+    "label": "A",
+    "listLabel": "Asc",
+    "longitude": 152.56394350266214,
+    "minText": "33",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "antiscia",
+     "source": {
+      "angle": "asc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "A"
+     }
+    ],
+    "semanticId": "antiscia:asc"
+   },
+   {
+    "degText": "14",
+    "family": "antiscia",
+    "id": "antiscia-planet-15-secondary",
+    "label": "Chiron",
+    "longitude": 164.8073588305116,
+    "minText": "48",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 15,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:15:secondary"
+   },
+   {
+    "degText": "1",
+    "family": "antiscia",
+    "id": "antiscia-planet-1-primary",
+    "label": "Moon",
+    "longitude": 181.68034386824036,
+    "minText": "40",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 1,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:1:primary"
+   },
+   {
+    "degText": "22",
+    "family": "antiscia",
+    "id": "antiscia-planet-6-secondary",
+    "label": "Saturn",
+    "longitude": 202.07780783450104,
+    "minText": "04",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 6,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:6:secondary"
+   },
+   {
+    "degText": "25",
+    "family": "antiscia",
+    "id": "antiscia-planet-0-primary",
+    "label": "Sun",
+    "longitude": 205.8024433607756,
+    "minText": "48",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 0,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:0:primary"
+   },
+   {
+    "degText": "27",
+    "family": "antiscia",
+    "id": "antiscia-planet-5-secondary",
+    "label": "Jupiter",
+    "longitude": 207.73155885820478,
+    "minText": "43",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 5,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:5:secondary"
+   },
+   {
+    "degText": "2",
+    "family": "antiscia",
+    "id": "antiscia-planet-3-secondary",
+    "label": "Venus",
+    "longitude": 212.78018884593632,
+    "minText": "46",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 3,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:3:secondary"
+   },
+   {
+    "degText": "5",
+    "family": "antiscia",
+    "id": "antiscia-planet-9-secondary",
+    "label": "Pluto",
+    "longitude": 215.5185237557827,
+    "minText": "31",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 9,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:9:secondary"
+   },
+   {
+    "degText": "7",
+    "family": "antiscia",
+    "id": "antiscia-planet-2-secondary",
+    "label": "Mercury",
+    "longitude": 217.83457593378967,
+    "minText": "50",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 2,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:2:secondary"
+   },
+   {
+    "degText": "8",
+    "family": "antiscia",
+    "id": "antiscia-planet-7-secondary",
+    "label": "Uranus",
+    "longitude": 218.2279241804017,
+    "minText": "13",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 7,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:7:secondary"
+   },
+   {
+    "degText": "24",
+    "family": "antiscia",
+    "id": "antiscia-planet-12-primary",
+    "label": "Apogee",
+    "longitude": 234.3493247200998,
+    "minText": "20",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 12,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:12:primary"
+   },
+   {
+    "degText": "16",
+    "family": "antiscia",
+    "id": "antiscia-mc",
+    "label": "M",
+    "listLabel": "MC",
+    "longitude": 256.83368296262796,
+    "minText": "50",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "antiscia",
+     "source": {
+      "angle": "mc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "M"
+     }
+    ],
+    "semanticId": "antiscia:mc"
+   },
+   {
+    "degText": "1",
+    "family": "antiscia",
+    "id": "antiscia-planet-10-primary",
+    "label": "North Node (T)",
+    "longitude": 271.64439542550866,
+    "minText": "38",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 1,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 10,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 10,
+      "text": "K"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:10:primary"
+   },
+   {
+    "degText": "5",
+    "family": "antiscia",
+    "id": "antiscia-planet-12-secondary",
+    "label": "Apogee",
+    "longitude": 305.6506752799002,
+    "minText": "39",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 12,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:12:secondary"
+   },
+   {
+    "degText": "21",
+    "family": "antiscia",
+    "id": "antiscia-planet-7-primary",
+    "label": "Uranus",
+    "longitude": 321.7720758195983,
+    "minText": "46",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 7,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:7:primary"
+   },
+   {
+    "degText": "22",
+    "family": "antiscia",
+    "id": "antiscia-planet-2-primary",
+    "label": "Mercury",
+    "longitude": 322.16542406621033,
+    "minText": "09",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 2,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:2:primary"
+   },
+   {
+    "degText": "24",
+    "family": "antiscia",
+    "id": "antiscia-planet-9-primary",
+    "label": "Pluto",
+    "longitude": 324.48147624421733,
+    "minText": "28",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 9,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:9:primary"
+   },
+   {
+    "degText": "27",
+    "family": "antiscia",
+    "id": "antiscia-planet-3-primary",
+    "label": "Venus",
+    "longitude": 327.2198111540637,
+    "minText": "13",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 3,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:3:primary"
+   },
+   {
+    "degText": "2",
+    "family": "antiscia",
+    "id": "antiscia-planet-5-primary",
+    "label": "Jupiter",
+    "longitude": 332.2684411417952,
+    "minText": "16",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 5,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:5:primary"
+   },
+   {
+    "degText": "4",
+    "family": "antiscia",
+    "id": "antiscia-planet-0-secondary",
+    "label": "Sun",
+    "longitude": 334.1975566392244,
+    "minText": "11",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 0,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:0:secondary"
+   },
+   {
+    "degText": "7",
+    "family": "antiscia",
+    "id": "antiscia-planet-6-primary",
+    "label": "Saturn",
+    "longitude": 337.9221921654989,
+    "minText": "55",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 6,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:6:primary"
+   },
+   {
+    "degText": "28",
+    "family": "antiscia",
+    "id": "antiscia-planet-1-secondary",
+    "label": "Moon",
+    "longitude": 358.31965613175964,
+    "minText": "19",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_antiscia",
+     "source": {
+      "bodyId": 1,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     }
+    ],
+    "semanticId": "morin_antiscia:planet:1:secondary"
+   }
+  ],
+  "arabic_parts": [
+   {
+    "degText": "15",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-0",
+    "label": "Union",
+    "longitude": 15.979209053311024,
+    "minText": "58",
+    "motionRef": {
+     "configIndex": 0,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:000",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Union"
+     }
+    ],
+    "semanticId": "arabic-part:0"
+   },
+   {
+    "degText": "14",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-1",
+    "label": "Daimon",
+    "longitude": 14.834527431093875,
+    "minText": "50",
+    "motionRef": {
+     "configIndex": 1,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:001",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Daimon"
+     }
+    ],
+    "semanticId": "arabic-part:1"
+   },
+   {
+    "degText": "16",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-2",
+    "label": "Journeys",
+    "longitude": 316.19652800832057,
+    "minText": "11",
+    "motionRef": {
+     "configIndex": 2,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:002",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Journeys"
+     }
+    ],
+    "semanticId": "arabic-part:2",
+    "shortLabel": "Journ."
+   },
+   {
+    "degText": "13",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-3",
+    "label": "Eros",
+    "longitude": 343.5132250885749,
+    "minText": "30",
+    "motionRef": {
+     "configIndex": 3,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:003",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Eros"
+     }
+    ],
+    "semanticId": "arabic-part:3"
+   },
+   {
+    "degText": "5",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-4",
+    "label": "Children",
+    "longitude": 35.11271502640266,
+    "minText": "06",
+    "motionRef": {
+     "configIndex": 20,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:004",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Children"
+     }
+    ],
+    "semanticId": "arabic-part:20",
+    "shortLabel": "Child."
+   },
+   {
+    "degText": "24",
+    "family": "arabic_part",
+    "id": "arabic-part-primary-5",
+    "label": "Intercourse",
+    "longitude": 24.150562799249087,
+    "minText": "09",
+    "motionRef": {
+     "configIndex": 31,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "searchObjectId": "part:005",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Intercourse"
+     }
+    ],
+    "semanticId": "arabic-part:31"
+   }
+  ],
+  "asteroids": [
+   {
+    "degText": "11",
+    "family": "asteroid",
+    "id": "asteroid-15",
+    "label": "Chiron",
+    "longitude": 11.85918055721998,
+    "minText": "51",
+    "motionRef": {
+     "bodyId": 15,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Chiron"
+     }
+    ],
+    "semanticId": "ephemeris-body:15",
+    "speed": 0.05181620694702156
+   },
+   {
+    "degText": "27",
+    "family": "asteroid",
+    "id": "asteroid-10016",
+    "label": "Psyche",
+    "longitude": 207.15140005607688,
+    "minText": "09",
+    "motion": "R",
+    "motionRef": {
+     "bodyId": 10016,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Psyche"
+     }
+    ],
+    "semanticId": "ephemeris-body:10016",
+    "speed": -0.03708592034622885
+   },
+   {
+    "degText": "11",
+    "family": "asteroid",
+    "id": "asteroid-10005",
+    "label": "Astraea",
+    "longitude": 281.8781195291637,
+    "minText": "52",
+    "motionRef": {
+     "bodyId": 10005,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Astraea"
+     }
+    ],
+    "semanticId": "ephemeris-body:10005",
+    "speed": 0.32818915671835
+   },
+   {
+    "degText": "23",
+    "family": "asteroid",
+    "id": "asteroid-17",
+    "label": "Ceres",
+    "longitude": 323.0725883397591,
+    "minText": "04",
+    "motionRef": {
+     "bodyId": 17,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Ceres"
+     }
+    ],
+    "semanticId": "ephemeris-body:17",
+    "speed": 0.3890128182563865
+   },
+   {
+    "degText": "1",
+    "family": "asteroid",
+    "id": "asteroid-18",
+    "label": "Pallas",
+    "longitude": 331.22466626836774,
+    "minText": "13",
+    "motionRef": {
+     "bodyId": 18,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Pallas"
+     }
+    ],
+    "semanticId": "ephemeris-body:18",
+    "speed": 0.32997801585892533
+   }
+  ],
+  "contra_antiscia": [
+   {
+    "degText": "1",
+    "family": "contra_antiscia",
+    "id": "contra-planet-1-secondary",
+    "label": "Moon",
+    "longitude": 1.6803438682403615,
+    "minText": "40",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 1,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:1:secondary"
+   },
+   {
+    "degText": "22",
+    "family": "contra_antiscia",
+    "id": "contra-planet-6-primary",
+    "label": "Saturn",
+    "longitude": 22.077807834501055,
+    "minText": "04",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 6,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:6:primary"
+   },
+   {
+    "degText": "25",
+    "family": "contra_antiscia",
+    "id": "contra-planet-0-secondary",
+    "label": "Sun",
+    "longitude": 25.802443360775598,
+    "minText": "48",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 0,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:0:secondary"
+   },
+   {
+    "degText": "27",
+    "family": "contra_antiscia",
+    "id": "contra-planet-5-primary",
+    "label": "Jupiter",
+    "longitude": 27.731558858204767,
+    "minText": "43",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 5,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:5:primary"
+   },
+   {
+    "degText": "2",
+    "family": "contra_antiscia",
+    "id": "contra-planet-3-primary",
+    "label": "Venus",
+    "longitude": 32.78018884593634,
+    "minText": "46",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 3,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:3:primary"
+   },
+   {
+    "degText": "5",
+    "family": "contra_antiscia",
+    "id": "contra-planet-9-primary",
+    "label": "Pluto",
+    "longitude": 35.51852375578269,
+    "minText": "31",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 9,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:9:primary"
+   },
+   {
+    "degText": "7",
+    "family": "contra_antiscia",
+    "id": "contra-planet-2-primary",
+    "label": "Mercury",
+    "longitude": 37.83457593378965,
+    "minText": "50",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 2,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:2:primary"
+   },
+   {
+    "degText": "8",
+    "family": "contra_antiscia",
+    "id": "contra-planet-7-primary",
+    "label": "Uranus",
+    "longitude": 38.22792418040169,
+    "minText": "13",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 7,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:7:primary"
+   },
+   {
+    "degText": "24",
+    "family": "contra_antiscia",
+    "id": "contra-planet-12-secondary",
+    "label": "Apogee",
+    "longitude": 54.34932472009978,
+    "minText": "20",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 12,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:12:secondary"
+   },
+   {
+    "degText": "16",
+    "family": "contra_antiscia",
+    "id": "contra-mc",
+    "label": "M",
+    "listLabel": "MC",
+    "longitude": 76.83368296262796,
+    "minText": "50",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "contra_antiscia",
+     "source": {
+      "angle": "mc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "M"
+     }
+    ],
+    "semanticId": "contra_antiscia:mc"
+   },
+   {
+    "degText": "1",
+    "family": "contra_antiscia",
+    "id": "contra-planet-10-primary",
+    "label": "North Node (T)",
+    "longitude": 91.64439542550868,
+    "minText": "38",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 1,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 10,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 10,
+      "text": "K"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:10:primary"
+   },
+   {
+    "degText": "5",
+    "family": "contra_antiscia",
+    "id": "contra-planet-12-primary",
+    "label": "Apogee",
+    "longitude": 125.65067527990021,
+    "minText": "39",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 12,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:12:primary"
+   },
+   {
+    "degText": "21",
+    "family": "contra_antiscia",
+    "id": "contra-planet-7-secondary",
+    "label": "Uranus",
+    "longitude": 141.7720758195983,
+    "minText": "46",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 7,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:7:secondary"
+   },
+   {
+    "degText": "22",
+    "family": "contra_antiscia",
+    "id": "contra-planet-2-secondary",
+    "label": "Mercury",
+    "longitude": 142.16542406621033,
+    "minText": "09",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 2,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:2:secondary"
+   },
+   {
+    "degText": "24",
+    "family": "contra_antiscia",
+    "id": "contra-planet-9-secondary",
+    "label": "Pluto",
+    "longitude": 144.4814762442173,
+    "minText": "28",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 9,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:9:secondary"
+   },
+   {
+    "degText": "27",
+    "family": "contra_antiscia",
+    "id": "contra-planet-3-secondary",
+    "label": "Venus",
+    "longitude": 147.21981115406368,
+    "minText": "13",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 3,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:3:secondary"
+   },
+   {
+    "degText": "2",
+    "family": "contra_antiscia",
+    "id": "contra-planet-5-secondary",
+    "label": "Jupiter",
+    "longitude": 152.26844114179522,
+    "minText": "16",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 5,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:5:secondary"
+   },
+   {
+    "degText": "4",
+    "family": "contra_antiscia",
+    "id": "contra-planet-0-primary",
+    "label": "Sun",
+    "longitude": 154.1975566392244,
+    "minText": "11",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 0,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:0:primary"
+   },
+   {
+    "degText": "7",
+    "family": "contra_antiscia",
+    "id": "contra-planet-6-secondary",
+    "label": "Saturn",
+    "longitude": 157.92219216549896,
+    "minText": "55",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 6,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:6:secondary"
+   },
+   {
+    "degText": "28",
+    "family": "contra_antiscia",
+    "id": "contra-planet-1-primary",
+    "label": "Moon",
+    "longitude": 178.31965613175964,
+    "minText": "19",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 1,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:1:primary"
+   },
+   {
+    "degText": "15",
+    "family": "contra_antiscia",
+    "id": "contra-planet-15-secondary",
+    "label": "Chiron",
+    "longitude": 195.1926411694884,
+    "minText": "11",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 15,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:15:secondary"
+   },
+   {
+    "degText": "8",
+    "family": "contra_antiscia",
+    "id": "contra-planet-8-secondary",
+    "label": "Neptune",
+    "longitude": 248.24196207010817,
+    "minText": "14",
+    "motionRef": {
+     "branch": "secondary",
+     "branchCount": 2,
+     "branchDirection": "sinister",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 8,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:8:secondary"
+   },
+   {
+    "degText": "1",
+    "family": "contra_antiscia",
+    "id": "contra-planet-11-primary",
+    "label": "South Node (T)",
+    "longitude": 271.64439542550866,
+    "minText": "38",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 1,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 11,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:11:primary"
+   },
+   {
+    "degText": "21",
+    "family": "contra_antiscia",
+    "id": "contra-planet-8-primary",
+    "label": "Neptune",
+    "longitude": 291.7580379298918,
+    "minText": "45",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 8,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:8:primary"
+   },
+   {
+    "degText": "19",
+    "family": "contra_antiscia",
+    "id": "contra-fortune",
+    "label": "Fortuna",
+    "listLabel": "Fortuna",
+    "longitude": 319.96241443641816,
+    "minText": "57",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "contra_antiscia",
+     "source": {
+      "kind": "fortune"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "glyph",
+      "text": "4"
+     }
+    ],
+    "semanticId": "contra_antiscia:fortune"
+   },
+   {
+    "degText": "2",
+    "family": "contra_antiscia",
+    "id": "contra-asc",
+    "label": "A",
+    "listLabel": "Asc",
+    "longitude": 332.56394350266214,
+    "minText": "33",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "contra_antiscia",
+     "source": {
+      "angle": "asc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "A"
+     }
+    ],
+    "semanticId": "contra_antiscia:asc"
+   },
+   {
+    "degText": "14",
+    "family": "contra_antiscia",
+    "id": "contra-planet-15-primary",
+    "label": "Chiron",
+    "longitude": 344.8073588305116,
+    "minText": "48",
+    "motionRef": {
+     "branch": "primary",
+     "branchCount": 2,
+     "branchDirection": "dexter",
+     "kind": "projection",
+     "projection": "morin_contra_antiscia",
+     "source": {
+      "bodyId": 15,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "morin_contra_antiscia:planet:15:primary"
+   }
+  ],
+  "dodecatemoria": [
+   {
+    "degText": "20",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-0",
+    "label": "Sun (12th)",
+    "longitude": 20.366276645036578,
+    "minText": "21",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 0,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "exal",
+      "kind": "planet",
+      "minorDignityCount": 1,
+      "seId": 0,
+      "text": "A"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:0"
+   },
+   {
+    "degText": "26",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-5",
+    "label": "Jupiter (12th)",
+    "longitude": 26.302619247515622,
+    "minText": "18",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 5,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:5"
+   },
+   {
+    "degText": "10",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-11",
+    "label": "South Node (T) (12th)",
+    "longitude": 40.267254893896734,
+    "minText": "16",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 11,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:11"
+   },
+   {
+    "degText": "26",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-9",
+    "label": "Pluto (12th)",
+    "longitude": 56.142621500191126,
+    "minText": "08",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 9,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:9"
+   },
+   {
+    "degText": "7",
+    "family": "dodecatemoria",
+    "id": "dodec-mc",
+    "label": "M",
+    "listLabel": "MC (12th)",
+    "longitude": 67.99580444846447,
+    "minText": "59",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "angle": "mc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "M"
+     }
+    ],
+    "semanticId": "dodecatemoria:mc"
+   },
+   {
+    "degText": "28",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-6",
+    "label": "Saturn (12th)",
+    "longitude": 118.42252159629334,
+    "minText": "25",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 6,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "exil",
+      "kind": "planet",
+      "minorDignityCount": 1,
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:6"
+   },
+   {
+    "degText": "22",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-12",
+    "label": "Chiron (12th)",
+    "longitude": 142.31016668663977,
+    "minText": "18",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 15,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:15"
+   },
+   {
+    "degText": "0",
+    "family": "dodecatemoria",
+    "id": "dodec-fortune",
+    "label": "Fortuna",
+    "listLabel": "Fortuna (12th)",
+    "longitude": 150.45102676298202,
+    "minText": "27",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "kind": "fortune"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "glyph",
+      "text": "4"
+     }
+    ],
+    "semanticId": "dodecatemoria:fortune"
+   },
+   {
+    "degText": "21",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-1",
+    "label": "Moon (12th)",
+    "longitude": 171.58462543996438,
+    "minText": "35",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 1,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 1,
+      "text": "B"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:1"
+   },
+   {
+    "degText": "7",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-4",
+    "label": "Mars (12th)",
+    "longitude": 187.49330728137954,
+    "minText": "29",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 4,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "exil",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 4,
+      "text": "E"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:4"
+   },
+   {
+    "degText": "10",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-10",
+    "label": "North Node (T) (12th)",
+    "longitude": 220.26725489389673,
+    "minText": "16",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 10,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 10,
+      "text": "K"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:10"
+   },
+   {
+    "degText": "15",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-7",
+    "label": "Uranus (12th)",
+    "longitude": 225.39139510207247,
+    "minText": "23",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 7,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:7"
+   },
+   {
+    "degText": "5",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-2",
+    "label": "Mercury (12th)",
+    "longitude": 275.69784997662396,
+    "minText": "41",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 2,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 1,
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:2"
+   },
+   {
+    "degText": "4",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-8",
+    "label": "Neptune (12th)",
+    "longitude": 304.4697055680744,
+    "minText": "28",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 8,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:8"
+   },
+   {
+    "degText": "29",
+    "family": "dodecatemoria",
+    "id": "dodec-asc",
+    "label": "A",
+    "listLabel": "Asc (12th)",
+    "longitude": 329.2326779680542,
+    "minText": "13",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "angle": "asc",
+      "kind": "angleSource"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "A"
+     }
+    ],
+    "semanticId": "dodecatemoria:asc"
+   },
+   {
+    "degText": "10",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-3",
+    "label": "Venus (12th)",
+    "longitude": 340.9403522679713,
+    "minText": "56",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 3,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "exal",
+      "kind": "planet",
+      "minorDignityCount": 2,
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:3"
+   },
+   {
+    "degText": "21",
+    "family": "dodecatemoria",
+    "id": "dodec-planet-13",
+    "label": "Apogee (12th)",
+    "longitude": 351.11042678380807,
+    "minText": "06",
+    "motionRef": {
+     "kind": "projection",
+     "projection": "dodecatemoria",
+     "source": {
+      "bodyId": 12,
+      "kind": "planet"
+     }
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "dignity": "peregrin",
+      "kind": "planet",
+      "minorDignityCount": 0,
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "dodecatemoria:planet:12"
+   }
+  ],
+  "fixstars": [
+   {
+    "degText": "8",
+    "family": "fixstar",
+    "id": "fixstar-8",
+    "label": "Sirius 8°21'",
+    "listLabel": "Sirius",
+    "longitude": 98.35034994192908,
+    "minText": "21",
+    "motionRef": {
+     "code": "alCMa",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Sirius 8°21'"
+     }
+    ],
+    "semanticId": "fixed-star:alCMa"
+   },
+   {
+    "degText": "9",
+    "family": "fixstar",
+    "id": "fixstar-9",
+    "label": "Canopus 9°14'",
+    "listLabel": "Canopus",
+    "longitude": 99.2253406165749,
+    "minText": "13",
+    "motionRef": {
+     "code": "alCar",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Canopus 9°14'"
+     }
+    ],
+    "semanticId": "fixed-star:alCar"
+   },
+   {
+    "degText": "14",
+    "family": "fixstar",
+    "id": "fixstar-10",
+    "label": "Castor 14°27'",
+    "listLabel": "Castor",
+    "longitude": 104.44702561257618,
+    "minText": "26",
+    "motionRef": {
+     "code": "alGem",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Castor 14°27'"
+     }
+    ],
+    "semanticId": "fixed-star:alGem"
+   },
+   {
+    "degText": "17",
+    "family": "fixstar",
+    "id": "fixstar-11",
+    "label": "Pollux 17°28'",
+    "listLabel": "Pollux",
+    "longitude": 107.4752059847601,
+    "minText": "28",
+    "motionRef": {
+     "code": "beGem",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Pollux 17°28'"
+     }
+    ],
+    "semanticId": "fixed-star:beGem"
+   },
+   {
+    "degText": "27",
+    "family": "fixstar",
+    "id": "fixstar-28",
+    "label": "Fomalhaut 28°00'",
+    "listLabel": "Fomalhaut",
+    "longitude": 327.99332762326657,
+    "minText": "59",
+    "motionRef": {
+     "code": "alPsA",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Fomalhaut 28°00'"
+     }
+    ],
+    "semanticId": "fixed-star:alPsA"
+   },
+   {
+    "degText": "17",
+    "family": "fixstar",
+    "id": "fixstar-29",
+    "label": "Markab 17°41'",
+    "listLabel": "Markab",
+    "longitude": 347.6817791030684,
+    "minText": "40",
+    "motionRef": {
+     "code": "alPeg",
+     "kind": "fixedStar"
+    },
+    "positionInLabel": true,
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Markab 17°41'"
+     }
+    ],
+    "semanticId": "fixed-star:alPeg"
+   }
+  ],
+  "hybrid_hits": [
+   {
+    "degText": "8",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:alCMa",
+    "label": "Sirius",
+    "longitude": 98.35034994192908,
+    "minText": "21",
+    "motionRef": {
+     "code": "alCMa",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Sirius"
+     }
+    ],
+    "semanticId": "fixed-star:alCMa"
+   },
+   {
+    "degText": "9",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:alCar",
+    "label": "Canopus",
+    "longitude": 99.2253406165749,
+    "minText": "13",
+    "motionRef": {
+     "code": "alCar",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Canopus"
+     }
+    ],
+    "semanticId": "fixed-star:alCar"
+   },
+   {
+    "degText": "14",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:alGem",
+    "label": "Castor",
+    "longitude": 104.44702561257618,
+    "minText": "26",
+    "motionRef": {
+     "code": "alGem",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Castor"
+     }
+    ],
+    "semanticId": "fixed-star:alGem"
+   },
+   {
+    "degText": "17",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:beGem",
+    "label": "Pollux",
+    "longitude": 107.4752059847601,
+    "minText": "28",
+    "motionRef": {
+     "code": "beGem",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Pollux"
+     }
+    ],
+    "semanticId": "fixed-star:beGem"
+   },
+   {
+    "degText": "27",
+    "family": "asteroid",
+    "id": "hybrid-asteroid-ephemeris-body:10016",
+    "label": "Psyche",
+    "longitude": 207.15140005607688,
+    "minText": "09",
+    "motion": "R",
+    "motionRef": {
+     "bodyId": 10016,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Psyche"
+     }
+    ],
+    "semanticId": "ephemeris-body:10016",
+    "speed": -0.03708592034622885
+   },
+   {
+    "degText": "11",
+    "family": "asteroid",
+    "id": "hybrid-asteroid-ephemeris-body:10005",
+    "label": "Astraea",
+    "longitude": 281.8781195291637,
+    "minText": "52",
+    "motionRef": {
+     "bodyId": 10005,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Astraea"
+     }
+    ],
+    "semanticId": "ephemeris-body:10005",
+    "speed": 0.32818915671835
+   },
+   {
+    "degText": "23",
+    "family": "asteroid",
+    "id": "hybrid-asteroid-ephemeris-body:17",
+    "label": "Ceres",
+    "longitude": 323.0725883397591,
+    "minText": "04",
+    "motionRef": {
+     "bodyId": 17,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Ceres"
+     }
+    ],
+    "semanticId": "ephemeris-body:17",
+    "speed": 0.3890128182563865
+   },
+   {
+    "degText": "27",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:alPsA",
+    "label": "Fomalhaut",
+    "longitude": 327.99332762326657,
+    "minText": "59",
+    "motionRef": {
+     "code": "alPsA",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Fomalhaut"
+     }
+    ],
+    "semanticId": "fixed-star:alPsA"
+   },
+   {
+    "degText": "1",
+    "family": "asteroid",
+    "id": "hybrid-asteroid-ephemeris-body:18",
+    "label": "Pallas",
+    "longitude": 331.22466626836774,
+    "minText": "13",
+    "motionRef": {
+     "bodyId": 18,
+     "kind": "ephemerisBody"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Pallas"
+     }
+    ],
+    "semanticId": "ephemeris-body:18",
+    "speed": 0.32997801585892533
+   },
+   {
+    "degText": "13",
+    "family": "arabic_part",
+    "id": "hybrid-arabic_part-arabic-part:3",
+    "label": "Eros",
+    "longitude": 343.5132250885749,
+    "minText": "30",
+    "motionRef": {
+     "configIndex": 3,
+     "kind": "arabicPart"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Eros"
+     }
+    ],
+    "semanticId": "arabic-part:3"
+   },
+   {
+    "degText": "17",
+    "family": "fixstar",
+    "id": "hybrid-fixstar-fixed-star:alPeg",
+    "label": "Markab",
+    "longitude": 347.6817791030684,
+    "minText": "40",
+    "motionRef": {
+     "code": "alPeg",
+     "kind": "fixedStar"
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "text",
+      "text": "Markab"
+     }
+    ],
+    "semanticId": "fixed-star:alPeg"
+   }
+  ],
+  "midpoints": [
+   {
+    "degText": "26",
+    "family": "midpoint",
+    "id": "midpoint-0",
+    "label": "Uranus/South Node",
+    "longitude": 26.069110416498688,
+    "minText": "04",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 7,
+     "p2": 11
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "midpoint:7:11"
+   },
+   {
+    "degText": "28",
+    "family": "midpoint",
+    "id": "midpoint-1",
+    "label": "Mercury/South Node",
+    "longitude": 28.165212702938334,
+    "minText": "09",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 2,
+     "p2": 11
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "midpoint:2:11"
+   },
+   {
+    "degText": "9",
+    "family": "midpoint",
+    "id": "midpoint-2",
+    "label": "Venus/Neptune",
+    "longitude": 39.392085743168536,
+    "minText": "23",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 3,
+     "p2": 8
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "midpoint:3:8"
+   },
+   {
+    "degText": "10",
+    "family": "midpoint",
+    "id": "midpoint-3",
+    "label": "Mars/Saturn",
+    "longitude": 40.24649286990302,
+    "minText": "14",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 4,
+     "p2": 6
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 4,
+      "text": "E"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "midpoint:4:6"
+   },
+   {
+    "degText": "11",
+    "family": "midpoint",
+    "id": "midpoint-4",
+    "label": "Sun/Neptune",
+    "longitude": 41.03483259221298,
+    "minText": "02",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 0,
+     "p2": 8
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "midpoint:0:8"
+   },
+   {
+    "degText": "11",
+    "family": "midpoint",
+    "id": "midpoint-5",
+    "label": "Jupiter/Neptune",
+    "longitude": 41.28218020064958,
+    "minText": "16",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 5,
+     "p2": 8
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "midpoint:5:8"
+   },
+   {
+    "degText": "8",
+    "family": "midpoint",
+    "id": "midpoint-6",
+    "label": "Neptune/South Node",
+    "longitude": 98.11404001924879,
+    "minText": "06",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 8,
+     "p2": 11
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 11,
+      "text": "L"
+     }
+    ],
+    "semanticId": "midpoint:8:11"
+   },
+   {
+    "degText": "12",
+    "family": "midpoint",
+    "id": "midpoint-7",
+    "label": "Mars/Neptune",
+    "longitude": 102.99845886872725,
+    "minText": "59",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 4,
+     "p2": 8
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 4,
+      "text": "E"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 8,
+      "text": "I"
+     }
+    ],
+    "semanticId": "midpoint:4:8"
+   },
+   {
+    "degText": "12",
+    "family": "midpoint",
+    "id": "midpoint-8",
+    "label": "Saturn/Apogee",
+    "longitude": 282.0638728491709,
+    "minText": "03",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 6,
+     "p2": 12
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "midpoint:6:12"
+   },
+   {
+    "degText": "14",
+    "family": "midpoint",
+    "id": "midpoint-9",
+    "label": "Moon/Apogee",
+    "longitude": 284.27896050932384,
+    "minText": "16",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 1,
+     "p2": 12
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 12,
+      "text": "⚸"
+     }
+    ],
+    "semanticId": "midpoint:1:12"
+   },
+   {
+    "degText": "27",
+    "family": "midpoint",
+    "id": "midpoint-10",
+    "label": "Venus/Uranus",
+    "longitude": 327.3471561404185,
+    "minText": "20",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 3,
+     "p2": 7
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "midpoint:3:7"
+   },
+   {
+    "degText": "28",
+    "family": "midpoint",
+    "id": "midpoint-11",
+    "label": "Sun/Uranus",
+    "longitude": 328.98990298946285,
+    "minText": "59",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 0,
+     "p2": 7
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "midpoint:0:7"
+   },
+   {
+    "degText": "29",
+    "family": "midpoint",
+    "id": "midpoint-12",
+    "label": "Jupiter/Uranus",
+    "longitude": 329.2372505978995,
+    "minText": "14",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 5,
+     "p2": 7
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "midpoint:5:7"
+   },
+   {
+    "degText": "29",
+    "family": "midpoint",
+    "id": "midpoint-13",
+    "label": "Mercury/Venus",
+    "longitude": 329.44325842685816,
+    "minText": "26",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 2,
+     "p2": 3
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "midpoint:2:3"
+   },
+   {
+    "degText": "1",
+    "family": "midpoint",
+    "id": "midpoint-14",
+    "label": "Sun/Mercury",
+    "longitude": 331.0860052759025,
+    "minText": "05",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 0,
+     "p2": 2
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     }
+    ],
+    "semanticId": "midpoint:0:2"
+   },
+   {
+    "degText": "1",
+    "family": "midpoint",
+    "id": "midpoint-15",
+    "label": "Mercury/Jupiter",
+    "longitude": 331.33335288433915,
+    "minText": "20",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 2,
+     "p2": 5
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "midpoint:2:5"
+   },
+   {
+    "degText": "2",
+    "family": "midpoint",
+    "id": "midpoint-16",
+    "label": "Sun/Venus",
+    "longitude": 332.55444287137533,
+    "minText": "33",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 0,
+     "p2": 3
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     }
+    ],
+    "semanticId": "midpoint:0:3"
+   },
+   {
+    "degText": "2",
+    "family": "midpoint",
+    "id": "midpoint-17",
+    "label": "Venus/Jupiter",
+    "longitude": 332.801790479812,
+    "minText": "48",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 3,
+     "p2": 5
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "midpoint:3:5"
+   },
+   {
+    "degText": "3",
+    "family": "midpoint",
+    "id": "midpoint-18",
+    "label": "Saturn/Uranus",
+    "longitude": 333.07557986243194,
+    "minText": "04",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 6,
+     "p2": 7
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "midpoint:6:7"
+   },
+   {
+    "degText": "4",
+    "family": "midpoint",
+    "id": "midpoint-19",
+    "label": "Sun/Jupiter",
+    "longitude": 334.4445373288563,
+    "minText": "26",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 0,
+     "p2": 5
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 0,
+      "text": "A"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 5,
+      "text": "F"
+     }
+    ],
+    "semanticId": "midpoint:0:5"
+   },
+   {
+    "degText": "5",
+    "family": "midpoint",
+    "id": "midpoint-20",
+    "label": "Mercury/Saturn",
+    "longitude": 335.1716821488716,
+    "minText": "10",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 2,
+     "p2": 6
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 6,
+      "text": "G"
+     }
+    ],
+    "semanticId": "midpoint:2:6"
+   },
+   {
+    "degText": "5",
+    "family": "midpoint",
+    "id": "midpoint-21",
+    "label": "Moon/Uranus",
+    "longitude": 335.29066752258484,
+    "minText": "17",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 1,
+     "p2": 7
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 1,
+      "text": "B"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     }
+    ],
+    "semanticId": "midpoint:1:7"
+   },
+   {
+    "degText": "16",
+    "family": "midpoint",
+    "id": "midpoint-22",
+    "label": "Mercury/Pluto",
+    "longitude": 346.326686311534,
+    "minText": "19",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 2,
+     "p2": 9
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 2,
+      "text": "C"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "midpoint:2:9"
+   },
+   {
+    "degText": "17",
+    "family": "midpoint",
+    "id": "midpoint-23",
+    "label": "Venus/Pluto",
+    "longitude": 347.79512390700677,
+    "minText": "47",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 3,
+     "p2": 9
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 3,
+      "text": "D"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 9,
+      "text": "9"
+     }
+    ],
+    "semanticId": "midpoint:3:9"
+   },
+   {
+    "degText": "17",
+    "family": "midpoint",
+    "id": "midpoint-24",
+    "label": "Uranus/Chiron",
+    "longitude": 347.820898407863,
+    "minText": "49",
+    "motionRef": {
+     "kind": "midpoint",
+     "p1": 7,
+     "p2": 15
+    },
+    "role": "primary",
+    "segments": [
+     {
+      "kind": "planet",
+      "seId": 7,
+      "text": "H"
+     },
+     {
+      "kind": "text",
+      "text": "/"
+     },
+     {
+      "kind": "planet",
+      "seId": 15,
+      "text": "}"
+     }
+    ],
+    "semanticId": "midpoint:7:15"
+   }
+  ],
+  "parallel_transits": []
+ },
+ "outerRingMode": "arabic_parts",
+ "overlayRenderMode": "full",
+ "primaryChart": {
+  "angles": {
+   "armc": 284.30941846783026,
+   "asc": 27.43605649733785,
+   "ascDegMin": {
+    "degText": "27",
+    "minText": "26"
+   },
+   "dsc": 207.43605649733786,
+   "ic": 103.16631703737204,
+   "mc": 283.16631703737204,
+   "mcDegMin": {
+    "degText": "13",
+    "minText": "09"
+   },
+   "vertex": 190.9804173245277
+  },
+  "aspects": [
+   {
+    "exact": false,
+    "maxOrb": 8.5,
+    "orb": 3.2854936980887715,
+    "p1": "sun",
+    "p2": "venus",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 7.0,
+    "orb": 3.9272525530285805,
+    "p1": "sun",
+    "p2": "mars",
+    "type": 6
+   },
+   {
+    "exact": true,
+    "maxOrb": 9.0,
+    "orb": 0.4946952168732537,
+    "p1": "sun",
+    "p2": "jupiter",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 9.0,
+    "orb": 8.171353745938063,
+    "p1": "sun",
+    "p2": "saturn",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 9.0,
+    "orb": 4.430175320305921,
+    "p1": "moon",
+    "p2": "saturn",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.5,
+    "orb": 1.0737566773425016,
+    "p1": "moon",
+    "p2": "neptune",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.5,
+    "orb": 5.039516554679693,
+    "p1": "moon",
+    "p2": "apogee",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.5,
+    "orb": 4.192204572879291,
+    "p1": "mercury",
+    "p2": "uranus",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 7.5,
+    "orb": 3.780188914962025,
+    "p1": "venus",
+    "p2": "jupiter",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.5,
+    "orb": 3.4325573361553268,
+    "p1": "mars",
+    "p2": "jupiter",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.5,
+    "orb": 4.244101192909483,
+    "p1": "mars",
+    "p2": "saturn",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 5.5,
+    "orb": 3.4458904817657015,
+    "p1": "mars",
+    "p2": "pluto",
+    "type": 5
+   },
+   {
+    "exact": false,
+    "maxOrb": 5.5,
+    "orb": 3.7347382837716907,
+    "p1": "mars",
+    "p2": "chiron",
+    "type": 5
+   },
+   {
+    "exact": false,
+    "maxOrb": 5.5,
+    "orb": 3.63475995853571,
+    "p1": "mars",
+    "p2": "apogee",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 8.0,
+    "orb": 7.6766585290648095,
+    "p1": "jupiter",
+    "p2": "saturn",
+    "type": 0
+   },
+   {
+    "exact": false,
+    "maxOrb": 6.0,
+    "orb": 5.503931997648422,
+    "p1": "saturn",
+    "p2": "neptune",
+    "type": 6
+   },
+   {
+    "exact": true,
+    "maxOrb": 6.0,
+    "orb": 0.6093412343737725,
+    "p1": "saturn",
+    "p2": "apogee",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 4.5,
+    "orb": 3.6324017492916596,
+    "p1": "moon",
+    "p2": "ic",
+    "type": 6
+   },
+   {
+    "exact": true,
+    "maxOrb": 3.0,
+    "orb": 0.5387643340474781,
+    "p1": "mercury",
+    "p2": "asc",
+    "type": 3
+   },
+   {
+    "exact": true,
+    "maxOrb": 3.5,
+    "orb": 0.538764334047471,
+    "p1": "mercury",
+    "p2": "dc",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 2.5,
+    "orb": 1.9131432901335401,
+    "p1": "mars",
+    "p2": "fortune",
+    "type": 3
+   },
+   {
+    "exact": true,
+    "maxOrb": 3.5,
+    "orb": 0.797773571014261,
+    "p1": "saturn",
+    "p2": "mc",
+    "type": 3
+   },
+   {
+    "exact": true,
+    "maxOrb": 4.0,
+    "orb": 0.797773571014261,
+    "p1": "saturn",
+    "p2": "ic",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 3.0,
+    "orb": 2.3309579027759426,
+    "p1": "saturn",
+    "p2": "fortune",
+    "type": 3
+   },
+   {
+    "exact": false,
+    "maxOrb": 3.0,
+    "orb": 1.307136480152053,
+    "p1": "chiron",
+    "p2": "mc",
+    "type": 5
+   },
+   {
+    "exact": false,
+    "maxOrb": 3.0,
+    "orb": 1.307136480152053,
+    "p1": "chiron",
+    "p2": "ic",
+    "type": 5
+   },
+   {
+    "exact": false,
+    "maxOrb": 2.5,
+    "orb": 1.4071148053880336,
+    "p1": "apogee",
+    "p2": "mc",
+    "type": 3
+   },
+   {
+    "exact": false,
+    "maxOrb": 3.0,
+    "orb": 1.4071148053880336,
+    "p1": "apogee",
+    "p2": "ic",
+    "type": 6
+   },
+   {
+    "exact": false,
+    "maxOrb": 3.0,
+    "orb": 1.721616668402163,
+    "p1": "apogee",
+    "p2": "fortune",
+    "type": 10
+   }
+  ],
+  "bodyAspects": {
+   "apogee": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 5.039516554679693,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.63475995853571,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 6.0,
+     "orb": 0.6093412343737725,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.4071148053880336,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.4071148053880336,
+     "other": "ic",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.721616668402163,
+     "other": "fortune",
+     "showsOnClick": true,
+     "type": 10
+    }
+   ],
+   "asc": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.25,
+     "orb": 1.810295348346692,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.5387643340474781,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.0,
+     "orb": 1.3116142238895563,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 4
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.0,
+     "orb": 1.3156001314734382,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.06751303098007355,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 2
+    }
+   ],
+   "chiron": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.7347382837716907,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "ic",
+     "showsOnClick": true,
+     "type": 5
+    }
+   ],
+   "cusp1": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.538764334047471,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "cusp10": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.797773571014261,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.4071148053880336,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "cusp11": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.4315561878615881,
+     "other": "pluto",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "cusp12": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 1.8189688970686007,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 3.5,
+     "orb": 2.10828365595998,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 1.324273680195347,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "cusp2": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 2.8200573766985144,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.46543632139025704,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.0,
+     "orb": 3.3147525935717113,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 5
+    }
+   ],
+   "cusp3": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.3302598102303591,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "cusp4": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 3.6324017492916596,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 4.0,
+     "orb": 0.797773571014261,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.4071148053880336,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "cusp5": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.4315561878615881,
+     "other": "pluto",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "cusp6": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 1.8189688970686575,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 10
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.108283655959923,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 1.3242736801954038,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 10
+    }
+   ],
+   "cusp7": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.538764334047471,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "cusp8": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 2.820057376698486,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.46543632139028546,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.0,
+     "orb": 3.3147525935717397,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 5
+    }
+   ],
+   "cusp9": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.3302598102303591,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "dc": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.538764334047471,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "eclipse": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 4.0,
+     "orb": 0.714275330237939,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.3594813471045626,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "fortune": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 1.5,
+     "orb": 0.06276473219650569,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 4
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.9131432901335401,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.3309579027759426,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.721616668402163,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 10
+    }
+   ],
+   "ic": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 3.6324017492916596,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 4.0,
+     "orb": 0.797773571014261,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.4071148053880336,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "jupiter": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 9.0,
+     "orb": 0.4946952168732537,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.5,
+     "orb": 6.717064105907639,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.5,
+     "orb": 3.780188914962025,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 3.4325573361553268,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.0,
+     "orb": 7.6766585290648095,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.8194094732867683,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.013333145610374686,
+     "other": "pluto",
+     "showsOnClick": true,
+     "type": 1
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.0,
+     "orb": 1.3156001314734382,
+     "other": "asc",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.09699647134948464,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.0,
+     "orb": 1.4481605388165235,
+     "other": "syzygy",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "mars": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.0,
+     "orb": 3.9272525530285805,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 3.4325573361553268,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 4.244101192909483,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.6581739850577435,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.4458904817657015,
+     "other": "pluto",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.7347382837716907,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.63475995853571,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.0,
+     "orb": 1.3116142238895563,
+     "other": "asc",
+     "showsOnClick": true,
+     "type": 4
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.9131432901335401,
+     "other": "fortune",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "mc": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.25,
+     "orb": 0.39769874552376905,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.19149620598670936,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 2
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.09699647134948464,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.797773571014261,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 1.307136480152053,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.4071148053880336,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "mercury": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.5,
+     "orb": 6.222368889034385,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.0,
+     "orb": 2.9368751909456137,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.5,
+     "orb": 6.717064105907639,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 4.192204572879291,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.5387643340474781,
+     "other": "asc",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.19149620598670936,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 2
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.538764334047471,
+     "other": "dc",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 1.5,
+     "orb": 0.06276473219650569,
+     "other": "fortune",
+     "showsOnClick": true,
+     "type": 4
+    }
+   ],
+   "moon": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 9.0,
+     "orb": 4.430175320305921,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 1.0737566773425016,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 5.039516554679693,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.5,
+     "orb": 3.6324017492916596,
+     "other": "ic",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 4.0,
+     "orb": 0.714275330237939,
+     "other": "eclipse",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "neptune": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.75,
+     "orb": 1.3247142564135146,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 1.0737566773425016,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.9607794416752569,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.8194094732867683,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.0,
+     "orb": 5.503931997648422,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.08985920550016147,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 8
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.3594813471045626,
+     "other": "eclipse",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "nnode": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.3807837431060648,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.556091447839549,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "pluto": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.75,
+     "orb": 0.481362071262879,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 1
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 5.5,
+     "orb": 3.4458904817657015,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.013333145610374686,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 1
+    }
+   ],
+   "point:primary:arabic_part:arabic-part-primary-0:15.979209": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.8932664106951762,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 5
+    }
+   ],
+   "point:primary:arabic_part:arabic-part-primary-1:14.834527": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.975346873873894,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "point:primary:arabic_part:arabic-part-primary-2:316.196528": [],
+   "point:primary:arabic_part:arabic-part-primary-3:343.513225": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 5.0,
+     "orb": 3.2854936980887715,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 4.0,
+     "orb": 1.1446816222171492,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.7540228565909217,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "point:primary:arabic_part:arabic-part-primary-4:35.112715": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.9155253059829533,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.42083008910969966,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "point:primary:arabic_part:arabic-part-primary-5:24.150563": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.36794654074304844,
+     "other": "uranus",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "saturn": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 9.0,
+     "orb": 8.171353745938063,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 9.0,
+     "orb": 4.430175320305921,
+     "other": "moon",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 4.244101192909483,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.0,
+     "orb": 7.6766585290648095,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 6.0,
+     "orb": 5.503931997648422,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 6.0,
+     "orb": 0.6093412343737725,
+     "other": "apogee",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.06751303098007355,
+     "other": "asc",
+     "showsOnClick": true,
+     "type": 2
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.797773571014261,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 3
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 4.0,
+     "orb": 0.797773571014261,
+     "other": "ic",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.3309579027759426,
+     "other": "fortune",
+     "showsOnClick": true,
+     "type": 3
+    }
+   ],
+   "snode": [
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 3.5,
+     "orb": 0.3807837431060648,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 6
+    }
+   ],
+   "sun": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.5,
+     "orb": 6.222368889034385,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.5,
+     "orb": 3.2854936980887715,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.0,
+     "orb": 3.9272525530285805,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 6
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 9.0,
+     "orb": 0.4946952168732537,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 9.0,
+     "orb": 8.171353745938063,
+     "other": "saturn",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.75,
+     "orb": 1.3247142564135146,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.75,
+     "orb": 0.481362071262879,
+     "other": "pluto",
+     "showsOnClick": true,
+     "type": 1
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 2.25,
+     "orb": 1.810295348346692,
+     "other": "asc",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 2.25,
+     "orb": 0.39769874552376905,
+     "other": "mc",
+     "showsOnClick": true,
+     "type": 11
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 5.0,
+     "orb": 0.9534653219432698,
+     "other": "syzygy",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "syzygy": [
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 5.0,
+     "orb": 0.9534653219432698,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.5,
+     "orb": 2.3320283761455016,
+     "other": "venus",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 4.0,
+     "orb": 1.4481605388165235,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "uranus": [
+    {
+     "applying": false,
+     "exact": false,
+     "maxOrb": 6.5,
+     "orb": 4.192204572879291,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.5,
+     "orb": 0.6581739850577435,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": true,
+     "exact": true,
+     "maxOrb": 2.0,
+     "orb": 0.08985920550016147,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 8
+    }
+   ],
+   "venus": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 8.5,
+     "orb": 3.2854936980887715,
+     "other": "sun",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.0,
+     "orb": 2.9368751909456137,
+     "other": "mercury",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 7.5,
+     "orb": 3.780188914962025,
+     "other": "jupiter",
+     "showsOnClick": true,
+     "type": 0
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 2.5,
+     "orb": 1.9607794416752569,
+     "other": "neptune",
+     "showsOnClick": true,
+     "type": 7
+    },
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.5,
+     "orb": 2.3320283761455016,
+     "other": "syzygy",
+     "showsOnClick": true,
+     "type": 0
+    }
+   ],
+   "vertex": [
+    {
+     "applying": true,
+     "exact": false,
+     "maxOrb": 3.0,
+     "orb": 2.8559750510794117,
+     "other": "mars",
+     "showsOnClick": true,
+     "type": 5
+    },
+    {
+     "applying": false,
+     "exact": true,
+     "maxOrb": 3.0,
+     "orb": 0.878763232692279,
+     "other": "chiron",
+     "showsOnClick": true,
+     "type": 10
+    }
+   ]
+  },
+  "clickAspectFlags": {
+   "exclusiveOnClick": true,
+   "showMinor": true,
+   "traditional": false
+  },
+  "drishti": [],
+  "eclipse": {
+   "coincidesWithSyzygy": false,
+   "color": "rgb(215,215,217)",
+   "degText": "17",
+   "eventJd": 2299245.745126069,
+   "glyph": "Ec",
+   "glyphFont": "text",
+   "house": 4,
+   "id": "eclipse",
+   "isSolar": false,
+   "label": "Prenatal Eclipse · 08.01.1583",
+   "longitude": 107.51299411690164,
+   "minText": "30",
+   "searchObjectId": "point:eclipse",
+   "semanticId": "point:eclipse"
+  },
+  "fortune": {
+   "color": "rgb(215,215,217)",
+   "degText": "10",
+   "glyph": "4",
+   "longitude": 40.037585563581835,
+   "minText": "02"
+  },
+  "houses": {
+   "cuspDegMin": [
+    {
+     "degText": "27",
+     "minText": "26"
+    },
+    {
+     "degText": "1",
+     "minText": "22"
+    },
+    {
+     "degText": "23",
+     "minText": "27"
+    },
+    {
+     "degText": "13",
+     "minText": "09"
+    },
+    {
+     "degText": "5",
+     "minText": "06"
+    },
+    {
+     "degText": "6",
+     "minText": "00"
+    },
+    {
+     "degText": "27",
+     "minText": "26"
+    },
+    {
+     "degText": "1",
+     "minText": "22"
+    },
+    {
+     "degText": "23",
+     "minText": "27"
+    },
+    {
+     "degText": "13",
+     "minText": "09"
+    },
+    {
+     "degText": "5",
+     "minText": "06"
+    },
+    {
+     "degText": "6",
+     "minText": "00"
+    }
+   ],
+   "cusps": [
+    27.43605649733785,
+    61.37713234372123,
+    83.45235644827567,
+    103.16631703737204,
+    125.11010797954418,
+    156.01615861748837,
+    207.43605649733786,
+    241.37713234372123,
+    263.4523564482757,
+    283.16631703737204,
+    305.1101079795442,
+    336.0161586174883
+   ],
+   "system": "T"
+  },
+  "meta": {
+   "age": "Age: 443.67y",
+   "anchorDisplay": "23.February.1583 08:47:00, LC",
+   "buildStamp": "6431bda4 2026-10-25 23:36",
+   "centerLines": [
+    "23.February.1583",
+    "08:47:00, LC",
+    "Villefranche-sur-Saône",
+    "04°43'E, 45°59'N",
+    "Morinus",
+    "Radix",
+    "Tropical",
+    "Polich-Page"
+   ],
+   "compactTimeDisplay": "08:47, LC",
+   "dateDisplay": "23.February.1583",
+   "datetime": "1583-02-23T08:47:00",
+   "houseSystemLines": [
+    "Polich-Page"
+   ],
+   "kind": "radix",
+   "latitude": 45.983333333333334,
+   "longitude": 4.716666666666667,
+   "name": "Morinus",
+   "numericDateDisplay": "23.02.1583",
+   "obliquity": 23.49351181864518,
+   "place": "Villefranche-sur-Saône",
+   "placeCoords": "04°43'E, 45°59'N",
+   "statusFields": [
+    "6431bda4 2026-10-25 23:36",
+    "Morinus",
+    "Radix",
+    "23.February.1583, 08:47LC",
+    "Longitude: 04°43'E",
+    "Latitude: 45°59'N"
+   ],
+   "timeDisplay": "08:47:00, LC",
+   "titleParts": [
+    "Morinus",
+    "Radix",
+    "Sun 25.10.2026 23:55",
+    "Age: 443.67y"
+   ]
+  },
+  "options": {
+   "angloDenseLabelLayout": "routed-cusps",
+   "ascmcSize": 3,
+   "aspectOpacityMode": false,
+   "aspectThicknessMode": false,
+   "blendMinorDignities": false,
+   "chartRingThickness": 3,
+   "decans": [
+    {
+     "rulerSeIds": [
+      4,
+      0,
+      3
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 5.0,
+       "rulerSeId": 4
+      },
+      {
+       "rulerGlyph": "A",
+       "rulerLon": 15.0,
+       "rulerSeId": 0
+      },
+      {
+       "rulerGlyph": "D",
+       "rulerLon": 25.0,
+       "rulerSeId": 3
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      2,
+      1,
+      6
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "C",
+       "rulerLon": 35.0,
+       "rulerSeId": 2
+      },
+      {
+       "rulerGlyph": "B",
+       "rulerLon": 45.0,
+       "rulerSeId": 1
+      },
+      {
+       "rulerGlyph": "G",
+       "rulerLon": 55.0,
+       "rulerSeId": 6
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      5,
+      4,
+      0
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "F",
+       "rulerLon": 65.0,
+       "rulerSeId": 5
+      },
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 75.0,
+       "rulerSeId": 4
+      },
+      {
+       "rulerGlyph": "A",
+       "rulerLon": 85.0,
+       "rulerSeId": 0
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      3,
+      2,
+      1
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "D",
+       "rulerLon": 95.0,
+       "rulerSeId": 3
+      },
+      {
+       "rulerGlyph": "C",
+       "rulerLon": 105.0,
+       "rulerSeId": 2
+      },
+      {
+       "rulerGlyph": "B",
+       "rulerLon": 115.0,
+       "rulerSeId": 1
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      6,
+      5,
+      4
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "G",
+       "rulerLon": 125.0,
+       "rulerSeId": 6
+      },
+      {
+       "rulerGlyph": "F",
+       "rulerLon": 135.0,
+       "rulerSeId": 5
+      },
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 145.0,
+       "rulerSeId": 4
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      0,
+      3,
+      2
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "A",
+       "rulerLon": 155.0,
+       "rulerSeId": 0
+      },
+      {
+       "rulerGlyph": "D",
+       "rulerLon": 165.0,
+       "rulerSeId": 3
+      },
+      {
+       "rulerGlyph": "C",
+       "rulerLon": 175.0,
+       "rulerSeId": 2
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      1,
+      6,
+      5
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "B",
+       "rulerLon": 185.0,
+       "rulerSeId": 1
+      },
+      {
+       "rulerGlyph": "G",
+       "rulerLon": 195.0,
+       "rulerSeId": 6
+      },
+      {
+       "rulerGlyph": "F",
+       "rulerLon": 205.0,
+       "rulerSeId": 5
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      4,
+      0,
+      3
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 215.0,
+       "rulerSeId": 4
+      },
+      {
+       "rulerGlyph": "A",
+       "rulerLon": 225.0,
+       "rulerSeId": 0
+      },
+      {
+       "rulerGlyph": "D",
+       "rulerLon": 235.0,
+       "rulerSeId": 3
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      2,
+      1,
+      6
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "C",
+       "rulerLon": 245.0,
+       "rulerSeId": 2
+      },
+      {
+       "rulerGlyph": "B",
+       "rulerLon": 255.0,
+       "rulerSeId": 1
+      },
+      {
+       "rulerGlyph": "G",
+       "rulerLon": 265.0,
+       "rulerSeId": 6
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      5,
+      4,
+      0
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "F",
+       "rulerLon": 275.0,
+       "rulerSeId": 5
+      },
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 285.0,
+       "rulerSeId": 4
+      },
+      {
+       "rulerGlyph": "A",
+       "rulerLon": 295.0,
+       "rulerSeId": 0
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      3,
+      2,
+      1
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "D",
+       "rulerLon": 305.0,
+       "rulerSeId": 3
+      },
+      {
+       "rulerGlyph": "C",
+       "rulerLon": 315.0,
+       "rulerSeId": 2
+      },
+      {
+       "rulerGlyph": "B",
+       "rulerLon": 325.0,
+       "rulerSeId": 1
+      }
+     ]
+    },
+    {
+     "rulerSeIds": [
+      6,
+      5,
+      4
+     ],
+     "rulers": [
+      {
+       "rulerGlyph": "G",
+       "rulerLon": 335.0,
+       "rulerSeId": 6
+      },
+      {
+       "rulerGlyph": "F",
+       "rulerLon": 345.0,
+       "rulerSeId": 5
+      },
+      {
+       "rulerGlyph": "E",
+       "rulerLon": 355.0,
+       "rulerSeId": 4
+      }
+     ]
+    }
+   ],
+   "houseLinesAvailable": true,
+   "multiwheelShowAngleLabels": true,
+   "multiwheelShowMinutes": true,
+   "multiwheelShowPositions": true,
+   "multiwheelSignColors": [
+    "rgb(214,82,60)",
+    "rgb(118,146,74)",
+    "rgb(88,138,214)",
+    "rgb(68,164,172)",
+    "rgb(214,82,60)",
+    "rgb(118,146,74)",
+    "rgb(88,138,214)",
+    "rgb(68,164,172)",
+    "rgb(214,82,60)",
+    "rgb(118,146,74)",
+    "rgb(88,138,214)",
+    "rgb(68,164,172)"
+   ],
+   "multiwheelUseSignColors": false,
+   "pluto": 3,
+   "selectedDecanSet": 0,
+   "selectedTermSet": 0,
+   "showAngleArrowheads": true,
+   "showAspects": true,
+   "showAspectsToVertex": false,
+   "showCusplessAscMcLabels": true,
+   "showDecans": false,
+   "showDignityGlyphs": false,
+   "showFaceGlyphs": false,
+   "showFixstarsToHcs": false,
+   "showFixstarsToLoF": false,
+   "showHouseSystem": true,
+   "showHouses": true,
+   "showInformation": true,
+   "showLoF": true,
+   "showMinorAspects": false,
+   "showOuterHouseLines": true,
+   "showOuterMinutes": true,
+   "showOuterPositions": false,
+   "showPositionMinutes": true,
+   "showPositions": true,
+   "showPrenatalEclipse": true,
+   "showPrenatalSyzygy": true,
+   "showRadixNameInCanvas": false,
+   "showSymbols": true,
+   "showTermGlyphs": false,
+   "showTerms": true,
+   "showVertex": true,
+   "signColors": [
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)",
+    "rgb(215,215,217)"
+   ],
+   "signVariant": 1,
+   "terms": [
+    [
+     {
+      "boundaryLon": 6.0,
+      "rulerGlyph": "F",
+      "rulerLon": 3.0,
+      "rulerSeId": 5,
+      "size": 6
+     },
+     {
+      "boundaryLon": 12.0,
+      "rulerGlyph": "D",
+      "rulerLon": 9.0,
+      "rulerSeId": 3,
+      "size": 6
+     },
+     {
+      "boundaryLon": 20.0,
+      "rulerGlyph": "C",
+      "rulerLon": 16.0,
+      "rulerSeId": 2,
+      "size": 8
+     },
+     {
+      "boundaryLon": 25.0,
+      "rulerGlyph": "E",
+      "rulerLon": 22.5,
+      "rulerSeId": 4,
+      "size": 5
+     },
+     {
+      "boundaryLon": 30.0,
+      "rulerGlyph": "G",
+      "rulerLon": 27.5,
+      "rulerSeId": 6,
+      "size": 5
+     }
+    ],
+    [
+     {
+      "boundaryLon": 38.0,
+      "rulerGlyph": "D",
+      "rulerLon": 34.0,
+      "rulerSeId": 3,
+      "size": 8
+     },
+     {
+      "boundaryLon": 44.0,
+      "rulerGlyph": "C",
+      "rulerLon": 41.0,
+      "rulerSeId": 2,
+      "size": 6
+     },
+     {
+      "boundaryLon": 52.0,
+      "rulerGlyph": "F",
+      "rulerLon": 48.0,
+      "rulerSeId": 5,
+      "size": 8
+     },
+     {
+      "boundaryLon": 57.0,
+      "rulerGlyph": "G",
+      "rulerLon": 54.5,
+      "rulerSeId": 6,
+      "size": 5
+     },
+     {
+      "boundaryLon": 60.0,
+      "rulerGlyph": "E",
+      "rulerLon": 58.5,
+      "rulerSeId": 4,
+      "size": 3
+     }
+    ],
+    [
+     {
+      "boundaryLon": 66.0,
+      "rulerGlyph": "C",
+      "rulerLon": 63.0,
+      "rulerSeId": 2,
+      "size": 6
+     },
+     {
+      "boundaryLon": 72.0,
+      "rulerGlyph": "F",
+      "rulerLon": 69.0,
+      "rulerSeId": 5,
+      "size": 6
+     },
+     {
+      "boundaryLon": 77.0,
+      "rulerGlyph": "D",
+      "rulerLon": 74.5,
+      "rulerSeId": 3,
+      "size": 5
+     },
+     {
+      "boundaryLon": 84.0,
+      "rulerGlyph": "E",
+      "rulerLon": 80.5,
+      "rulerSeId": 4,
+      "size": 7
+     },
+     {
+      "boundaryLon": 90.0,
+      "rulerGlyph": "G",
+      "rulerLon": 87.0,
+      "rulerSeId": 6,
+      "size": 6
+     }
+    ],
+    [
+     {
+      "boundaryLon": 97.0,
+      "rulerGlyph": "E",
+      "rulerLon": 93.5,
+      "rulerSeId": 4,
+      "size": 7
+     },
+     {
+      "boundaryLon": 103.0,
+      "rulerGlyph": "D",
+      "rulerLon": 100.0,
+      "rulerSeId": 3,
+      "size": 6
+     },
+     {
+      "boundaryLon": 109.0,
+      "rulerGlyph": "C",
+      "rulerLon": 106.0,
+      "rulerSeId": 2,
+      "size": 6
+     },
+     {
+      "boundaryLon": 116.0,
+      "rulerGlyph": "F",
+      "rulerLon": 112.5,
+      "rulerSeId": 5,
+      "size": 7
+     },
+     {
+      "boundaryLon": 120.0,
+      "rulerGlyph": "G",
+      "rulerLon": 118.0,
+      "rulerSeId": 6,
+      "size": 4
+     }
+    ],
+    [
+     {
+      "boundaryLon": 126.0,
+      "rulerGlyph": "F",
+      "rulerLon": 123.0,
+      "rulerSeId": 5,
+      "size": 6
+     },
+     {
+      "boundaryLon": 131.0,
+      "rulerGlyph": "D",
+      "rulerLon": 128.5,
+      "rulerSeId": 3,
+      "size": 5
+     },
+     {
+      "boundaryLon": 138.0,
+      "rulerGlyph": "G",
+      "rulerLon": 134.5,
+      "rulerSeId": 6,
+      "size": 7
+     },
+     {
+      "boundaryLon": 144.0,
+      "rulerGlyph": "C",
+      "rulerLon": 141.0,
+      "rulerSeId": 2,
+      "size": 6
+     },
+     {
+      "boundaryLon": 150.0,
+      "rulerGlyph": "E",
+      "rulerLon": 147.0,
+      "rulerSeId": 4,
+      "size": 6
+     }
+    ],
+    [
+     {
+      "boundaryLon": 157.0,
+      "rulerGlyph": "C",
+      "rulerLon": 153.5,
+      "rulerSeId": 2,
+      "size": 7
+     },
+     {
+      "boundaryLon": 167.0,
+      "rulerGlyph": "D",
+      "rulerLon": 162.0,
+      "rulerSeId": 3,
+      "size": 10
+     },
+     {
+      "boundaryLon": 171.0,
+      "rulerGlyph": "F",
+      "rulerLon": 169.0,
+      "rulerSeId": 5,
+      "size": 4
+     },
+     {
+      "boundaryLon": 178.0,
+      "rulerGlyph": "E",
+      "rulerLon": 174.5,
+      "rulerSeId": 4,
+      "size": 7
+     },
+     {
+      "boundaryLon": 180.0,
+      "rulerGlyph": "G",
+      "rulerLon": 179.0,
+      "rulerSeId": 6,
+      "size": 2
+     }
+    ],
+    [
+     {
+      "boundaryLon": 186.0,
+      "rulerGlyph": "G",
+      "rulerLon": 183.0,
+      "rulerSeId": 6,
+      "size": 6
+     },
+     {
+      "boundaryLon": 194.0,
+      "rulerGlyph": "C",
+      "rulerLon": 190.0,
+      "rulerSeId": 2,
+      "size": 8
+     },
+     {
+      "boundaryLon": 201.0,
+      "rulerGlyph": "F",
+      "rulerLon": 197.5,
+      "rulerSeId": 5,
+      "size": 7
+     },
+     {
+      "boundaryLon": 208.0,
+      "rulerGlyph": "D",
+      "rulerLon": 204.5,
+      "rulerSeId": 3,
+      "size": 7
+     },
+     {
+      "boundaryLon": 210.0,
+      "rulerGlyph": "E",
+      "rulerLon": 209.0,
+      "rulerSeId": 4,
+      "size": 2
+     }
+    ],
+    [
+     {
+      "boundaryLon": 217.0,
+      "rulerGlyph": "E",
+      "rulerLon": 213.5,
+      "rulerSeId": 4,
+      "size": 7
+     },
+     {
+      "boundaryLon": 221.0,
+      "rulerGlyph": "D",
+      "rulerLon": 219.0,
+      "rulerSeId": 3,
+      "size": 4
+     },
+     {
+      "boundaryLon": 229.0,
+      "rulerGlyph": "C",
+      "rulerLon": 225.0,
+      "rulerSeId": 2,
+      "size": 8
+     },
+     {
+      "boundaryLon": 234.0,
+      "rulerGlyph": "F",
+      "rulerLon": 231.5,
+      "rulerSeId": 5,
+      "size": 5
+     },
+     {
+      "boundaryLon": 240.0,
+      "rulerGlyph": "G",
+      "rulerLon": 237.0,
+      "rulerSeId": 6,
+      "size": 6
+     }
+    ],
+    [
+     {
+      "boundaryLon": 252.0,
+      "rulerGlyph": "F",
+      "rulerLon": 246.0,
+      "rulerSeId": 5,
+      "size": 12
+     },
+     {
+      "boundaryLon": 257.0,
+      "rulerGlyph": "D",
+      "rulerLon": 254.5,
+      "rulerSeId": 3,
+      "size": 5
+     },
+     {
+      "boundaryLon": 261.0,
+      "rulerGlyph": "C",
+      "rulerLon": 259.0,
+      "rulerSeId": 2,
+      "size": 4
+     },
+     {
+      "boundaryLon": 266.0,
+      "rulerGlyph": "G",
+      "rulerLon": 263.5,
+      "rulerSeId": 6,
+      "size": 5
+     },
+     {
+      "boundaryLon": 270.0,
+      "rulerGlyph": "E",
+      "rulerLon": 268.0,
+      "rulerSeId": 4,
+      "size": 4
+     }
+    ],
+    [
+     {
+      "boundaryLon": 277.0,
+      "rulerGlyph": "C",
+      "rulerLon": 273.5,
+      "rulerSeId": 2,
+      "size": 7
+     },
+     {
+      "boundaryLon": 284.0,
+      "rulerGlyph": "F",
+      "rulerLon": 280.5,
+      "rulerSeId": 5,
+      "size": 7
+     },
+     {
+      "boundaryLon": 292.0,
+      "rulerGlyph": "D",
+      "rulerLon": 288.0,
+      "rulerSeId": 3,
+      "size": 8
+     },
+     {
+      "boundaryLon": 296.0,
+      "rulerGlyph": "G",
+      "rulerLon": 294.0,
+      "rulerSeId": 6,
+      "size": 4
+     },
+     {
+      "boundaryLon": 300.0,
+      "rulerGlyph": "E",
+      "rulerLon": 298.0,
+      "rulerSeId": 4,
+      "size": 4
+     }
+    ],
+    [
+     {
+      "boundaryLon": 307.0,
+      "rulerGlyph": "C",
+      "rulerLon": 303.5,
+      "rulerSeId": 2,
+      "size": 7
+     },
+     {
+      "boundaryLon": 313.0,
+      "rulerGlyph": "D",
+      "rulerLon": 310.0,
+      "rulerSeId": 3,
+      "size": 6
+     },
+     {
+      "boundaryLon": 320.0,
+      "rulerGlyph": "F",
+      "rulerLon": 316.5,
+      "rulerSeId": 5,
+      "size": 7
+     },
+     {
+      "boundaryLon": 325.0,
+      "rulerGlyph": "E",
+      "rulerLon": 322.5,
+      "rulerSeId": 4,
+      "size": 5
+     },
+     {
+      "boundaryLon": 330.0,
+      "rulerGlyph": "G",
+      "rulerLon": 327.5,
+      "rulerSeId": 6,
+      "size": 5
+     }
+    ],
+    [
+     {
+      "boundaryLon": 342.0,
+      "rulerGlyph": "D",
+      "rulerLon": 336.0,
+      "rulerSeId": 3,
+      "size": 12
+     },
+     {
+      "boundaryLon": 346.0,
+      "rulerGlyph": "F",
+      "rulerLon": 344.0,
+      "rulerSeId": 5,
+      "size": 4
+     },
+     {
+      "boundaryLon": 349.0,
+      "rulerGlyph": "C",
+      "rulerLon": 347.5,
+      "rulerSeId": 2,
+      "size": 3
+     },
+     {
+      "boundaryLon": 358.0,
+      "rulerGlyph": "E",
+      "rulerLon": 353.5,
+      "rulerSeId": 4,
+      "size": 9
+     },
+     {
+      "boundaryLon": 360.0,
+      "rulerGlyph": "G",
+      "rulerLon": 359.0,
+      "rulerSeId": 6,
+      "size": 2
+     }
+    ]
+   ],
+   "theme": 0,
+   "uranus": true,
+   "useDignityColors": false,
+   "usePlanetColorsForSubdivisions": true,
+   "useZodiacElementColors": false,
+   "useZodiacElementFieldColors": false,
+   "wheelComposition": {
+    "customized": false,
+    "projection": "zodiac",
+    "rings": [
+     {
+      "archetypeId": "outerHouses",
+      "chartRole": "outer",
+      "enabled": true,
+      "instanceId": "classic-outerHouses"
+     },
+     {
+      "archetypeId": "outerBodies",
+      "chartRole": "outer",
+      "enabled": true,
+      "instanceId": "classic-outerBodies"
+     },
+     {
+      "archetypeId": "zodiac",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-zodiac"
+     },
+     {
+      "archetypeId": "degree",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-degree"
+     },
+     {
+      "archetypeId": "terms",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-terms"
+     },
+     {
+      "archetypeId": "decans",
+      "chartRole": "primary",
+      "enabled": false,
+      "instanceId": "classic-decans"
+     },
+     {
+      "archetypeId": "bodies",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-bodies"
+     },
+     {
+      "archetypeId": "aspects",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-aspects"
+     },
+     {
+      "archetypeId": "houses",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-houses"
+     },
+     {
+      "archetypeId": "hub",
+      "chartRole": "primary",
+      "enabled": true,
+      "instanceId": "classic-hub"
+     }
+    ],
+    "schemaVersion": 1
+   },
+   "wheelGeometryPresets": {},
+   "zodiacElementFieldOpacity": 0.2
+  },
+  "overlay": {
+   "deferredSignals": false,
+   "rows": [
+    {
+     "glyphs": [
+      {
+       "char": "C",
+       "color": "rgb(205,205,209)",
+       "kind": "planet",
+       "seId": 2
+      }
+     ],
+     "group": "dayhour",
+     "label": "Day",
+     "slot": "planetary-day"
+    },
+    {
+     "glyphs": [
+      {
+       "char": "G",
+       "color": "rgb(205,205,209)",
+       "kind": "planet",
+       "seId": 6
+      }
+     ],
+     "group": "dayhour",
+     "label": "Hour",
+     "slot": "planetary-hour"
+    },
+    {
+     "glyphs": [
+      {
+       "char": "f",
+       "kind": "sign"
+      },
+      {
+       "char": "C",
+       "color": "rgb(205,205,209)",
+       "kind": "planet",
+       "seId": 2
+      }
+     ],
+     "group": "header",
+     "label": "Term Lord",
+     "slot": "term-lord"
+    },
+    {
+     "glyphs": [
+      {
+       "char": "l",
+       "kind": "sign"
+      },
+      {
+       "char": "F",
+       "color": "rgb(2,191,2)",
+       "kind": "planet",
+       "seId": 5
+      }
+     ],
+     "group": "header",
+     "label": "Lord of the year",
+     "slot": "lord-of-year"
+    },
+    {
+     "glyphs": [
+      {
+       "char": "F",
+       "color": "rgb(2,191,2)",
+       "kind": "planet",
+       "seId": 5
+      }
+     ],
+     "group": "signal",
+     "label": "Cazimi",
+     "slot": "signal",
+     "trailing": "+0.6d"
+    }
+   ]
+  },
+  "palette": {
+   "angles": "rgb(205,205,209)",
+   "aspects": [
+    "rgb(246,0,206)",
+    "rgb(40,232,232)",
+    "rgb(246,0,206)",
+    "rgb(34,255,154)",
+    "rgb(255,242,0)",
+    "rgb(246,0,206)",
+    "rgb(34,255,154)",
+    "rgb(246,0,206)",
+    "rgb(255,122,0)",
+    "rgb(0,0,251)",
+    "rgb(246,0,206)",
+    "rgb(138,43,226)"
+   ],
+   "background": "rgb(35,36,40)",
+   "casus": "rgb(205,92,92)",
+   "domicil": "rgb(2,191,2)",
+   "exal": "rgb(255,215,0)",
+   "exil": "rgb(255,0,0)",
+   "fortune": "rgb(215,215,217)",
+   "frame": "rgb(220,220,221)",
+   "houseNums": "rgb(59,59,60)",
+   "houses": "rgb(138,139,141)",
+   "minorDignities": [
+    "rgb(205,205,209)",
+    "rgb(205,205,209)",
+    "rgb(205,205,209)"
+   ],
+   "peregrin": "rgb(205,205,209)",
+   "planets": [
+    "rgb(255,215,0)",
+    "rgb(0,191,255)",
+    "rgb(138,43,226)",
+    "rgb(0,128,0)",
+    "rgb(178,34,34)",
+    "rgb(0,0,255)",
+    "rgb(0,0,0)",
+    "rgb(0,0,128)",
+    "rgb(0,0,128)",
+    "rgb(0,0,128)",
+    "rgb(139,54,38)",
+    "rgb(205,96,144)",
+    "rgb(128,0,128)"
+   ],
+   "positions": "rgb(255,255,255)",
+   "signs": "rgb(215,215,217)",
+   "surveilAccent": "rgb(229,146,70)",
+   "textBright": "rgb(255,255,255)",
+   "textDim": "rgb(255,255,255)"
+  },
+  "planets": [
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "4",
+    "dignity": "peregrin",
+    "glyph": "A",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "sun",
+    "latitude": 0.00014358991512981734,
+    "longitude": 334.1971897204197,
+    "minText": "11",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 0,
+    "speed": 1.0039509136668643
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "16",
+    "dignity": "peregrin",
+    "glyph": "B",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "moon",
+    "latitude": 4.942342394425368,
+    "longitude": 346.7987187866637,
+    "minText": "47",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 1,
+    "speed": 14.387800325534446
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "27",
+    "dignity": "peregrin",
+    "glyph": "C",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 11,
+    "id": "mercury",
+    "latitude": -2.078565446611429,
+    "longitude": 327.97482083138533,
+    "minText": "58",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 2,
+    "speed": 1.7968215623971628
+   },
+   {
+    "color": "rgb(255,215,0)",
+    "degText": "0",
+    "dignity": "exal",
+    "glyph": "D",
+    "hasFaceDignity": false,
+    "hasTermDignity": true,
+    "house": 11,
+    "id": "venus",
+    "latitude": -1.3799193446576195,
+    "longitude": 330.91169602233094,
+    "minText": "54",
+    "minorDignityCount": 2,
+    "motion": "",
+    "primaryTriplicityElement": "water",
+    "seId": 3,
+    "speed": 1.2496847748258237
+   },
+   {
+    "color": "rgb(205,92,92)",
+    "degText": "8",
+    "dignity": "casus",
+    "glyph": "E",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 3,
+    "id": "mars",
+    "latitude": 3.4341322959302736,
+    "longitude": 98.1244422734483,
+    "minText": "07",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 4,
+    "speed": 0.0919590209786267
+   },
+   {
+    "color": "rgb(2,191,2)",
+    "degText": "4",
+    "dignity": "domicil",
+    "glyph": "F",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "jupiter",
+    "latitude": -0.9439937632346278,
+    "longitude": 334.69188493729297,
+    "minText": "41",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 5,
+    "speed": 0.24182892931548378
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "12",
+    "dignity": "peregrin",
+    "glyph": "G",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "saturn",
+    "latitude": -1.8215057995498238,
+    "longitude": 342.3685434663578,
+    "minText": "22",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 6,
+    "speed": 0.12216449925592111
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "23",
+    "dignity": "peregrin",
+    "glyph": "H",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 11,
+    "id": "uranus",
+    "latitude": -0.6969783528070783,
+    "longitude": 323.78261625850604,
+    "minText": "46",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 7,
+    "speed": 0.05705895512650707
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "17",
+    "dignity": "peregrin",
+    "glyph": "I",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 4,
+    "id": "neptune",
+    "latitude": -0.5712620675121902,
+    "longitude": 107.8724754640062,
+    "minText": "52",
+    "minorDignityCount": 0,
+    "motion": "R",
+    "primaryTriplicityElement": null,
+    "seId": 8,
+    "speed": -0.017738808698009367
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "4",
+    "dignity": "peregrin",
+    "glyph": "9",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "pluto",
+    "latitude": -16.648618068389982,
+    "longitude": 4.678551791682594,
+    "minText": "40",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 9,
+    "speed": 0.021387663347098126
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "28",
+    "dignity": "peregrin",
+    "glyph": "K",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 9,
+    "id": "nnode",
+    "latitude": 0.0,
+    "longitude": 268.3556045744914,
+    "minText": "21",
+    "minorDignityCount": 0,
+    "motion": "R",
+    "primaryTriplicityElement": null,
+    "seId": 10,
+    "speed": -0.18244673657871438
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "28",
+    "dignity": "peregrin",
+    "glyph": "L",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 3,
+    "id": "snode",
+    "latitude": 0.0,
+    "longitude": 88.3556045744914,
+    "minText": "21",
+    "minorDignityCount": 0,
+    "motion": "R",
+    "primaryTriplicityElement": null,
+    "seId": 11,
+    "speed": -0.18244673657871438
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "11",
+    "dignity": "peregrin",
+    "glyph": "}",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 12,
+    "id": "chiron",
+    "latitude": 1.4102866042786295,
+    "longitude": 11.85918055721998,
+    "minText": "51",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 15,
+    "speed": 0.05181620694702156
+   },
+   {
+    "color": "rgb(205,205,209)",
+    "degText": "11",
+    "dignity": "peregrin",
+    "glyph": "⚸",
+    "hasFaceDignity": false,
+    "hasTermDignity": false,
+    "house": 7,
+    "id": "apogee",
+    "latitude": -3.687593696906652,
+    "longitude": 221.759202231984,
+    "minText": "45",
+    "minorDignityCount": 0,
+    "motion": "",
+    "primaryTriplicityElement": null,
+    "seId": 12,
+    "speed": 0.11138658162763004
+   }
+  ],
+  "syzygy": {
+   "color": "rgb(215,215,217)",
+   "degText": "3",
+   "glyph": "Sy",
+   "glyphFont": "text",
+   "house": 12,
+   "id": "syzygy",
+   "label": "Syzygy · 22.02.1583",
+   "longitude": 333.24372439847645,
+   "minText": "14"
+  },
+  "vertex": {
+   "color": "rgb(205,205,209)",
+   "degText": "10",
+   "glyph": "!",
+   "house": 6,
+   "id": "vertex",
+   "longitude": 190.9804173245277,
+   "minText": "58",
+   "seId": 16
+  }
+ },
+ "radixChart": null,
+ "renderInvalidation": {
+  "deferredOuterLabel": false,
+  "dynamic": true,
+  "geometry": true,
+  "outerLabel": true
+ },
+ "renderVariant": "round-classic",
+ "ringCount": 1,
+ "rings": []
+}

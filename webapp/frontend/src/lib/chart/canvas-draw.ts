@@ -14,13 +14,49 @@
  *   draw.textsize("A", { font: "AriesMorinus", size: 32 }) -> [w, h]
  */
 
-import { DEFAULT_MORINUS_TEXT_FONT } from "./chart-fonts";
+import { bundledGlyphInkBounds, DEFAULT_MORINUS_TEXT_FONT } from "./chart-fonts";
 import type { WheelFrame } from "./wheel-projection";
 
 type Pt = [number, number];
 
+export type TextMarker = Readonly<{
+  text: string; font: string; size: number; color: string;
+  weight?: number;
+  strokeWidth?: number;
+  bounds: { x: number; y: number; w: number; h: number };
+}>;
+
+export function paintTextMarker(ctx: CanvasRenderingContext2D, marker: TextMarker | undefined) {
+  if (!marker) return;
+  ctx.save();
+  ctx.font = `normal ${marker.weight ?? 400} ${Math.max(1, Math.round(marker.size))}px ${marker.font}`;
+  ctx.fillStyle = marker.color;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  const ink = bundledGlyphInkBounds(marker.text, marker.font, marker.size, marker.weight);
+  const metrics = ink ? undefined : ctx.measureText(marker.text);
+  const ascent = ink ? -ink.y : metrics!.actualBoundingBoxAscent;
+  ctx.textBaseline = Number.isFinite(ascent) ? "alphabetic" : "top";
+  const pad = (marker.strokeWidth ?? 0) / 2;
+  // Bounds describe the painted ink, including stroke. Resnapping the font
+  // origin here can move a tiny superscript across a collision boundary.
+  const x = marker.bounds.x + pad + (ink ? -ink.x : metrics!.actualBoundingBoxLeft || 0);
+  const y = marker.bounds.y + pad + (Number.isFinite(ascent) ? ascent : 0);
+  if (marker.strokeWidth) {
+    ctx.strokeStyle = marker.color;
+    ctx.lineWidth = marker.strokeWidth;
+    ctx.lineJoin = "round";
+    ctx.strokeText(marker.text, x, y);
+  }
+  ctx.fillText(marker.text, x, y);
+  ctx.restore();
+}
+
 export interface TextOpts {
   fill?: string;
+  outline?: string;
+  outlineWidth?: number;
+  outlineOpacity?: number;
   font?: string;
   size?: number; // px
   weight?: string | number;
@@ -29,6 +65,7 @@ export interface TextOpts {
   opacity?: number;
   align?: CanvasTextAlign;
   baseline?: CanvasTextBaseline;
+  markers?: readonly TextMarker[];
 }
 
 export interface LineOpts {
@@ -61,13 +98,32 @@ type CachedTextMetrics = {
 const textMetricsCache = new Map<string, CachedTextMetrics>();
 export type TextInkBounds = Readonly<{ x: number; y: number; w: number; h: number }>;
 const textInkBoundsCache = new Map<string, TextInkBounds>();
+const textInkContourCache = new Map<string, InkContour>();
+let inkContourCanvas: HTMLCanvasElement | undefined;
 
 export type CanvasDrawProfile = Record<string, { calls: number; ms: number }>;
+
+/** One tile of a drawing larger than a canvas may be: the canvas holds
+ * `width` x `height` device pixels and the drawing's device origin sits at
+ * (`x`, `y`) in it (integers; negative for a tile right of or below the
+ * origin). Prints and posters paint each tile with the same renderer call. */
+export type CanvasDeviceFrame = Readonly<{ x: number; y: number; width: number; height: number }>;
+
+const deviceFrames = new WeakMap<HTMLCanvasElement, CanvasDeviceFrame>();
+
+/** Make every `CanvasDraw.resize` on `canvas` paint the tile `frame` (null: the whole drawing). */
+export function setCanvasDeviceFrame(canvas: HTMLCanvasElement, frame: CanvasDeviceFrame | null) {
+  if (frame) deviceFrames.set(canvas, frame);
+  else deviceFrames.delete(canvas);
+}
 
 export class CanvasDraw {
   readonly ctx: CanvasRenderingContext2D;
   readonly canvas: HTMLCanvasElement;
   private dpr = 1;
+  // Text and stroke snapping grid, in pixels per CSS px: the CSS pixel on
+  // screen, the device pixel in a framed (print) tile.
+  private snapScale = 1;
   private defaultFont = DEFAULT_MORINUS_TEXT_FONT;
   private profile: CanvasDrawProfile | null = null;
 
@@ -97,7 +153,7 @@ export class CanvasDraw {
   }
 
   private snap(value: number): number {
-    return Math.round(value);
+    return Math.round(value * this.snapScale) / this.snapScale;
   }
 
   constructor(canvas: HTMLCanvasElement) {
@@ -114,8 +170,10 @@ export class CanvasDraw {
 
   resize(cssWidth: number, cssHeight: number, dprOverride?: number) {
     this.dpr = Math.max(1, dprOverride ?? (window.devicePixelRatio || 1));
-    const backingWidth = Math.round(cssWidth * this.dpr);
-    const backingHeight = Math.round(cssHeight * this.dpr);
+    const frame = deviceFrames.get(this.canvas);
+    this.snapScale = frame ? this.dpr : 1;
+    const backingWidth = frame?.width ?? Math.round(cssWidth * this.dpr);
+    const backingHeight = frame?.height ?? Math.round(cssHeight * this.dpr);
     if (this.canvas.width !== backingWidth) {
       this.canvas.width = backingWidth;
     }
@@ -130,7 +188,7 @@ export class CanvasDraw {
     if (this.canvas.style.height !== styleHeight) {
       this.canvas.style.height = styleHeight;
     }
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, frame?.x ?? 0, frame?.y ?? 0);
   }
 
   clear() {
@@ -144,8 +202,9 @@ export class CanvasDraw {
   fillBackground(color: string) {
     const { ctx } = this;
     ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = color;
-    ctx.fillRect(0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.restore();
   }
 
@@ -177,12 +236,24 @@ export class CanvasDraw {
     const tracking = Number.isFinite(opts?.tracking)
       ? Number(opts?.tracking)
       : 0;
+    const paintText = (value: string, x: number, y: number) => {
+      if (opts?.outline && (opts.outlineWidth ?? 0) > 0) {
+        ctx.save();
+        ctx.strokeStyle = opts.outline;
+        ctx.lineWidth = opts.outlineWidth!;
+        ctx.lineJoin = "round";
+        ctx.globalAlpha *= opts.outlineOpacity ?? 1;
+        ctx.strokeText(value, x, y);
+        ctx.restore();
+      }
+      ctx.fillText(value, x, y);
+    };
     if (tracking === 0) {
-      ctx.fillText(text, this.snap(xy[0]), this.snap(xy[1]));
+      paintText(text, this.snap(xy[0]), this.snap(xy[1]));
     } else {
       const glyphs = Array.from(text);
       if (glyphs.length < 2) {
-        ctx.fillText(text, this.snap(xy[0]), this.snap(xy[1]));
+        paintText(text, this.snap(xy[0]), this.snap(xy[1]));
       } else {
         const widths = glyphs.map((glyph) => ctx.measureText(glyph).width);
         const totalWidth = widths.reduce((sum, width) => sum + width, 0)
@@ -194,11 +265,12 @@ export class CanvasDraw {
         }
         ctx.textAlign = "left";
         for (let index = 0; index < glyphs.length; index += 1) {
-          ctx.fillText(glyphs[index], this.snap(cursor), this.snap(xy[1]));
+          paintText(glyphs[index], this.snap(cursor), this.snap(xy[1]));
           cursor += widths[index] + tracking;
         }
       }
     }
+    opts?.markers?.forEach(marker => paintTextMarker(ctx, marker));
     ctx.restore();
   }
 
@@ -253,21 +325,26 @@ export class CanvasDraw {
     const font = this.fontSpec(opts);
     const baseline = opts?.baseline ?? "top";
     const tracking = opts?.tracking ?? 0;
-    const key = JSON.stringify([font, baseline, tracking, text]);
+    const align = opts?.align ?? "left";
+    const key = JSON.stringify([font, baseline, align, tracking, text]);
     const cached = textInkBoundsCache.get(key);
     if (cached) return cached;
     const { ctx } = this;
     ctx.save();
     ctx.font = font;
-    ctx.textAlign = "left";
+    ctx.textAlign = align;
     ctx.textBaseline = baseline;
     const metrics = ctx.measureText(text);
+    const ink = bundledGlyphInkBounds(text, opts?.font ?? this.defaultFont,
+      opts?.size ?? 14, opts?.weight, opts?.style);
+    const alignmentOffset = align === "center" ? metrics.width / 2
+      : align === "right" || align === "end" ? metrics.width : 0;
     const bounds = {
-      x: -metrics.actualBoundingBoxLeft,
-      y: -metrics.actualBoundingBoxAscent,
-      w: metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight
+      x: ink ? ink.x - alignmentOffset : -metrics.actualBoundingBoxLeft,
+      y: ink && baseline === "alphabetic" ? ink.y : -metrics.actualBoundingBoxAscent,
+      w: ink?.w ?? metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight
         + Math.max(0, Array.from(text).length - 1) * tracking,
-      h: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+      h: ink?.h ?? metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
     };
     ctx.restore();
     if (textInkBoundsCache.size >= TEXT_SIZE_CACHE_LIMIT) textInkBoundsCache.clear();
@@ -293,6 +370,46 @@ export class CanvasDraw {
       ...opts,
       baseline: "alphabetic",
     });
+  }
+
+  /** Cached visible outline for optical spacing, relative to the ink box.
+   * This scratch measurement never reads or changes a painted chart layer. */
+  textcontour(text: string, opts?: TextOpts): InkContour {
+    const key = JSON.stringify([this.fontSpec(opts), opts?.tracking ?? 0, text]);
+    const cached = textInkContourCache.get(key);
+    if (cached) return cached;
+    const ink = this.textbounds(text, {...opts, align: "left", baseline: "alphabetic"});
+    inkContourCanvas ??= document.createElement("canvas");
+    const canvas = inkContourCanvas, pad = 2;
+    canvas.width = Math.max(1, Math.ceil(ink.w) + pad * 2);
+    canvas.height = Math.max(1, Math.ceil(ink.h) + pad * 2);
+    const ctx = canvas.getContext("2d", {willReadFrequently: true})!;
+    ctx.font = this.fontSpec(opts);
+    ctx.fillStyle = "#fff";
+    ctx.textBaseline = "alphabetic";
+    let x = pad - ink.x;
+    if (opts?.tracking) {
+      for (const char of Array.from(text)) {
+        ctx.fillText(char, x, pad - ink.y);
+        x += ctx.measureText(char).width + opts.tracking;
+      }
+    } else ctx.fillText(text, x, pad - ink.y);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const points: InkPoint[] = [];
+    for (let y = 0; y < canvas.height; y++) {
+      let left = canvas.width, right = -1;
+      for (let x = 0; x < canvas.width; x++) {
+        if (pixels[(y * canvas.width + x) * 4 + 3] < 32) continue;
+        left = Math.min(left, x); right = x;
+      }
+      if (right < left) continue;
+      points.push([left - pad, y - pad], [right + 1 - pad, y - pad],
+        [left - pad, y + 1 - pad], [right + 1 - pad, y + 1 - pad]);
+    }
+    const contour = convexInkHull(points);
+    if (textInkContourCache.size >= TEXT_SIZE_CACHE_LIMIT) textInkContourCache.clear();
+    textInkContourCache.set(key, contour);
+    return contour;
   }
 
   line(xy: [Pt, Pt, ...Pt[]], opts?: LineOpts) {
@@ -384,3 +501,4 @@ export function polar(
     center[1] - Math.sin(astro) * radius,
   ];
 }
+import { convexInkHull, type InkContour, type InkPoint } from "./text-ink-gap";

@@ -20,9 +20,8 @@ hands that to the adapter. So these objects emit a ``StepPlan`` describing the
 mutation; the caller (wx ``_on_step`` / daemon ``_step_binding``) applies it and
 rebuilds through the one adapter path. No second deriver.
 
-Keycodes are plain integers equal to ``wx.WXK_LEFT/RIGHT/UP/DOWN`` (314/316/
-315/317) so this module never imports wx; ``chart_session._KEYS`` already pins
-the same integers (chart_session.py:51-54).
+Keycodes use the shared shortcut-registry integers (314/316/315/317),
+preserving the historical keyboard contract without importing a GUI toolkit.
 """
 from __future__ import annotations
 
@@ -32,14 +31,14 @@ from typing import Any, Optional
 
 import chart
 import profectiontiming
+from shortcut_registry import NAVIGATION_KEYCODES
 
 
-# wx.WXK_* integer equivalents (chart_session.py:51-54). Kept as bare ints so
-# this module stays wx-free and importable in the daemon.
-KEY_LEFT = 314
-KEY_RIGHT = 316
-KEY_UP = 315
-KEY_DOWN = 317
+# Session, daemon and stepper commands share the same stable arrow IDs.
+KEY_LEFT = NAVIGATION_KEYCODES['left']
+KEY_RIGHT = NAVIGATION_KEYCODES['right']
+KEY_UP = NAVIGATION_KEYCODES['up']
+KEY_DOWN = NAVIGATION_KEYCODES['down']
 
 
 # StepPlan.kind values:
@@ -319,9 +318,7 @@ def _radix_calflag(radix) -> int:
 #
 # Callers that fold a repeat count MUST consult this before doing so; callers
 # stepping a non-fold-safe unit must loop one transition at a time (see
-# SupplementaryStepper._step, workspace_service.py). Doctrine:
-# doc/policy-time-architecture.md T3a; per-intent table:
-# doc/temporal-capability-matrix.md.
+# SupplementaryStepper._step, workspace_service.py).
 FOLD_SAFE_UNITS = frozenset({"week", "day", "hour", "minute", "second"})
 
 

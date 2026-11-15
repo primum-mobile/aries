@@ -33,12 +33,13 @@ Aspects in this system:
 
   Conjunction  --  same quadrant, same MDO
   Opposition   --  opposite quadrants (1<->3, 2<->4), same MDO
-  Antiscia     --  adjacent quadrants (1<->2, 2<->3, 3<->4, 4<->1), same MDO
+  Antiscia     --  meridian reflection (1<->4, 2<->3), same MDO
+  Contra-antiscia -- opposite antiscion (1<->2, 3<->4), same MDO
 
 Orbs (Estadella ch. 13, with second-accurate rectification):
   Conjunction / opposition  --  25' of arc
   Antiscia                  --  10' of arc
-  Parallels (true decl)     --  2'  of arc
+  Parallels (true decl)     --  2' of arc, accompanying transit evidence only
 
 Time/arc equivalence: 1' MDO ≈ 4 seconds of time (since the RAMC advances
 1° in 4 minutes).
@@ -65,6 +66,7 @@ import math
 import collections
 
 import astrology
+import chart_bodies
 import chart as _chart
 import fortune
 import houses as _houses
@@ -99,6 +101,7 @@ _FAST_PLANETS = frozenset((
 CONJUNCTION = 'conjunction'
 OPPOSITION = 'opposition'
 ANTISCIA = 'antiscia'
+CONTRA_ANTISCIA = 'contra_antiscia'
 PARALLEL = 'parallel'
 CONTRAPARALLEL = 'contraparallel'
 
@@ -115,6 +118,9 @@ def _radix_planet_point_ids(chrt):
 	ids = list(range(planets.Planets.PLANETS_NUM - 2))
 	if _show_chiron(chrt):
 		ids.append(astrology.SE_CHIRON)
+	apogee = getattr(chrt, 'apogee', None)
+	if apogee is not None:
+		ids.append(apogee.pId)
 	return ids
 
 
@@ -122,12 +128,15 @@ def _transit_planet_point_ids(chrt):
 	ids = list(range(planets.Planets.PLANETS_NUM - 2))
 	if _show_chiron(chrt):
 		ids.append(astrology.SE_CHIRON)
+	apogee = getattr(chrt, 'apogee', None)
+	if apogee is not None:
+		ids.append(apogee.pId)
 	return ids
 
 
 def _radix_body(chrt, pid):
-	if pid == astrology.SE_CHIRON:
-		return getattr(chrt, 'chiron', None)
+	if pid == astrology.SE_CHIRON or pid in chart_bodies.APOGEE_IDS:
+		return chart_bodies.dynamic_body(chrt, pid)
 	try:
 		return chrt.planets.planets[pid]
 	except Exception:
@@ -150,6 +159,10 @@ def _radix_ecliptic_lons(chrt):
 				yield astrology.SE_CHIRON, body.data[planets.Planet.LONG]
 			except Exception:
 				pass
+
+	apogee = getattr(chrt, 'apogee', None)
+	if apogee is not None:
+		yield apogee.pId, apogee.data[planets.Planet.LONG]
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +327,7 @@ def _mdo_q_from_pmp(pmp):
 
 def _pmp_aspect(pmp_t, pmp_r, orb_conj, orb_antiscia):
 	"""Detect AT aspect between two PMPs and return (aspect, orb_arcmin)
-	or (None, None). Conjunction > Opposition > Antiscia in priority — at
+	or (None, None). Conjunction > Opposition > antiscion reflections — at
 	the angles (PMP 0/90/180/270) more than one condition can be satisfied
 	simultaneously, and the user expects the closer-knit aspect."""
 	# Conjunction
@@ -327,14 +340,14 @@ def _pmp_aspect(pmp_t, pmp_r, orb_conj, orb_antiscia):
 	od = abs(d - 180.0)
 	if od * 60.0 <= orb_conj:
 		return OPPOSITION, od * 60.0
-	# Antiscia: PMP_T + PMP_R ≡ 0 or 180 (mod 360). The smaller residual
-	# wins (mirror across whichever cardinal axis is closer).
+	# The antiscion reflects across MC/IC; its opposite reflects across
+	# ASC/DSC. Keep both geometries, but name them separately.
 	s_mod = (pmp_t + pmp_r) % 360.0
 	a1 = min(s_mod, 360.0 - s_mod)        # distance to 0 (Asc / Desc-mirror)
 	a2 = abs(s_mod - 180.0)               # distance to 180 (MC / IC-mirror)
 	a = min(a1, a2)
 	if a * 60.0 <= orb_antiscia:
-		return ANTISCIA, a * 60.0
+		return (ANTISCIA if a2 <= a1 else CONTRA_ANTISCIA), a * 60.0
 	return None, None
 
 
@@ -347,9 +360,10 @@ def _aspect_for(q_t, q_r):
 		return CONJUNCTION
 	if (q_t, q_r) in ((1, 3), (3, 1), (2, 4), (4, 2)):
 		return OPPOSITION
-	if (q_t, q_r) in ((1, 2), (2, 1), (2, 3), (3, 2),
-	                  (3, 4), (4, 3), (4, 1), (1, 4)):
+	if (q_t, q_r) in ((2, 3), (3, 2), (4, 1), (1, 4)):
 		return ANTISCIA
+	if (q_t, q_r) in ((1, 2), (2, 1), (3, 4), (4, 3)):
+		return CONTRA_ANTISCIA
 	return None
 
 
@@ -374,6 +388,20 @@ def _aspect_for(q_t, q_r):
 # moved slightly *less* than the precession suggests).
 
 _PRECESSION_ARCSEC_PER_YEAR = 50.290966  # IAU 2006
+# Annual precession by measure. 'ecliptic' is the general precession in
+# longitude used by Marr/Estadella (Prediction II: 52' at age 62). 'equatorial'
+# is precession in right ascension along the Equator, 46.1"/year, as Millard
+# states for his Fixed Elapsed Arc (Genetics of Astrology pp.26-27). Delta T is
+# applied identically under both measures.
+PRECESSION_MEASURES = {
+	'ecliptic': _PRECESSION_ARCSEC_PER_YEAR,
+	'equatorial': 46.1,
+}
+DEFAULT_PRECESSION_MEASURE = 'ecliptic'
+
+
+def precession_rate_arcsec(measure=DEFAULT_PRECESSION_MEASURE):
+	return PRECESSION_MEASURES.get(measure, _PRECESSION_ARCSEC_PER_YEAR)
 
 # Default search window for `find_next_at_event_jd` — covers a few hours of
 # sky rotation in either direction, well past the typical density of AT
@@ -382,8 +410,11 @@ _AT_EVENT_SEARCH_MINUTES = 360
 _AT_EVENT_THRESHOLD_ARCMIN = 25.0   # max orb we consider a "hit"
 
 
-def precession_dt_correction_arcmin(radix_jd, event_jd, direction='direct'):
+def precession_dt_correction_arcmin(radix_jd, event_jd, direction='direct',
+                                   measure=DEFAULT_PRECESSION_MEASURE):
 	"""Return the Marr/Estadella event-RAMC correction in arcminutes.
+
+	``measure`` selects only the annual precession rate (PRECESSION_MEASURES).
 
 	direction='direct'   -> value should be ADDED to event_ramc
 	direction='prenatal' -> value should be SUBTRACTED
@@ -391,7 +422,7 @@ def precession_dt_correction_arcmin(radix_jd, event_jd, direction='direct'):
 	is positive when event is after radix.)
 	"""
 	years = (event_jd - radix_jd) / 365.25
-	precession_arcmin = years * _PRECESSION_ARCSEC_PER_YEAR / 60.0
+	precession_arcmin = years * precession_rate_arcsec(measure) / 60.0
 	try:
 		dt_radix_sec = astrology.swe_deltat(radix_jd) * 86400.0
 		dt_event_sec = astrology.swe_deltat(event_jd) * 86400.0
@@ -470,17 +501,23 @@ class ATSnapshot:
 		transit_points     list of MDOPoint for current ephemeris planets.
 		at_pairs           list of ATPair (only those within orb).
 		active_ecliptic    list of (transit_id, radix_id, asp, orb_arcmin)
-		                   present at this moment.  Empty => "trivial" by
-		                   Estadella's two-transit rule.
+		                   for qualifying longitude transits.
+		active_declination list of true-declination qualifying contacts,
+		                   separate from at_pairs and MDO aspect geometry.
+		active_transit_body_ids union of qualifying longitude/declination actors.
 	"""
 
 	def __init__(self, radix_chart, event_jd, event_place,
 	             swiss_flags=None, include_parallels=True,
-	             apply_precession=True, direction='direct'):
+	             apply_precession=True, direction='direct',
+	             precession_measure=DEFAULT_PRECESSION_MEASURE):
 		self.radix = radix_chart
 		self.event_jd = float(event_jd)
 		self.event_place = event_place
 		self.direction = direction
+		self.apply_precession = bool(apply_precession)
+		self.precession_measure = (precession_measure if precession_measure in PRECESSION_MEASURES
+		                           else DEFAULT_PRECESSION_MEASURE)
 
 		if swiss_flags is None:
 			swiss_flags = astrology.SEFLG_SPEED | astrology.SEFLG_SWIEPH
@@ -509,7 +546,7 @@ class ATSnapshot:
 		self.event_ramc_uncorrected = evt_houses.ascmc2[_houses.Houses.MC][_houses.Houses.RA]
 		self._evt_houses = evt_houses
 
-		# 2a. Apply Marr/Estadella precession + Delta-T correction to the
+		# 2a. Optionally apply Marr/Estadella precession + Delta-T correction to the
 		# event meridian before event-time transit MDOs are compared with
 		# the fixed radix MDO table. Without this, AT orbs drift ~50' per
 		# 60 years of age.
@@ -520,6 +557,7 @@ class ATSnapshot:
 				radix_jd = self.event_jd
 			self.precession_correction_arcmin = precession_dt_correction_arcmin(
 				radix_jd, self.event_jd, direction=direction,
+				measure=self.precession_measure,
 			)
 		else:
 			self.precession_correction_arcmin = 0.0
@@ -540,9 +578,9 @@ class ATSnapshot:
 		# 5. Detect AT pairs (MDO conj / opp / antiscia).
 		self.at_pairs = self._detect_at_pairs()
 
-		# 6. Optional declination parallels / contra-parallels.
-		if include_parallels:
-			self.at_pairs.extend(self._detect_parallels())
+		# 6. True-declination contacts qualify the accompanying transit side
+		# of the two-transit rule. They never enter the MDO contact graph.
+		self.active_declination = self._detect_parallels() if include_parallels else []
 
 		# 7. Two-transit-rule data: any tight ecliptic aspects present?
 		transit_lons = [
@@ -552,7 +590,10 @@ class ATSnapshot:
 		self.active_ecliptic = find_active_ecliptic_aspects(
 			self.radix, transit_lons,
 		)
-		self.is_active_moment = bool(self.active_ecliptic)
+		self.active_transit_body_ids = {
+			tid for tid, _rid, _aspect, _orb in self.active_ecliptic
+		} | {pair.transit.idx for pair in self.active_declination if pair.transit.kind == 'planet'}
+		self.is_active_moment = bool(self.active_ecliptic or self.active_declination)
 
 	# -- builders -----------------------------------------------------------
 
@@ -739,6 +780,8 @@ def _planet_label(pid):
 	if 0 <= pid < len(_PLANET_NAMES):
 		eng = _PLANET_NAMES[pid]
 		return mtexts.txts.get(eng, eng)
+	if pid in chart_bodies.APOGEE_IDS:
+		return mtexts.txts['Apogee']
 	if pid == astrology.SE_CHIRON:
 		return mtexts.txts.get('Chiron', 'Chiron')
 	if pid == astrology.SE_MEAN_NODE:
@@ -762,7 +805,8 @@ def find_next_at_event_jd(radix_chart, current_jd, event_place,
                           direction='forward',
                           max_minutes=_AT_EVENT_SEARCH_MINUTES,
                           threshold_arcmin=_AT_EVENT_THRESHOLD_ARCMIN,
-                          apply_precession=True):
+                          apply_precession=True,
+                          precession_measure=DEFAULT_PRECESSION_MEASURE):
 	"""Find the JD of the next/prev local minimum of any (transit, radix)
 	pair's AT-orb where the minimum lies under threshold_arcmin.
 
@@ -775,7 +819,7 @@ def find_next_at_event_jd(radix_chart, current_jd, event_place,
 	one ATSnapshot construction (~5-10 ms on contemporary hardware);
 	at the default 360-minute window the entire scan completes in well
 	under a second.  Conjunction and opposition only — antiscia and
-	parallel are excluded as they are not the "exact transit time"
+	contra-antiscia are excluded as they are not the "exact transit time"
 	contacts the user is chasing.
 	"""
 	if max_minutes <= 0:
@@ -793,6 +837,7 @@ def find_next_at_event_jd(radix_chart, current_jd, event_place,
 				radix_chart, candidate_jd, event_place,
 				include_parallels=False,
 				apply_precession=apply_precession,
+				precession_measure=precession_measure,
 			)
 		except Exception:
 			continue
@@ -821,6 +866,7 @@ def find_next_at_event_jd(radix_chart, current_jd, event_place,
 						radix_idx=at.radix.idx,
 						aspect=at.aspect,
 						apply_precession=apply_precession,
+						precession_measure=precession_measure,
 					)
 					return {
 						'jd': exact_jd,
@@ -846,7 +892,8 @@ def find_next_at_event_jd(radix_chart, current_jd, event_place,
 def _refine_at_event_jd(radix_chart, centre_jd, event_place,
                         transit_idx, radix_kind, radix_idx, aspect,
                         apply_precession=True,
-                        half_window_seconds=60):
+                        half_window_seconds=60,
+                        precession_measure=DEFAULT_PRECESSION_MEASURE):
 	"""Refine a single AT event's exact time to ~1-second precision around
 	an approximate centre. Scans ±half_window_seconds at 1-second steps
 	for the named pair's orb minimum, ignoring all other pairs.  Returns
@@ -861,6 +908,7 @@ def _refine_at_event_jd(radix_chart, centre_jd, event_place,
 				radix_chart, candidate_jd, event_place,
 				include_parallels=False,
 				apply_precession=apply_precession,
+				precession_measure=precession_measure,
 			)
 		except Exception:
 			continue

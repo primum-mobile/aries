@@ -12,13 +12,15 @@ import chart
 import common
 import dateformat
 import eclipses
-from engine import lunar_cycle, moment
+from aries.astrology.ephemeris_context import EphemerisContext
+from engine import lunar_cycle, moment, void_of_course
 import mtexts
 import options
 import searchbackend
 import searchcatalog
 import searchquery
 import util
+from engine.dignity_display import chart_dignity_color, minor_dignity_count
 from webapp.daemon.display_palette import (
     effective_display_options,
     object_glyph_color,
@@ -42,6 +44,7 @@ INGRESS_PLANET_SPECS: tuple[tuple[int, str], ...] = (
     (astrology.SE_NEPTUNE, "neptune"),
     (astrology.SE_PLUTO, "pluto"),
     (astrology.SE_CHIRON, "chiron"),
+    (astrology.SE_MEAN_APOG, "apogee"),
     (LOGICAL_NORTH_NODE_ID, "asc_node"),
 )
 SYNODIC_PLANET_IDS = (
@@ -54,6 +57,7 @@ SYNODIC_PLANET_IDS = (
     astrology.SE_NEPTUNE,
     astrology.SE_PLUTO,
     astrology.SE_CHIRON,
+    astrology.SE_MEAN_APOG,
 )
 SYNODIC_FILTER_PLANET_IDS = frozenset((
     astrology.SE_MOON,
@@ -63,16 +67,22 @@ SYNODIC_FILTER_PLANET_IDS = frozenset((
 PLANET_IDS = tuple(pid for pid, _key in INGRESS_PLANET_SPECS)
 PLANET_OBJECT_IDS = {pid: f"planet:{key}" for pid, key in INGRESS_PLANET_SPECS}
 OBJECT_PLANET_IDS = {oid: pid for pid, oid in PLANET_OBJECT_IDS.items()}
-LUNAR_CYCLE_IDS = ("draconic", "anomalistic")
+LUNAR_CYCLE_IDS = ("draconic", "anomalistic", "void-course")
 EVENT_ORDER = {
     "eclipse": 0,
     "lunation": 1,
     "draconic": 2,
     "anomalistic": 3,
+    "void-course": 3,
     "heliacal": 4,
     "station": 5,
-    "cazimi": 6,
+    "conjunction": 6,
     "ingress": 7,
+}
+SOLAR_CONJUNCTION_LABELS = {
+    "inferior": ("InferiorConjunction", "InferiorConjunctionShort"),
+    "superior": ("SuperiorConjunction", "SuperiorConjunctionShort"),
+    "conjunction": ("SolarConjunction", "SolarConjunctionShort"),
 }
 LUNATION_ECLIPSE_DEDUPE_DAYS = 1.0 / 24.0
 
@@ -560,7 +570,9 @@ def _rows_for_range(
                 runtime,
             ))
         if include_cazimis:
-            rows.extend(searchbackend._search_cazimi_rows(
+            # Keep the existing source gate for API callers. Cazimi is a
+            # condition on the exact conjunction and does not gate the row.
+            rows.extend(searchbackend._search_solar_conjunction_rows(
                 catalog,
                 chrt,
                 synodic_promittor_ids,
@@ -568,10 +580,6 @@ def _rows_for_range(
                 end_jd,
                 technique,
                 runtime,
-                # A synodic cycle contains both exact Sun conjunctions. The
-                # configured solar-condition geometry still governs Search,
-                # but must not discard inferior (retrograde) cycle events.
-                respect_mode=False,
             ))
     if LOGICAL_NORTH_NODE_ID in synodic_planets and include_stations:
         rows.extend(_search_true_node_station_rows(
@@ -598,6 +606,15 @@ def _rows_for_range(
                 include_draconic=include_draconic,
             )
         )
+    if "void-course" in lunar_cycles:
+        rows.extend(_search_void_course_rows(
+            catalog,
+            chrt,
+            start_jd,
+            end_jd,
+            technique,
+            runtime,
+        ))
     if "anomalistic" in lunar_cycles:
         rows.extend(_search_anomalistic_rows(
             catalog,
@@ -658,6 +675,7 @@ def _planet_item_payload(
             display_options,
             obj,
             dignity_code,
+            minor_count=minor_dignity_count(chrt, planet_id),
             resolved_color=color,
         ),
         "enabled": enabled,
@@ -692,6 +710,12 @@ def _lunar_items(chrt) -> list[dict[str, Any]]:
         {
             "id": "anomalistic",
             "label": mtexts.txts.get("Anomalistic", "Anomalistic"),
+            "glyph": glyphs.get_planet_glyph(astrology.SE_MOON),
+            "enabled": True,
+        },
+        {
+            "id": "void-course",
+            "label": mtexts.txts.get("VoidCourseActive", "Void of course"),
             "glyph": glyphs.get_planet_glyph(astrology.SE_MOON),
             "enabled": True,
         },
@@ -923,6 +947,57 @@ def _search_anomalistic_rows(
     return rows
 
 
+def _search_void_course_rows(
+    catalog: searchcatalog.SearchCatalog,
+    chrt,
+    start_jd: float,
+    end_jd: float,
+    technique: str,
+    runtime,
+) -> list[searchquery.SearchResult]:
+    """Onset and end of each void of course Moon under the selected policy."""
+    moon_id = PLANET_OBJECT_IDS[astrology.SE_MOON]
+    if catalog.get(moon_id) is None:
+        return []
+    context = EphemerisContext.for_chart(chrt, ephe_path=common.get_ephe_path())
+    policy = void_of_course.normalize_policy(
+        getattr(getattr(chrt, "options", None), "voidcoursepolicy", void_of_course.HELLENISTIC)
+    )
+    # A void period begun before the window can still end inside it.
+    periods = void_of_course.periods(start_jd - 3.0, end_jd, policy, context)
+    calflag = searchbackend._calendar_flag(chrt)
+    rows: list[searchquery.SearchResult] = []
+    for period in periods:
+        for code, event_jd, label in (
+            ("void_start", period.start_jd, mtexts.txts.get("VoidCourseActive", "Void of course")),
+            ("void_end", period.end_jd, mtexts.txts.get("VoidCourseEnds", "Void of course ends")),
+        ):
+            if not start_jd <= event_jd < end_jd:
+                continue
+            row = searchquery.SearchResult(technique, code, moon_id, "")
+            searchbackend._fill_row_from_jd(row, catalog, event_jd, calflag)
+            row.significator_label = ""
+            row.metadata["synodic_event_type"] = "void-course"
+            row.metadata["lunar_cycle"] = "void-course"
+            row.metadata["lunar_cycle_code"] = code
+            row.metadata["synodic_filter_group"] = "lunar"
+            row.metadata["synodic_filter_id"] = "void-course"
+            row.event_label = label
+            row.notes = label
+            prom_display = searchbackend._build_live_row_object_display(
+                catalog,
+                moon_id,
+                chrt,
+                event_jd,
+                runtime,
+            )
+            if prom_display is not None:
+                row.metadata["prom_display"] = prom_display
+            row.metadata["display_hydrated"] = True
+            rows.append(row)
+    return rows
+
+
 def _draconic_code(aspect: str, chrt, event_jd: float) -> str:
     if aspect == searchquery.SearchQuery.ASPECT_CONJUNCTION:
         return "north_node"
@@ -1057,7 +1132,14 @@ def _serialize_row(
     except Exception:
         dignity_code = None
     detail = _detail_label(row, event_type)
-    event_label = _event_label(row, event_type, prom_display)
+    solar_conjunction = row.metadata.get("solar_conjunction")
+    if solar_conjunction:
+        full_key, short_key = SOLAR_CONJUNCTION_LABELS[solar_conjunction]
+        event_label = mtexts.txts[full_key]
+        event_short_label = mtexts.txts[short_key]
+    else:
+        event_label = _event_label(row, event_type)
+        event_short_label = None
     planet_label = (
         mtexts.txts.get("NorthNode", "North Node")
         if row.promittor_id == NORTH_NODE_OBJECT_ID
@@ -1102,6 +1184,7 @@ def _serialize_row(
             display_options,
             prom,
             dignity_code,
+            minor_count=prom_display.get("minor_dignity_count", 0) if prom_display else minor_dignity_count(chrt, pid),
             resolved_color=planet_color,
         ),
         "filterGroup": filter_group,
@@ -1122,6 +1205,10 @@ def _serialize_row(
         "canOpenChart": bool(row.can_open_chart),
         "sign": sign_payload,
         "longitudeText": str(prom_display.get("degree_text") or _longitude_text(row, prom_display)),
+        "longitudeDegrees": (
+            min(float(prom_display["display_longitude"]) % 30.0, 30.0 - 1.0 / 3600.0)
+            if prom_display.get("display_longitude") is not None else None
+        ),
         "motionMarker": str(prom_display.get("motion_marker") or ""),
         "metadata": _json_clean({
             "stationCode": row.metadata.get("station_code"),
@@ -1139,6 +1226,7 @@ def _serialize_row(
                 "heliacal_calculation_place"
             ),
             "dateOnly": True if row.metadata.get("date_only") else None,
+            "solarConjunction": solar_conjunction,
             "cazimiMode": row.metadata.get("cazimi_mode"),
             "signChangeDirection": (
                 "retrograde" if row.metadata.get("sign_change_retrograde") else "direct"
@@ -1153,6 +1241,10 @@ def _serialize_row(
             "promDisplay": prom_display,
         }),
     }
+    if solar_conjunction:
+        payload["eventShortLabel"] = event_short_label
+        if row.metadata.get("cazimi"):
+            payload["cazimiLabel"] = mtexts.txts.get("Cazimi", "Cazimi")
     if include_temporal:
         activation_colors: dict[str, dict[str, str]] = {}
         actor_color = _temporal_activation_color(
@@ -1194,6 +1286,7 @@ def _serialize_row(
                     display_options,
                     sig,
                     sig_dignity,
+                    minor_count=sig_display.get("minor_dignity_count", 0) if sig_display else minor_dignity_count(chrt, sig_pid),
                     resolved_color=sig_color,
                 )
             target_color = _temporal_activation_color(sig_color_role, sig_color)
@@ -1231,19 +1324,15 @@ def _event_type(row: searchquery.SearchResult) -> str:
         return "lunation"
     if row.metadata.get("station"):
         return "station"
-    if row.metadata.get("cazimi"):
-        return "cazimi"
+    if row.metadata.get("solar_conjunction"):
+        return "conjunction"
     if row.metadata.get("sign_change"):
         return "ingress"
     return str(row.aspect or "event")
 
 
-def _event_label(
-    row: searchquery.SearchResult,
-    event_type: str,
-    prom_display: dict[str, Any],
-) -> str:
-    if event_type in {"lunation", "eclipse", "draconic", "anomalistic"}:
+def _event_label(row: searchquery.SearchResult, event_type: str) -> str:
+    if event_type in {"lunation", "eclipse", "draconic", "anomalistic", "void-course"}:
         return row.event_label or row.notes
     if event_type == "heliacal":
         return row.event_label or row.notes
@@ -1254,9 +1343,6 @@ def _event_label(
         if code == "SD":
             return mtexts.txts.get("StationDirect", "Station (D)")
         return mtexts.txts.get("Station", "Station")
-    if event_type == "cazimi":
-        marker = str(prom_display.get("motion_marker") or "").upper()
-        return mtexts.txts.get("CazimiRetrograde", "Cazimi (R)") if marker == "R" else mtexts.txts.get("Cazimi", "Cazimi")
     if event_type == "ingress":
         return "←" if row.metadata.get("sign_change_retrograde") else "→"
     return row.event_label or str(row.aspect or "")
@@ -1277,12 +1363,13 @@ def _event_session_label(event_type: str, event_label: str, planet_label: str) -
 def _detail_label(row: searchquery.SearchResult, event_type: str) -> str:
     if event_type in {
         "station",
-        "cazimi",
+        "conjunction",
         "ingress",
         "lunation",
         "eclipse",
         "draconic",
         "anomalistic",
+        "void-course",
         "heliacal",
     }:
         return ""
@@ -1381,6 +1468,7 @@ def _decorate_display_payload(
                 payload.get("dignity_code"),
                 fallback=payload.get("glyph_color"),
                 source_options=source_options,
+                minor_count=payload.get("minor_dignity_count", 0),
             )
         )
         payload["glyph_color_role"] = object_glyph_color_role(
@@ -1388,6 +1476,7 @@ def _decorate_display_payload(
             obj,
             payload.get("dignity_code"),
             resolved_color=payload["glyph_color_css"],
+            minor_count=payload.get("minor_dignity_count", 0),
         )
     return payload
 
@@ -1433,14 +1522,7 @@ def _planet_color(chrt, planet_id: int, *, display_options=None) -> str | None:
         except Exception:
             return _rgb_css(getattr(opts, "clrperegrin", (0, 0, 0)))
     try:
-        palette = (
-            getattr(opts, "clrdomicil"),
-            getattr(opts, "clrexal"),
-            getattr(opts, "clrperegrin"),
-            getattr(opts, "clrcasus"),
-            getattr(opts, "clrexil"),
-        )
-        return _rgb_css(palette[int(chrt.dignity(int(planet_id)))])
+        return _rgb_css(chart_dignity_color(chrt, opts, int(planet_id)))
     except Exception:
         return _rgb_css(getattr(opts, "clrperegrin", (0, 0, 0)))
 

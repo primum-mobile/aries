@@ -4,10 +4,12 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import {
   closestCenter,
   DndContext,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
@@ -46,18 +48,22 @@ import {
   workspacePreviewMoveIntent,
 } from "@/lib/daemon/client";
 import { useT, useTFallback } from "@/lib/i18n/i18n";
+import { useMobileLayout } from "@/hooks/use-mobile-layout";
+import { useChartEventsStore } from "@/stores/chart-events-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { executeWorkspaceContextMenuAction } from "@/lib/daemon/client";
 import type { WorkspaceDocument } from "@/stores/workspace-store";
 import {
   DocumentRowContextMenu,
-  HarmonicLauncherContextMenu,
+  LauncherRowMenu,
   NavRow,
-  SolarAverageLauncherContextMenu,
   documentRowLabel,
   type DropIndicatorPosition,
   type FlatDocumentNode,
   type ReturnAverageKind,
 } from "./app-sidebar";
-import { documentPairSupportsDirectAttach } from "./workspace-tab-drag";
+import { chartEventDropAction, documentPairSupportsDirectAttach, dragPointInside } from "./workspace-tab-drag";
+import { captureSidebarTabDragPreview, SidebarTabDragPreview } from "./sidebar-tab-drag-preview";
 
 type DragDropGeometry = {
   overId: string;
@@ -106,6 +112,32 @@ export function SortableDocumentsGroup({
   >(null);
   const [dropIndicator, setDropIndicator] = React.useState<DropIndicator | null>(null);
   const [staticDragList, setStaticDragList] = React.useState(false);
+  const dragOriginRef = React.useRef<{ x: number; y: number } | null>(null);
+  const sidebarContentRef = React.useRef<Element | null>(null);
+  const [tabDragSnapshot, setTabDragSnapshot] = React.useState<HTMLElement | null>(null);
+  const notifyEventDrop = React.useCallback((over: boolean) => {
+    window.dispatchEvent(new CustomEvent("aries:chart-event-drag", { detail: { over } }));
+  }, []);
+  const eventDropAt = React.useCallback((activeId: string, delta: { x: number; y: number }) => {
+    if (dragModifierActionRef.current) return null;
+    const source = documents.find((doc) => doc.id === activeId);
+    const paneId = useWorkspaceStore.getState().chartEventsPane?.documentId;
+    const target = documents.find((doc) => doc.id === paneId);
+    const origin = dragOriginRef.current;
+    const actionId = chartEventDropAction(source, target, documents);
+    if (!actionId || !target || !origin) return null;
+    const pane = [...document.querySelectorAll("[data-aries-chart-events-drop]")]
+      .find((element) => element.getAttribute("data-aries-chart-events-drop") === paneId);
+    if (!pane) return null;
+    return dragPointInside(origin, delta, pane.getBoundingClientRect())
+      ? { documentId: target.id, actionId } : null;
+  }, [documents]);
+  const pointerInSidebar = React.useCallback((delta: { x: number; y: number }) => {
+    const origin = dragOriginRef.current;
+    const sidebar = sidebarContentRef.current;
+    if (!origin || !sidebar) return false;
+    return dragPointInside(origin, delta, sidebar.getBoundingClientRect());
+  }, []);
   void onReorder;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -162,15 +194,19 @@ export function SortableDocumentsGroup({
   );
 
   const clearDragState = React.useCallback(() => {
+    dragOriginRef.current = null;
+    sidebarContentRef.current = null;
+    notifyEventDrop(false);
     activeDragIdRef.current = null;
     dropGeometryRef.current = null;
     dragModifierActionRef.current = null;
     setDragContext(null);
     setActiveDragId(null);
+    setTabDragSnapshot(null);
     setDragPreview(null);
     setDropIndicator(null);
     setStaticDragList(false);
-  }, []);
+  }, [notifyEventDrop]);
 
   React.useEffect(() => {
     if (!activeDragId) return;
@@ -186,10 +222,19 @@ export function SortableDocumentsGroup({
   }, [activeDragId, setDragModifierAction]);
 
   const handleDragStart = (event: DragStartEvent) => {
+    const target = event.activatorEvent.target;
+    const row = target instanceof Element
+      ? target.closest('[data-sidebar="menu-item"]')
+        ?.querySelector<HTMLElement>('[data-sidebar="menu-button"]')?.parentElement
+      : null;
+    setTabDragSnapshot(row ? captureSidebarTabDragPreview(row) : null);
     const activeId = String(event.active.id);
     activeDragIdRef.current = activeId;
     dropGeometryRef.current = null;
     setActiveDragId(activeId);
+    const pointer = event.activatorEvent as MouseEvent;
+    dragOriginRef.current = typeof pointer.clientX === "number" ? { x: pointer.clientX, y: pointer.clientY } : null;
+    sidebarContentRef.current = document.querySelector(`[data-sidebar="content"]`);
     setDragModifierAction(modifierActionFromEvent(event.activatorEvent));
     void workspaceDragContext(activeId)
       .then((payload) => setDragContext(payload.context))
@@ -202,16 +247,60 @@ export function SortableDocumentsGroup({
   const handleDragMove = (event: DragMoveEvent) => {
     const action = modifierActionFromEvent(event.activatorEvent);
     if (action) dragModifierActionRef.current = action;
-    updateOverFromEvent(event);
+    const eventTarget = eventDropAt(String(event.active.id), event.delta);
+    notifyEventDrop(Boolean(eventTarget));
+    if (eventTarget) {
+      dropGeometryRef.current = null;
+      setDropIndicator(null);
+      setDragPreview(null);
+      setStaticDragList(true);
+    } else if (pointerInSidebar(event.delta)) updateOverFromEvent(event);
+    else {
+      dropGeometryRef.current = null;
+      setDropIndicator(null);
+      setDragPreview(null);
+      setStaticDragList(true);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active } = event;
     const conversionAction = dragModifierActionRef.current;
     const activeId = String(active.id);
+    const eventTarget = eventDropAt(activeId, event.delta);
+    const endedInSidebar = pointerInSidebar(event.delta);
     const geometry =
       dropGeometryRef.current ?? dropGeometryFromEvent(documents, activeId, event, dragContext);
     clearDragState();
+    if (eventTarget) {
+      const ownerId = eventTarget.documentId;
+      const payload = eventTarget.actionId === "workspace.save_event" ? {
+        documentId: activeId, ownerDocumentId: ownerId,
+      } : {
+        sourceDocumentId: activeId, targetDocumentId: ownerId, eventId: crypto.randomUUID(),
+      };
+      const saveDrop = async () => {
+        if (eventTarget.actionId === "workspace.copy_saved_chart_event") {
+          // The copied note comes from its sidecar. Finish any active note
+          // editor's pending write before the daemon reads that file.
+          const awaitFlush: Promise<unknown>[] = [];
+          window.dispatchEvent(new CustomEvent("aries://flush-notes", { detail: { awaitFlush } }));
+          await Promise.all(awaitFlush);
+        }
+        return executeWorkspaceContextMenuAction(eventTarget.actionId, payload);
+      };
+      void saveDrop().then((result) => {
+        // A newly added event opens into inline rename, like the menu's Add event.
+        const renameEventId = eventTarget.actionId === "workspace.save_event" && result?.eventId ? String(result.eventId) : null;
+        useChartEventsStore.getState().patch(ownerId, { error: null, renameEventId });
+        useChartEventsStore.getState().invalidate([ownerId]);
+      }).catch((err) => {
+        console.error("[chart-event-drop]", err);
+        useChartEventsStore.getState().patch(ownerId, { error: "chartEvents.saveError" });
+      });
+      return;
+    }
+    if (!endedInSidebar) return;
     if (!geometry || activeId === geometry.overId) return;
     const overId = geometry.overId;
     if (dragContext && !dragContext.ordered_ids.includes(overId)) return;
@@ -276,11 +365,14 @@ export function SortableDocumentsGroup({
                       ? dropIndicator.position
                       : null
                   }
-                  conversionActive={dragPreview != null}
                 />
               ))}
             </SidebarMenu>
           </SortableContext>
+          {typeof document !== "undefined" && createPortal(
+            <DragOverlay dropAnimation={null}>
+              {tabDragSnapshot ? <SidebarTabDragPreview snapshot={tabDragSnapshot} /> : null}
+            </DragOverlay>, document.body)}
         </DndContext>
       </SidebarGroupContent>
     </SidebarGroup>
@@ -311,7 +403,6 @@ export function SortableActionsContent({
   const tLabel = useTFallback();
   const [dropIndicator, setDropIndicator] = React.useState<DropIndicator | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
   const handleDragEnd = React.useCallback(
     (event: DragEndEvent) => {
       setDropIndicator(null);
@@ -365,17 +456,26 @@ export function SortableActionsContent({
           {orderedActions.map((action) =>
             action.id === "transit-search" ? (
               <SidebarMenuItem key={action.id}>
-                <NavRow
-                  label={tLabel(`sidebar.action.${action.id}`, action.label)}
-                  shortcut={action.shortcut}
-                  isActive={action.id === activeDocumentId}
-                  disabled={!action.enabled}
-                  onClick={action.enabled ? () => onSelect(action.id) : undefined}
-                />
+                <LauncherRowMenu
+                  sectionLabel={label}
+                  action={action}
+                  onSelect={onSelect}
+                  onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+                  harmonicChartMode={harmonicChartMode}
+                >
+                  <NavRow
+                    label={tLabel(`sidebar.action.${action.id}`, action.label)}
+                    shortcut={action.shortcut}
+                    isActive={action.id === activeDocumentId}
+                    disabled={!action.enabled}
+                    onClick={action.enabled ? () => onSelect(action.id) : undefined}
+                  />
+                </LauncherRowMenu>
               </SidebarMenuItem>
             ) : (
               <SortableActionItem
                 key={action.id}
+                sectionLabel={label}
                 action={action}
                 isActive={action.id === activeDocumentId}
                 dropIndicator={
@@ -564,7 +664,6 @@ function SortableDocItem({
   onClose,
   preview,
   dropIndicator,
-  conversionActive,
 }: {
   doc: WorkspaceDocument;
   depth: number;
@@ -574,18 +673,19 @@ function SortableDocItem({
   onClose?: () => void;
   preview?: { kind: DragPreviewKind; sourceLabel: string } | null;
   dropIndicator?: DropIndicatorPosition | null;
-  conversionActive?: boolean;
 }) {
   const t = useT();
+  // Phone: a finger drag on a row must scroll the launcher, not reorder it.
+  // The row's long press stays with its context menu.
+  const mobile = useMobileLayout();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: doc.id });
+    useSortable({ id: doc.id, disabled: mobile });
   const label = documentRowLabel(doc, dirty, t);
-  const freezeDragSource = isDragging && Boolean(conversionActive);
+  const freezeDragSource = isDragging;
   const style: React.CSSProperties = {
     transform: freezeDragSource ? undefined : CSS.Transform.toString(transform),
     transition: freezeDragSource ? undefined : transition,
-    opacity:
-      isDragging && !freezeDragSource ? "var(--aries-sidebar-drag-opacity)" : 1,
+    opacity: isDragging ? "var(--aries-sidebar-drag-opacity)" : 1,
     zIndex: isDragging ? 10 : undefined,
   };
 
@@ -595,12 +695,13 @@ function SortableDocItem({
         <NavRow
           label={label}
           isActive={isActive}
+          documentRow
           depth={depth}
           dirty={dirty}
           onClick={onSelect}
           onClose={onClose}
-          dragAttributes={attributes}
-          dragListeners={listeners}
+          dragAttributes={mobile ? undefined : attributes}
+          dragListeners={mobile ? undefined : listeners}
           preview={isDragging ? null : preview}
           dropIndicator={isDragging ? null : dropIndicator}
           previewTargetLabel={doc.title}
@@ -611,6 +712,7 @@ function SortableDocItem({
 }
 
 function SortableActionItem({
+  sectionLabel,
   action,
   isActive,
   dropIndicator,
@@ -618,6 +720,7 @@ function SortableActionItem({
   onSolarAverageWindowSelect,
   harmonicChartMode,
 }: {
+  sectionLabel: string;
   action: SidebarAction;
   isActive: boolean;
   dropIndicator?: DropIndicatorPosition | null;
@@ -626,8 +729,9 @@ function SortableActionItem({
   harmonicChartMode: "harmonic" | "varga";
 }) {
   const tLabel = useTFallback();
+  const mobile = useMobileLayout();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: action.id, disabled: !action.enabled });
+    useSortable({ id: action.id, disabled: mobile || !action.enabled });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -642,27 +746,22 @@ function SortableActionItem({
       isActive={isActive}
       disabled={!action.enabled}
       onClick={action.enabled ? () => onSelect(action.id) : undefined}
-      dragAttributes={attributes}
-      dragListeners={listeners}
+      dragAttributes={mobile ? undefined : attributes}
+      dragListeners={mobile ? undefined : listeners}
       dropIndicator={isDragging ? null : dropIndicator}
     />
   );
   return (
     <SidebarMenuItem ref={setNodeRef} style={style}>
-      {action.id === "solar-average" && action.enabled ? (
-        <SolarAverageLauncherContextMenu onSelectWindow={onSolarAverageWindowSelect}>
-          {row}
-        </SolarAverageLauncherContextMenu>
-      ) : action.id === "harmonic" && action.enabled ? (
-        <HarmonicLauncherContextMenu
-          initialMode={harmonicChartMode}
-          onSelectNumber={(mode, number) => onSelect(`harmonic:${mode}:${number}`)}
-        >
-          {row}
-        </HarmonicLauncherContextMenu>
-      ) : (
-        row
-      )}
+      <LauncherRowMenu
+        sectionLabel={sectionLabel}
+        action={action}
+        onSelect={onSelect}
+        onSolarAverageWindowSelect={onSolarAverageWindowSelect}
+        harmonicChartMode={harmonicChartMode}
+      >
+        {row}
+      </LauncherRowMenu>
     </SidebarMenuItem>
   );
 }

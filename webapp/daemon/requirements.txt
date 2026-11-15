@@ -1,11 +1,15 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
+orjson>=3.10,<3.12  # 3.12+ wheels require macOS 15; Aries supports macOS 11
 numpy==2.4.6
 pillow
-wxPython>=4.2.2
 geographiclib>=2.0
 reportlab>=4.0
 fonttools>=4.0
 brotli>=1.1
+truststore>=0.10; sys_platform == "win32"  # Windows certificate store for HTTPS downloads
 
 PyYAML>=6.0
+# IANA time zones for zoneinfo. Windows has no system tz database, so without
+# this package every chart's historical offset and DST lookup fails there.
+tzdata>=2025.2

@@ -16,11 +16,14 @@ Module is dependency-free (stdlib + os env) and importable from any layer.
 
 import os
 import sys
+import tempfile
 import time
 
 
 _ENABLED = os.environ.get('PROG_LOG', '0') not in ('', '0', 'false', 'False', 'no', 'No')
-_LOG_PATH = os.environ.get('PROG_LOG_FILE', '/tmp/morinus_progressions_profile.log')
+_LOG_PATH = os.environ.get('PROG_LOG_FILE') or os.path.join(
+	tempfile.gettempdir() if os.name == 'nt' else '/tmp', 'morinus_progressions_profile.log',
+)
 
 
 def enabled():
@@ -36,7 +39,7 @@ def _emit(line):
 	except Exception:
 		pass
 	try:
-		with open(_LOG_PATH, 'a') as f:
+		with open(_LOG_PATH, 'a', encoding='utf-8') as f:
 			f.write(line + '\n')
 	except Exception:
 		pass

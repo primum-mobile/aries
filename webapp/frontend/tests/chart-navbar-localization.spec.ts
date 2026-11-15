@@ -98,6 +98,25 @@ test("Graphic Ephemeris shares the localized rail with month and year arrows", (
   expect(translator("en")(graphicEphemerisModeButtonLabelKey("declination"))).toBe("Decl/Lon");
 });
 
+test("Astrolabe steps its rete arc like PD-in-Chart and jumps between PD events", () => {
+  const groups = navigationHintGroups(
+    { ...baseContext, kind: "astrolabe" as const },
+    translator("en"),
+  );
+
+  expect(groups.map((group) => ({
+    label: group.label,
+    backwardKey: group.backwardKey,
+    forwardKey: group.forwardKey,
+    modifiers: group.modifiers,
+  }))).toEqual([
+    { label: "week", backwardKey: "left", forwardKey: "right", modifiers: { alt: true } },
+    { label: "month", backwardKey: "left", forwardKey: "right", modifiers: { shift: true } },
+    { label: "year", backwardKey: "left", forwardKey: "right", modifiers: undefined },
+    { label: "event", backwardKey: "down", forwardKey: "up", modifiers: undefined },
+  ]);
+});
+
 test("relationship charts replace time navigation with view controls", () => {
   expect(navigationHintGroups(
     { ...baseContext, kind: "supplementary", compoundKind: "synastry" },
@@ -107,6 +126,20 @@ test("relationship charts replace time navigation with view controls", () => {
     { ...baseContext, kind: "supplementary", compoundKind: "composite_from_synastry" },
     translator("en"),
   )).toEqual([]);
+});
+
+test("midpoint composite titles respect the daemon's explicit empty date suffix", () => {
+  const snapshot = {
+    displayDatetime: "2004-12-07T12:36:30",
+    primaryChart: { meta: { name: "Mx + CAELI • Composite" } },
+    document: { compoundKind: "composite_from_synastry", compositeVariant: "midpoint", titleSuffix: "" },
+  } as unknown as ChartRenderSnapshot;
+  const document = {
+    kind: "supplementary", supplementaryFeatureKind: "synastry",
+    title: "Mx + CAELI • Composite", sourceName: "Mx + CAELI",
+    displayDatetime: snapshot.displayDatetime,
+  } as WorkspaceDocument;
+  expect(buildTitleParts(snapshot, document, translator("en"))).toEqual([document.title]);
 });
 
 test("the radix-name option moves the name from the titlebar above the birth date", () => {

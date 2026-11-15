@@ -47,6 +47,29 @@ export type ChartPaintTarget = Readonly<{
 
 export type WheelVerticalAlignment = "center" | "upper";
 
+/**
+ * The largest the wheel may get in its pane, as proportions of the pane: the
+ * wheel's rim (the zodiac's outer edge, `wheelOuterAttachmentRadius`) stays
+ * within `height` × half the pane height and `width` × half the pane width.
+ * `rimRadiusScale` is the rim radius per unit of half chart side for this
+ * wheel geometry, so the cap holds for every geometry and screen.
+ */
+export type WheelRimLimit = Readonly<{
+  rimRadiusScale: number;
+  height: number;
+  width: number;
+}>;
+
+/** The rim within 0.843 of half the pane height and 0.844 of half its width. */
+export const WHEEL_RIM_LIMIT_DEFAULT = Object.freeze({ height: 0.843, width: 0.844 });
+
+function rimLimitedSide(width: number, height: number, limit: WheelRimLimit | undefined): number {
+  if (!limit || !(limit.rimRadiusScale > 0)) return Infinity;
+  const byHeight = limit.height > 0 ? limit.height * height / limit.rimRadiusScale : Infinity;
+  const byWidth = limit.width > 0 ? limit.width * width / limit.rimRadiusScale : Infinity;
+  return Math.min(byHeight, byWidth);
+}
+
 /** Fit the wheel independently of the full-height corner-overlay host. */
 export function resolveChartPaintTarget(
   hostWidth: number,
@@ -55,6 +78,8 @@ export function resolveChartPaintTarget(
   topBoundary = 0,
   avoidHeader = false,
   verticalAlignment: WheelVerticalAlignment = "center",
+  targetScale = 1,
+  rimLimit?: WheelRimLimit,
 ): ChartPaintTarget {
   const width = Math.max(1, hostWidth);
   const height = Math.max(1, hostHeight);
@@ -66,11 +91,12 @@ export function resolveChartPaintTarget(
     ? paintRadiusScale
     : 1;
   const baseSide = Math.min(width, height);
+  const nominalSide = baseSide / (Number.isFinite(targetScale) ? Math.max(1, targetScale) : 1);
   const availableDiameter = avoidHeader
     ? Math.min(baseSide, Math.max(1, (centerY - top) * 2))
     : baseSide;
   const paintFitSide = availableDiameter / paintScale;
-  const side = Math.max(1, Math.min(baseSide, paintFitSide));
+  const side = Math.max(1, Math.min(nominalSide, paintFitSide, rimLimitedSide(width, height, rimLimit)));
   // Split panes use half the spare space above the centered paint envelope.
   // This gently lifts width-limited wheels without shrinking them or changing
   // the corner-overlay bounds. Height-limited wheels keep their existing fit.

@@ -79,7 +79,7 @@ export function AspectListExport({
   retainedPerfectionByRow,
   modeLabel,
   sourceName,
-  maxOrb,
+  maxOrbLabel,
   disabled,
 }: {
   rows: AspectListRow[];
@@ -87,7 +87,7 @@ export function AspectListExport({
   retainedPerfectionByRow: ReadonlyMap<string, AspectListPerfection>;
   modeLabel: string;
   sourceName: string;
-  maxOrb: number;
+  maxOrbLabel: string;
   disabled: boolean;
 }) {
   const t = useT();
@@ -112,9 +112,9 @@ export function AspectListExport({
           : row.phase === "separating" ? t("aspectList.separatingShort")
             : row.phase === "exact" ? t("aspectList.exact") : "",
         t("aspectList.notApplicable"),
-      )) : [[{ text: t("aspectList.empty", { orb: maxOrb }) }, {}, {}, {}]],
+      )) : [[{ text: t("aspectList.empty", { orb: maxOrbLabel }) }, {}, {}, {}]],
     });
-  }, [maxOrb, modeLabel, perfectionByRow, retainedPerfectionByRow, rows, sourceName, t]);
+  }, [maxOrbLabel, modeLabel, perfectionByRow, retainedPerfectionByRow, rows, sourceName, t]);
 
   return <>
     <TextExportActions

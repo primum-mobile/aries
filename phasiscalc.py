@@ -12,52 +12,12 @@ import astrology
 import math
 import astrology, chart
 import localcities
-from angleatbirth import _fmt_time_chart_local
+from engine import moment
 import mtexts
 def jd_to_local_YMD_HM(ch, jd_ut):
-    # 차트 달력 플래그 Chart Calendar Flag
-    calflag = astrology.SE_GREG_CAL if ch.time.cal == chart.Time.GREGORIAN else astrology.SE_JUL_CAL
-
-    # angleatbirth의 포맷터는 HH.MM.SS만 주니까,
-    # 날짜는 swe_revjul(jd_ut + 오프셋)을 써서 얻습니다.
-    # → 오프셋 산출 로직은 _fmt_time_chart_local과 동일하게 구현.
-    # The formatter for angleatbirth is HH. Just give me MM.SS,
-    # The date is obtained by writing swe_revjul(jd_ut + offset).
-    # → The offset output logic is implemented in the same way as _fmt_time_chart_local .
-
-    off_days = 0.0
-    zt = ch.time.zt
-    if zt == chart.Time.ZONE:
-        ztime_h = float(getattr(ch.time, 'zh', 0.0) or 0.0) + float(getattr(ch.time, 'zm', 0.0) or 0.0)/60.0
-        off_days += (ztime_h if getattr(ch.time, 'plus', False) else -ztime_h) / 24.0
-    elif zt == chart.Time.LOCALMEAN:  # LMT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0
-        hours = long_min / 60.0
-        off_days += (hours if ch.place.east else -hours) / 24.0
-    elif zt == chart.Time.LOCALAPPARENT:  # LAT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0
-        hours = long_min / 60.0
-        lmt_days = (hours if ch.place.east else -hours) / 24.0
-        # 방정시(EoT)
-        try:
-            ret, te, serr = astrology.swe_time_equ(jd_ut)
-            te_days = te if abs(te) <= 0.5 else te/1440.0
-        except Exception:
-            te_days = 0.0
-        off_days += (lmt_days - te_days)
-    if getattr(ch.time, 'daylightsaving', False):
-        off_days += 1.0/24.0
-
-    # 날짜/시각
-    # Date/Time
-    y, m, d, ut = astrology.swe_revjul(jd_ut + off_days, calflag)
-    hh = int(ut); mm = int((ut - hh)*60.0)
-
-    # 시각 포맷은 기존 함수 재사용(점 표기 유지)
-     # Visual format reuses existing functions (keep punctuation)
-    #视觉格式重复使用现有函数（保留点标记）
-    hhmmss = _fmt_time_chart_local(ch, jd_ut)  # 예: "06.10.00"
-    return u"{:04d}-{:02d}-{:02d} {}".format(y, m, d, hhmmss)
+    local_jd = jd_ut + _local_offset_days(ch, jd_ut)
+    y, m, d, hh, mm, ss = moment.jd_to_civil_tuple(local_jd, calendar=ch.time.cal)
+    return f"{y:04d}-{m:02d}-{d:02d} {hh:02d}.{mm:02d}.{ss:02d}"
 
 # --- exact-output caches (py2 fallback 포함) ---包含
 try:
@@ -205,34 +165,12 @@ def _effective_astronomical_backend():
     return backend
 # === Local day helpers (use chart's timezone/LMT/LAT/DST) ===
 def _local_offset_days(ch, jd_ut):
-    """
-    Return offset (days) such that  JD_local = JD_UT + offset.
-    Mirrors _fmt_time_chart_local / jd_to_local_YMD_HM logic.
-    """
-    calflag = astrology.SE_GREG_CAL if ch.time.cal == chart.Time.GREGORIAN else astrology.SE_JUL_CAL
-    off_days = 0.0
-    zt = ch.time.zt
-    if zt == chart.Time.ZONE:
-        ztime_h = float(getattr(ch.time, 'zh', 0.0) or 0.0) + float(getattr(ch.time, 'zm', 0.0) or 0.0)/60.0
-        off_days += (ztime_h if getattr(ch.time, 'plus', False) else -ztime_h) / 24.0
-    elif zt == chart.Time.LOCALMEAN:  # LMT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0
-        hours = long_min / 60.0
-        off_days += (hours if ch.place.east else -hours) / 24.0
-    elif zt == chart.Time.LOCALAPPARENT:  # LAT
-        long_min = (ch.place.deglon + ch.place.minlon/60.0) * 4.0
-        hours = long_min / 60.0
-        lmt_days = (hours if ch.place.east else -hours) / 24.0
-        # Equation of Time (swe_time_equ expects UT)
-        try:
-            ret, te, serr = astrology.swe_time_equ(jd_ut)
-            te_days = te if abs(te) <= 0.5 else te/1440.0
-        except Exception:
-            te_days = 0.0
-        off_days += (lmt_days - te_days)
-    if getattr(ch.time, 'daylightsaving', False):
-        off_days += 1.0/24.0
-    return float(off_days)
+    """Return the offset in days from UT to the chart's local clock."""
+    t = ch.time
+    return _local_offset_days_from_params(
+        jd_ut, ch.place.lon, t.zt, getattr(t, 'zh', 0.0), getattr(t, 'zm', 0.0),
+        getattr(t, 'plus', False), getattr(t, 'daylightsaving', False),
+    )
 
 def _local_date_tuple(ch, jd_ut):
     """
@@ -265,31 +203,19 @@ def _jd_ut_from_local_noon(ch, y, m, d, calflag, iters=3):
         jd_ut = jd_local_noon - _local_offset_days(ch, jd_ut)
     return float(jd_ut)
 
-def _local_offset_days_from_params(jd_ut, deglon, minlon, east, zt, zh, zm, plus, daylightsaving):
+def _local_offset_days_from_params(jd_ut, longitude, zt, zh, zm, plus, daylightsaving):
     off_days = 0.0
     if zt == chart.Time.ZONE:
         ztime_h = float(zh or 0.0) + float(zm or 0.0) / 60.0
         off_days += (ztime_h if plus else -ztime_h) / 24.0
-    elif zt == chart.Time.LOCALMEAN:
-        long_min = (float(deglon) + float(minlon) / 60.0) * 4.0
-        hours = long_min / 60.0
-        off_days += (hours if east else -hours) / 24.0
-    elif zt == chart.Time.LOCALAPPARENT:
-        long_min = (float(deglon) + float(minlon) / 60.0) * 4.0
-        hours = long_min / 60.0
-        lmt_days = (hours if east else -hours) / 24.0
-        try:
-            ret, te, serr = astrology.swe_time_equ(jd_ut)
-            te_days = te if abs(te) <= 0.5 else te / 1440.0
-        except Exception:
-            te_days = 0.0
-        off_days += (lmt_days - te_days)
+    elif zt in (chart.Time.LOCALMEAN, chart.Time.LOCALAPPARENT):
+        off_days = chart.Time.solar_clock_offset_days(jd_ut, longitude, zt)
     if daylightsaving:
         off_days += 1.0 / 24.0
     return float(off_days)
 
-def _local_date_tuple_from_params(jd_ut, calflag, deglon, minlon, east, zt, zh, zm, plus, daylightsaving):
-    off = _local_offset_days_from_params(jd_ut, deglon, minlon, east, zt, zh, zm, plus, daylightsaving)
+def _local_date_tuple_from_params(jd_ut, calflag, longitude, zt, zh, zm, plus, daylightsaving):
+    off = _local_offset_days_from_params(jd_ut, longitude, zt, zh, zm, plus, daylightsaving)
     y, m, d, _ = astrology.swe_revjul(jd_ut + off, calflag)
     return (int(y), int(m), int(d), int(calflag))
 
@@ -418,7 +344,7 @@ def _swe_heliacal_observer():
     return (21.0, SWEP_HELIOCAL_PERFECT_SNELLEN, 1.0, 1.0, 0.0, 0.0)
 
 @lru_cache(maxsize=8192)
-def _heliacal_event_offset_cached(chart_sig, jd0, geo_lon, geo_lat, alt_m, deglon, minlon, east, zt, zh, zm, plus, daylightsaving, y0, m0, d0, calflag, ipl, event_type, days_window):
+def _heliacal_event_offset_cached(chart_sig, jd0, geo_lon, geo_lat, alt_m, zt, zh, zm, plus, daylightsaving, y0, m0, d0, calflag, ipl, event_type, days_window):
     try:
         obj_name = astrology.swe_get_planet_name(int(ipl))
     except Exception:
@@ -479,7 +405,7 @@ def _heliacal_event_offset_cached(chart_sig, jd0, geo_lon, geo_lat, alt_m, deglo
 
     try:
         event_y, event_m, event_d, _ = _local_date_tuple_from_params(
-            event_jd, int(calflag), deglon, minlon, east, zt, zh, zm, plus, daylightsaving,
+            event_jd, int(calflag), geo_lon, zt, zh, zm, plus, daylightsaving,
         )
     except Exception:
         return None
@@ -492,9 +418,6 @@ def _heliacal_event_offset(chrt, ipl, event_type, days_window):
     jd0 = float(chrt.time.jd)
     geo_lon = float(getattr(chrt.place, 'lon', 0.0))
     geo_lat = float(getattr(chrt.place, 'lat', 0.0))
-    deglon = float(getattr(chrt.place, 'deglon', 0.0))
-    minlon = float(getattr(chrt.place, 'minlon', 0.0))
-    east = bool(getattr(chrt.place, 'east', False))
     alt_m = float(chrt.place.altitude)
     calflag = astrology.SE_GREG_CAL if chrt.time.cal == chart.Time.GREGORIAN else astrology.SE_JUL_CAL
     y0, m0, d0, _ = _local_date_tuple(chrt, jd0)
@@ -511,13 +434,10 @@ def _heliacal_event_offset(chrt, ipl, event_type, days_window):
         int(chrt.time.zt),
         int(getattr(chrt.time, 'plus', False)),
         int(getattr(chrt.time, 'daylightsaving', False)),
-        round(deglon, 6),
-        round(minlon, 6),
-        int(east),
         int(calflag),
     )
     return _heliacal_event_offset_cached(
-        chart_sig, jd0, geo_lon, geo_lat, alt_m, deglon, minlon, east,
+        chart_sig, jd0, geo_lon, geo_lat, alt_m,
         int(chrt.time.zt), float(getattr(chrt.time, 'zh', 0.0) or 0.0), float(getattr(chrt.time, 'zm', 0.0) or 0.0),
         bool(getattr(chrt.time, 'plus', False)), bool(getattr(chrt.time, 'daylightsaving', False)),
         y0, m0, d0, calflag, int(ipl), int(event_type), float(days_window),

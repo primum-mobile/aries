@@ -74,6 +74,18 @@ test("paint target fits diameter around the historical centre", () => {
   assert.equal(resolveChartPaintTarget(800, 1000, 1, 60, true).centerY, 500);
 });
 
+test("nominal frame margin and actual header clearance are independent", () => {
+  const targetScale = .96 / .85;
+  for (const top of [0, 50]) {
+    const target = resolveChartPaintTarget(1344, 1200, .96, top, true, "center", targetScale);
+    assert.equal(target.side, 1200 / targetScale);
+    assert.equal(target.side * .96 / 2, 510);
+    assert.ok(target.centerY - target.side * .96 / 2 >= top);
+  }
+  assert.equal(resolveChartPaintTarget(1344, 1200, .96, 120, true, "center", targetScale).side,
+    960 / .96, "only the actual paint radius constrains a tighter header");
+});
+
 test("split wheels keep their diameter with one quarter of spare height above", () => {
   for (const width of [400, 600, 800, 1000]) {
     const centered = resolveChartPaintTarget(width, 1000, 1);
@@ -110,7 +122,7 @@ test("glyph families share one lane and bypass the word-label push-out", () => {
   assert.match(drawChartSource, /outerRingItemFontSize\(item, typography\)[\s\S]*?\.leaderRadius/);
   assert.match(
     drawChartSource,
-    /ordered\.every\(\(item\) => isOuterGlyphFamily\(item\.family\)\)[\s\S]*?\? \[\][\s\S]*?: collisionBounds/,
+    /ordered\.every\(\(item\) => isOuterGlyphFamily\(item\.family\)\)[\s\S]*?\? \[\][\s\S]*?: nudgeBounds\(collisionBounds\)/,
   );
   assert.doesNotMatch(drawChartSource, /avoidOuterBodyCollisionBounds/);
 });
@@ -121,6 +133,12 @@ test("canvas keeps the historical centre and fits to the visible title text", ()
     drawChartSource.indexOf("export function drawSnapshotLayer("),
   );
   assert.match(chartCanvasSource, /resolveChartOuterPaintEnvelope\(/);
+  // One framing resolver (centred square or chart dashboard circle) serves
+  // both the settled paint and the retained resize.
+  assert.equal(chartCanvasSource.match(/outerPaintEnvelope\.targetScale/g)?.length, 1,
+    "settled paint and retained resize share nominal framing");
+  assert.equal(chartCanvasSource.match(/= resolveTarget\(rect\)/g)?.length, 2,
+    "settled paint and retained resize resolve the same target");
   assert.match(chartCanvasSource, /\[data-aries-titlebar-title\]/);
   assert.doesNotMatch(chartCanvasSource, /\[data-aries-titlebar-backplate\]/);
   assert.doesNotMatch(chartCanvasSource, /function chartTopInset\(/);
@@ -134,7 +152,7 @@ test("canvas keeps the historical centre and fits to the visible title text", ()
   );
   assert.match(drawChartSource, /const center: Pt = opts\.center/);
   assert.match(envelopeSource, /const hasOuterRing = hasComparison \|\| snapshot\.outerRingMode !== "none"/);
-  assert.match(envelopeSource, /if \(!hasOuterRing && !wheelOpenCuspLabelBand\(ringset\)\)[\s\S]*?paintRadiusScale: 1[\s\S]*?avoidTitlebar: false/);
+  assert.match(envelopeSource, /if \(!hasOuterRing && !standardMorinus && style.presentation !== "traditional-morinus"[\s\S]*?!wheelOpenCuspLabelBand\(ringset\)\)[\s\S]*?paintRadiusScale: 1[\s\S]*?avoidTitlebar: false/);
   assert.match(envelopeSource, /outerPaintRadius = Math\.max\(outerPaintRadius, wheelOpenCuspLabelBand\(ringset\)\?\.outer \?\? 0\)/);
   assert.match(envelopeSource, /outerModeGlyphSize\(snapshot\.outerRingMode, typography\)/);
   assert.doesNotMatch(envelopeSource, /candidateRingsets/);

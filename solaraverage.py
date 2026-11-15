@@ -5,6 +5,7 @@ import datetime
 import math
 
 import astrology
+import chart_bodies
 import chart
 import houses
 import mtexts
@@ -389,11 +390,13 @@ def build_average_return_chart(
 			ayanamsha_offset=avg_chart.ayanamsha_offset,
 		)
 
-	if getattr(avg_chart, 'chiron', None) is not None and all(getattr(chrt, 'chiron', None) is not None for chrt in return_charts):
+	for body_id, avg_body in chart_bodies.iter_dynamic_bodies(avg_chart):
+		if not all(chart_bodies.dynamic_body(chrt, body_id) is not None for chrt in return_charts):
+			continue
 		_apply_average_body(
-			avg_chart.chiron,
+			avg_body,
 			return_charts,
-			lambda chrt: chrt.chiron,
+			lambda chrt, pid=body_id: chart_bodies.dynamic_body(chrt, pid),
 			avg_chart.place.lat,
 			avg_chart.houses.ascmc2,
 			avg_chart.raequasc,

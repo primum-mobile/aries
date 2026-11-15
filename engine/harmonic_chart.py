@@ -22,6 +22,7 @@ import math
 from typing import Any
 
 import astrology
+import chart_bodies
 import fortune
 import houses
 import planets
@@ -757,47 +758,46 @@ def _capture_varga_overlay_factors(chart_obj: Any, division: int) -> dict:
 	# Chiron is intentionally outside the fixed classic planet matrix but is an
 	# enabled planet-like point in Aries. Resolve the same three radix operators
 	# explicitly so it cannot fall through to a derive-after-Varga shortcut.
-	chiron = getattr(chart_obj, "chiron", None)
-	data = getattr(chiron, "data", None)
-	if data is not None and len(data) > planets.Planet.LONG:
-		body_id = astrology.SE_CHIRON
-		longitude = float(data[planets.Planet.LONG])
-		latitude = float(data[planets.Planet.LAT]) if len(data) > planets.Planet.LAT else 0.0
-		if expected_morin:
-			for family, contra in (("antiscia", False), ("contra_antiscia", True)):
-				resolved = Antiscia.morin_projection_points(
-					longitude,
-					latitude,
-					float(getattr(chart_obj, "obl", (0.0,))[0]),
-					int(getattr(chart_obj.options, "ayanamsha", 0)),
-					float(getattr(chart_obj, "ayanamsha_offset", 0.0)),
-					contra=contra,
-				)
-				points = []
-				for branch in ("primary", "secondary"):
-					point = resolved.get(branch)
-					if point is None or point.get("lon") is None:
-						continue
-					points.append({
-						"branch": branch,
-						"longitude": varga_longitude(point["lon"], division),
-						"direction": int(point.get("direction", 0) or 0),
-					})
-				if points:
-					cache[family]["planets"][body_id] = points
-		else:
-			ant, contra = collection.calc(collection._to_tropical(longitude))
-			cache["antiscia"]["planets"][body_id] = [{
-				"branch": "primary", "longitude": varga_longitude(ant, division), "direction": 0,
+	for body_id, body in chart_bodies.iter_dynamic_bodies(chart_obj):
+		data = getattr(body, "data", None)
+		if data is not None and len(data) > planets.Planet.LONG:
+			longitude = float(data[planets.Planet.LONG])
+			latitude = float(data[planets.Planet.LAT]) if len(data) > planets.Planet.LAT else 0.0
+			if expected_morin:
+				for family, contra in (("antiscia", False), ("contra_antiscia", True)):
+					resolved = Antiscia.morin_projection_points(
+						longitude,
+						latitude,
+						float(getattr(chart_obj, "obl", (0.0,))[0]),
+						int(getattr(chart_obj.options, "ayanamsha", 0)),
+						float(getattr(chart_obj, "ayanamsha_offset", 0.0)),
+						contra=contra,
+					)
+					points = []
+					for branch in ("primary", "secondary"):
+						point = resolved.get(branch)
+						if point is None or point.get("lon") is None:
+							continue
+						points.append({
+							"branch": branch,
+							"longitude": varga_longitude(point["lon"], division),
+							"direction": int(point.get("direction", 0) or 0),
+						})
+					if points:
+						cache[family]["planets"][body_id] = points
+			else:
+				ant, contra = collection.calc(collection._to_tropical(longitude))
+				cache["antiscia"]["planets"][body_id] = [{
+					"branch": "primary", "longitude": varga_longitude(ant, division), "direction": 0,
+				}]
+				cache["contra_antiscia"]["planets"][body_id] = [{
+					"branch": "primary", "longitude": varga_longitude(contra, division), "direction": 0,
+				}]
+			cache["dodecatemoria"]["planets"][body_id] = [{
+				"branch": "primary",
+				"longitude": varga_longitude(collection.calcDodecatemoria(longitude), division),
+				"direction": 0,
 			}]
-			cache["contra_antiscia"]["planets"][body_id] = [{
-				"branch": "primary", "longitude": varga_longitude(contra, division), "direction": 0,
-			}]
-		cache["dodecatemoria"]["planets"][body_id] = [{
-			"branch": "primary",
-			"longitude": varga_longitude(collection.calcDodecatemoria(longitude), division),
-			"direction": 0,
-		}]
 	return cache
 
 
@@ -887,7 +887,8 @@ def build_harmonic_chart(radix: Any, harmonic_number: Any = DEFAULT_HARMONIC) ->
 		chart_obj._semantic_desc_node_body = chart_obj.planets.planets[astrology.SE_TRUE_NODE]
 	except Exception:
 		chart_obj._semantic_desc_node_body = None
-	_transform_planet_body(getattr(chart_obj, "chiron", None), number)
+	for _body_id, body in chart_bodies.iter_dynamic_bodies(chart_obj):
+		_transform_planet_body(body, number)
 
 	for asteroid in getattr(getattr(chart_obj, "asteroids", None), "asteroids", ()) or ():
 		data = getattr(asteroid, "data", None)
@@ -941,7 +942,8 @@ def build_varga_chart(radix: Any, division: Any = DEFAULT_VARGA) -> Any:
 		chart_obj._semantic_desc_node_body = chart_obj.planets.planets[astrology.SE_TRUE_NODE]
 	except Exception:
 		chart_obj._semantic_desc_node_body = None
-	_transform_varga_planet_body(getattr(chart_obj, "chiron", None), number)
+	for _body_id, body in chart_bodies.iter_dynamic_bodies(chart_obj):
+		_transform_varga_planet_body(body, number)
 
 	for asteroid in getattr(getattr(chart_obj, "asteroids", None), "asteroids", ()) or ():
 		data = getattr(asteroid, "data", None)

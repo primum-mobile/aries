@@ -116,33 +116,9 @@ body {
   background: color-mix(in srgb, var(--notes-accent) 20%, transparent);
 }
 
-.notes-close-button {
-  flex: 0 0 22px;
-  min-width: 22px;
-  margin-left: 4px;
-  padding: 0 4px;
-  color: color-mix(in srgb, var(--notes-background) 30%, var(--notes-text) 70%);
-  font-weight: 600;
-}
-
-.notes-close-button:hover {
-  color: var(--notes-text);
-  background: transparent;
-}
-
-.notes-close-button:active {
-  color: var(--notes-text);
-  background: transparent;
-}
-
 .is-readonly #notes-toolbar button {
   opacity: 0.35;
   pointer-events: none;
-}
-
-.is-readonly #notes-toolbar button.notes-close-button {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 #editor {

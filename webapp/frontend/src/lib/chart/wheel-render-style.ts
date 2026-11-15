@@ -6,6 +6,13 @@ import type { DitherRasterPattern } from "../render/dither-pattern";
 import type { ChartPalette } from "./types";
 import {
   composeWheelBands,
+  resizeWheelOpenTracks,
+  composedWheelLayout,
+  resolvedWheelLayout,
+  wheelBandOuterField,
+  retainWheelRadiusLayout,
+  wheelBandOuterBoundaryRole,
+  wheelCuspAnnotationsShareRuler,
   reserveWheelSecondarySpace,
   WHEEL_BAND_BOUNDARY_FIELDS,
   WHEEL_BAND_ORDER,
@@ -15,8 +22,14 @@ import {
   solveOrderedBoundaries,
   resolveWheelRulerDepth,
   wheelBandFloor,
+  wheelBandMinimumWidth,
+  resolveWheelClassFontSizeCeiling,
+  resolveWheelClassBandThickness,
+  resolveWheelTickLength,
   wheelLayoutFamily,
   type WheelBandId,
+  type ResolvedWheelBand,
+  usesOriginalWheelTopology,
   type WheelRulerId,
 } from "./wheel-layout-model";
 
@@ -24,6 +37,7 @@ import {
 // reaches the wheel through this module; re-exported so the style lab has one
 // import surface rather than two.
 export {
+  resolveWheelBandLayout,
   WHEEL_RULER_DEPTH_RANGE,
   WHEEL_RULER_IDS,
   WHEEL_TICK_LENGTH_RANGE,
@@ -116,9 +130,9 @@ export const WHEEL_RENDER_PALETTE_SPECS: Readonly<WheelRenderPaletteSpecs> = dee
   houseLabel: ["--aries-wheel-house-label-color", "var(--morinus-housenums)"],
   angloHouseLabel: ["--aries-wheel-anglo-house-label-color", "var(--morinus-text-dim)"],
   termBoundary: ["--aries-wheel-term-boundary-color", "var(--morinus-frame)"],
-  termGlyph: ["--aries-wheel-term-glyph-color", "var(--morinus-signs)"],
+  termGlyph: ["--aries-wheel-term-glyph-color", "currentColor"],
   decanBoundary: ["--aries-wheel-decan-boundary-color", "var(--morinus-frame)"],
-  decanGlyph: ["--aries-wheel-decan-glyph-color", "var(--morinus-signs)"],
+  decanGlyph: ["--aries-wheel-decan-glyph-color", "currentColor"],
   bodyLeader: ["--aries-wheel-body-leader-color", "var(--morinus-frame)"],
   angloBodyLeader: ["--aries-wheel-anglo-body-leader-color", "var(--morinus-angles)"],
   outerLeader: ["--aries-wheel-outer-leader-color", "var(--morinus-frame)"],
@@ -191,6 +205,7 @@ export interface WheelPositionLane {
 }
 
 export interface ClassicWheelGeometryProfile {
+  readonly bareSingle?: Readonly<{ zodiac: number; signSector: number; planetSector: number; houseSector: number; base: number; houseName: number; signInset: number; angle: number; positionLanes: readonly [WheelPositionLane, WheelPositionLane, WheelPositionLane] }>;
   readonly degreeTickLength: number;
   readonly signSectorLength: number;
   readonly planetSectorLength: number;
@@ -219,6 +234,7 @@ export interface ClassicWheelGeometryProfile {
 }
 
 export interface CompactWheelGeometryProfile {
+  readonly barePositionLanes?: readonly [number, number, number];
   readonly positionLaneSingle: readonly [number, number, number];
   readonly positionLaneComparison: readonly [number, number, number];
   readonly positionInset: number;
@@ -324,6 +340,7 @@ export interface WheelGeometryInput {
   readonly mode: WheelGeometryMode;
   readonly maxRadius: number;
   readonly hasOuterRing: boolean;
+  readonly outerRingMode?: string;
   readonly showTerms: boolean;
   readonly showDecans: boolean;
   readonly showHouses: boolean;
@@ -333,20 +350,17 @@ export interface WheelGeometryInput {
   readonly showOuterHouses?: boolean;
   readonly restrainedAngloComparison?: boolean;
   /**
-   * The ring the user is editing right now, if any.
-   *
-   * A stored profile has no active boundary: every pin is equally authored, and
-   * the solver's order-independent "stop at your neighbour" is exactly right
-   * for it. A boundary being *edited* is different — it is a live request, and
-   * stopping dead at a neighbour reads as the control breaking rather than as a
-   * wall. Naming it here lets the solver push its neighbours aside for it, and
-   * report its wall as the room the whole stack has rather than the room its
-   * neighbour currently leaves.
-   *
-   * Set by whichever surface is editing — a drag on the wheel or an inspector
-   * field — so both behave identically.
+   * Optional diagnostic override for the boundary that takes push priority.
+   * Production editing stores that intent in `authoringOverrides.radiusPriority`
+   * so paint, scene, numeric limits, release, and reload resolve the same wheel.
+   * Old profiles without a priority retain the deterministic outer-pin-first
+   * policy. A prioritized boundary may use the whole feasible stack interval;
+   * neighbouring authored targets yield without being rewritten as extra pins.
    */
   readonly pushBoundaryRole?: WheelPaintedRingRole;
+  /** Internal appearance sampling of the accepted nominal recipe; never used
+   * for live geometry or editor constraints. */
+  readonly bandMinimumPolicy?: "nominal";
 }
 
 export interface WheelTypographyRatios {
@@ -533,6 +547,7 @@ export const WHEEL_AUTHORING_TYPOGRAPHY_CLASSES = [
   "bodies.outer.glyph",
   "bodies.outer.motion",
   "bodies.outer.position",
+  "bodies.outer.position.minute",
   "aspects.primary.glyph",
   "aspects.interchart.glyph",
   "secondaryRing.fixedStar.label",
@@ -868,6 +883,102 @@ export type WheelAuthoringLinePaintOverride = Readonly<{
   lineJoin?: CanvasLineJoin;
 }>;
 
+type DignityGlyphBounds = { x: number; y: number; w: number; h: number };
+
+type MinorDignityFacts = {
+  minorDignityCount?: number;
+  hasTermDignity?: boolean;
+  hasFaceDignity?: boolean;
+  primaryTriplicityElement?: import("./types").ZodiacElement | null;
+};
+
+export type DignityGlyphOptions = {
+  showDignityGlyphs?: boolean;
+  showTermGlyphs?: boolean;
+  showFaceGlyphs?: boolean;
+};
+
+export type MinorDignityDecoration = Readonly<{
+  bounds: DignityGlyphBounds;
+  markers: readonly import("./canvas-draw").TextMarker[];
+}>;
+
+/** Canonical dignity facts select annotations; major glyph paint stays intact. */
+export function resolveMinorDignityDecoration(
+  planet: MinorDignityFacts | undefined,
+  glyph: DignityGlyphBounds,
+  glyphSize: number,
+  markerStyle: {
+    font: string; triplicityColor: string; dignityColor: string;
+    measure: (text: string, size: number, font: string, weight?: number) => readonly [number, number];
+    motionBounds?: DignityGlyphBounds;
+  },
+  options: DignityGlyphOptions,
+): MinorDignityDecoration | undefined {
+  if (!planet?.minorDignityCount) return;
+  const markers: import("./canvas-draw").TextMarker[] = [];
+  const gap = Math.max(1, glyph.h * 0.0625);
+  const right = glyph.x + glyph.w + gap;
+  let superscriptX = right;
+  const upperHeight = Math.max(8, glyph.h * 0.45);
+  const upperBottom = glyph.y + upperHeight * 0.82;
+  for (const [present, text, font, weight, targetHeight] of [
+    [options.showTermGlyphs && planet.hasTermDignity, "*", "FreeSans", 700, upperHeight],
+    [options.showFaceGlyphs && planet.hasFaceDignity, "𝑭", "AriesDignityFace", 400, Math.max(6, glyph.h * 0.4)],
+  ] as const) {
+    if (!present) continue;
+    // Normalize visible ink, preserving the bold FreeSans asterisk's five points.
+    let size = Math.max(9, Math.round(glyphSize * 0.42));
+    const measuredHeight = markerStyle.measure(text, size, font, weight)[1];
+    if (measuredHeight > 0) size = Math.max(1, Math.round(size * targetHeight / measuredHeight));
+    const [w, h] = markerStyle.measure(text, size, font, weight);
+    const bounds = { x: superscriptX, y: upperBottom - h, w, h };
+    markers.push({ text, font, weight, size, color: markerStyle.dignityColor, bounds });
+    superscriptX += w + gap;
+  }
+  if (options.showDignityGlyphs && planet.primaryTriplicityElement) {
+    const font = "FreeSans";
+    let size = Math.max(9, Math.round(glyphSize * 0.42));
+    const targetHeight = Math.max(6, glyph.h * 0.4);
+    const measuredHeight = markerStyle.measure("△", size, font)[1];
+    if (measuredHeight > 0) size = Math.max(1, Math.round(size * targetHeight / measuredHeight));
+    const [w, h] = markerStyle.measure("△", size, font);
+    const strokeWidth = h * 0.1;
+    const pad = strokeWidth / 2;
+    const motion = markerStyle.motionBounds;
+    const bounds = {
+      x: Math.max(right, motion ? motion.x + motion.w + gap : right),
+      y: glyph.y + glyph.h - h * 0.72 - pad,
+      w: w + strokeWidth, h: h + strokeWidth,
+    };
+    markers.push({ text: "△", font, size,
+      color: markerStyle.triplicityColor, strokeWidth, bounds });
+  }
+  if (!markers.length) return;
+  const boxes = [glyph, ...markers.map(marker => marker.bounds)];
+  const x = Math.min(...boxes.map(box => box.x)), y = Math.min(...boxes.map(box => box.y));
+  return { markers, bounds: { x, y,
+    w: Math.max(...boxes.map(box => box.x + box.w)) - x,
+    h: Math.max(...boxes.map(box => box.y + box.h)) - y } };
+}
+
+export function triplicityElementColor(
+  element: MinorDignityFacts["primaryTriplicityElement"],
+  palette: Pick<import("./types").ChartPalette, "elements" | "domicil" | "signs">,
+  useElementColors = true,
+): string {
+  if (!useElementColors) return palette.signs;
+  return palette.elements?.[["fire", "earth", "air", "water"].indexOf(element ?? "")] ?? palette.domicil;
+}
+
+/** Triplicity annotations follow the same color mode as zodiac glyphs. */
+export function triplicityColorRole(
+  element: MinorDignityFacts["primaryTriplicityElement"],
+  useElementColors: boolean,
+): string {
+  return useElementColors && element ? `--morinus-element-${element}` : "--morinus-signs";
+}
+
 /**
  * Sparse profile-v2 values. Every dimension is a direct chart-pixel value on
  * the declared reference radius. Variant inheritance is resolved before this
@@ -925,6 +1036,17 @@ export type WheelAuthoringOverrides = Readonly<{
    */
   wheelScale: Readonly<Partial<Record<WheelTypographyProfile, number>>>;
   ringWidths?: Readonly<Partial<Record<WheelTypographyProfile, Readonly<Record<string, number>>>>>;
+  /** Last explicitly edited boundary. Keeps a push gesture's result stable
+   * after release/reload without turning displaced neighbours into pins. */
+  radiusPriority?: Readonly<Partial<Record<WheelTypographyProfile, WheelPaintedRingRole>>>;
+  /** Imported radius-defined recipes supply preferred band dimensions.
+   * These values are sampled in the original recipe, never reapplied as live
+   * absolute pins after an instrument moves or disappears. */
+  recipeRadii?: Readonly<Partial<Record<WheelTypographyProfile,
+    Readonly<Partial<Record<WheelPaintedRingRole, number>>>>>>;
+  /** The historical outer-degree role also named a custom Cusp annotation
+   * boundary. Keep its authored target explicit across topology transitions. */
+  outerDegreeBinding?: Readonly<Partial<Record<WheelTypographyProfile, "degree" | "cuspLabels">>>;
   /**
    * Where a band span's inner edge sits, in reference-space px, per span.
    *
@@ -989,6 +1111,17 @@ export type WheelAuthoringOverrides = Readonly<{
   tickLength: Readonly<
     Partial<Record<WheelTypographyProfile, Readonly<Record<string, number>>>>
   >;
+  /**
+   * The Vintage magazine wheel's own appearance edits, in its 400-unit frame
+   * (vintage-magazine-wheel.ts). Sparse, and never folded with Base or the
+   * Cusp wheel, so an unedited theme paints the approved mock-up.
+   */
+  vintage?: WheelVintageAuthoringOverrides;
+}>;
+
+export type WheelVintageAuthoringOverrides = Readonly<{
+  typography: Readonly<Partial<Record<WheelAuthoringTypographyClass, WheelAuthoringTypographyOverride>>>;
+  linePaint: Readonly<Partial<Record<WheelAuthoringLineClass, WheelAuthoringLinePaintOverride>>>;
 }>;
 
 
@@ -1034,6 +1167,7 @@ export const WHEEL_BAND_SPANS: Readonly<
 export function resolveWheelBandSpanFields(
   input: WheelGeometryInput,
   spanId: string,
+  rings?: Readonly<WheelRingSet>,
 ): Readonly<{
   outerField: keyof WheelRingSet | null;
   interiorFields: readonly (keyof WheelRingSet)[];
@@ -1041,6 +1175,25 @@ export function resolveWheelBandSpanFields(
 }> | null {
   const bands = WHEEL_BAND_SPANS[spanId];
   if (!bands?.length) return null;
+  const layout = rings ? composedWheelLayout(rings) : undefined;
+  if (layout) {
+    const stack = layout.bands.filter(band => band.visible && !band.overlay && !band.floating);
+    const first = stack.findIndex(band => bands.includes(band.id));
+    const last = stack.reduce((found, band, index) => bands.includes(band.id) ? index : found, -1);
+    if (first < 0 || last < first) return null;
+    // The chart-ring run ends at the points field. Independent instruments
+    // inserted into that run belong to it too; hosted instruments follow
+    // their host rather than becoming independent span boundaries.
+    const body = spanId === "chartRing" ? stack.findIndex(band => band.id === "bodies") : -1;
+    const end = body > last ? body : last + 1;
+    const interiorFields = stack.slice(first + 1, end + 1).flatMap(band => {
+      const field = wheelBandOuterField(input, band.id, true);
+      return field ? [field] : [];
+    });
+    if (!interiorFields.length) return null;
+    return {outerField: first === 0 ? null : wheelBandOuterField(input, stack[first].id, true) ?? null,
+      interiorFields, innerField: interiorFields[interiorFields.length - 1]};
+  }
   const family = wheelLayoutFamily(input);
   const order = WHEEL_BAND_ORDER[family];
   const boundaries = WHEEL_BAND_BOUNDARY_FIELDS[family];
@@ -1558,6 +1711,7 @@ export interface WheelOverlayStyle {
 }
 
 export interface WheelRenderStyle {
+  readonly presentation?: "traditional-morinus" | "vintage-magazine";
   readonly schemaVersion: typeof WHEEL_RENDER_STYLE_SCHEMA_VERSION;
   readonly revision: WheelStyleRevision;
   readonly palette: WheelRenderPalette;
@@ -1844,6 +1998,7 @@ export interface ResolvedWheelTypographyMetrics {
   readonly aspectGlyphOffset: number;
   readonly motionSize: number;
   readonly outerPositionSize: number;
+  readonly outerPositionMinuteSize: number;
   readonly outerMotionSize: number;
   readonly outerLabelSize: number;
   readonly outerProjectedGlyphSize: number;
@@ -2021,9 +2176,9 @@ function elementColorsFromPalette(palette: ChartPalette): WheelElementColors {
     houseLabel: palette.houseNums,
     angloHouseLabel: palette.textDim,
     termBoundary: palette.frame,
-    termGlyph: palette.signs,
+    termGlyph: "currentColor",
     decanBoundary: palette.frame,
-    decanGlyph: palette.signs,
+    decanGlyph: "currentColor",
     bodyLeader: palette.frame,
     angloBodyLeader: palette.angles,
     outerLeader: palette.frame,
@@ -2189,9 +2344,53 @@ export function wheelTypographyProfileForTheme(
 export function paintedRingFieldFor(
   role: WheelPaintedRingRole,
   profile: WheelTypographyProfile,
+  rings?: Readonly<WheelRingSet>,
+  style?: WheelRenderStyle,
 ): keyof WheelRingSet {
+  const outerDegreeBinding = style?.authoringOverrides.outerDegreeBinding?.[profile];
+  if (role === "outerDegreeRing" && outerDegreeBinding) {
+    return outerDegreeBinding === "cuspLabels" ? "rCuspLabelOuter" : "rOuter10";
+  }
+  if (rings && composedWheelLayout(rings)) {
+    if (role === "outerMaximumRing") return "rOuterMax";
+    if (role === "outerHouseRing") return rings.rOuterHouse != null ? "rOuterHouse" : "rOuterMax";
+    const fields: Partial<Record<WheelPaintedRingRole, keyof WheelRingSet>> = {
+      termRing: "rDecans", zodiacInnerRing: "rTerms", outerDegreeRing: "rCuspLabelOuter",
+      innerDegreeRing: "rDegreeOuter", baseRing: "rBase",
+    };
+    if (fields[role]) return fields[role]!;
+  }
   if (role === "baseRing" && isAngloFamilyProfile(profile)) return "rAsp";
   return PAINTED_RING_FIELD[role];
+}
+
+/** A Degree terminal can share the adjoining band's edge without owning its
+ * painted circle. Resolve that constraint from the declared stack, so an
+ * unpainted Cusp annotation join cannot decide whether the terminal is live. */
+function authoredRadiusBoundaryField(
+  style: WheelRenderStyle,
+  input: WheelGeometryInput,
+  rings: Readonly<WheelRingSet>,
+  role: WheelPaintedRingRole,
+): keyof WheelRingSet {
+  const field = paintedRingFieldFor(role, input.profile, rings, style);
+  const layout = resolvedWheelLayout(rings);
+  if (!layout || role !== "outerDegreeRing"
+    || style.authoringOverrides.outerDegreeBinding?.[input.profile] !== "degree") return field;
+  const degree = layout.bands.find(band => band.id === "degree" && band.visible);
+  if (!degree || degree.floating || degree.attachment?.edge === "outer") return field;
+  const owner = degree.attachment
+    ? layout.bands.find(band => band.id === degree.attachment!.hostBandId) : degree;
+  const stack = layout.bands.filter(band => band.visible && !band.overlay && !band.floating);
+  const next = owner ? stack[stack.indexOf(owner) + 1] : undefined;
+  return next ? wheelBandOuterField(input, next.id, Boolean(composedWheelLayout(rings))) ?? field : field;
+}
+
+function hostedDegreeFreeTerminal(style: WheelRenderStyle, input: WheelGeometryInput,
+  rings: Readonly<WheelRingSet>) {
+  if (style.authoringOverrides.outerDegreeBinding?.[input.profile] !== "degree") return undefined;
+  return composedWheelLayout(rings)?.bands.find(band => band.id === "degree" && band.visible
+    && band.attachment?.edge === "outer");
 }
 
 export function activePaintedRingRoles(
@@ -2281,17 +2480,15 @@ export function resolveWheelFillPaint(
   const sourceShadowY = source?.shadowYpx ?? DEFAULT_WHEEL_FILL_PAINT.shadowYpx;
   const sourceShadowBlur =
     source?.shadowBlurPx ?? DEFAULT_WHEEL_FILL_PAINT.shadowBlurPx;
+  // Clamp in authoring units, then scale cell and dot together: a texture's
+  // tone is its dot/cell ratio, so post-scale floors would darken small wheels.
+  const authoringCell = Math.min(48, Math.max(0.5, sourceCell));
+  const authoringDot = Math.min(authoringCell, 24, Math.max(0.25, sourceDot));
   const cellSizePx = Math.max(
-    0.5,
-    resolveWheelAuthoringPx(style, Math.min(48, Math.max(0.5, sourceCell)), targetWheelRadius),
+    1e-3,
+    resolveWheelAuthoringPx(style, authoringCell, targetWheelRadius),
   );
-  const dotSizePx = Math.min(
-    cellSizePx,
-    Math.max(
-      0.25,
-      resolveWheelAuthoringPx(style, Math.min(24, Math.max(0.25, sourceDot)), targetWheelRadius),
-    ),
-  );
+  const dotSizePx = cellSizePx * authoringDot / authoringCell;
   return deepFreeze({
     fillPattern: (
       source?.fillPattern === "solid"
@@ -2410,6 +2607,7 @@ export function wheelFillUsesSolarDirection(
 
 /** Ordered boundary stack plus authored pins for one preview state. */
 interface WheelBoundaryPlan {
+  readonly outerLimit: number;
   readonly fields: readonly (keyof WheelRingSet)[];
   readonly canonicalRadii: readonly number[];
   readonly pins: readonly (number | undefined)[];
@@ -2437,8 +2635,15 @@ function planWheelBoundaries(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
   rings: Readonly<WheelRingSet>,
+  excludedRadiusRole?: WheelPaintedRingRole,
 ): WheelBoundaryPlan {
-  const roles = activePaintedRingRoles(input);
+  const layout = resolvedWheelLayout(rings);
+  const reordered = Boolean(composedWheelLayout(rings));
+  const outerLimit = Math.max(input.maxRadius, layout?.bands.find(band => band.id === "margin")?.outer ?? 0);
+  const roles = reordered && layout ? layout.bands.flatMap(band => {
+    const role = wheelBandOuterBoundaryRole(band, layout.bands);
+    return role ? [role as WheelPaintedRingRole] : [];
+  }) : activePaintedRingRoles(input);
   const legacyOverrides = style.ringRadiusOverrides[input.profile];
   const directOverrides = style.authoringOverrides.ringRadii[input.profile];
   const gap = wheelBandFloor(input.maxRadius);
@@ -2449,18 +2654,28 @@ function planWheelBoundaries(
   //
   // An authored radius is a *pinned band boundary*. The stack is solved in one
   // declarative pass against the authored pins, never against a neighbour's
-  // already-adjusted value, so the same set of edits yields the same wheel
-  // regardless of the order they were made in.
+  // already-adjusted value. The same pins and persisted priority yield the
+  // same wheel across release and reload.
   const pinByField = new Map<keyof WheelRingSet, number>();
-  for (const role of roles) {
+  const outerDegreeBinding = style.authoringOverrides.outerDegreeBinding?.[input.profile];
+  const radiusTarget = outerDegreeBinding ? (layout?.bands ?? resolveWheelBandLayoutFromRings(style, input, rings).bands)
+    .find(band => band.id === (outerDegreeBinding === "degree" ? "degree" : "cuspLabels") && band.visible) : undefined;
+  const radiusRoles = outerDegreeBinding && input.composition
+    ? [...roles.filter(role => role !== "outerDegreeRing"), ...(radiusTarget ? ["outerDegreeRing" as const] : [])]
+    : outerDegreeBinding === "cuspLabels" && !roles.includes("outerDegreeRing")
+      ? [...roles, "outerDegreeRing" as const] : roles;
+  for (const role of radiusRoles) {
+    if (role === excludedRadiusRole) continue;
+    if (role === "outerDegreeRing" && hostedDegreeFreeTerminal(style, input, rings)) continue;
     const directOverride = directOverrides?.[role];
-    const legacyOverride = legacyOverrides[role];
+    const legacyOverride = style.authoringOverrides.recipeRadii?.[input.profile] !== undefined
+      ? 0 : legacyOverrides[role];
     const pin = directOverride !== undefined && Number.isFinite(directOverride)
       ? resolveWheelAuthoringPx(style, directOverride, input.maxRadius)
       : legacyOverride > 0
         ? legacyOverride * input.maxRadius
         : undefined;
-    if (pin !== undefined) pinByField.set(paintedRingFieldFor(role, input.profile), pin);
+    if (pin !== undefined) pinByField.set(authoredRadiusBoundaryField(style, input, rings, role), pin);
   }
 
   // Solve every boundary the band model declares, not only the stroked ones. A
@@ -2472,58 +2687,81 @@ function planWheelBoundaries(
   // radius sort would order those ties arbitrarily — the solver would then push
   // them apart in that arbitrary order and invert the band.
   const declared = WHEEL_BAND_BOUNDARY_FIELDS[wheelLayoutFamily(input)];
-  const fields: (keyof WheelRingSet)[] = declared.filter(
-    (field) => typeof rings[field] === "number",
-  );
-  // Painted rings that are not band edges — the degree-ruler terminals — slot
-  // in by radius, which is unambiguous because they never tie with an edge.
-  for (const role of roles) {
-    const field = paintedRingFieldFor(role, input.profile);
+  const fields: (keyof WheelRingSet)[] = layout
+    ? layout.bands.filter(band => band.visible && !band.overlay && !band.floating)
+      .flatMap(band => { const field = wheelBandOuterField(input, band.id, reordered); return field ? [field] : []; })
+    : declared.filter((field) => typeof rings[field] === "number");
+  // Historical ruler terminals can be separate circle constraints. Composed
+  // shared terminals resolve to their existing declared edge above.
+  for (const role of radiusRoles) {
+    if (role === "outerDegreeRing" && hostedDegreeFreeTerminal(style, input, rings)) continue;
+    const field = authoredRadiusBoundaryField(style, input, rings, role);
     if (fields.includes(field) || typeof rings[field] !== "number") continue;
     const radius = rings[field] as number;
     const at = fields.findIndex((other) => (rings[other] as number) < radius);
     fields.splice(at < 0 ? fields.length : at, 0, field);
   }
   const canonicalRadii = fields.map((field) => rings[field] as number);
+  const pushRole = input.pushBoundaryRole ?? style.authoringOverrides.radiusPriority?.[input.profile];
+  const pushField = pushRole ? authoredRadiusBoundaryField(style, input, rings, pushRole) : undefined;
+  const pushAt = pushField ? fields.indexOf(pushField) : -1;
 
-  // A uniform structural floor is the wrong minimum for a band that has to
-  // show something. It is why the decan ring can be squeezed until its rulers
-  // have nowhere to sit, while a plain divider beside it keeps room it never
-  // needed. Give each band that carries a glyph a floor of that glyph's size,
-  // which pairs with the ceiling that keeps a glyph inside its band: the band
-  // never shrinks below its glyph, and the glyph never grows past its band.
-  //
-  // The floor is applied to the interval ending at the band's inner edge. A
-  // band may span several intervals once the degree-ruler terminals are slotted
-  // in, and the band's thickness is the sum of those intervals, so demanding it
-  // of the last one is enough to guarantee the whole band clears the floor.
-  const gaps: number[] = new Array(fields.length + 1).fill(gap);
-  const metrics = resolveWheelTypographyMetrics(style, input.profile, input.maxRadius);
-  //
-  // Located by *band*, not by a hard-coded circle. Naming the two circles
-  // directly was a classic-only assumption: anglo's decan band ends at
-  // `rCuspOuter`, not `rInner`, so the decan floor was being demanded of a band
-  // that holds no decan and the decan band itself was free to be crushed to the
-  // bare structural gap. Measured on anglo, dragging the cusp ring collapsed it
-  // to 1.8px with a 0.8px glyph inside.
-  //
-  // Still exactly two floors. A floor grows a band to fit its glyph and pushes
-  // its neighbours, which is the behaviour that was rejected in favour of the
-  // glyph capping; the fix is to put the two we have in the right place, not to
-  // add more.
-  const bandInnerField = (bandId: WheelBandId): keyof WheelRingSet | undefined => {
-    const at = WHEEL_BAND_ORDER[wheelLayoutFamily(input)].indexOf(bandId);
-    return at < 0 ? undefined : declared[at];
-  };
-  const contentFloors: readonly (readonly [keyof WheelRingSet | undefined, number])[] = [
-    [bandInnerField("terms"), metrics.termSize],
-    [bandInnerField("decans"), metrics.decanSize],
-  ];
-  for (const [innerField, floor] of contentFloors) {
-    if (!innerField) continue;
-    const at = fields.indexOf(innerField);
-    if (at < 0 || !Number.isFinite(floor) || floor <= 0) continue;
-    gaps[at] = Math.max(gaps[at], floor);
+  // A saved thickness joins its two boundaries. A radius pin can carry this
+  // dimension in either direction; it must not silently resize the band or
+  // be swallowed by a later width pass. These derived pins remain preferences:
+  // required band minimums win when an import or visibility change conflicts.
+  if (input.composition && layout) {
+    const bands = resolveWheelBandLayoutFromRings(style, input, rings).bands;
+    const widths = style.authoringOverrides.ringWidths?.[input.profile] ?? {};
+    const joinedStack = bands.filter(band => !band.overlay && !band.floating && band.visible);
+    const joins = joinedStack.filter(band => band.instanceId
+      && (widths[band.instanceId] != null || band.id.startsWith("outer"))).flatMap(band => {
+        const outer = wheelBandOuterField(input, band.id, reordered);
+        const next = joinedStack[joinedStack.indexOf(band) + 1];
+        const inner = next ? wheelBandOuterField(input, next.id, reordered) : undefined;
+        return outer && inner && fields.includes(outer) && fields.includes(inner)
+          ? [{outer, inner, width: band.outer - band.inner}] : [];
+      });
+    for (let pass = 0; pass < joins.length; pass++) {
+      let changed = false;
+      for (const {outer, inner, width} of joins) {
+        const a = pinByField.get(outer), b = pinByField.get(inner);
+        if (a !== undefined && b === undefined) { pinByField.set(inner, a - width); changed = true; }
+        if (b !== undefined && a === undefined) { pinByField.set(outer, b + width); changed = true; }
+      }
+      if (!changed) break;
+    }
+  }
+
+  // Required minima belong to semantic bands, shared with thickness controls.
+  // Radius/diameter pins and saved widths are preferences. Neither may consume
+  // the room required by another visible band when the composition changes.
+  const gaps: number[] = new Array(fields.length + 1).fill(0);
+  const bands = layout?.bands ?? resolveWheelBandLayoutFromRings(style, input, rings).bands;
+  const stack = bands.filter(band => band.visible && !band.overlay && !band.floating);
+  for (const band of stack) {
+    if (band.id === "margin") continue;
+    const minimum = wheelBandMinimumWidth(style, input, band);
+    const outerField = layout ? wheelBandOuterField(input, band.id, reordered) : undefined;
+    const innerField = layout
+      ? wheelBandOuterField(input, stack[stack.indexOf(band) + 1]?.id, reordered)
+      : declared[WHEEL_BAND_ORDER[wheelLayoutFamily(input)].indexOf(band.id)];
+    const outer = outerField ? fields.indexOf(outerField)
+      : fields.findIndex(field => Math.abs((rings[field] as number) - band.outer) < 1e-9);
+    const inner = band.id === "hub" ? fields.length
+      : innerField ? fields.indexOf(innerField) : -1;
+    if (inner < 0) continue;
+    // Ruler terminals can divide a band into several solver intervals. Share
+    // its minimum across those intervals instead of charging the full minimum
+    // to the last one, which unnecessarily pushes the surrounding bands.
+    const start = Math.max(0, outer + 1);
+    const depth = Math.max(0, band.outer - band.inner);
+    for (let index = start; index <= inner; index++) {
+      const upper = index === 0 ? outerLimit : canonicalRadii[index - 1];
+      const lower = index === fields.length ? 0 : canonicalRadii[index];
+      const share = depth > 1e-9 ? Math.max(0, upper - lower) / depth : index === inner ? 1 : 0;
+      gaps[index] = Math.max(gaps[index], minimum * share);
+    }
   }
 
   // The span remaps against what the user is currently looking at, which is the
@@ -2537,10 +2775,11 @@ function planWheelBoundaries(
   const ringOnlyPins = fields.map((field) => pinByField.get(field));
   const ringOnlyRadii = ringOnlyPins.some((pin) => pin !== undefined)
     ? solveOrderedBoundaries(canonicalRadii, ringOnlyPins, {
-      outerLimit: input.maxRadius,
+      outerLimit,
       innerLimit: 0,
       gap,
       gaps,
+      ...(pushAt >= 0 ? {pushIndex: pushAt} : {}),
     }).resolved
     : canonicalRadii;
   const currentByField = new Map<keyof WheelRingSet, number>(
@@ -2567,7 +2806,7 @@ function planWheelBoundaries(
   // is carried as a share of the run rather than pinned to an absolute radius —
   // the behaviour the span always intended, now expressed directly.
   for (const spanId of Object.keys(WHEEL_BAND_SPANS)) {
-    const span = resolveWheelBandSpanFields(input, spanId);
+    const span = resolveWheelBandSpanFields(input, spanId, rings);
     if (!span) continue;
     const anchor = span.outerField === null
       ? input.maxRadius
@@ -2612,16 +2851,21 @@ function planWheelBoundaries(
     && typeof cuspLabelOuter === "number"
     && typeof rings.rCuspOuter === "number"
   ) {
-    const rulerBand = rings.rCuspOuter - cuspLabelOuter;
+    // Saved Anglo boundaries retain their original ruler depth when optional
+    // subdivisions disappear. Apply this before deriving the annotation pin;
+    // repairing it only in the width pass had already displaced inner rings.
+    const fullRuler = input.profile === "anglo" && input.composition && !usesOriginalWheelTopology(input)
+      && pinByField.has("rInner")
+      && (!input.showTerms || !input.showDecans)
+      ? resolveCanonicalWheelLayout(style, {...input, showTerms: true, showDecans: true})
+        .bands.find(band => band.id === "cuspRuler") : undefined;
+    const rulerBand = fullRuler ? fullRuler.outer - fullRuler.inner : rings.rCuspOuter - cuspLabelOuter;
     if (rulerBand > 0) pinByField.set("rCuspLabelOuter", cuspOuterPin - rulerBand);
   }
 
   const pins = fields.map((field) => pinByField.get(field));
-  const pushField = input.pushBoundaryRole
-    ? paintedRingFieldFor(input.pushBoundaryRole, input.profile)
-    : undefined;
-  const pushAt = pushField ? fields.indexOf(pushField) : -1;
   return {
+    outerLimit,
     fields,
     canonicalRadii,
     pins,
@@ -2643,12 +2887,27 @@ export function resolveWheelPaintedRingRadiusRange(
   input: WheelGeometryInput,
   role: WheelPaintedRingRole,
 ): Readonly<{ min: number; max: number }> | null {
-  const canonical = resolveCanonicalWheelRingSet(style, input);
-  const plan = planWheelBoundaries(style, input, canonical);
-  const index = plan.fields.indexOf(paintedRingFieldFor(role, input.profile));
+  const rings = resolveWheelRadiusBaseline(style, input).rings;
+  if (role === "outerDegreeRing" && hostedDegreeFreeTerminal(style, input, rings)) {
+    const ringRadii = {...style.authoringOverrides.ringRadii[input.profile]};
+    delete ringRadii.outerDegreeRing;
+    const withoutTerminal = {...style,
+      ringRadiusOverrides: {...style.ringRadiusOverrides,
+        [input.profile]: {...style.ringRadiusOverrides[input.profile], outerDegreeRing: 0}},
+      authoringOverrides: {...style.authoringOverrides,
+        ringRadii: {...style.authoringOverrides.ringRadii, [input.profile]: ringRadii}}};
+    const solved = applyPaintedRingRadiusOverrides(withoutTerminal, input, rings);
+    const degree = hostedDegreeFreeTerminal(style, input, solved)!;
+    const host = resolvedWheelLayout(solved)!.bands.find(band => band.id === degree.attachment!.hostBandId)!;
+    const maximum = Math.max(0, host.outer - host.inner) * degree.attachment!.maxDepthFraction;
+    const minimum = Math.min(maximum, wheelBandMinimumWidth(style, input, degree));
+    return {min: host.outer - maximum, max: host.outer - minimum};
+  }
+  const plan = planWheelBoundaries(style, input, rings, role);
+  const index = plan.fields.indexOf(authoredRadiusBoundaryField(style, input, rings, role));
   if (index < 0) return null;
   const solution = solveOrderedBoundaries(plan.canonicalRadii, plan.ringOnlyPins, {
-    outerLimit: input.maxRadius,
+    outerLimit: plan.outerLimit,
     innerLimit: 0,
     gap: plan.gap,
     gaps: plan.gaps,
@@ -2690,16 +2949,16 @@ function resolveWheelBandSpanInnerRenderedRange(
   input: WheelGeometryInput,
   spanId: string,
 ): Readonly<{ min: number; max: number }> | null {
-  const span = resolveWheelBandSpanFields(input, spanId);
+  const rings = resolveWheelRadiusBaseline(style, input).rings;
+  const span = resolveWheelBandSpanFields(input, spanId, rings);
   if (!span) return null;
-  const canonical = resolveCanonicalWheelRingSet(style, input);
-  const plan = planWheelBoundaries(style, input, canonical);
+  const plan = planWheelBoundaries(style, input, rings);
   const index = plan.fields.indexOf(span.innerField);
   if (index < 0) return null;
   // Bounded by the hand-placed circles and the floors, not by the span's own
   // derived positions: a span cannot be its own wall.
   const solution = solveOrderedBoundaries(plan.canonicalRadii, plan.ringOnlyPins, {
-    outerLimit: input.maxRadius,
+    outerLimit: plan.outerLimit,
     innerLimit: 0,
     gap: plan.gap,
     gaps: plan.gaps,
@@ -2713,14 +2972,14 @@ export function resolveWheelBandSpanInnerReferenceRange(
   input: WheelGeometryInput,
   spanId: string,
 ): Readonly<{ min: number; max: number }> | null {
-  const span = resolveWheelBandSpanFields(input, spanId);
+  const rings = resolveWheelRadiusBaseline(style, input).rings;
+  const span = resolveWheelBandSpanFields(input, spanId, rings);
   if (!span) return null;
-  const canonical = resolveCanonicalWheelRingSet(style, input);
-  const plan = planWheelBoundaries(style, input, canonical);
+  const plan = planWheelBoundaries(style, input, rings);
   const index = plan.fields.indexOf(span.innerField);
   if (index < 0) return null;
   const solution = solveOrderedBoundaries(plan.canonicalRadii, plan.pins, {
-    outerLimit: input.maxRadius,
+    outerLimit: plan.outerLimit,
     innerLimit: 0,
     gap: plan.gap,
     gaps: plan.gaps,
@@ -2742,14 +3001,15 @@ export function resolveWheelBandSpanScaleRange(
   input: WheelGeometryInput,
   spanId: string,
 ): Readonly<{ min: number; max: number }> | null {
-  const span = resolveWheelBandSpanFields(input, spanId);
+  const rings = resolveWheelRingSet(style, input);
+  const span = resolveWheelBandSpanFields(input, spanId, rings);
   if (!span) return null;
   const rendered = resolveWheelBandSpanInnerRenderedRange(style, input, spanId);
   if (!rendered) return null;
   const anchor = span.outerField === null
     ? input.maxRadius
-    : resolveWheelRingSet(style, input)[span.outerField];
-  const inner = resolveWheelRingSet(style, input)[span.innerField];
+    : rings[span.outerField];
+  const inner = rings[span.innerField];
   if (typeof anchor !== "number" || typeof inner !== "number") return null;
   const currentScale = resolveWheelBandSpanScale(
     style, input.profile, spanId, anchor, inner, input.maxRadius,
@@ -2774,8 +3034,22 @@ function applyPaintedRingRadiusOverrides(
   canonical: Readonly<WheelRingSet>,
 ): Readonly<WheelRingSet> {
   const rings = { ...canonical } as MutableWheelRingSet;
-  const { fields, canonicalRadii, pins, gap, gaps, pushIndex } =
+  const { fields, canonicalRadii, pins, gap, gaps, pushIndex, outerLimit } =
     planWheelBoundaries(style, input, canonical);
+  const freeDegree = hostedDegreeFreeTerminal(style, input, canonical);
+  const directDegree = style.authoringOverrides.ringRadii[input.profile]?.outerDegreeRing;
+  const legacyDegree = style.authoringOverrides.recipeRadii?.[input.profile] === undefined
+    ? style.ringRadiusOverrides[input.profile].outerDegreeRing : 0;
+  const hostedDegreeInnerRadius = freeDegree
+    ? directDegree !== undefined && Number.isFinite(directDegree)
+      ? resolveWheelAuthoringPx(style, directDegree, input.maxRadius)
+      : legacyDegree > 0 ? legacyDegree * input.maxRadius : undefined
+    : undefined;
+
+  if (input.composition && !pins.some(pin => pin !== undefined) && hostedDegreeInnerRadius === undefined) return canonical;
+
+  const radiusFields = Object.keys(style.authoringOverrides.ringRadii[input.profile] ?? {})
+    .map(role => authoredRadiusBoundaryField(style, input, canonical, role as WheelPaintedRingRole));
 
   // Which rings the user pinned explicitly, as opposed to boundaries the solver
   // merely placed. Only an explicit pin overrides a derived ruler terminal.
@@ -2786,7 +3060,7 @@ function applyPaintedRingRadiusOverrides(
   let boundariesMoved = false;
   if (pins.some((pin) => pin !== undefined)) {
     const solution = solveOrderedBoundaries(canonicalRadii, pins, {
-      outerLimit: input.maxRadius,
+      outerLimit,
       innerLimit: 0,
       gap,
       gaps,
@@ -2808,12 +3082,82 @@ function applyPaintedRingRadiusOverrides(
     const solvedFields = new Set<string>(fields as string[]);
     const remapped = remapWheelAnchorsToBands(
       input.profile,
-      resolveCanonicalWheelLayout(style, input).bands,
-      resolveWheelBandLayoutFromRings(style, input, rings).bands,
+      resolveWheelBandLayoutFromRings(style, input, canonical).bands,
+      retainWheelRadiusLayout(style, input, canonical, rings, fields, radiusFields, hostedDegreeInnerRadius).bands,
       rings,
       solvedFields,
     );
     Object.assign(rings, remapped);
+    const openTracks = resolvedWheelLayout(canonical)?.bands.some(band => band.overlay && band.id.startsWith("outer"));
+    if (openTracks) {
+      Object.assign(rings, Object.fromEntries(Object.entries(canonical)
+        .filter(([field]) => field.startsWith("rOuter") || field.startsWith("rAntis"))));
+    }
+  }
+
+  if (composedWheelLayout(canonical)) {
+    const layout = retainWheelRadiusLayout(style, input, canonical, rings, fields, radiusFields, hostedDegreeInnerRadius);
+    const band = (id: WheelBandId) => layout.bands.find(item => item.id === id);
+    const zodiac = band("zodiac"), terms = band("terms"), decans = band("decans"), degree = band("degree");
+    const primary = layout.bands.find(item => item.visible && !item.overlay && !item.floating
+      && item.id !== "margin" && !item.id.startsWith("outer"));
+    const sourcePrimary = resolvedWheelLayout(canonical)?.bands.find(item => item.visible && !item.overlay && !item.floating
+      && item.id !== "margin" && !item.id.startsWith("outer"));
+    if (primary && sourcePrimary) {
+      rings.rASCMC = style.authoringOverrides.recipeRadii?.[input.profile] !== undefined
+        ? primary.outer + canonical.rASCMC - sourcePrimary.outer : primary.outer;
+      rings.rArrow = Math.min(input.maxRadius, primary.outer + canonical.rArrow - sourcePrimary.outer);
+    }
+    if (zodiac) { rings.r30 = zodiac.outer; rings.r0 = zodiac.inner; }
+    else {
+      if (primary) rings.r30 = rings.r0 = primary.outer;
+    }
+    if (terms) { rings.rTerms = terms.outer; rings.rTermsInner = terms.inner; }
+    if (decans) { rings.rDecans = decans.outer; rings.rDecansInner = decans.inner; }
+    const bodies = band("bodies"), houses = band("houses"), hub = band("hub"), aspects = band("aspects");
+    if (hub) {
+      rings.rInner = bodies?.outer ?? houses?.outer ?? hub.outer;
+      rings.rHouse = houses?.outer ?? hub.outer;
+      rings.rBase = hub.outer;
+      rings.rAsp = aspects?.outer ?? hub.outer;
+    }
+    if (degree) {
+      rings.rDegreeOuter = rings.rOuter0 = rings.r10 = degree.outer;
+      rings.rDegreeInner = rings.rOuter10 = degree.inner;
+      rings.rOuter1 = degree.outer - (degree.outer - degree.inner) / 3;
+      rings.rOuter5 = degree.outer - (degree.outer - degree.inner) * 2 / 3;
+      rings.r1 = degree.inner + (degree.outer - degree.inner) / 3;
+      rings.r5 = degree.inner + (degree.outer - degree.inner) * 2 / 3;
+    }
+    if (!degree) rings.rOuter0 = rings.rOuter10 = rings.rOuter1 = rings.rOuter5 = 0;
+    const outerBodies = band("outerBodies"), outerHouses = band("outerHouses");
+    if (outerBodies && !outerBodies.overlay) {
+      rings.rOuterPlanet = (outerBodies.outer + outerBodies.inner) / 2;
+      rings.rOuterRetr = outerBodies.inner + (outerBodies.outer - outerBodies.inner) / 4;
+    }
+    if (outerHouses && !outerHouses.overlay) rings.rOuterHouseName = (outerHouses.outer + outerHouses.inner) / 2;
+    if (outerBodies && !outerBodies.overlay) {
+      rings.rOuterMax = outerHouses?.outer ?? outerBodies.outer;
+      rings.rOuterHouse = outerHouses?.inner;
+      rings.rOuterMin = outerBodies.inner;
+      rings.rOuterASCMC = rings.rOuterArrow = rings.rOuterLine = rings.rOuterMax;
+      rings.rAntis = rings.rOuterPlanet!;
+      rings.rAntisLines = rings.rOuterLine;
+    }
+    const labels = band("cuspLabels"), cuspRuler = band("cuspRuler");
+    // Optional legacy aliases describe the final topology too. An absent or
+    // hosted Cusp ruler shares the adjoining annotation/body edge; leaving its
+    // recipe radius behind makes an identity width edit change hidden geometry.
+    rings.rCuspOuter = cuspRuler && !cuspRuler.overlay ? cuspRuler.outer
+      : labels?.outer ?? rings.rInner;
+    rings.rCuspRulerInner = cuspRuler && !cuspRuler.overlay ? cuspRuler.inner : rings.rCuspOuter;
+    rings.rCuspLabelOuter = labels?.outer ?? rings.rCuspRulerInner;
+    if (labels && !(style.authoringOverrides.recipeRadii?.[input.profile] !== undefined
+      && wheelCuspAnnotationsShareRuler(resolvedWheelLayout(canonical)?.bands ?? [])
+      && wheelCuspAnnotationsShareRuler(layout.bands))) rings.rCuspLabel = rings.rPosHouses = (labels.outer + labels.inner) / 2;
+    const result = Object.freeze(rings);
+    retainWheelRadiusLayout(style, input, canonical, result, fields, radiusFields, hostedDegreeInnerRadius);
+    return result;
   }
 
   // Keep the degree ruler ticks attached to their exact authored terminal
@@ -2908,7 +3252,81 @@ function applyPaintedRingRadiusOverrides(
     rings.rPosHouses = cuspRunRadius;
   }
 
-  return Object.freeze(rings);
+  // A primary Degree target denotes the actual instrument after a return to
+  // the original recipe as well. Its base can share the sign boundary, while
+  // the old outer-ruler aliases previously described a different margin run.
+  if (style.authoringOverrides.outerDegreeBinding?.[input.profile] === "degree") {
+    const degree = retainWheelRadiusLayout(style, input, canonical, rings, fields, radiusFields)
+      .bands.find(band => band.id === "degree" && band.visible);
+    if (degree) {
+      rings.rOuter0 = degree.outer; rings.rOuter10 = degree.inner;
+      rings.rOuter1 = degree.outer - (degree.outer - degree.inner) / 3;
+      rings.rOuter5 = degree.outer - (degree.outer - degree.inner) * 2 / 3;
+    }
+  }
+  const result = Object.freeze(rings);
+  retainWheelRadiusLayout(style, input, canonical, result, fields, radiusFields);
+  return result;
+}
+
+/** Compose widths before direct dimensions. A radius constrains the actual
+ * visible stack, never a recipe that a later width pass can overwrite. */
+function resolveWheelRadiusBaseline(style: WheelRenderStyle, input: WheelGeometryInput): Readonly<{
+  rings: Readonly<WheelRingSet>; widthsMoved: boolean;
+}> {
+  const canonical = resolveCanonicalWheelRingSet(style, input);
+  const recipeRadii = style.authoringOverrides.recipeRadii?.[input.profile];
+  if (!input.composition && !recipeRadii) return {rings: canonical, widthsMoved: false};
+  const recipeStyle = {...style, authoringOverrides: {...style.authoringOverrides,
+    bandSpanScale: {}, bandSpanInner: {},
+    ...(recipeRadii ? {ringRadii: {...style.authoringOverrides.ringRadii, [input.profile]: recipeRadii},
+      recipeRadii: undefined, radiusPriority: {}, outerDegreeBinding: {}} : {}),
+  }};
+  if (!input.composition) return {
+    rings: applyPaintedRingRadiusOverrides(recipeStyle,
+      recipeRadii ? {...input, pushBoundaryRole: undefined} : input, canonical), widthsMoved: false,
+  };
+  // Anglo samples the accepted full subdivision recipe. Hiding a layer frees
+  // its own depth inward; it must not replace the full Signs lane with the
+  // wider bare recipe. Classic/Compact retain their native density recipes.
+  const stableAnglo = recipeRadii !== undefined && input.profile === "anglo";
+  const recipeInput = recipeRadii ? {...input, composition: undefined, pushBoundaryRole: undefined,
+    ...(stableAnglo ? {showTerms: true, showDecans: true} : {})} : input;
+  const recipeCanonical = recipeRadii ? resolveCanonicalWheelRingSet(recipeStyle, recipeInput) : canonical;
+  // Original saved profiles express dimensions in the original recipe. Their
+  // compatibility adapter preserves that sampled geometry. Reordered wheels
+  // instead interpret live radius roles only after their topology is compiled:
+  // applying them here too assigns the same value to a different recipe edge.
+  const legacy = recipeRadii ? applyPaintedRingRadiusOverrides(recipeStyle, recipeInput, recipeCanonical)
+    : usesOriginalWheelTopology(input)
+      ? applyPaintedRingRadiusOverrides(recipeStyle, input, canonical) : canonical;
+  const reserved = input.hasOuterRing || input.mode === "comparison"
+    ? reserveWheelSecondarySpace(style, recipeInput, recipeCanonical, legacy, wheelSecondaryGlyphClearance(style, recipeInput))
+    : legacy;
+  const widths = style.authoringOverrides.ringWidths?.[input.profile] ?? {};
+  const scale = input.maxRadius / style.authoringOverrides.referenceRadius;
+  const sourceBands = resolveWheelBandLayoutFromRings(recipeStyle, recipeInput, reserved).bands;
+  const preferredWidths = stableAnglo ? Object.fromEntries(sourceBands.map(band =>
+    [band.id, band.outer - band.inner])) : {};
+  const openInstances = new Set(sourceBands.filter(band => band.overlay && band.id.startsWith("outer"))
+    .map(band => band.instanceId));
+  const stackWidths = Object.fromEntries(Object.entries(widths).filter(([id]) => !openInstances.has(id)));
+  const stackStyle = {...style, authoringOverrides: {...style.authoringOverrides,
+    ringWidths: {...style.authoringOverrides.ringWidths, [input.profile]: stackWidths}}};
+  const widthsMoved = sourceBands.some(band => !band.overlay &&
+    band.visible && band.instanceId && widths[band.instanceId] != null
+    && Math.abs(widths[band.instanceId] * scale - (band.outer - band.inner)) > 1e-7);
+  return {rings: composeWheelBands(stackStyle, input, reserved, preferredWidths), widthsMoved};
+}
+
+function wheelSecondaryGlyphClearance(style: WheelRenderStyle, input: WheelGeometryInput): number {
+  const typography = resolveWheelTypographyMetrics(style, input.profile, input.maxRadius, input);
+  const glyphSize = input.mode === "comparison"
+    ? input.restrainedAngloComparison
+      ? Math.max(typography.bodySize, typography.outerSize) : typography.outerSize
+    : typography.outerProjectedGlyphSize;
+  return glyphSize / Math.SQRT2
+    + Math.round(typography.outerLayoutUnit * style.labels.outerOutsidePadScale);
 }
 
 /** Resolve canonical layout first, then apply safe exact painted-ring radii. */
@@ -2916,22 +3334,116 @@ export function resolveWheelRingSet(
   style: WheelRenderStyle,
   input: WheelGeometryInput,
 ): Readonly<WheelRingSet> {
+  const {rings: baseline, widthsMoved} = resolveWheelRadiusBaseline(style, input);
+  const hasSpans = Object.keys(style.authoringOverrides.bandSpanScale[input.profile] ?? {}).length > 0
+    || Object.keys(style.authoringOverrides.bandSpanInner[input.profile] ?? {}).length > 0;
+  const legacy = input.composition && usesOriginalWheelTopology(input)
+    && !style.authoringOverrides.recipeRadii?.[input.profile] && !widthsMoved && !hasSpans
+    ? baseline : applyPaintedRingRadiusOverrides(style, input, baseline);
+  if (!input.hasOuterRing && input.mode !== "comparison") return legacy;
   const canonical = resolveCanonicalWheelRingSet(style, input);
-  const legacy = applyPaintedRingRadiusOverrides(style, input, canonical);
-  if (!input.hasOuterRing && input.mode !== "comparison") return composeWheelBands(style, input, legacy);
-  const typography = resolveWheelTypographyMetrics(style, input.profile, input.maxRadius);
-  const glyphSize = input.mode === "comparison"
-    ? input.restrainedAngloComparison
-      ? Math.max(typography.bodySize, typography.outerSize)
-      : typography.outerSize
-    : typography.outerProjectedGlyphSize;
-  // The inward corner of an upright square glyph is furthest from its anchor
-  // on a diagonal. Reserve that corner, not only half the font height.
-  const clearance = glyphSize / Math.SQRT2
-    + Math.round(typography.outerLayoutUnit * style.labels.outerOutsidePadScale);
+  const clearance = wheelSecondaryGlyphClearance(style, input);
   const reserved = reserveWheelSecondarySpace(style, input, canonical, legacy, clearance);
+  if (!input.composition) return reserved;
   return reserveWheelSecondarySpace(style, input, canonical,
-    composeWheelBands(style, input, reserved), clearance);
+    resizeWheelOpenTracks(style, input, reserved), clearance);
+}
+
+/** Appearance uses the accepted full recipe as its size reference. The live
+ * stack keeps today's readable minima and visibility allocation; only explicit
+ * geometry edits contribute a proportional size change. */
+export interface WheelContentSizingReference {
+  readonly rings: Readonly<WheelRingSet>;
+  readonly bands: readonly ResolvedWheelBand[];
+  readonly canonicalBands: readonly ResolvedWheelBand[];
+  readonly canonicalRings: Readonly<WheelRingSet>;
+  readonly uneditedBands?: readonly ResolvedWheelBand[];
+}
+
+export function resolveWheelContentSizingReference(
+  style: WheelRenderStyle,
+  input: WheelGeometryInput,
+): WheelContentSizingReference {
+  const overrides = style.authoringOverrides;
+  const sourceStyle = {...style, authoringOverrides: {...overrides,
+    ringRadii: {}, ringWidths: {}, radiusPriority: {}, outerDegreeBinding: {},
+    bandSpanInner: {}, bandSpanScale: {}, rulerDepth: {},
+  }};
+  const factory = WHEEL_FACTORY_SETTINGS.layouts[input.profile].composition as WheelComposition;
+  const fullInput: WheelGeometryInput = {...input, showTerms: true, showDecans: true,
+    pushBoundaryRole: undefined, bandMinimumPolicy: "nominal",
+    composition: {...factory, rings: factory.rings.map(ring => ({...ring,
+      enabled: ring.archetypeId === "terms" || ring.archetypeId === "decans" ? true
+        : ring.archetypeId === "houses" ? input.showHouses : ring.enabled}))},
+  };
+  const rings = resolveWheelRingSet(sourceStyle, fullInput);
+  const canonicalRings = resolveCanonicalWheelRingSet(sourceStyle, fullInput);
+  const hasGeometryEdits = [overrides.ringRadii[input.profile], overrides.ringWidths?.[input.profile],
+    overrides.bandSpanInner[input.profile], overrides.bandSpanScale[input.profile],
+    overrides.rulerDepth?.[input.profile]].some(values => values && Object.keys(values).length > 0);
+  const uneditedRings = hasGeometryEdits
+    ? resolveWheelRingSet(sourceStyle, {...input, pushBoundaryRole: undefined}) : undefined;
+  return {
+    rings, canonicalRings,
+    bands: resolveWheelBandLayoutFromRings(sourceStyle, fullInput, rings).bands,
+    canonicalBands: resolveWheelBandLayoutFromRings(sourceStyle, fullInput, canonicalRings).bands,
+    ...(uneditedRings ? {uneditedBands: resolveWheelBandLayoutFromRings(sourceStyle, input, uneditedRings).bands} : {}),
+  };
+}
+
+/** Saved font sizes keep their semantic override behavior. Fallback glyphs
+ * follow deliberate own-band width/radius edits, never visibility or order. */
+export function resolveWheelBandGlyphSize(
+  style: WheelRenderStyle,
+  profile: WheelTypographyProfile,
+  classId: WheelAuthoringTypographyClass,
+  size: number,
+  bands: readonly ResolvedWheelBand[],
+  reference: WheelContentSizingReference,
+): number {
+  const ceiling = resolveWheelClassFontSizeCeiling(classId, bands);
+  if (ceiling == null || !(ceiling > 0)) return size;
+  const physicalCeiling = resolveWheelClassBandThickness(classId, bands) ?? ceiling;
+  if (style.authoringOverrides.typography[profile]?.[classId]?.fontSizePx != null) {
+    return Math.min(size, physicalCeiling);
+  }
+  const base = resolveWheelClassFontSizeCeiling(classId, reference.bands);
+  const canonical = resolveWheelClassFontSizeCeiling(classId, reference.canonicalBands);
+  const unedited = reference.uneditedBands
+    ? resolveWheelClassFontSizeCeiling(classId, reference.uneditedBands) : ceiling;
+  const preferredSize = base != null && canonical != null && canonical > 0 ? size * base / canonical : size;
+  const editedSize = unedited != null && unedited > 0 ? preferredSize * ceiling / unedited : preferredSize;
+  return Math.min(physicalCeiling, editedSize);
+}
+
+/** Effective reference depth also drives the editor's tick percentage handle. */
+export function wheelCuspTickReferenceDepth(
+  bands: readonly ResolvedWheelBand[], reference: WheelContentSizingReference,
+): number {
+  const thickness = (source: readonly ResolvedWheelBand[]) => {
+    const band = source.find(item => item.id === "cuspRuler" && item.visible);
+    return band ? band.outer - band.inner : 0;
+  };
+  const base = thickness(reference.bands);
+  const unedited = reference.uneditedBands ? thickness(reference.uneditedBands) : 0;
+  return unedited > 0 ? base * thickness(bands) / unedited : base;
+}
+
+export function resolveWheelCuspTickLength(
+  style: WheelRenderStyle, classId: string, lengthScale: number,
+  bands: readonly ResolvedWheelBand[], reference: WheelContentSizingReference,
+): number {
+  const canonicalDepth = (reference.canonicalRings.rCuspOuter ?? 0)
+    - (reference.canonicalRings.rCuspLabelOuter ?? 0);
+  const preferred = resolveWheelTickLength(style, "anglo", classId,
+    wheelCuspTickReferenceDepth(bands, reference), canonicalDepth, reference.rings.r30 * lengthScale);
+  const ruler = bands.find(band => band.id === "cuspRuler" && band.visible);
+  if (!ruler || ruler.overlay) return preferred;
+  // The accepted long tick crosses the internal ruler/annotation seam. Permit
+  // that shared material, but never draw it through an unrelated band.
+  const annotations = bands.find(band => band.id === "cuspLabels" && band.visible
+    && Math.abs(band.outer - ruler.inner) < 1e-7);
+  return Math.min(preferred, ruler.outer - (annotations?.inner ?? ruler.inner));
 }
 
 /** Exact painted-circle radius used by paint, hit testing, and the inspector. */
@@ -2940,8 +3452,9 @@ export function resolveWheelPaintedRingRadius(
   input: WheelGeometryInput,
   role: WheelPaintedRingRole,
 ): number {
-  const field = paintedRingFieldFor(role, input.profile);
-  const radius = resolveWheelRingSet(style, input)[field];
+  const rings = resolveWheelRingSet(style, input);
+  const field = paintedRingFieldFor(role, input.profile, rings, style);
+  const radius = rings[field];
   return typeof radius === "number" ? radius : 0;
 }
 
@@ -4645,6 +5158,7 @@ export function hasWheelAuthoringOverrides(
     || profileHasValues(overrides.linePaint)
     || profileHasValues(overrides.fillPaint)
     || profileHasValues(overrides.ringRadii)
+    || profileHasValues(overrides.recipeRadii ?? {})
     // A scale-only theme still has to bind its target radius, or authored px
     // would keep projecting against the reference wheel while the wheel itself
     // is drawn scaled.
@@ -5082,12 +5596,18 @@ export function resolveWheelTypographyMetrics(
   style: WheelRenderStyle,
   profile: WheelTypographyProfile,
   maxRadius: number,
+  geometryInput?: Pick<WheelGeometryInput, "mode" | "hasOuterRing" | "outerRingMode">,
 ): ResolvedWheelTypographyMetrics {
+  const bareMorinus = Boolean(style.presentation !== "traditional-morinus" && style.geometry.classic.bareSingle &&
+    (profile === "classic" || profile === "compact") &&
+    geometryInput?.mode === "single" && !geometryInput.hasOuterRing);
+  const bodyScale = bareMorinus ? 4 / 3 : 1;
+  const signScale = bareMorinus ? 5 / 3 : 1;
   const ratios = style.typography.ratios;
   // Division by the ratio's denominator preserves the exact floating-point
   // path used by the established renderer (`maxRadius / 16`, `/ 20`, etc.).
   const scaled = (ratio: number) => maxRadius / (1 / ratio);
-  const layoutUnit = scaled(PROFILE_BODY) * PROFILE_BODY_SCALE[profile];
+  const layoutUnit = scaled(PROFILE_BODY) * PROFILE_BODY_SCALE[profile] * bodyScale;
   // The House Wheel anchors its cusp run on the sign glyph at a nominal size,
   // with degree and minute set as shares of it. Every other layout keeps sizing
   // the whole run off the shared body unit.
@@ -5112,12 +5632,11 @@ export function resolveWheelTypographyMetrics(
   const housePosition = ratios.housePosition;
   const angloBodyPosition = ratios.angloBodyPosition;
   const angloAnglePosition = ratios.angloAnglePosition;
-  const angloHousePosition = ratios.angloHousePosition;
   const direct = (
     classId: WheelAuthoringTypographyClass,
     fallback: number,
   ) => resolveWheelAuthoringTypographyPx(style, profile, classId, maxRadius, fallback);
-  const subdivisionSize = scaled(ratios.subdivision[profile]);
+  const subdivisionSize = scaled(ratios.subdivision[profile]) * bodyScale;
   const outerLabelSize = outerLayoutUnit * ratios.outerLabelScale;
   const outerProjectedGlyphSize =
     outerLayoutUnit * ratios.outerProjectedGlyphScale;
@@ -5186,10 +5705,10 @@ export function resolveWheelTypographyMetrics(
     outerLayoutUnit,
     bodySize: direct(
       "bodies.inner.glyph",
-      scaled(ratios.body) * PROFILE_BODY_SCALE[profile],
+      scaled(ratios.body) * PROFILE_BODY_SCALE[profile] * bodyScale,
     ),
     outerSize: direct("bodies.outer.glyph", scaled(ratios.outer[profile])),
-    signSize: direct("zodiac.signGlyph", scaled(ratios.sign[profile])),
+    signSize: direct("zodiac.signGlyph", scaled(ratios.sign[profile]) * signScale),
     subdivisionSize,
     termSize: direct("subdivisions.term.glyph", subdivisionSize * ratios.termGlyphScale),
     decanSize: direct("subdivisions.decan.glyph", subdivisionSize * ratios.decanGlyphScale),
@@ -5295,6 +5814,8 @@ export function resolveWheelTypographyMetrics(
     ),
     // Two compact rows beside the outer glyph, readable within its radial lane.
     outerPositionSize: direct("bodies.outer.position", outerLayoutUnit * 0.5),
+    // Radial minutes read as a qualifier of the degree above them.
+    outerPositionMinuteSize: direct("bodies.outer.position.minute", outerLayoutUnit * 0.4),
     outerMotionSize: direct("bodies.outer.motion", outerMotionSize),
     outerLabelSize,
     outerProjectedGlyphSize,
@@ -5376,6 +5897,15 @@ export function resolveWheelTypographyPaint(
         ? Math.min(1, Math.max(0, sourceOpacity))
         : Math.min(1, Math.max(0, defaults.opacity ?? 1)),
   });
+}
+
+/** Original Morinus wx pen buckets, in chart CSS pixels. Authoring is applied afterward. */
+export function resolveMorinusStroke(chartSize: number, base: number, role: "ring" | "angle" | "medium"): number {
+  if (role === "medium") return (chartSize <= 600 ? 1 : 2) * base / 2;
+  if (role === "ring") return (chartSize <= 400 ? 1 : chartSize <= 600 ? 2 : 3) * base / 3;
+  if (chartSize <= 400 && base >= 3 && base <= 5) return 2;
+  if (chartSize <= 600 && base >= 4 && base <= 5) return 3;
+  return base;
 }
 
 export function resolveScaledWheelStroke(
@@ -5547,4 +6077,10 @@ export function resolveWheelArrowGeometry(
       : (arrowStyle === "stealth" ? notchRadius : resolvedBase)
         + direction * (joinOverlap - (shaftCap === "butt" ? 0 : shaftWidth / 2)),
   };
+}
+
+/** Inherited subdivision ink comes from the ruler's existing planet color. */
+export function subdivisionGlyphColor(style: WheelRenderStyle, kind: "term" | "decan", rulerColor: string, inheritPlanetColors: boolean): string {
+  const token = style.elementColors[kind === "term" ? "termGlyph" : "decanGlyph"];
+  return token === "currentColor" ? (inheritPlanetColors ? rulerColor : style.palette.signs) : token;
 }

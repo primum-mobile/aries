@@ -50,6 +50,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from webapp.daemon.chart_service import chart_snapshot_service
+from webapp.daemon.fixed_star_inspector import conjunction_facts, constellation_identity
 from webapp.daemon.supplementary_service import (
     SUPPLEMENTARY_KINDS,
     parse_when,
@@ -60,10 +61,11 @@ from webapp.frontend.scripts import export_chart_json
 import arabicparts
 import astrology
 import chart
+import chart_bodies
 import chartinspector
 import common
 import eclipses
-from engine import harmonic_chart, lunar_cycle, pd_in_chart
+from engine import harmonic_chart, lunar_cycle, orb_policy
 import fixedstar_natures
 import fixstars as fixstars_mod
 import fortune as fortune_mod
@@ -73,6 +75,9 @@ import mtexts
 import planets
 import radixsignals
 import util
+from webapp.daemon import term_inspector
+from webapp.daemon import decan_inspector
+from webapp.daemon import ascensional_inspector
 
 
 # Region object_id for an angle → the key chartinspector / graphchart expect
@@ -96,13 +101,13 @@ _ANGLE_HOUSE = {
 
 def _body_obj(chrt, body_id):
     """graphchart._get_body_obj — None for Fortune/Vertex pseudo-bodies."""
-    if body_id in (planets.Planets.PLANETS_NUM, common.CHART_OBJECT_VERTEX):
+    if body_id in (common.CHART_OBJECT_FORTUNE, common.CHART_OBJECT_VERTEX):
         return None
     return common.common.get_chart_planet(chrt, body_id)
 
 
 def _body_lon(chrt, body_id):
-    if body_id == planets.Planets.PLANETS_NUM:
+    if body_id == common.CHART_OBJECT_FORTUNE:
         return chrt.fortune.fortune[fortune_mod.Fortune.LON]
     if body_id == common.CHART_OBJECT_VERTEX:
         return chrt.houses.ascmc[houses.Houses.VERTEX]
@@ -111,15 +116,23 @@ def _body_lon(chrt, body_id):
 
 
 def _body_speed_lon(chrt, body_id):
-    if body_id in (planets.Planets.PLANETS_NUM, common.CHART_OBJECT_VERTEX):
+    if body_id in (common.CHART_OBJECT_FORTUNE, common.CHART_OBJECT_VERTEX):
         return None
     obj = _body_obj(chrt, body_id)
     return None if obj is None else obj.data[planets.Planet.SPLON]
 
 
+def _ecliptic_declination(chrt, longitude):
+    """Equatorial declination of a zodiacal point in the chart's frame."""
+    tropical_lon = util.to_tropical_lon(longitude, getattr(chrt, "ayanamsha_offset", 0.0))
+    return astrology.swe_cotrans(tropical_lon, 0.0, 1.0, -chrt.obl[0])[1]
+
+
 def _body_declination(chrt, body_id):
-    if body_id in (planets.Planets.PLANETS_NUM, common.CHART_OBJECT_VERTEX):
-        return None
+    if body_id == common.CHART_OBJECT_FORTUNE:
+        return chrt.fortune.fortune[fortune_mod.Fortune.DECL]
+    if body_id == common.CHART_OBJECT_VERTEX:
+        return _ecliptic_declination(chrt, _body_lon(chrt, body_id))
     obj = _body_obj(chrt, body_id)
     return None if obj is None else obj.dataEqu[planets.Planet.DECLEQU]
 
@@ -129,7 +142,7 @@ def _body_colour(chrt, body_id, options):
 
     Returns the accent (r,g,b) the inspector tints the glyph with.
     """
-    if body_id == planets.Planets.PLANETS_NUM:
+    if body_id == common.CHART_OBJECT_FORTUNE:
         if getattr(options, "useplanetcolors", False):
             idx = min(astrology.SE_PLUTO + 2, len(options.clrindividual) - 1)
             return tuple(options.clrindividual[idx])
@@ -139,14 +152,12 @@ def _body_colour(chrt, body_id, options):
     if getattr(options, "useplanetcolors", False):
         color_idx = min(common.common.get_planet_color_index(body_id), len(options.clrindividual) - 1)
         return tuple(options.clrindividual[color_idx])
-    if body_id == astrology.SE_CHIRON:
+    if body_id in (astrology.SE_CHIRON, astrology.SE_MEAN_APOG, astrology.SE_OSCU_APOG):
         return tuple(options.clrperegrin)
     try:
-        palette = (
-            tuple(options.clrdomicil), tuple(options.clrexal), tuple(options.clrperegrin),
-            tuple(options.clrcasus), tuple(options.clrexil),
-        )
-        return palette[chrt.dignity(body_id)]
+        from .display_palette import chart_dignity_color
+
+        return tuple(chart_dignity_color(chrt, options, body_id))
     except Exception:
         return tuple(options.clrperegrin)
 
@@ -188,6 +199,9 @@ def _planet_region(chrt, partner_chart, options, body_id, chart_role="primary"):
         raise SystemExit(f"body {body_id} not present in chart")
     speed_lon = _body_speed_lon(chrt, body_id)
     display_lon = lon
+    from .display_palette import chart_body_color_role
+
+    colour = _body_colour(chrt, body_id, options)
     data = {
         "chart": chrt,
         "partner_chart": partner_chart,
@@ -198,9 +212,41 @@ def _planet_region(chrt, partner_chart, options, body_id, chart_role="primary"):
         "motion_marker": _motion_marker(chrt, body_id, speed_lon, options, partner_chart is not None),
         "speed_lon": speed_lon,
         "declination": _body_declination(chrt, body_id),
-        "colour": _body_colour(chrt, body_id, options),
+        "colour": colour,
+        "colour_role": chart_body_color_role(options, chrt, body_id, resolved_color=colour),
     }
     return {"kind": "planet", "object_id": int(body_id), "chart_role": chart_role, "data": data}
+
+
+def _declination_region(chrt, options, object_id: str):
+    """Chart dashboard declination hover: ``seId`` lists that body's
+    parallels and contraparallels in orb; ``seId:partner`` one pair (a grid
+    cell's parallel mark). Same engine flags as the grid marks."""
+    from . import chart_dashboard, tables_service
+
+    parts = str(object_id).split(":")
+    try:
+        body_id = int(parts[0])
+        partner = int(parts[1]) if len(parts) > 1 else None
+    except ValueError as exc:
+        raise SystemExit(f"malformed declination objectId {object_id!r}") from exc
+    body_ids = [entry["planet"] for entry in tables_service._aspects(
+        chrt, tables_service.effective_display_options(options), planet_matrix_only=True,
+    )["planets"]]
+    contacts = chart_dashboard.declination_contacts(chrt, body_ids, body_id, partner).get(body_id, [])
+    colour = _body_colour(chrt, body_id, options)
+    from .display_palette import chart_body_color_role
+
+    data = {
+        "chart": chrt,
+        "planet_index": body_id,
+        "declination": _body_declination(chrt, body_id),
+        "contacts": contacts,
+        "pair": partner is not None,
+        "colour": colour,
+        "colour_role": chart_body_color_role(options, chrt, body_id, resolved_color=colour),
+    }
+    return {"kind": "declination", "object_id": body_id, "chart_role": "primary", "data": data}
 
 
 def _lunar_conditions_payload(region) -> Optional[dict]:
@@ -230,71 +276,6 @@ def _lunar_conditions_payload(region) -> Optional[dict]:
     }
 
 
-def _pd_event_region(context: dict, event_id: str) -> dict:
-    """Validate one live supported PD marker and build its dedicated region."""
-    state = context.get("state")
-    overlay = context.get("overlay")
-    binding = context.get("binding") or {}
-    requested = str(event_id or "")
-    if not requested or not isinstance(state, dict):
-        raise SystemExit("primary-direction event is unavailable")
-    if requested != str(state.get("eventId") or ""):
-        raise SystemExit("stale primary-direction event")
-    if str(binding.get("eventId") or "") != requested:
-        raise SystemExit("stale primary-direction event binding")
-    if (
-        not isinstance(overlay, dict)
-        or not bool(overlay.get("supported"))
-        or str(overlay.get("eventId") or "") != requested
-    ):
-        raise SystemExit("primary-direction event has no supported marker")
-    if overlay.get("eventKind") not in {
-        "body-aspect-to-angle",
-        "angle-to-body-aspect",
-    }:
-        raise SystemExit("unsupported primary-direction event marker family")
-    primitives = overlay.get("primitives")
-    expected_primitive_kinds = {"direction-ray", "directed-angle"}
-    if not isinstance(primitives, list) or not primitives:
-        raise SystemExit("primary-direction event marker has no geometry")
-    primitive_kinds = set()
-    for item in primitives:
-        if not isinstance(item, dict) or item.get("kind") not in expected_primitive_kinds:
-            raise SystemExit("unsupported primary-direction event marker primitive")
-        try:
-            longitude = float(item.get("longitude"))
-        except (TypeError, ValueError, OverflowError):
-            raise SystemExit("primary-direction event marker has no geometry")
-        if not math.isfinite(longitude):
-            raise SystemExit("primary-direction event marker has no geometry")
-        primitive_kinds.add(item["kind"])
-    if primitive_kinds != expected_primitive_kinds:
-        raise SystemExit("primary-direction event marker has incomplete geometry")
-    event = binding.get("directionEvent")
-    if not isinstance(event, dict):
-        raise SystemExit("primary-direction selected row is unavailable")
-    if pd_in_chart._selected_event_id(event) != requested:
-        raise SystemExit("stale primary-direction selected row")
-    event_datetime = (
-        binding.get("initialDisplayDatetime")
-        if bool(binding.get("hasEventDatetime"))
-        else None
-    )
-    return {
-        "kind": "pd_event",
-        "object_id": requested,
-        "chart_role": "primary",
-        "data": {
-            "direction_state": state,
-            "event_overlay": overlay,
-            "direction_event": event,
-            "event_datetime": event_datetime,
-            "prom_parts": list(event.get("promParts") or []),
-            "sig_parts": list(event.get("sigParts") or []),
-        },
-    }
-
-
 def _vertex_region(chrt, partner_chart, options, chart_role):
     """Reproduce graphchart's Vertex hover-region data (graphchart.py:2174-2196,
     body_id == common.CHART_OBJECT_VERTEX). The Vertex is drawn via
@@ -318,7 +299,7 @@ def _vertex_region(chrt, partner_chart, options, chart_role):
         "house_index": _house_index(chrt, lon, options),
         "motion_marker": "",
         "speed_lon": None,
-        "declination": None,
+        "declination": _body_declination(chrt, body_id),
         "colour": _body_colour(chrt, body_id, options),
         "title": mtexts.txts.get("Vertex", "Vertex"),
     }
@@ -326,15 +307,16 @@ def _vertex_region(chrt, partner_chart, options, chart_role):
 
 
 def _fortune_region(chrt, options, chart_role="primary", partner_chart=None):
-    lon = _body_lon(chrt, planets.Planets.PLANETS_NUM)
+    lon = _body_lon(chrt, common.CHART_OBJECT_FORTUNE)
     display_lon = lon
     data = {
         "chart": chrt,
         "partner_chart": partner_chart,
         "longitude": lon,
         "display_lon": display_lon,
+        "declination": _body_declination(chrt, common.CHART_OBJECT_FORTUNE),
         "house_index": _house_index(chrt, lon, options),
-        "colour": _body_colour(chrt, planets.Planets.PLANETS_NUM, options),
+        "colour": _body_colour(chrt, common.CHART_OBJECT_FORTUNE, options),
     }
     return {"kind": "fortune", "object_id": "fortune", "chart_role": chart_role, "data": data}
 
@@ -351,6 +333,7 @@ def _syzygy_region(chrt, options, chart_role="primary", partner_chart=None):
         "partner_chart": partner_chart,
         "longitude": lon,
         "display_lon": display_lon,
+        "declination": syz.speculum[3],
         "house_index": _house_index(chrt, lon, options),
         "colour": tuple(getattr(options, "clrsigns", ())),
         "title": export_chart_json.prenatal_syzygy_label(chrt),
@@ -381,6 +364,7 @@ def _eclipse_region(chrt, options, chart_role="primary", partner_chart=None):
         "partner_chart": partner_chart,
         "longitude": lon,
         "display_lon": lon,
+        "declination": _ecliptic_declination(chrt, lon),
         "house_index": _house_index(chrt, lon, options),
         "colour": tuple(getattr(options, "clrsigns", ())),
         "title": str(title),
@@ -427,7 +411,8 @@ def _house_region(chrt, options, house_index, chart_role="primary"):
     house_index = max(1, int(house_index))
     lon = chrt.houses.cusps[house_index]
     display_lon = lon
-    data = {"chart": chrt, "longitude": lon, "display_lon": display_lon}
+    data = {"chart": chrt, "longitude": lon, "display_lon": display_lon,
+            "declination": _ecliptic_declination(chrt, lon)}
     return {"kind": "house", "object_id": house_index, "chart_role": chart_role, "data": data}
 
 
@@ -527,7 +512,7 @@ def _find_fixstar(chrt, lon):
 def _find_asteroid(chrt, options, lon, label=""):
     """Resolve a rendered asteroid label back to its live ephemeris body."""
     try:
-        items = common.collect_asteroid_ring_items(chrt, options)
+        items = common.collect_asteroid_ring_items(chrt, options, filter_hits=False)
     except Exception:
         return None
     best = None
@@ -559,7 +544,9 @@ def _secondary_ring_region(
     partner_chart=None,
 ):
     """Rebuild graphchart's secondary-ring ``data`` dict from the objectId
-    ``family|longitude|label`` the React canvas emits for an outer-ring item."""
+    ``family|longitude|label`` the React canvas emits for an outer-ring item.
+    Astrolabe stars append their catalog code to resolve an exact star outside
+    the chart's configured fixed-star selection."""
     parts = str(object_id).split("|")
     raw_family = parts[0] if parts else ""
     family = _RING_FAMILY_MAP.get(raw_family, raw_family or "secondary_ring")
@@ -568,6 +555,7 @@ def _secondary_ring_region(
     except (TypeError, ValueError):
         longitude = None
     label = parts[2] if len(parts) > 2 else ""
+    star_code = parts[3] if len(parts) > 3 and parts[3] else None
     display_lon = _display_lon(chrt, options, longitude) if longitude is not None else None
 
     data = {
@@ -579,14 +567,30 @@ def _secondary_ring_region(
         "display_lon": display_lon,
     }
 
-    if family == "fixed_star" and longitude is not None:
-        star = _find_fixstar(chrt, longitude)
+    if family == "fixed_star" and (longitude is not None or star_code):
+        selected_rows = getattr(getattr(chrt, "fixstars", None), "data", None) or ()
+        if star_code:
+            star = next(
+                (row for row in selected_rows
+                 if row[fixstars_mod.FixStars.NOMNAME] == star_code), None,
+            )
+        else:
+            star = _find_fixstar(chrt, longitude)
+        selected = star is not None
+        if star is None and star_code:
+            from webapp.daemon.astrolabe_service import astrolabe_star_rows
+            star = next(iter(astrolabe_star_rows(chrt, (star_code,))), None)
         if star is not None:
+            data["declination"] = star[fixstars_mod.FixStars.DECL]
             code = star[fixstars_mod.FixStars.NOMNAME]
             name = star[fixstars_mod.FixStars.NAME]
             data["fixstar_code"] = code
             data["fixstar_name"] = name
+            data["fixstar_display_name"] = astrology.display_fixstar_name(code, options, name)
             data["fixstar_nature"] = fixedstar_natures.as_payload(code)
+            data["fixstar_constellation"] = constellation_identity(code)
+            if selected:
+                data["fixstar_conjunctions"] = conjunction_facts(chrt, star, options)
         if not data.get("title"):
             data["title"] = label or data.get("fixstar_name") or "Fixed star"
     elif family == "asteroid" and longitude is not None:
@@ -677,6 +681,12 @@ def _secondary_ring_region(
         if not data.get("title"):
             data["title"] = label or "Ring item"
 
+    if longitude is not None and family in (
+        "lot", "midpoint", "antiscia", "contra_antiscia", "dodecatemoria",
+        "parallel_transits", "surveil", "secondary_ring",
+    ):
+        data["declination"] = _ecliptic_declination(chrt, longitude)
+
     return {"kind": "secondary_ring", "object_id": object_id, "chart_role": chart_role, "data": data}
 
 
@@ -691,6 +701,17 @@ def _secondary_ring_region(
 
 # Inverse of export_chart_json.PLANET_ID_MAP (planet string id → SE id).
 _PLANET_NAME_TO_SE = {name: se for se, name in export_chart_json.PLANET_ID_MAP.items()}
+
+
+def _key_se(chrt, key):
+    """Ephemeris id of a body key in this chart.
+
+    PLANET_ID_MAP names both apogees "apogee", so the inverted map alone
+    cannot tell them apart; the chart's mean/true apogee choice does.
+    """
+    if key == "apogee" and chrt is not None:
+        return chart_bodies.apogee_id(getattr(chrt, "options", None))
+    return _PLANET_NAME_TO_SE.get(key)
 
 
 def _aspect_angle_lon(chrt, key):
@@ -799,7 +820,7 @@ def _aspect_body_info(chrt, key, role="primary"):
         }
     if key == "eclipse":
         _event, _jd, lon = eclipses.selected_prenatal_eclipse_point(chrt)
-        return {"kind": "point", "label": eclipses.eclipse_event_label(_event), "lon": lon, "role": role}
+        return {"kind": "point", "label": eclipses.prenatal_eclipse_point_label(), "lon": lon, "role": role}
     point_lon = _aspect_point_lon(key)
     if point_lon is not None:
         return {
@@ -807,7 +828,7 @@ def _aspect_body_info(chrt, key, role="primary"):
             "label": mtexts.txts.get("Point", "Point"),
             "lon": float(point_lon),
         }
-    se = _PLANET_NAME_TO_SE.get(key)
+    se = _key_se(chrt, key)
     if se is None:
         return None
     obj = _body_obj(chrt, se)
@@ -852,7 +873,7 @@ def _aspect_endpoint_motion(chrt, key):
     point_lon = _aspect_point_lon(key)
     if point_lon is not None:
         return (float(point_lon), 0.0, None)
-    se = _PLANET_NAME_TO_SE.get(key)
+    se = _key_se(chrt, key)
     if se is None:
         return (None, None, None)
     obj = _body_obj(chrt, se)
@@ -869,10 +890,10 @@ def _aspect_endpoint_motion(chrt, key):
 
 
 def _aspect_endpoint_orbs(chrt, key, aspect_type):
-    se = _PLANET_NAME_TO_SE.get(key)
+    se = _key_se(chrt, key)
     if se is not None:
         try:
-            return float(chrt.options.orbis[chrt.get_planet_orb_index(se)][aspect_type])
+            return float(orb_policy.contributions(chrt.options)[chrt.get_planet_orb_index(se)][aspect_type])
         except Exception:
             return 0.0
     if _aspect_angle_lon(chrt, key) is not None or _aspect_cusp_lon(chrt, key) is not None:
@@ -899,9 +920,9 @@ def _aspect_from_region_type(chrt, p1_key, p2_key, aspect_type):
     asp.dif = chart.Chart._aspect_distance_static(lon1, lon2)
     asp.aspdif = abs(asp.dif - chart.Chart.Aspects[int(aspect_type)])
     asp.exact = asp.aspdif <= float(getattr(chrt.options, "exact", 0.0))
-    asp.max_orb = (
-        _aspect_endpoint_orbs(chrt, p1_key, int(aspect_type))
-        + _aspect_endpoint_orbs(chrt, p2_key, int(aspect_type))
+    asp.max_orb = orb_policy.combiner(chrt.options)(
+        _aspect_endpoint_orbs(chrt, p1_key, int(aspect_type)),
+        _aspect_endpoint_orbs(chrt, p2_key, int(aspect_type)),
     )
     if asp.max_orb > 0.0 and asp.aspdif > asp.max_orb:
         return None
@@ -930,9 +951,9 @@ def _interchart_aspect_from_region_type(inner_chart, outer_chart, options, inner
     asp.dif = distance
     asp.aspdif = delta
     asp.exact = delta <= float(getattr(options, "exact", 0.0))
-    asp.max_orb = (
-        _aspect_endpoint_orbs(inner_chart, inner_key, int(aspect_type))
-        + _aspect_endpoint_orbs(outer_chart, outer_key, int(aspect_type))
+    asp.max_orb = orb_policy.combiner(options)(
+        _aspect_endpoint_orbs(inner_chart, inner_key, int(aspect_type)),
+        _aspect_endpoint_orbs(outer_chart, outer_key, int(aspect_type)),
     )
     if asp.max_orb > 0.0 and asp.aspdif > asp.max_orb:
         return None
@@ -956,8 +977,8 @@ def _interchart_aspect_from_region_type(inner_chart, outer_chart, options, inner
 def _resolve_aspect(chrt, p1_key, p2_key, aspect_type=None):
     """Recompute the Asp object the renderer drew, via the same accessors
     export_chart_json.export_aspects used."""
-    a = _PLANET_NAME_TO_SE.get(p1_key)
-    b = _PLANET_NAME_TO_SE.get(p2_key)
+    a = _key_se(chrt, p1_key)
+    b = _key_se(chrt, p2_key)
     asp = None
     if a is not None and b is not None:
         asp = chrt.get_planetary_aspect(a, b)
@@ -975,7 +996,9 @@ def _resolve_aspect(chrt, p1_key, p2_key, aspect_type=None):
         desired = int(aspect_type) if aspect_type is not None else None
     except Exception:
         desired = None
-    if asp is not None and asp.typ != chart.Chart.NONE and (desired is None or int(asp.typ) == desired):
+    if asp is not None and desired is not None:
+        asp = asp.nearest(lambda typ: typ == desired)
+    if asp is not None and asp.typ != chart.Chart.NONE:
         return asp
     fallback = _aspect_from_region_type(chrt, p1_key, p2_key, desired)
     if fallback is not None:
@@ -1034,6 +1057,17 @@ def _aspect_hover_data(chrt, options, asp, body_a, body_b):
         actor, target = body_b, body_a
     data["actor"] = actor
     data["target"] = target
+    # Whole-orb rules (Morin): both bodies within each other's orb, or one.
+    if body_a.get("kind") == "planet" and body_b.get("kind") == "planet":
+        try:
+            cells = orb_policy.contributions(chrt.options)
+            a_cell = float(cells[chrt.get_planet_orb_index(int(body_a["index"]))][int(asp.typ)])
+            b_cell = float(cells[chrt.get_planet_orb_index(int(body_b["index"]))][int(asp.typ)])
+            complete = orb_policy.contact_is_complete(chrt.options, a_cell, b_cell, float(asp.aspdif))
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            complete = None
+        if complete is not None:
+            data["contact_complete"] = complete
     return data
 
 
@@ -1094,8 +1128,8 @@ def _interchart_aspect_region(chrt, partner_chart, options, object_id):
         aspect_type = int(type_str)
     except (TypeError, ValueError):
         aspect_type = chart.Chart.NONE
-    inner_idx = _PLANET_NAME_TO_SE.get(inner_key)
-    outer_idx = _PLANET_NAME_TO_SE.get(outer_key)
+    inner_idx = _key_se(chrt, inner_key)
+    outer_idx = _key_se(partner_chart, outer_key)
 
     asp = None
     if inner_idx is not None and outer_idx is not None:
@@ -1197,6 +1231,7 @@ class InspectorService:
         binding_payload: Optional[dict] = None,
         view_mode: Optional[int] = None,
         ring_index: Optional[int] = None,
+        at_jd: Optional[float] = None,
     ):
         """Rebuild the hovered chart and its optional biwheel partner.
 
@@ -1212,6 +1247,11 @@ class InspectorService:
         service layering acyclic.
         """
         with self._lock:
+            if doc_id and at_jd is not None:
+                # A view that hovers a moment (Graphic Ephemeris): the transit
+                # sky at that JD over the live radix, radix as partner.
+                from webapp.daemon.workspace_service import workspace_service
+                return workspace_service.inspector_charts_at_jd(doc_id, at_jd)
             if doc_id:
                 from webapp.daemon.workspace_service import workspace_service
                 return workspace_service.inspector_charts(
@@ -1291,16 +1331,9 @@ class InspectorService:
         view_mode: Optional[int] = None,
         ring_index: Optional[int] = None,
         defer_signals: bool = False,
+        at_jd: Optional[float] = None,
     ) -> Optional[dict]:
         pd_context = self._live_pd_context(doc_id)
-        if kind == "pd_event":
-            if pd_context is None:
-                raise SystemExit("primary-direction event requires a live PD-in-chart document")
-            opts = self._presentation_options(pd_context["options"])
-            return chartinspector.build_payload(
-                _pd_event_region(pd_context, object_id),
-                opts,
-            )
         # Resolve the chart the user is hovering (inner ring) + its biwheel
         # partner (outer ring), matching what the React hit-test hovers.
         opts, chrt, partner_chart = self.resolve_chart(
@@ -1314,11 +1347,20 @@ class InspectorService:
             binding_payload=binding_payload,
             view_mode=view_mode,
             ring_index=ring_index,
+            at_jd=at_jd,
         )
         opts = self._presentation_options(opts)
         if pd_context is not None and kind == "aspect":
             raise SystemExit("ordinary aspect phase is unavailable in a PD-in-chart document")
+        coordinate_context = ascensional_inspector.context(doc_id, kind, object_id, chart_role, ring_index)
+        coordinate_payload = ascensional_inspector.special_payload(coordinate_context, compact=False)
+        if coordinate_payload is not None:
+            return coordinate_payload
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
+        if kind == "term":
+            return term_inspector.payload(region, opts, chrt=chrt)
+        if kind == "decan":
+            return decan_inspector.payload(region, opts, chrt=chrt)
         ring_context = self._ring_context(doc_id, ring_index)
         _attach_multiwheel_ring_context(region, ring_context)
         if pd_context is not None:
@@ -1331,7 +1373,7 @@ class InspectorService:
         lunar_conditions = _lunar_conditions_payload(region)
         if lunar_conditions is not None:
             payload["lunar_conditions"] = lunar_conditions
-        return payload
+        return ascensional_inspector.decorate(payload, coordinate_context, compact=False)
 
     def flag_payload(
         self,
@@ -1350,6 +1392,7 @@ class InspectorService:
         view_mode: Optional[int] = None,
         ring_index: Optional[int] = None,
         defer_signals: bool = False,
+        at_jd: Optional[float] = None,
     ) -> Optional[dict]:
         """Compact on-chart hover-flag payload — the OTHER chartinspector entry
         point (chartinspector.build_flag_payload, chartinspector.py:1148). The wx
@@ -1359,14 +1402,6 @@ class InspectorService:
         chart identity / region dict is byte-for-byte what Zone A hovers, then
         call the real brain. No reimplementation — the daemon ships its JSON."""
         pd_context = self._live_pd_context(doc_id)
-        if kind == "pd_event":
-            if pd_context is None:
-                raise SystemExit("primary-direction event requires a live PD-in-chart document")
-            opts = self._presentation_options(pd_context["options"])
-            return chartinspector.build_flag_payload(
-                _pd_event_region(pd_context, object_id),
-                opts,
-            )
         opts, chrt, partner_chart = self.resolve_chart(
             doc_id=doc_id,
             source=source,
@@ -1378,11 +1413,20 @@ class InspectorService:
             binding_payload=binding_payload,
             view_mode=view_mode,
             ring_index=ring_index,
+            at_jd=at_jd,
         )
         opts = self._presentation_options(opts)
         if pd_context is not None and kind == "aspect":
             raise SystemExit("ordinary aspect phase is unavailable in a PD-in-chart document")
+        coordinate_context = ascensional_inspector.context(doc_id, kind, object_id, chart_role, ring_index)
+        coordinate_payload = ascensional_inspector.special_payload(coordinate_context, compact=True)
+        if coordinate_payload is not None:
+            return coordinate_payload
         region = self._build_region(chrt, partner_chart, opts, kind, object_id, chart_role)
+        if kind == "term":
+            return term_inspector.payload(region, opts, chrt=chrt, compact=True)
+        if kind == "decan":
+            return decan_inspector.payload(region, opts, chrt=chrt, compact=True)
         ring_context = self._ring_context(doc_id, ring_index)
         _attach_multiwheel_ring_context(region, ring_context)
         if pd_context is not None:
@@ -1395,7 +1439,8 @@ class InspectorService:
             )
         else:
             payload = chartinspector.build_flag_payload(region, opts)
-        return _apply_multiwheel_payload_title(payload, region, ring_context)
+        payload = _apply_multiwheel_payload_title(payload, region, ring_context)
+        return ascensional_inspector.decorate(payload, coordinate_context, compact=True)
 
     def _build_region(self, chrt, partner_chart, options, kind: str, object_id: str, chart_role: str = "primary"):
         # OUTER-ring body → resolve against the comparison chart, with the radix
@@ -1423,6 +1468,10 @@ class InspectorService:
             return _house_region(chrt, options, int(object_id), chart_role)
         if kind == "sign":
             return _sign_region(chrt, options, int(object_id))
+        if kind == "term":
+            return term_inspector.build_region(getattr(chrt, "options", options), object_id)
+        if kind == "decan":
+            return decan_inspector.build_region(getattr(chrt, "options", options), object_id)
         if kind == "secondary_ring":
             return _secondary_ring_region(
                 chrt,
@@ -1437,6 +1486,8 @@ class InspectorService:
             return _aspect_region(chrt, options, str(object_id))
         if kind == "drishti":
             return _drishti_region(chrt, options, str(object_id))
+        if kind == "declination":
+            return _declination_region(chrt, options, str(object_id))
         # Unknown kind → build_payload returns the empty-state payload.
         return {"kind": kind, "object_id": object_id, "chart_role": "primary", "data": {}}
 

@@ -36,7 +36,7 @@ import searchbackend
 import searchcatalog
 import searchquery
 import util
-from engine import moment
+from engine import moment, orb_policy
 from engine.supplementary_headless_driver import SupplementaryHeadlessDriver
 from webapp.daemon.chart_service import chart_snapshot_service
 from webapp.daemon.display_palette import (
@@ -233,7 +233,7 @@ def _temporal_aspect_orb_contribution(
                 orb_index = int(chrt.get_planet_orb_index(int(planet_index)))
             else:
                 orb_index = int(planet_index)
-            value = float(options.orbis[orb_index][int(chart_aspect)])
+            value = float(orb_policy.contributions(options)[orb_index][int(chart_aspect)])
         except (AttributeError, IndexError, TypeError, ValueError):
             return None
         return value if math.isfinite(value) and value >= 0.0 else None
@@ -263,7 +263,7 @@ def _temporal_canonical_aspect_orb(
     sig_orb = _temporal_aspect_orb_contribution(chrt, sig, chart_aspect)
     if prom_orb is None or sig_orb is None:
         return None
-    max_orb = float(prom_orb) + float(sig_orb)
+    max_orb = orb_policy.combiner(chrt.options)(float(prom_orb), float(sig_orb))
     return max_orb if math.isfinite(max_orb) and max_orb > 0.0 else None
 
 
@@ -874,6 +874,9 @@ class TransitSearchService:
                     "standard": standard_promittors,
                     "planets": self._planetary_promittor_ids(catalog),
                     "core7": self._classical_promittor_ids(catalog),
+                    "listDefault": searchcatalog.list_default_point_ids(
+                        self._transit_role_ids(catalog, "promittor"), moon=False,
+                    ),
                     "clear": [],
                 },
                 "significators": {
@@ -881,6 +884,9 @@ class TransitSearchService:
                     "builtins": catalog.builtin_significator_ids[:],
                     "planets": self._planetary_significator_ids(catalog),
                     "fixedStars": self._fixed_star_significator_ids(catalog),
+                    "listDefault": searchcatalog.list_default_point_ids(
+                        self._transit_role_ids(catalog, "significator"),
+                    ),
                     "clear": [],
                 },
             },
@@ -893,7 +899,9 @@ class TransitSearchService:
                 "promittorIds": default_promittors,
                 "significatorIds": default_significators,
                 "aspects": default_aspects,
-                "includeSignChanges": bool(getattr(opts, "search_sign_changes", False)),
+                # Find transits targets the clicked point; ingresses have no
+                # receiving point and belong to the general Search defaults.
+                "includeSignChanges": False if initial_id else bool(getattr(opts, "search_sign_changes", False)),
                 "promittorMotion": self._valid_motion_filter(
                     getattr(opts, "search_promittor_motion", "")
                 ),
@@ -1233,6 +1241,7 @@ class TransitSearchService:
                     minimum_date=cursor_minimum_date,
                     maximum_date=cursor_maximum_date,
                     should_cancel=job.is_cancelled,
+                    progressive=True,
                 ):
                     if job.is_cancelled():
                         return
@@ -1573,6 +1582,36 @@ class TransitSearchService:
             "lifetimeTo": lifetime_to.isoformat() if lifetime_to is not None else None,
         }
 
+    def lifetime_range(self, chrt) -> Optional[tuple[datetime.date, datetime.date]]:
+        """The Lifetime button's range for ``chrt``: its own date onward."""
+        start = self._chart_birth_date(chrt)
+        if start is None:
+            return None
+        years = self._coerce_int(
+            getattr(chart_snapshot_service.options, "search_lifetime_years", SEARCH_LIFETIME_DEFAULT_YEARS),
+            SEARCH_LIFETIME_DEFAULT_YEARS,
+            SEARCH_LIFETIME_MIN_YEARS,
+            SEARCH_LIFETIME_MAX_YEARS,
+        )
+        return start, self._add_years(start, years)
+
+    def chart_for_request(self, chrt, radix, payload: dict[str, Any]):
+        """Chart a search request runs against.
+
+        Lifetime always searches the radix.  On a sub chart the range keeps
+        the sub chart's start date (the catalog's ``lifetimeFrom``); only the
+        searched positions switch to the natal radix.  A cursor window inside
+        a Lifetime range carries the full range as ``cursorRange*``.
+        """
+        if radix is None or radix is chrt:
+            return chrt
+        lifetime = self.lifetime_range(chrt)
+        if lifetime is None:
+            return chrt
+        range_from = self._parse_date(payload.get("cursorRangeFrom") or payload.get("fromDate"))
+        range_to = self._parse_date(payload.get("cursorRangeTo") or payload.get("toDate"))
+        return radix if (range_from, range_to) == lifetime else chrt
+
     def export_rows(self, rows_payload: Any, kind: str) -> dict:
         """Clipboard/ICS text for selected result rows.
 
@@ -1773,7 +1812,8 @@ class TransitSearchService:
             "fixedstarCode": getattr(obj, "fixedstar_code", None),
             "asteroidNumber": getattr(obj, "asteroid_number", None),
             "techniqueRoles": (
-                searchcatalog.ASTEROID_SEARCH_ROLES if obj.id.startswith("asteroid:")
+                searchcatalog.APOGEE_CAPABILITIES if obj.id == "planet:apogee"
+                else searchcatalog.ASTEROID_SEARCH_ROLES if obj.id.startswith("asteroid:")
                 else searchcatalog.HOUSE_CUSP_SEARCH_ROLES if obj.family == searchcatalog.SearchObject.FAMILY_HOUSE_CUSP
                 else None
             ),
@@ -2075,6 +2115,7 @@ class TransitSearchService:
                     payload.get("dignity_code"),
                     fallback=payload.get("glyph_color"),
                     source_options=chart_snapshot_service.options,
+                    minor_count=payload.get("minor_dignity_count", 0),
                 )
             )
             payload["glyph_color_role"] = object_glyph_color_role(
@@ -2082,6 +2123,7 @@ class TransitSearchService:
                 obj,
                 payload.get("dignity_code"),
                 resolved_color=payload["glyph_color_css"],
+                minor_count=payload.get("minor_dignity_count", 0),
             )
         return payload
 
@@ -2170,6 +2212,13 @@ class TransitSearchService:
             oid for oid in catalog.promittor_ids
             if oid != "planet:moon" and not oid.startswith("asteroid:")
             and (catalog.get(oid) is None or catalog.get(oid).family != searchcatalog.SearchObject.FAMILY_FIXED_STAR)
+        ]
+
+    @staticmethod
+    def _transit_role_ids(catalog: searchcatalog.SearchCatalog, role: str) -> list[str]:
+        return [
+            obj.id for obj in catalog.objects
+            if searchcatalog.transit_point_role(obj, role) == "supported"
         ]
 
     @staticmethod

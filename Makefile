@@ -1,26 +1,33 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help run check package build-ext clean web web-tauri web-tauri-status
+.PHONY: help run check package build-ext clean web web-browser-smoke web-tauri web-tauri-status web-tauri-test-frontend
 .PHONY: web-tauri-stop web-tauri-reset web-live-smoke web-daemon web-dev
 .PHONY: perf-check perf-report speedlog
 .PHONY: worktree-check worktree-bootstrap
 .PHONY: web-frontend web-hosted-build web-notes web-corpus web-runtime-resources web-legal web-venv web-build-deps web-check-deps
 .PHONY: app-preflight web-frontend-preflight web-tauri-before-build
 .PHONY: web-daemon-current web-daemon-binary web-verify-parity style-check style-token-check
-
-# POSIX-oriented helper targets.
-# On native Windows shells, prefer direct `python` / PowerShell commands.
-
+.PHONY: web-dev-runtime web-venv-python
+# These targets expect a POSIX shell (macOS, Linux, Git Bash); the Windows
+# installer is built by the Tauri Windows configuration's PowerShell prebuild.
+# PYTHON runs stdlib-only helper scripts. Everything that needs third-party
+# packages (setuptools, Pillow, PyInstaller, pytest, the daemon requirements)
+# runs through WEB_PYTHON, the project venv, whose requirements declare them.
+# ARIES_PYTHON is the one interpreter that creates that venv; set it to choose
+# the Python version (e.g. ARIES_PYTHON=python3.14). An existing venv made by
+# another minor version is refused rather than mixed.
 PYTHON ?= python3
+ARIES_PYTHON ?= python3
 SWEP_SRC ?= SWEP/src
 WEB_DAEMON_PORT ?= 8765
-WEB_PYTHON ?= webapp/.venv/bin/python
+WEB_VENV := webapp/.venv
+WEB_PYTHON ?= $(WEB_VENV)/bin/python
 ARCH ?= arm64
 ARIES_VERSION ?=
 # Private/development builds stage every authored corpus pack that exists in the
 # checkout. Valens is passive public inspector content; the other packs provide
 # interpretation rules and remain subject to the release distribution boundary.
-ARIES_PACK_SEED_SOURCES ?= $(wildcard corpus/valens corpus/hephaistion corpus/dorotheus corpus/lilly)
+ARIES_PACK_SEED_SOURCES ?= $(wildcard corpus/valens corpus/hephaistion corpus/dorotheus corpus/lilly corpus/robson-fixed-stars)
 PUBLIC_MACOS_ICON := Res/OpenAries.icns
 PUBLIC_TAURI_ICON_CONFIG := {"bundle":{"icon":["../../../$(PUBLIC_MACOS_ICON)","icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.ico"]}}
 export ARIES_VERSION
@@ -28,6 +35,7 @@ export ARIES_VERSION
 DAEMON_BUILD_STAMP := webapp/frontend/.tmp/daemon-build.stamp
 DAEMON_BUILD_INPUTS := Makefile scripts/build_sweastrology.sh scripts/build_transit_kernel.py
 DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/wheel-ring-archetypes.json
+DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/dignity-display-policy.json
 DAEMON_BUILD_INPUTS += $(wildcard webapp/frontend/src/lib/chart/wheel-factory-*.json)
 DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/wheel-geometry-ownership.json
 DAEMON_BUILD_INPUTS += webapp/daemon/shipping-style-profiles.json
@@ -43,18 +51,21 @@ help:
 		'Aries commands:' \
 		'  make run    Open the native development app' \
 		'  make check  Run public static and backend checks' \
-		'  make package  Build an unlocked, unsigned local package'
+		'  make package  Build an unlocked, unsigned local package' \
+		'  make web    Build and smoke-test the browser (WASM) app'
 	@if [ -n "$(ARIES_OWNER_RELEASE)" ]; then \
 		$(MAKE) --no-print-directory owner-help; \
 	fi
 
-run: worktree-check web-corpus web-daemon-current
-	@if [ ! -x webapp/frontend/src-tauri/binaries/aries-daemon/aries-daemon ]; then \
-		$(MAKE) web-daemon-binary; \
-	fi
+run: worktree-check web-dev-runtime
 	cd webapp/frontend && bash ./scripts/tauri-dev-up.sh
 
-check: build-ext web-corpus web-runtime-resources web-legal web-check-deps
+# Debug Tauri runs source Python. Only changed native code needs compilation;
+# PyInstaller and the release sidecar are exclusively packaging prerequisites.
+web-dev-runtime: web-venv-python
+	$(WEB_PYTHON) -m webapp.daemon.dev_runtime
+
+check: build-ext web-corpus web-runtime-resources web-legal web-check-deps web-tauri-test-frontend
 	cd webapp/frontend && npm run lint
 	cd webapp/frontend && npm run typecheck
 	cd webapp/frontend && npm test
@@ -93,19 +104,41 @@ worktree-check:
 worktree-bootstrap:
 	@$(PYTHON) scripts/worktree_runtime.py bootstrap
 
-build-ext:
-	cd $(SWEP_SRC) && $(PYTHON) setup.py build_ext --inplace
-	$(PYTHON) scripts/build_transit_kernel.py build_ext --inplace
+# Native extensions compile with the venv's setuptools (requirements-build.txt).
+build-ext: web-build-deps
+	cd $(SWEP_SRC) && $(abspath $(WEB_PYTHON)) setup.py build_ext --inplace
+	$(WEB_PYTHON) scripts/build_transit_kernel.py build_ext --inplace
 
-web-venv:
-	@if [ ! -x "$(WEB_PYTHON)" ]; then \
-		if [ "$(WEB_PYTHON)" = "webapp/.venv/bin/python" ]; then \
-			$(PYTHON) -m venv --system-site-packages webapp/.venv; \
-		else \
-			echo "Missing WEB_PYTHON=$(WEB_PYTHON)" >&2; \
-			exit 1; \
-		fi; \
-	fi
+# Creates the project venv with ARIES_PYTHON. It does not see the interpreter's
+# own site-packages: every package comes from the declared requirements, since
+# a system Pillow or setuptools can vanish or break when Python is upgraded.
+# A custom WEB_PYTHON (such as an Intel packaging venv) must already exist.
+web-venv-python:
+	@if [ "$(WEB_PYTHON)" != "$(WEB_VENV)/bin/python" ]; then \
+		[ -x "$(WEB_PYTHON)" ] || { echo "Missing WEB_PYTHON=$(WEB_PYTHON)" >&2; exit 1; }; \
+		exit 0; \
+	fi; \
+	minor='import sys; print("%d.%d" % sys.version_info[:2])'; \
+	wanted=$$($(ARIES_PYTHON) -c "$$minor" 2>/dev/null) || { \
+		echo "ARIES_PYTHON=$(ARIES_PYTHON) does not run; set ARIES_PYTHON to the Python for $(WEB_VENV)." >&2; \
+		exit 1; \
+	}; \
+	if [ -x "$(WEB_PYTHON)" ]; then \
+		have=$$($(WEB_PYTHON) -c "$$minor" 2>/dev/null) || have=unknown; \
+		[ "$$have" = "$$wanted" ] && exit 0; \
+		printf '%s\n' \
+			"$(WEB_VENV) was made by Python $$have, but ARIES_PYTHON=$(ARIES_PYTHON) is Python $$wanted." \
+			"Keep the venv with ARIES_PYTHON=python$$have, or delete $(WEB_VENV) to rebuild it with $(ARIES_PYTHON)." >&2; \
+		exit 1; \
+	fi; \
+	if [ -e "$(WEB_VENV)" ] || [ -L "$(WEB_VENV)" ]; then \
+		echo "$(WEB_VENV) has no working Python; delete it to rebuild it with $(ARIES_PYTHON)." >&2; \
+		exit 1; \
+	fi; \
+	echo "Creating $(WEB_VENV) with $(ARIES_PYTHON) (Python $$wanted)"; \
+	$(ARIES_PYTHON) -m venv $(WEB_VENV)
+
+web-venv: web-venv-python
 	$(WEB_PYTHON) -m pip install -r webapp/daemon/requirements.txt
 
 web-daemon: web-venv
@@ -117,6 +150,14 @@ web-notes:
 web-corpus:
 	$(PYTHON) scripts/stage_corpus_resources.py corpus/parsed webapp/frontend/src-tauri/target/aries-corpus-resources --subdir parsed
 	$(PYTHON) scripts/stage_corpus_pack_seed.py webapp/frontend/src-tauri/target/aries-pack-seeds $(ARIES_PACK_SEED_SOURCES)
+
+# tauri-build checks at compile time that frontendDist and every bundle resource
+# exist. `cargo test` needs neither the built frontend nor its media, so create
+# the two staged directories empty when no build has staged them; a real
+# web-tauri-before-build stage is never touched.
+web-tauri-test-frontend:
+	mkdir -p webapp/frontend/src-tauri/target/aries-frontend-embedded \
+		webapp/frontend/src-tauri/target/aries-frontend-media
 
 web-runtime-resources:
 	$(PYTHON) scripts/stage_tauri_runtime_resources.py
@@ -143,8 +184,20 @@ app-preflight: web-frontend-preflight
 
 web-tauri-before-build: web-frontend-preflight
 	$(MAKE) --no-print-directory web-corpus web-notes web-daemon-binary web-legal
+	@# Universal builds: fuse the native daemon with the Intel one built beforehand.
+	@if [ -n "$$ARIES_UNIVERSAL_X86_DAEMON" ]; then \
+		stage=webapp/.pyinstaller-universal; daemon=webapp/frontend/src-tauri/binaries/aries-daemon; \
+		rm -rf $$stage/arm64 && ditto $$daemon $$stage/arm64 && \
+		$(WEB_PYTHON) scripts/fuse_macos_universal.py $$stage/arm64 "$$ARIES_UNIVERSAL_X86_DAEMON" $$stage/universal && \
+		find $$daemon -mindepth 1 ! -name .gitkeep -exec rm -rf {} + && ditto $$stage/universal $$daemon && \
+		$$daemon/aries-daemon --verify-native-transit-kernel && \
+		/usr/bin/arch -x86_64 $$daemon/aries-daemon --verify-native-transit-kernel && \
+		echo "Daemon bundle at $$daemon (universal)" || exit 1; \
+	fi
 	$(PYTHON) scripts/stage_tauri_runtime_resources.py
 	cd webapp/frontend && npm run build:next
+	@# Embed a pruned frontend; fonts and plates ship once as bundle resources.
+	$(PYTHON) scripts/stage_tauri_frontend_dist.py
 
 web-dev: web-venv web-notes
 	@set -e; \
@@ -239,7 +292,20 @@ package:
 	@test -f "$(PUBLIC_MACOS_ICON)" || { echo "Missing public app icon: $(PUBLIC_MACOS_ICON)" >&2; exit 1; }
 	cd webapp/frontend && ARIES_LICENSE_REQUIRED=0 npx tauri build --config '$(PUBLIC_TAURI_ICON_CONFIG)'
 
-web: package
+# Browser build (aries.sh/webapp): the same daemon, engine and frontend as the
+# desktop app, compiled for WebAssembly. Prepares the toolchain on first use,
+# smoke-tests the engine headless, then writes build/wasm/site.
+web:
+	bash scripts/wasm/setup_toolchain.sh
+	$(PYTHON) scripts/wasm/stage_engine.py
+	node scripts/wasm/smoke.mjs
+	$(PYTHON) scripts/wasm/build_web.py
+
+# Headless Chromium against build/wasm/site (run `make web` first): the page
+# loads, the engine boots, Here and Now renders, a time step repaints, and no
+# console errors. Uses the frontend's Playwright (npx playwright install chromium).
+web-browser-smoke:
+	PYTHON=$(PYTHON) node scripts/wasm/browser_smoke.mjs
 
 clean:
 	rm -rf build dist __pycache__

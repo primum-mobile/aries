@@ -6,7 +6,16 @@ import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useMobileLayout } from "@/hooks/use-mobile-layout"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n/i18n"
+import { matchesCaretShortcut } from "@/lib/shortcut-display"
+import {
+  chartScopeIsClear,
+  EMBEDDED_MANIFEST_SHORTCUT_EVENT,
+  targetAllowsShortcut,
+  type EmbeddedManifestShortcutDetail,
+} from "@/shortcuts/manifest-shortcuts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -64,7 +73,10 @@ function SidebarProvider({
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const isMobile = useIsMobile()
+  // The browser build's compact layout (landscape phones, touch tablets) also
+  // presents the launcher as a sheet; Tauri keeps the width-only rule.
+  const mobileLayout = useMobileLayout()
+  const isMobile = useIsMobile() || mobileLayout
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -98,11 +110,32 @@ function SidebarProvider({
       ) {
         event.preventDefault()
         toggleSidebar()
+        return
+      }
+      if (
+        !event.defaultPrevented &&
+        !event.repeat &&
+        matchesCaretShortcut(event) &&
+        targetAllowsShortcut(event.target) &&
+        chartScopeIsClear()
+      ) {
+        event.preventDefault()
+        toggleSidebar()
+      }
+    }
+    const handleEmbeddedShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<EmbeddedManifestShortcutDetail>).detail
+      if (detail && !detail.repeat && matchesCaretShortcut(detail) && chartScopeIsClear()) {
+        toggleSidebar()
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
+    window.addEventListener(EMBEDDED_MANIFEST_SHORTCUT_EVENT, handleEmbeddedShortcut)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener(EMBEDDED_MANIFEST_SHORTCUT_EVENT, handleEmbeddedShortcut)
+    }
   }, [toggleSidebar])
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
@@ -159,6 +192,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const t = useT()
 
   if (collapsible === "none") {
     return (
@@ -185,7 +219,7 @@ function Sidebar({
           data-slot="sidebar"
           data-aries-surface="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="aries-mobile-launcher-sheet w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -194,8 +228,8 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>{t("mobile.launcher.title")}</SheetTitle>
+            <SheetDescription>{t("mobile.launcher.description")}</SheetDescription>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>

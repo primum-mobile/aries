@@ -25,7 +25,7 @@ export function drawPngWatermark(
     x?: number; y?: number; size?: number; font?: string; maxWidth?: number;
     monochrome: boolean; style: PngWatermarkStyle; color: string;
   },
-): void {
+): { x: number; y: number; w: number; h: number } {
   let size = options.size ?? width * 0.027;
   const colors = options.monochrome ? MONOCHROME_FLAME_COLORS : FLAME_COLORS;
   context.save();
@@ -54,12 +54,14 @@ export function drawPngWatermark(
     context.textBaseline = "alphabetic";
     context.fillStyle = options.color;
     // Shape the complete custom text so combining marks and joined scripts survive.
-    const textWidth = context.measureText(label).width;
+    const metrics = context.measureText(label);
+    const textWidth = metrics.width;
     const x = options.x ?? (width - textWidth) / 2;
-    const y = (options.y ?? size * 0.25) + context.measureText(label).actualBoundingBoxAscent;
+    const top = options.y ?? size * 0.25;
+    const y = top + metrics.actualBoundingBoxAscent;
     context.fillText(label, x, y);
     context.restore();
-    return;
+    return { x, y: top, w: textWidth, h: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent };
   }
   context.textAlign = "left";
   context.textBaseline = "alphabetic";
@@ -104,4 +106,6 @@ export function drawPngWatermark(
   context.strokeText(label, x, textY);
   context.fillText(label, x, textY);
   context.restore();
+  // Painted extent: flame tips (no higher than `y`) to the text descent.
+  return { x: x - step * 0.7, y, w: textWidth + step * 1.4, h: textY + textMetrics.actualBoundingBoxDescent + size * 0.05 - y };
 }

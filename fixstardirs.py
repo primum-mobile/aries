@@ -231,7 +231,7 @@ def _load_fixstars_cat():
     db = {}
     for path in _fixstars_cat_paths():
         try:
-            f = open(path, 'r')
+            f = open(path, 'r', encoding='utf-8')
             for line in f:
                 s = line.strip()
                 if not s or s.startswith('#'):
@@ -320,7 +320,7 @@ def _cat_all_names_in_order():
     if not path:
         return []
     names = []
-    f = open(path, "r")
+    f = open(path, "r", encoding="utf-8")
     try:
         for ln in f:
             if not isinstance(ln, unicode):
@@ -691,7 +691,7 @@ def _fallback_names_from_cat(path=None):
 
     names = []
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             for ln in f:
                 ln = ln.strip()
                 if not ln or ln.startswith("#"):
@@ -755,7 +755,7 @@ def _cat_lookup_equ_generic(star_name, path=None):
 
     want = star_name.strip().lower()
 
-    f = open(path, "r")
+    f = open(path, "r", encoding="utf-8")
     try:
         for ln in f:
             if not isinstance(ln, unicode):

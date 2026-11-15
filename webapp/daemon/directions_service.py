@@ -17,18 +17,20 @@ verbatim in column structure. We re-derive labels here (rather than calling the
 list window) because the wx DC renderer pulls ``common.common.*`` which imports
 wx (common.py:5). The math, dates, arcs and point ids all come straight from the
 engine ``PrimDir`` objects.
-
-Spec: doc/migration/surfaces/primary-directions.md
 """
 from __future__ import annotations
 
 import datetime
 import copy
+import functools
+import hashlib
 import math
 import sys
 import threading
 import types
+from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Optional
 
@@ -37,6 +39,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import astrology
+import chart_bodies
 import arabicparts
 import chart
 import common
@@ -47,6 +50,7 @@ import fixstars
 import fortune
 import houses
 import mtexts
+import options
 import planets
 import primdirs
 import searchbackend
@@ -54,9 +58,11 @@ import symbolic_time
 import util
 from primdirs import PrimDir, PrimDirs
 from engine import moment
+from engine import pd_in_chart
 from engine import symbolic_projection
 from engine.supplementary_headless_driver import SupplementaryHeadlessDriver
 from webapp.daemon.chart_service import chart_snapshot_service
+from engine.dignity_display import chart_dignity_color, minor_dignity_count
 from webapp.daemon.display_palette import (
     aspect_color_role,
     effective_display_options,
@@ -64,6 +70,7 @@ from webapp.daemon.display_palette import (
     object_glyph_color_role,
     sign_color_role,
 )
+from webapp.daemon.request_cancel import cancellable_lock, raise_if_cancelled, until_cancelled
 from webapp.daemon.primdir_points import (
     primdir_angle_label,
     primdir_house_cusp_label,
@@ -83,6 +90,44 @@ _NATAL_PROMISSOR_MARKER = "n"
 _TEXT_COLOR_ROLE = "--morinus-text-bright"
 _PEREGRIN_COLOR_ROLE = "--morinus-peregrin"
 
+# One list request shapes thousands of rows from the same chart, options and
+# language. Label, glyph and palette helpers depend on nothing else, so inside
+# ``_row_memo_scope`` each distinct call is computed once per request.
+_ROW_MEMO: ContextVar[Optional[dict]] = ContextVar("directions_row_memo", default=None)
+_ROW_MEMO_VALUE_TYPES = (str, int, float, bool)
+
+
+@contextmanager
+def _row_memo_scope():
+    token = _ROW_MEMO.set({})
+    try:
+        yield
+    finally:
+        _ROW_MEMO.reset(token)
+
+
+def _row_memoized(fn):
+    """Reuse ``fn``'s result within the active ``_row_memo_scope``.
+
+    Chart and options arguments key by identity; the memo holds them, so no
+    identity can be reused inside the scope. Outside a scope every call
+    computes as before.
+    """
+    @functools.wraps(fn)
+    def memoized(*args):
+        memo = _ROW_MEMO.get()
+        if memo is None:
+            return fn(*args)
+        key = (fn, *[
+            arg if arg is None or type(arg) in _ROW_MEMO_VALUE_TYPES else (id(arg),)
+            for arg in args
+        ])
+        entry = memo.get(key)
+        if entry is None:
+            entry = memo[key] = (fn(*args), args)
+        return entry[0]
+    return memoized
+
 
 def _is_natal_radix_promissor_key(key: Any) -> bool:
     return isinstance(key, str) and key.startswith(_NATAL_PROMISSOR_KEY_PREFIX)
@@ -100,6 +145,8 @@ def _body_label(body_id: Any) -> str:
     if 0 <= body_index < len(keys):
         key = keys[body_index]
         return mtexts.txts.get(key, key)
+    if body_index in chart_bodies.APOGEE_IDS:
+        return mtexts.txts["Apogee"]
     if body_index == astrology.SE_CHIRON:
         return mtexts.txts.get("Chiron", "Chiron")
     return str(body_id)
@@ -161,6 +208,26 @@ def _natal_radix_promissor_specs(radix, target_chart, options) -> list[dict[str,
                     "key": f"{_NATAL_PROMISSOR_KEY_PREFIX}{astrology.SE_CHIRON}",
                     "bodyId": int(astrology.SE_CHIRON),
                     "label": _body_label(astrology.SE_CHIRON),
+                    "point": point,
+                })
+            except Exception:
+                pass
+    if getattr(options, "pdpromapogee", False):
+        body = common.get_chart_planet(radix, chart_bodies.apogee_id(options))
+        if body is not None:
+            try:
+                point = customerpd.CustomerPD.from_ecliptic_longitude(
+                    float(body.data[planets.Planet.LONG]),
+                    target_chart.place.lat,
+                    target_chart.houses.ascmc2,
+                    target_chart.obl[0],
+                    target_chart.raequasc,
+                    float(body.data[planets.Planet.LAT]),
+                )
+                specs.append({
+                    "key": f"{_NATAL_PROMISSOR_KEY_PREFIX}{chart_bodies.apogee_id(options)}",
+                    "bodyId": int(chart_bodies.apogee_id(options)),
+                    "label": _body_label(chart_bodies.apogee_id(options)),
                     "point": point,
                 })
             except Exception:
@@ -320,7 +387,7 @@ def _options_for_custom_significator(options, spec: Optional[dict[str, Any]]):
             opts.pdlof = [bool(options.pdlof[0]), False]
         except Exception:
             pass
-        for attr in ("pdsyzygy", "pdsigchiron", "pdsigvertex", "pdsigarabicparts"):
+        for attr in ("pdsyzygy", "pdsigchiron", "pdsigapogee", "pdsigvertex", "pdsigarabicparts", "pdsigasteroids"):
             try:
                 setattr(opts, attr, False)
             except Exception:
@@ -411,6 +478,7 @@ def _temporary_radix_direction_chart(chrt):
 
 # --- Label tables (mirror PrimDirs.print2file, primdirs.py:2254-2260) ---------
 
+@_row_memoized
 def _bodies() -> tuple:
     t = mtexts.txts
     return (
@@ -421,6 +489,7 @@ def _bodies() -> tuple:
     )
 
 
+@_row_memoized
 def _signs() -> tuple:
     t = mtexts.txts
     return tuple(
@@ -430,6 +499,7 @@ def _signs() -> tuple:
     )
 
 
+@_row_memoized
 def _aspects() -> tuple:
     t = mtexts.txts
     return (
@@ -454,6 +524,7 @@ def _short_direction_body(label: Any, key: Optional[str] = None) -> str:
     return value[:3]
 
 
+@_row_memoized
 def _compact_direction_subject(label: Any) -> str:
     """Abbreviate known localized bodies/signs while preserving special points."""
     value = str(label or "").strip()
@@ -493,6 +564,7 @@ def _short_direction_aspect(label: Any) -> str:
     return value[:3].lower() + "."
 
 
+@_row_memoized
 def _without_leading_direction_aspect(label: Any) -> str:
     value = str(label or "").strip()
     for aspect in sorted((str(item or "").strip() for item in _aspects()), key=len, reverse=True):
@@ -780,21 +852,15 @@ def _system_label(options) -> str:
 
 
 def _key_label(options) -> str:
+    """The localized key name alone (Naibod, Ptolemy, …). The header shows only
+    the name; clients must never parse a rate back out of a translated label."""
     t = mtexts.txts
     if getattr(options, 'pdkeydyn', False):
         dyn = (t['TrueSolarEquatorialArc'], t['BirthdaySolarEquatorialArc'],
                t['TrueSolarEclipticalArc'], t['BirthdaySolarEclipticalArc'])
         return dyn[int(options.pdkeyd)]
     stat = (t['Naibod'], t['Cardan'], t['Ptolemy'], t['Customer'])
-    deg, minu, sec = options.pdkeydeg, options.pdkeymin, options.pdkeysec
-    if int(options.pdkeys) != PrimDirs.CUSTOMER:
-        deg = PrimDirs.staticData[options.pdkeys][PrimDirs.DEG]
-        minu = PrimDirs.staticData[options.pdkeys][PrimDirs.MIN]
-        sec = PrimDirs.staticData[options.pdkeys][PrimDirs.SEC]
-    return '%s %d%s %s%s %s%s' % (
-        stat[int(options.pdkeys)], deg, t['DegPDList'],
-        str(minu).zfill(2), t['MinPDList'], str(sec).zfill(2), t['SecPDList'],
-    )
+    return stat[int(options.pdkeys)]
 
 
 def _prom_label(pds, pd) -> str:
@@ -993,6 +1059,11 @@ def _row(
         },
         "signature": list(signature or []),
     }
+    converse_kind = getattr(pd, "converse_kind", None)
+    if converse_kind is not None:
+        # Only traditional converse rows carry it, so modern payloads stay
+        # unchanged; "direct": false alone means the modern converse.
+        payload["fields"]["converseKind"] = converse_kind
     if include_temporal:
         temporal = _primary_direction_temporal(
             pds,
@@ -1006,6 +1077,70 @@ def _row(
     return payload
 
 
+def _zodiac_label(chrt, options) -> str:
+    """Tropical, or the sidereal ayanamsha name, as the wheel centre shows it."""
+    chart_options = getattr(chrt, "options", None) or options
+    ayanamsha = int(getattr(chart_options, "ayanamsha", 0) or 0)
+    if ayanamsha:
+        return export_chart_json.ayanamsha_label(ayanamsha)
+    return mtexts.txts["WheelCenterTropical"]
+
+
+def _key_with_rate_label(options) -> str:
+    """Key name plus its yearly rate for static keys (legacy format2text)."""
+    if getattr(options, 'pdkeydyn', False):
+        return _key_label(options)
+    if int(options.pdkeys) == PrimDirs.CUSTOMER:
+        deg, minu, sec = int(options.pdkeydeg), int(options.pdkeymin), int(options.pdkeysec)
+        return f"{deg}°{minu:02d}′{sec:02d}″"
+    deg, minu, sec = PrimDirs.staticData[int(options.pdkeys)][:3]
+    return f"{_key_label(options)} {deg}°{minu:02d}′{sec:02d}″"
+
+
+def _direction_mode_label(direct: bool, converse: bool) -> str:
+    t = mtexts.txts
+    if direct and converse:
+        return t["PDDirectAndConverse"]
+    return t["Converse"] if converse else t["Direct"]
+
+
+def _primary_export_parameters(options, direction: int, chrt) -> str:
+    """One unlabelled line of the calculation settings the rows cannot show.
+
+    Aspects, promissors and significators are visible in the rows themselves;
+    the line carries system, mundane/zodiacal mode, latitude treatment, key,
+    direct/converse, secondary motion and zodiac."""
+    t = mtexts.txts
+    parts = [_system_label(options)]
+    sub = int(getattr(options, 'subprimarydir', PrimDirs.MUNDANE))
+    if sub == PrimDirs.MUNDANE:
+        parts.append(t["Mundane"])
+    elif sub == PrimDirs.ZODIACAL:
+        parts.append(t["Zodiacal"])
+    else:
+        parts.append(t["PDMundaneAndZodiacal"])
+    if sub != PrimDirs.MUNDANE:
+        latitude_key = {
+            PrimDirs.SZNEITHER: "PDLatitudeNeither",
+            PrimDirs.SZPROMISSOR: "PDLatitudePromissor",
+            PrimDirs.SZSIGNIFICATOR: "PDLatitudeSignificator",
+            PrimDirs.SZBOTH: "PDLatitudeBoth",
+        }.get(int(getattr(options, 'subzodiacal', PrimDirs.SZNEITHER)))
+        if latitude_key is not None:
+            parts.append(t[latitude_key])
+        if getattr(options, 'bianchini', False):
+            parts.append(t["Bianchini"])
+    parts.append(_key_with_rate_label(options))
+    parts.append(_direction_mode_label(
+        direction in (PrimDirs.DIRECT, PrimDirs.BOTHDC),
+        direction in (PrimDirs.CONVERSE, PrimDirs.BOTHDC),
+    ))
+    if getattr(options, 'pdsecmotion', False):
+        parts.append(t["SecondaryMotion"])
+    parts.append(_zodiac_label(chrt, options))
+    return " · ".join(part for part in parts if part)
+
+
 def _meta(options, range_mode: int, direction: int, chrt, title: str) -> dict:
     return {
         "title": title,
@@ -1013,6 +1148,7 @@ def _meta(options, range_mode: int, direction: int, chrt, title: str) -> dict:
                     mtexts.txts['Sig'], mtexts.txts['Arc'], mtexts.txts['Date']],
         "system": _system_label(options),
         "key": _key_label(options),
+        "exportParameters": _primary_export_parameters(options, direction, chrt),
         "subprimarydir": int(getattr(options, 'subprimarydir', 0)),
         "rangeMode": int(range_mode),
         "direction": int(direction),
@@ -1021,8 +1157,28 @@ def _meta(options, range_mode: int, direction: int, chrt, title: str) -> dict:
     }
 
 
-def _project(chrt, options, range_mode: int, direction: int) -> Any:
-    abort = primdirs.AbortPD()
+class _CancelAbort:
+    """``primdirs.AbortPD`` view of a request-cancel event."""
+
+    def __init__(self, cancel: threading.Event) -> None:
+        self._cancel = cancel
+
+    @property
+    def abort(self) -> bool:
+        return self._cancel.is_set()
+
+    def aborting(self) -> None:
+        self._cancel.set()
+
+
+def _project(
+    chrt,
+    options,
+    range_mode: int,
+    direction: int,
+    cancel: Optional[threading.Event] = None,
+) -> Any:
+    abort = primdirs.AbortPD() if cancel is None else _CancelAbort(cancel)
     projection = symbolic_projection.project_symbolic_table(
         symbolic_projection.PRIMARY_DIRECTIONS,
         chrt,
@@ -1031,9 +1187,12 @@ def _project(chrt, options, range_mode: int, direction: int) -> Any:
         default_range=range_mode,
         default_direction=direction,
     )
+    # An aborted engine run returns partial rows; never shape or send them.
+    raise_if_cancelled(cancel)
     return projection["content"]
 
 
+@_row_memoized
 def _planet_glyph(planet_id: Any) -> Optional[str]:
     try:
         glyph = export_chart_json.common.common.get_planet_glyph(int(planet_id))
@@ -1058,16 +1217,8 @@ def _text_color(options) -> Any:
     return getattr(options, "clrtexts", (0, 0, 0))
 
 
-def _dignity_palette(options) -> tuple:
-    return (
-        getattr(options, "clrdomicil", (0, 0, 0)),
-        getattr(options, "clrexal", (0, 0, 0)),
-        getattr(options, "clrperegrin", (0, 0, 0)),
-        getattr(options, "clrcasus", (0, 0, 0)),
-        getattr(options, "clrexil", (0, 0, 0)),
-    )
 
-
+@_row_memoized
 def _planet_color_role(chrt, options, planet_id: Any) -> Optional[str]:
     try:
         planet_id = int(planet_id)
@@ -1083,10 +1234,12 @@ def _planet_color_role(chrt, options, planet_id: Any) -> Optional[str]:
         options,
         types.SimpleNamespace(id=f"planet:{planet_id}", planet_index=planet_id),
         dignity_code,
+        minor_count=minor_dignity_count(chrt, planet_id),
         resolved_color=_planet_color(chrt, options, planet_id),
     )
 
 
+@_row_memoized
 def _planet_color(chrt, options, planet_id: Any) -> Any:
     try:
         planet_id = int(planet_id)
@@ -1094,6 +1247,8 @@ def _planet_color(chrt, options, planet_id: Any) -> Any:
         return _text_color(options)
     if planet_id == PrimDir.LOF:
         return _lof_color(options)
+    if planet_id in chart_bodies.APOGEE_IDS:
+        return options.clrindividual[astrology.SE_MOON] if getattr(options, "useplanetcolors", False) else options.clrperegrin
     if planet_id == astrology.SE_CHIRON:
         return _chiron_color(options)
     if getattr(options, "useplanetcolors", False):
@@ -1105,12 +1260,12 @@ def _planet_color(chrt, options, planet_id: Any) -> Any:
         except Exception:
             return _text_color(options)
     try:
-        dign = int(chrt.dignity(planet_id))
-        return _dignity_palette(options)[dign]
+        return chart_dignity_color(chrt, options, planet_id)
     except Exception:
         return getattr(options, "clrperegrin", _text_color(options))
 
 
+@_row_memoized
 def _primdir_point_color(chrt, options, point_id: Any) -> Any:
     try:
         point_id = int(point_id)
@@ -1124,6 +1279,7 @@ def _primdir_point_color(chrt, options, point_id: Any) -> Any:
     return _text_color(options)
 
 
+@_row_memoized
 def _primdir_point_color_role(chrt, options, point_id: Any) -> Optional[str]:
     try:
         point_id = int(point_id)
@@ -1137,6 +1293,7 @@ def _primdir_point_color_role(chrt, options, point_id: Any) -> Optional[str]:
     return _TEXT_COLOR_ROLE
 
 
+@_row_memoized
 def _antiscion_planet_color(chrt, options, planet_id: Any) -> Any:
     try:
         planet_id = int(planet_id)
@@ -1153,12 +1310,12 @@ def _antiscion_planet_color(chrt, options, planet_id: Any) -> Any:
         except Exception:
             return _text_color(options)
     try:
-        dign = int(chrt.dignity(planet_id))
-        return _dignity_palette(options)[dign]
+        return chart_dignity_color(chrt, options, planet_id)
     except Exception:
         return getattr(options, "clrperegrin", _text_color(options))
 
 
+@_row_memoized
 def _antiscion_planet_color_role(chrt, options, planet_id: Any) -> Optional[str]:
     try:
         planet_id = int(planet_id)
@@ -1169,10 +1326,12 @@ def _antiscion_planet_color_role(chrt, options, planet_id: Any) -> Optional[str]
         options,
         types.SimpleNamespace(id=f"planet:{planet_id}", planet_index=planet_id),
         dignity_code,
+        minor_count=minor_dignity_count(chrt, planet_id),
         resolved_color=_antiscion_planet_color(chrt, options, planet_id),
     )
 
 
+@_row_memoized
 def _aspect_color(options, aspect_id: Any) -> Any:
     try:
         aspect_id = int(aspect_id)
@@ -1186,6 +1345,7 @@ def _aspect_color(options, aspect_id: Any) -> Any:
         return _text_color(options)
 
 
+@_row_memoized
 def _aspect_color_role(options, aspect_id: Any) -> Optional[str]:
     resolved = _aspect_color(options, aspect_id)
     if aspect_id in (chart.Chart.PARALLEL, chart.Chart.CONTRAPARALLEL):
@@ -1211,6 +1371,7 @@ def _lof_color(options) -> Any:
     return getattr(options, "clrperegrin", _text_color(options))
 
 
+@_row_memoized
 def _lof_color_role(options) -> Optional[str]:
     return object_glyph_color_role(
         options,
@@ -1230,6 +1391,7 @@ def _chiron_color(options) -> Any:
     return getattr(options, "clrperegrin", _text_color(options))
 
 
+@_row_memoized
 def _chiron_color_role(options) -> Optional[str]:
     return object_glyph_color_role(
         options,
@@ -1261,6 +1423,7 @@ def _sign_color(options, sign_index: Any) -> Any:
     return getattr(options, "clrsignelementfire", getattr(options, "clrsigns", _text_color(options)))
 
 
+@_row_memoized
 def _sign_color_role(options, sign_index: Any) -> Optional[str]:
     resolved = _sign_color(options, sign_index)
     try:
@@ -1306,13 +1469,14 @@ def _aspect_glyph(aspect_id: Any) -> Optional[str]:
     return glyph or None
 
 
+@_row_memoized
 def _glyph_export_identity(glyph: Any) -> tuple[str, str]:
     """Return the localized alias and portable Unicode for a Morinus glyph."""
     value = "" if glyph is None else str(glyph)
     if not value:
         return "", ""
     candidate_ids = list(range(astrology.SE_SUN, astrology.SE_TRUE_NODE + 1))
-    candidate_ids.append(astrology.SE_CHIRON)
+    candidate_ids.extend((astrology.SE_CHIRON, *chart_bodies.APOGEE_IDS))
     body_labels = _bodies()
     for planet_id in candidate_ids:
         if value != (_planet_glyph(planet_id) or ""):
@@ -1760,6 +1924,13 @@ def _primdir_prom_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]
                     color_role=_planet_color_role(chrt, options, body_id),
                 ),
             ]
+        if getattr(pd, 'promdyn', None) == 'apogee':
+            body_id = chart_bodies.apogee_id(options)
+            return [_display_part(
+                _planet_glyph(body_id), glyph=True,
+                color=_planet_color(chrt, options, body_id),
+                color_role=_planet_color_role(chrt, options, body_id),
+            )]
         if getattr(pd, 'promdyn', None) == 'chiron':
             return [_display_part(
                 _planet_glyph(astrology.SE_CHIRON),
@@ -1914,6 +2085,13 @@ def _primdir_sig_parts(pds, pd, *, display_options=None) -> list[dict[str, Any]]
         return [_display_part(mtexts.txts['Syzygy'], color=txt, color_role=_TEXT_COLOR_ROLE)]
 
     if pd.sig == PrimDir.CUSTOMERPD:
+        if getattr(pd, 'sigdyn', None) == 'apogee':
+            body_id = chart_bodies.apogee_id(options)
+            return [_display_part(
+                _planet_glyph(body_id), glyph=True,
+                color=_planet_color(chrt, options, body_id),
+                color_role=_planet_color_role(chrt, options, body_id),
+            )]
         if getattr(pd, 'sigdyn', None) == 'chiron':
             return [_display_part(
                 _planet_glyph(astrology.SE_CHIRON),
@@ -1973,6 +2151,38 @@ def _primary_options_for_age_window(options, start_age: Optional[float], end_age
     setattr(opts, "_pd_range_bounds_override", (start, end))
     setattr(opts, "_pd_max_age_limit_override", end)
     return opts, True
+
+
+def _focus_window_jd(radix, pds_rows, focus_datetime: Optional[str], span_years: float):
+    """JD span of ``span_years`` either side of the list's focus instant.
+
+    Mirrors the panel's focus rule (``directionFocusTargetMs``): today when it
+    lies inside the list and the focus is no later than the first direction
+    (a freshly opened radix), otherwise the focus itself.
+    """
+    if radix is None or getattr(radix, "time", None) is None:
+        return None
+    radix_jd = float(radix.time.jd)
+    now_iso = datetime.datetime.now().replace(microsecond=0).isoformat()
+    today_age = _reference_age_years(radix, now_iso)
+    focus_age = _reference_age_years(radix, focus_datetime or now_iso)
+    if focus_age is None or today_age is None:
+        return None
+    focus_jd = radix_jd + focus_age * 365.2425
+    today_jd = radix_jd + today_age * 365.2425
+    if pds_rows:
+        first, last = float(pds_rows[0].time), float(pds_rows[-1].time)
+        if first <= today_jd <= last and focus_jd <= first + 1.0:
+            focus_jd = today_jd
+    span = max(0.5, float(span_years)) * 365.2425
+    return focus_jd - span, focus_jd + span
+
+
+def _rows_in_window(pds_rows, window):
+    if window is None:
+        return pds_rows
+    lo, hi = window
+    return [pd for pd in pds_rows if lo <= float(pd.time) < hi]
 
 
 def _primary_temporal_query_coverage(chrt, options, range_mode: int) -> Optional[dict[str, Any]]:
@@ -2045,28 +2255,79 @@ def _canonical_path(value: Any) -> str:
         return str(Path(raw).expanduser())
 
 
-def _same_source_path(left: Any, right: Any) -> bool:
-    return bool(_canonical_path(left)) and _canonical_path(left) == _canonical_path(right)
-
-
 def _load_radix_from_source(source: Optional[str], name: str, opts):
     source_path = _directions_source_path(source)
     radix, _ = export_chart_json.load_chart(source_path, opts, name=name)
     return radix
 
 
-def _workspace_radix_matches_request(radix, parent_session: Optional[dict], source: Optional[str], name: str) -> bool:
-    requested_source = str(source or "").strip()
-    if not requested_source:
-        return True
-    requested_name = str(name or "").strip()
-    live_name = str(getattr(radix, "name", "") or "").strip()
-    if requested_name and live_name != requested_name:
-        return False
-    live_source = ""
-    if isinstance(parent_session, dict):
-        live_source = str(parent_session.get("fpath") or "").strip()
-    return _same_source_path(live_source, requested_source)
+class RadixRetargetError(Exception):
+    """The document now hosts a different chart than the list was opened for.
+
+    Raised instead of silently serving another source; the client re-targets
+    on ``radix_identity`` (HTTP 409, ``detail.code == 'radix-retarget'``).
+    """
+
+    code = "radix-retarget"
+
+    def __init__(self, document_id: str, radix_identity: str, requested_identity: str) -> None:
+        # Machine-readable only: the client re-targets on ``code`` and the
+        # identities in ``payload()``; there is no message to display.
+        super().__init__(self.code, document_id, radix_identity, requested_identity)
+        self.document_id = document_id
+        self.radix_identity = radix_identity
+        self.requested_identity = requested_identity
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "documentId": self.document_id,
+            "radixIdentity": self.radix_identity,
+            "requestedRadixIdentity": self.requested_identity,
+        }
+
+
+def _live_direction_radix(document_id: Optional[str]):
+    """``(radix, identity, owner_id)`` from the live workspace, or ``None``
+    when no live document owns ``document_id``."""
+    if not document_id:
+        return None
+    from webapp.daemon.workspace_service import workspace_service
+
+    return workspace_service.live_direction_radix(str(document_id))
+
+
+def _source_radix_identity(source: Optional[str], name: str) -> str:
+    return "source:" + hashlib.sha256(
+        f"{_canonical_path(_directions_source_path(source))}\0{name}".encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def _resolve_direction_radix(
+    source: Optional[str],
+    name: str,
+    document_id: Optional[str],
+    opts,
+    radix_identity: Optional[str] = None,
+):
+    """``(radix, opts, effective_document_id, identity)``.
+
+    A ``document_id`` that resolves to a live document always computes from
+    the chart that document hosts now; the request's open-time name/path are
+    not consulted, so rename and Save As keep the live rows.  The saved file
+    is loaded only when no live document owns the id.  A request that names
+    the ``radix_identity`` it was opened for and finds another one gets a
+    ``RadixRetargetError`` rather than rows from a different chart.
+    """
+    live = _live_direction_radix(document_id)
+    if live is not None:
+        radix, identity, _owner_id = live
+        requested = str(radix_identity or "").strip()
+        if requested and requested != identity:
+            raise RadixRetargetError(str(document_id), identity, requested)
+        return radix, opts, document_id, identity
+    radix = _load_radix_from_source(source, name, opts)
+    return radix, opts, None, _source_radix_identity(source, name)
 
 
 def _load_direction_radix_context(
@@ -2074,24 +2335,80 @@ def _load_direction_radix_context(
     name: str,
     document_id: Optional[str],
     opts,
+    radix_identity: Optional[str] = None,
 ):
-    if document_id:
-        workspace_error = None
-        try:
-            from webapp.daemon.workspace_service import workspace_service
+    radix, opts, effective_document_id, _identity = _resolve_direction_radix(
+        source, name, document_id, opts, radix_identity,
+    )
+    return radix, opts, effective_document_id
 
-            parent_document_id = workspace_service._timed_chart_parent_document_id(document_id)
-            parent_session = workspace_service._controller.session(parent_document_id)
-            radix = workspace_service._parent_radix(parent_document_id)
-            if _workspace_radix_matches_request(radix, parent_session, source, name):
-                return radix, opts, document_id
-        except Exception as exc:
-            workspace_error = exc
-        if source:
-            return _load_radix_from_source(source, name, opts), opts, None
-        if workspace_error is not None:
-            raise workspace_error
-    return _load_radix_from_source(source, name, opts), opts, None
+
+def _float_tuple(values) -> Any:
+    try:
+        return tuple(float(v) for v in values)
+    except Exception:
+        return repr(values)
+
+
+def _scalar_attrs(obj) -> tuple:
+    try:
+        items = vars(obj).items()
+    except TypeError:
+        return ()
+    return tuple(sorted(
+        (key, value) for key, value in items
+        if isinstance(value, (bool, int, float, str, type(None)))
+    ))
+
+
+def _radix_content_fingerprint(radix) -> str:
+    """Content revision of a radix: everything its secondary rows are computed
+    from apart from the options object (keyed separately).  The name is
+    deliberately left out: a rename changes no row."""
+    t = getattr(radix, "time", None)
+    p = getattr(radix, "place", None)
+    houses_obj = getattr(radix, "houses", None)
+    planets_obj = getattr(radix, "planets", None)
+    fortune_obj = getattr(radix, "fortune", None)
+    parts_obj = getattr(radix, "parts", None)
+    planet_rows = [
+        _float_tuple(getattr(planet, "data", ()) or ())
+        for planet in (getattr(planets_obj, "planets", None) or ())
+    ]
+    part_rows = []
+    for part in (getattr(parts_obj, "parts", None) or ()):
+        try:
+            part_rows.append((
+                str(part[arabicparts.ArabicParts.NAME]),
+                float(part[arabicparts.ArabicParts.LONG]),
+            ))
+        except Exception:
+            part_rows.append(repr(part))
+    asteroid_rows = []
+    for body in (getattr(getattr(radix, "asteroids", None), "asteroids", None) or ()):
+        asteroid_rows.append((
+            getattr(body, "aId", None),
+            getattr(body, "number", None),
+            bool(getattr(body, "available", True)),
+            _float_tuple(getattr(body, "data", ()) or ()),
+        ))
+    content = (
+        # Every scalar of the birth moment and place, not only jd: rows are
+        # dated in the radix's local civil time and zone.
+        _scalar_attrs(t),
+        _scalar_attrs(p),
+        getattr(getattr(radix, "syzygy", None), "lon", None),
+        asteroid_rows,
+        getattr(radix, "htype", None),
+        getattr(radix, "male", None),
+        getattr(radix, "nolat", None),
+        planet_rows,
+        _float_tuple(getattr(houses_obj, "cusps", ()) or ()),
+        _float_tuple(getattr(houses_obj, "ascmc", ()) or ()),
+        _float_tuple(getattr(fortune_obj, "fortune", ()) or ()),
+        part_rows,
+    )
+    return hashlib.sha256(repr(content).encode("utf-8")).hexdigest()[:24]
 
 
 # Circumambulation is intentionally a separate service below: it shares the
@@ -2273,8 +2590,13 @@ class DirectionsService:
         custom_significator: Optional[dict[str, Any]] = None,
         options_preview: Optional[dict[str, Any]] = None,
         include_temporal: bool = False,
+        focus_datetime: Optional[str] = None,
+        focus_span_years: Optional[float] = None,
+        cancel: Optional[threading.Event] = None,
     ) -> dict:
-        with self._lock:
+        with cancellable_lock(self._lock, cancel), _row_memo_scope():
+            # A request abandoned while queued behind the lock does no work.
+            raise_if_cancelled(cancel)
             preview_options = self._preview_options(options_preview)
             radix, opts, effective_document_id = self._load_radix_context(
                 source,
@@ -2292,8 +2614,12 @@ class DirectionsService:
             with _temporary_radix_direction_chart(radix):
                 with _temporary_custom_significator(radix, normalized_sig):
                     while True:
-                        pds = _project(radix, pd_opts, range_mode, direction)
+                        pds = _project(radix, pd_opts, range_mode, direction, cancel)
                         display_options = effective_display_options(pds.options)
+                        focus_window = (
+                            None if windowed or not focus_span_years
+                            else _focus_window_jd(radix, pds.pds, focus_datetime, focus_span_years)
+                        )
                         rows = [
                             _row(
                                 pds,
@@ -2303,7 +2629,7 @@ class DirectionsService:
                                 display_options=display_options,
                                 include_temporal=include_temporal,
                             )
-                            for pd in pds.pds
+                            for pd in until_cancelled(_rows_in_window(pds.pds, focus_window), cancel)
                         ]
                         if rows or not windowed or normalized_seek == "exact" or searched_windows >= 40:
                             break
@@ -2331,6 +2657,16 @@ class DirectionsService:
                     meta["temporalCoverage"] = temporal_coverage
             if normalized_sig is not None:
                 meta["customSignificator"] = normalized_sig
+            if focus_window is not None:
+                # A first paint of the years around the focus; the client
+                # follows it with the complete list (rows are an exact subset).
+                meta["focusWindow"] = {
+                    "startJdUt": focus_window[0],
+                    "endJdUt": focus_window[1],
+                    "totalRows": len(pds.pds),
+                }
+                if include_temporal:
+                    meta["temporalCoverage"] = _temporal_coverage_payload(*focus_window)
             if windowed:
                 lo, hi = getattr(pd_opts, "_pd_range_bounds_override")
                 meta.update({
@@ -2411,8 +2747,11 @@ class DirectionsService:
         custom_significator: Optional[dict[str, Any]] = None,
         options_preview: Optional[dict[str, Any]] = None,
         include_temporal: bool = False,
+        cancel: Optional[threading.Event] = None,
     ) -> dict:
-        with self._lock:
+        with cancellable_lock(self._lock, cancel), _row_memo_scope():
+            # A request abandoned while queued behind the lock does no work.
+            raise_if_cancelled(cancel)
             preview_options = self._preview_options(options_preview)
             radix, opts, effective_document_id = self._load_radix_context(
                 source,
@@ -2435,10 +2774,11 @@ class DirectionsService:
             # through calcTimeRev. The retired annual-only profile is ignored.
             radix_jd = float(radix.time.jd) if getattr(radix, "time", None) is not None else None
             with _temporary_custom_significator(sr_chart, normalized_sig):
-                pds = _project(sr_chart, opts, range_mode, direction)
+                pds = _project(sr_chart, opts, range_mode, direction, cancel)
                 display_options = effective_display_options(pds.options)
                 if getattr(opts, "pdrevshownatalpromissors", False):
-                    with _temporary_natal_radix_promissors(sr_chart, radix, pds.options):
+                    # The engine directs its own copy of the return chart.
+                    with _temporary_natal_radix_promissors(pds.chart, radix, pds.options):
                         _append_natal_radix_promissor_directions(pds, radix)
                         rows = [
                             _row(
@@ -2449,7 +2789,7 @@ class DirectionsService:
                                 display_options=display_options,
                                 include_temporal=include_temporal,
                             )
-                            for pd in pds.pds
+                            for pd in until_cancelled(pds.pds, cancel)
                         ]
                 else:
                     rows = [
@@ -2461,7 +2801,7 @@ class DirectionsService:
                             display_options=display_options,
                             include_temporal=include_temporal,
                         )
-                        for pd in pds.pds
+                        for pd in until_cancelled(pds.pds, cancel)
                     ]
             title = (mtexts.txts.get("MonthlyDirections", "Monthly Directions")
                      if sr_chart.htype == chart.Chart.LUNAR
@@ -2505,11 +2845,6 @@ _SECONDARY_METHODS = {
 }
 _FULL_SECONDARY_DIRECTION_LIMIT = 1_000_000
 _SECONDARY_DIRECTION_WINDOW_YEARS = 5.0
-_SECONDARY_FOCUS_WINDOW_YEARS = {
-    posfordate.SECONDARY: 25.0,
-    posfordate.TERTIARY: 1.0,
-    posfordate.MINOR: 0.25,
-}
 
 
 def _secondary_direct_temporal_coverage(
@@ -2631,6 +2966,30 @@ def _reference_age_years(radix, value: Optional[str]) -> Optional[float]:
         return None
 
 
+def _secondary_payload_glyph_color(payload: dict, obj, source_options):
+    """The metadata glyph colour, resolved from the CURRENT options.
+
+    The engine stores ``glyph_color`` in row metadata when it builds the row;
+    rows are cached across option changes, so the colour is re-derived here
+    from the same semantic facts (sign index, dignity code, minor-dignity
+    count) by the builders' own rules (searchbackend._weather_sign_payload,
+    _glyph_color_for_dignity, and the clrtexts default of payloads with
+    neither).  Unchanged options give the stored colour exactly.
+    """
+    if source_options is None:
+        return payload.get("glyph_color")
+    if "sign_index" in payload and payload.get("sign_index") is not None:
+        return common.get_sign_color(source_options, int(payload["sign_index"]), force_element=True)
+    if "minor_dignity_count" in payload:
+        return searchbackend._glyph_color_for_dignity(
+            types.SimpleNamespace(options=source_options),
+            obj,
+            payload.get("dignity_code"),
+            payload.get("minor_dignity_count") or 0,
+        )
+    return getattr(source_options, "clrtexts", payload.get("glyph_color"))
+
+
 def _secondary_row_display_color(
     row,
     metadata_key: str,
@@ -2645,14 +3004,15 @@ def _secondary_row_display_color(
     payload = metadata.get(metadata_key)
     if not isinstance(payload, dict):
         return None
-    fallback = payload.get("glyph_color")
     obj = catalog.get(object_id) if catalog is not None else None
+    fallback = _secondary_payload_glyph_color(payload, obj, source_options)
     color = object_glyph_color(
         display_options,
         obj,
         payload.get("dignity_code"),
         fallback=fallback,
         source_options=source_options,
+                minor_count=payload.get("minor_dignity_count", 0),
     )
     return _rgb_css(color) if color is not None else None
 
@@ -2677,6 +3037,7 @@ def _secondary_row_display_color_role(
         obj,
         payload.get("dignity_code"),
         resolved_color=resolved_color,
+        minor_count=payload.get("minor_dignity_count", 0),
     )
 
 
@@ -2779,6 +3140,7 @@ def _apply_secondary_temporal_palette(serialized: list[dict[str, Any]]) -> None:
 
 
 def _focused_secondary_age_window(radix, reference_datetime: Optional[str], method: int) -> tuple[float, float, Optional[float]]:
+    reference_datetime = reference_datetime or datetime.datetime.now().isoformat()
     age = _reference_age_years(radix, reference_datetime)
     dt = _parse_reference_datetime(reference_datetime)
     if dt is None:
@@ -2793,46 +3155,120 @@ def _focused_secondary_age_window(radix, reference_datetime: Optional[str], meth
         except Exception:
             start_age, end_age = _secdir.SECONDARY_DIRECTION_RANGES[0]
         return float(start_age), float(end_age), age
-    window_years = float(
-        _SECONDARY_FOCUS_WINDOW_YEARS.get(
-            posfordate.progression_method(method),
-            _SECONDARY_DIRECTION_WINDOW_YEARS,
-        )
-    )
-    start_age = max(0.0, math.floor(float(age) / window_years) * window_years)
+    # Centred on the focus so the first paint fills the viewport around it;
+    # the client then grows coverage outward from here.
+    window_years = _secdir.secondary_first_window_years(radix, method)
+    start_age = max(0.0, float(age) - window_years / 2.0)
     end_age = start_age + window_years
     return float(start_age), float(end_age), age
 
 
+# Built secondary rows per (dataKey, method, direction, temporal flag, age
+# window).  Entries hold the engine rows, their catalog and the serialized
+# rows BEFORE the display palette, date text and session labels, which are
+# applied to a per-response copy: colours and date formats refresh on
+# display-only option events that never change dataKey.
+_SECONDARY_ROW_CACHE_ENTRIES = 8
+
+
+class _SecondaryRowBuild:
+    __slots__ = ("rows", "truncated", "catalog", "serialized")
+
+    def __init__(self, rows, truncated, catalog, serialized) -> None:
+        self.rows = rows
+        self.truncated = truncated
+        self.catalog = catalog
+        self.serialized = serialized
+
+
+def _copy_secondary_payload_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Per-response copy of every part the response pass writes into."""
+    out = dict(row)
+    fields = row.get("fields")
+    if isinstance(fields, dict):
+        out["fields"] = dict(fields)
+    temporal = row.get("temporal")
+    if isinstance(temporal, dict):
+        temporal_copy = dict(temporal)
+        activations = temporal.get("activations")
+        if isinstance(activations, list):
+            temporal_copy["activations"] = [
+                dict(item) if isinstance(item, dict) else item for item in activations
+            ]
+        out["temporal"] = temporal_copy
+    return out
+
+
 class SecondaryDirectionsService:
     def __init__(self) -> None:
+        # Serializes engine builds only; cache hits and the per-response
+        # palette pass never take it.
         self._lock = threading.RLock()
+        self._cache_lock = threading.Lock()
+        self._row_cache: "OrderedDict[tuple, _SecondaryRowBuild]" = OrderedDict()
+        self.cache_hits = 0
+        self.cache_misses = 0
 
-    def _load_radix(self, source: Optional[str], name: str, document_id: Optional[str] = None):
+    def _resolve_radix(
+        self,
+        source: Optional[str],
+        name: str,
+        document_id: Optional[str] = None,
+        radix_identity: Optional[str] = None,
+    ):
         opts = chart_snapshot_service.options
-        radix, opts, _effective_document_id = _load_direction_radix_context(
+        radix, opts, _effective_document_id, identity = _resolve_direction_radix(
             source,
             name,
             document_id,
             opts,
+            radix_identity,
         )
+        return radix, opts, identity
+
+    def _load_radix(self, source: Optional[str], name: str, document_id: Optional[str] = None):
+        radix, opts, _identity = self._resolve_radix(source, name, document_id)
         return radix, opts
 
-    def _build_secondary_rows(
+    @staticmethod
+    def _data_key_parts(radix, identity: str) -> tuple[str, str, str]:
+        """``(dataKey, optionsDataKey, radixRevision)`` for one radix."""
+        from webapp.daemon.options_service import options_service
+
+        radix_options = getattr(radix, "options", None) or chart_snapshot_service.options
+        options_key = options_service.secondary_progressions_data_key(radix_options)
+        revision = _radix_content_fingerprint(radix)
+        digest = hashlib.sha256(
+            f"{identity}\0{revision}\0{options_key}".encode("utf-8")
+        ).hexdigest()[:24]
+        return f"secondary-v1:{digest}", options_key, revision
+
+    def secondary_data_key(
         self,
         *,
-        source: Optional[str],
-        name: str,
-        document_id: Optional[str],
+        source: Optional[str] = None,
+        name: str = "Morinus",
+        document_id: Optional[str] = None,
+        radix_identity: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """The list's current ``dataKey`` without building rows."""
+        radix, _opts, identity = self._resolve_radix(source, name, document_id, radix_identity)
+        data_key, options_key, _revision = self._data_key_parts(radix, identity)
+        return {
+            "dataKey": data_key,
+            "optionsDataKey": options_key,
+            "radixIdentity": identity,
+        }
+
+    @staticmethod
+    def _request_window(
+        radix,
         start_age: Optional[float],
         end_age: Optional[float],
         method: str,
         direction: str,
         reference_datetime: Optional[str],
     ):
-        """Shared row build for the list payload and the Save-As-Text export so
-        both serve the exact same window of rows."""
-        radix, _opts = self._load_radix(source, name, document_id=document_id)
         engine_method = _SECONDARY_METHODS.get(method, posfordate.SECONDARY)
         direction_mode = _secdir.normalize_secondary_direction(direction)
         reference_age = _reference_age_years(radix, reference_datetime)
@@ -2845,6 +3281,37 @@ class SecondaryDirectionsService:
         end_age = float(end_age)
         if end_age <= start_age:
             end_age = start_age + _SECONDARY_DIRECTION_WINDOW_YEARS
+        return engine_method, direction_mode, start_age, end_age, reference_age
+
+    def _cache_get(self, key: tuple) -> Optional[_SecondaryRowBuild]:
+        with self._cache_lock:
+            entry = self._row_cache.get(key)
+            if entry is not None:
+                self._row_cache.move_to_end(key)
+            return entry
+
+    def _cache_put(self, key: tuple, entry: _SecondaryRowBuild) -> None:
+        with self._cache_lock:
+            self._row_cache[key] = entry
+            self._row_cache.move_to_end(key)
+            while len(self._row_cache) > _SECONDARY_ROW_CACHE_ENTRIES:
+                self._row_cache.popitem(last=False)
+
+    def clear_row_cache(self) -> None:
+        with self._cache_lock:
+            self._row_cache.clear()
+
+    @staticmethod
+    def _build_entry(
+        radix,
+        *,
+        start_age: float,
+        end_age: float,
+        engine_method: int,
+        direction_mode: str,
+        method: str,
+        include_temporal: bool,
+    ) -> _SecondaryRowBuild:
         full_range = False
         rows, truncated, catalog = _secdir.build_secondary_direction_rows(
             radix,
@@ -2854,17 +3321,14 @@ class SecondaryDirectionsService:
             method=engine_method,
             direction=direction_mode,
         )
-        return (
+        serialized = _secdir.serialize_secondary_rows(
             radix,
-            _opts,
             rows,
-            truncated,
             catalog,
-            start_age,
-            end_age,
-            reference_age,
-            direction_mode,
+            method=method,
+            include_temporal=include_temporal,
         )
+        return _SecondaryRowBuild(rows, truncated, catalog, serialized)
 
     def secondary_directions(
         self,
@@ -2878,121 +3342,206 @@ class SecondaryDirectionsService:
         direction: str = _secdir.SECONDARY_DIRECTION_DIRECT,
         reference_datetime: Optional[str] = None,
         include_temporal: bool = False,
+        radix_identity: Optional[str] = None,
+        cancel: Optional[threading.Event] = None,
     ) -> dict:
-        with self._lock:
-            radix, _opts, rows, truncated, catalog, start_age, end_age, reference_age, direction_mode = self._build_secondary_rows(
-                source=source,
-                name=name,
-                document_id=document_id,
+        raise_if_cancelled(cancel)
+        radix, _opts, identity = self._resolve_radix(source, name, document_id, radix_identity)
+        data_key, _options_key, revision = self._data_key_parts(radix, identity)
+        engine_method, direction_mode, start_age, end_age, reference_age = self._request_window(
+            radix, start_age, end_age, method, direction, reference_datetime,
+        )
+        # Everything that changes row content: the data world (radix identity,
+        # radix content, every option the rows read), the method/direction,
+        # whether temporal payloads are serialized, and the resolved window.
+        cache_key = (
+            data_key,
+            str(method),
+            direction_mode,
+            bool(include_temporal),
+            float(start_age),
+            float(end_age),
+        )
+        entry = self._cache_get(cache_key)
+        if entry is not None:
+            self.cache_hits += 1
+        else:
+            with cancellable_lock(self._lock, cancel), _row_memo_scope():
+                # A duplicate request queued behind this build reuses it.
+                entry = self._cache_get(cache_key)
+                if entry is not None:
+                    self.cache_hits += 1
+                else:
+                    self.cache_misses += 1
+                    entry = self._build_entry(
+                        radix,
+                        start_age=start_age,
+                        end_age=end_age,
+                        engine_method=engine_method,
+                        direction_mode=direction_mode,
+                        method=method,
+                        include_temporal=include_temporal,
+                    )
+                    # A recalculation that mutated the radix in place during the
+                    # build leaves rows of no single revision: serve, never cache.
+                    if _radix_content_fingerprint(radix) == revision:
+                        self._cache_put(cache_key, entry)
+        with _row_memo_scope():
+            payload = self._response_payload(
+                radix,
+                _opts,
+                name,
+                entry,
+                method=method,
+                direction_mode=direction_mode,
                 start_age=start_age,
                 end_age=end_age,
-                method=method,
-                direction=direction,
-                reference_datetime=reference_datetime,
-            )
-            source_display_options = (
-                getattr(radix, "options", None) or chart_snapshot_service.options
-            )
-            display_options = effective_display_options(source_display_options)
-            serialized = _secdir.serialize_secondary_rows(
-                radix,
-                rows,
-                catalog,
-                method=method,
+                reference_age=reference_age,
                 include_temporal=include_temporal,
+                cancel=cancel,
             )
-            _apply_secondary_display_palette(
-                serialized,
-                rows,
-                catalog,
-                display_options,
-                source_display_options,
+        payload["dataKey"] = data_key
+        payload["radixIdentity"] = identity
+        return payload
+
+    @staticmethod
+    def _response_payload(
+        radix,
+        _opts,
+        name: str,
+        entry: _SecondaryRowBuild,
+        *,
+        method: str,
+        direction_mode: str,
+        start_age: float,
+        end_age: float,
+        reference_age: Optional[float],
+        include_temporal: bool,
+        cancel: Optional[threading.Event],
+    ) -> dict:
+        rows = entry.rows
+        truncated = entry.truncated
+        catalog = entry.catalog
+        source_display_options = (
+            getattr(radix, "options", None) or chart_snapshot_service.options
+        )
+        display_options = effective_display_options(source_display_options)
+        serialized = [_copy_secondary_payload_row(row) for row in entry.serialized]
+        _apply_secondary_display_palette(
+            serialized,
+            rows,
+            catalog,
+            display_options,
+            source_display_options,
+        )
+        if include_temporal:
+            _apply_secondary_temporal_palette(serialized)
+        for row in until_cancelled(serialized, cancel):
+            row["displayDate"] = _display_date_from_iso(row.get("date"), display_options)
+            row["sessionLabel"] = _direction_event_session_label(
+                row.get("prom"), row.get("aspect"), row.get("sig"),
             )
-            if include_temporal:
-                _apply_secondary_temporal_palette(serialized)
-            for row in serialized:
-                row["displayDate"] = _display_date_from_iso(row.get("date"), display_options)
-                row["sessionLabel"] = _direction_event_session_label(
-                    row.get("prom"), row.get("aspect"), row.get("sig"),
-                )
-            title = {
-                "minor": mtexts.txts.get("MinorProgression", "Minor Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
-                "tertiary": mtexts.txts.get("TertiaryProgression", "Tertiary Progressions") + mtexts.txts.get("ToRadixSuffix", " to Radix"),
-            }.get(method, "Secondary Progressions to Radix")
-            from_ids = set(_secdir._secondary_progressed_promittor_ids(catalog) + _secdir.secondary_acting_angle_ids(catalog))
-            to_ids = set(_secdir._secondary_radix_target_ids(catalog))
-            filter_points = [
-                {
-                    "id": obj.id, "label": str(obj.label),
-                    "glyph": _secdir._object_glyph(catalog, obj.id),
-                    "groupId": "asteroid" if obj.id.startswith("asteroid:") else obj.family,
-                    "from": obj.id in from_ids, "to": obj.id in to_ids,
-                    "planetId": obj.planet_index,
-                }
-                for obj in catalog.objects if obj.id in from_ids or obj.id in to_ids
-            ]
-            filter_planets_by_id = {}
-            for object_id in catalog.promittor_ids:
-                obj = catalog.get(object_id)
-                if obj is None or obj.family != 'planet' or obj.planet_index is None:
-                    continue
-                filter_planets_by_id.setdefault(int(obj.planet_index), {
-                    "id": int(obj.planet_index),
-                    "label": str(obj.label),
-                    "glyph": _planet_glyph(obj.planet_index),
-                })
-            meta = {
-                "title": title,
-                "method": method,
-                "direction": direction_mode,
-                "directionModes": [
-                    _secdir.SECONDARY_DIRECTION_DIRECT,
-                    _secdir.SECONDARY_DIRECTION_CONVERSE,
-                    _secdir.SECONDARY_DIRECTION_BOTH,
-                ],
-                "conversionKey": _secondary_conversion_key_label(method),
-                "startAge": round(float(start_age), 4),
-                "endAge": round(float(end_age), 4),
-                "totalStartAge": 0,
-                "totalEndAge": None,
-                "referenceAge": round(reference_age, 4) if reference_age is not None else None,
-                "windowed": True,
-                "windowYears": round(float(end_age) - float(start_age), 4),
-                "hasPrevious": start_age > 0,
-                "hasNext": True,
-                "ranges": [list(r) for r in _secdir.SECONDARY_DIRECTION_RANGES],
-                "truncated": bool(truncated),
-                "columns": (
-                    [mtexts.txts.get("Age", "Age"), mtexts.txts.get("DirColumn", "Dir"),
-                     mtexts.txts.get("Prom", "Prom."), mtexts.txts.get("AspColumn", "Asp."),
-                     mtexts.txts.get("Sig", "Sig."), mtexts.txts.get("Date", "Date")]
-                    if direction_mode != _secdir.SECONDARY_DIRECTION_DIRECT
-                    else [mtexts.txts.get("Age", "Age"), mtexts.txts.get("Prom", "Prom."),
-                          mtexts.txts.get("AspColumn", "Asp."), mtexts.txts.get("Sig", "Sig."),
-                          mtexts.txts.get("Date", "Date")]
+        title = {
+            "minor": mtexts.txts.get("MinorProgressionToRadix", "Minor Progressions to Radix"),
+            "tertiary": mtexts.txts.get("TertiaryProgressionToRadix", "Tertiary Progressions to Radix"),
+        }.get(method) or mtexts.txts.get("SecondaryProgressionToRadix", "Secondary Progressions to Radix")
+        from_ids = set(_secdir._secondary_progressed_promittor_ids(catalog, available_only=False) + _secdir.secondary_acting_point_ids(catalog, radix))
+        to_ids = set(_secdir._secondary_radix_target_ids(catalog, available_only=False))
+        filter_points = []
+        for obj in catalog.objects:
+            if obj.id not in from_ids and obj.id not in to_ids:
+                continue
+            group_id = "asteroid" if obj.id.startswith("asteroid:") else obj.family
+            default_from, default_to = _secdir.secondary_point_role_defaults(
+                obj.id, obj.id in from_ids, obj.id in to_ids,
+            )
+            filter_points.append({
+                "id": obj.id, "label": str(obj.label),
+                "glyph": _secdir._object_glyph(catalog, obj.id),
+                "groupId": group_id,
+                "from": obj.id in from_ids, "to": obj.id in to_ids,
+                "defaultFrom": default_from, "defaultTo": default_to,
+                "planetId": obj.planet_index,
+            })
+        filter_planets_by_id = {}
+        for object_id in catalog.promittor_ids:
+            obj = catalog.get(object_id)
+            if obj is None or obj.family != 'planet' or obj.planet_index is None:
+                continue
+            filter_planets_by_id.setdefault(int(obj.planet_index), {
+                "id": int(obj.planet_index),
+                "label": str(obj.label),
+                "glyph": _planet_glyph(obj.planet_index),
+            })
+        meta = {
+            "title": title,
+            "method": method,
+            "direction": direction_mode,
+            "directionModes": [
+                _secdir.SECONDARY_DIRECTION_DIRECT,
+                _secdir.SECONDARY_DIRECTION_CONVERSE,
+                _secdir.SECONDARY_DIRECTION_BOTH,
+            ],
+            "conversionKey": _secondary_conversion_key_label(method),
+            "exportParameters": " · ".join((
+                _secondary_conversion_key_label(method),
+                _direction_mode_label(
+                    direction_mode != _secdir.SECONDARY_DIRECTION_CONVERSE,
+                    direction_mode != _secdir.SECONDARY_DIRECTION_DIRECT,
                 ),
-                "filterPoints": filter_points,
-                "filterPlanets": list(filter_planets_by_id.values()),
-                "filterAngles": [
-                    {"id": object_id, "label": catalog.get(object_id).label}
-                    for object_id in _secdir.secondary_acting_angle_ids(catalog)
-                ],
-            }
-            if include_temporal:
-                temporal_coverage = _secondary_temporal_query_coverage(
-                    radix,
-                    start_age,
-                    end_age,
-                    direction_mode,
-                    authoritative=not truncated,
-                )
-                if temporal_coverage is not None:
-                    meta["temporalCoverage"] = temporal_coverage
-            return {
-                "name": getattr(radix, "name", name),
-                "meta": meta,
-                "directions": serialized,
-            }
+                _zodiac_label(radix, _opts),
+            )),
+            "startAge": round(float(start_age), 4),
+            "endAge": round(float(end_age), 4),
+            "totalStartAge": 0,
+            "totalEndAge": None,
+            "referenceAge": round(reference_age, 4) if reference_age is not None else None,
+            "windowed": True,
+            "windowYears": round(float(end_age) - float(start_age), 4),
+            # Daemon-owned fetch chunk for adjacent windows (shrinks for dense angle methods).
+            "chunkYears": _secdir.secondary_chunk_years(
+                radix, _SECONDARY_METHODS.get(method, posfordate.SECONDARY),
+            ),
+            "hasPrevious": start_age > 0,
+            "hasNext": True,
+            "ranges": [list(r) for r in _secdir.SECONDARY_DIRECTION_RANGES],
+            "truncated": bool(truncated),
+            "columns": (
+                [mtexts.txts.get("Age", "Age"), mtexts.txts.get("DirColumn", "Dir"),
+                 mtexts.txts.get("Prom", "Prom."), mtexts.txts.get("AspColumn", "Asp."),
+                 mtexts.txts.get("Sig", "Sig."), mtexts.txts.get("Date", "Date")]
+                if direction_mode != _secdir.SECONDARY_DIRECTION_DIRECT
+                else [mtexts.txts.get("Age", "Age"), mtexts.txts.get("Prom", "Prom."),
+                      mtexts.txts.get("AspColumn", "Asp."), mtexts.txts.get("Sig", "Sig."),
+                      mtexts.txts.get("Date", "Date")]
+            ),
+            "filterPoints": filter_points,
+            "defaultAspectIds": list(options.SECONDARY_PROGRESSION_DEFAULT_ASPECT_IDS),
+            "unavailableEphemeris": [
+                {"id": object_id, "label": str(label)}
+                for object_id, label in _secdir.unavailable_secondary_ephemeris(catalog).items()
+            ],
+            "filterPlanets": list(filter_planets_by_id.values()),
+            "filterAngles": [
+                {"id": object_id, "label": catalog.get(object_id).label}
+                for object_id in _secdir.secondary_acting_angle_ids(catalog)
+            ],
+        }
+        if include_temporal:
+            temporal_coverage = _secondary_temporal_query_coverage(
+                radix,
+                start_age,
+                end_age,
+                direction_mode,
+                authoritative=not truncated and not _secdir.unavailable_secondary_ephemeris(catalog),
+            )
+            if temporal_coverage is not None:
+                meta["temporalCoverage"] = temporal_coverage
+        return {
+            "name": getattr(radix, "name", name),
+            "meta": meta,
+            "directions": serialized,
+        }
 
 
 secondary_directions_service = SecondaryDirectionsService()
@@ -3099,8 +3648,7 @@ class CircumambulationService:
             items.append(self._significator_item(group=group, label=label, custom_significator=spec))
 
         planet_ids = list(range(0, 12))
-        if hasattr(chrt, "get_planet_body"):
-            planet_ids.append(astrology.SE_CHIRON)
+        planet_ids.extend(pid for pid, _body in chart_bodies.iter_dynamic_bodies(chrt))
         for pid in planet_ids:
             try:
                 body = common.common.get_chart_planet(chrt, pid)
@@ -3290,6 +3838,10 @@ class CircumambulationService:
             meta = {
                 "title": title,
                 "useExactOa": bool(use_exact_oa),
+                # The PD system and key the "PD key" method directs by
+                # (header metadata, shared with the PD list header).
+                "system": _system_label(opts),
+                "key": _key_label(opts),
                 "maxAge": int(max_age),
                 "mode": normalized_mode,
                 "returnKind": return_kind,
@@ -3307,7 +3859,9 @@ class CircumambulationService:
                 ),
                 "promissorCapabilities": dict(circumambulation.CIRCUMAMBULATION_PROMISSOR_CAPABILITIES),
                 "customSignificator": normalized_sig,
-                "significators": self._circumambulation_significator_items(source_chart),
+                "significators": self._circumambulation_significator_items(
+                    pd_in_chart.radix_in_pd_houses(source_chart, opts)
+                ),
                 "columns": [mtexts.txts.get("Degree", "Degree"), mtexts.txts.get("TermLord", "Term Lord"),
                             mtexts.txts.get("Participator", "Participator"), mtexts.txts.get("Age", "Age"),
                             mtexts.txts.get("Date", "Date")],

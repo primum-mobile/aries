@@ -125,13 +125,36 @@
   },
   "authoringProperties": [
     "radius",
+    "recipeRadius",
+    "radiusAuthored",
+    "recipeVersion",
+    "radiusPriority",
+    "outerDegreeBinding",
     "bandWidth",
     "spanInner",
     "spanScale",
     "rulerDepth",
     "tickLength"
   ],
+  "radiusPriorityRoles": [
+    "outerMaximumRing",
+    "outerHouseRing",
+    "outerDegreeRing",
+    "zodiacOuterRing",
+    "innerDegreeRing",
+    "zodiacInnerRing",
+    "termRing",
+    "cuspOuterRing",
+    "innerBoundaryRing",
+    "aspectBoundaryRing",
+    "houseBoundaryRing",
+    "baseRing"
+  ],
+  "outerDegreeBindings": ["degree", "cuspLabels"],
   "scaleClasses": [
     "canvas.chart"
+  ],
+  "presentationKeys": [
+    "wheel.presentation"
   ]
 }

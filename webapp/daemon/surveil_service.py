@@ -20,7 +20,7 @@ It holds NO wx and NO chart-render state. The desktop ``drawSurveilMarks``
 fan-out / render-cache invalidation (morin.py:1619-1641) is superseded: the
 React context-menu + studies dialog re-fetch the chart snapshot after every
 mutation, and the active study's marks are re-injected on every snapshot build,
-so a fresh GET always reflects the store (see ``doc/migration/wiring/surveil.md``).
+so a fresh GET always reflects the store.
 
 Persistence note: the desktop pickles the store; this daemon writes JSON. The
 schema is plain dict/list/str/float/bool (lossless to JSON), and the daemon must
