@@ -103,6 +103,17 @@ No developer or customer charts are bundled.
 - Current stable Rust toolchain with Cargo.
 - Platform prerequisites required by Tauri.
 - On macOS, Xcode Command Line Tools.
+- On Linux, a C compiler, the Python headers and venv module, and the WebKitGTK
+  libraries Tauri needs. On Debian or Ubuntu:
+
+  ```bash
+  sudo apt install build-essential pkg-config python3-dev python3-venv \
+    libwebkit2gtk-4.1-dev libssl-dev libxdo-dev librsvg2-dev \
+    libayatana-appindicator3-dev file
+  ```
+
+  If the AppImage step cannot run `linuxdeploy` because FUSE is missing, run
+  `APPIMAGE_EXTRACT_AND_RUN=1 make package` or install `libfuse2t64`.
 
 From the repository root, install the JavaScript dependencies:
 
@@ -129,6 +140,9 @@ make run      # start the native development app
 make check    # run public static and backend checks
 make package  # create an unlocked, unsigned local package
 ```
+
+On Linux, `make package` produces a `.deb` package and an AppImage under
+`webapp/frontend/src-tauri/target/release/bundle/`.
 
 On Windows, use the equivalent PowerShell or direct Python/npm/Cargo commands
 where GNU Make is unavailable.

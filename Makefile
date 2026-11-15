@@ -39,6 +39,12 @@ DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/dignity-display-policy.json
 DAEMON_BUILD_INPUTS += $(wildcard webapp/frontend/src/lib/chart/wheel-factory-*.json)
 DAEMON_BUILD_INPUTS += webapp/frontend/src/lib/chart/wheel-geometry-ownership.json
 DAEMON_BUILD_INPUTS += webapp/daemon/shipping-style-profiles.json
+DAEMON_BUILD_INPUTS += scripts/binary_archs.py
+
+# Portable stand-in for `lipo -archs` (Mach-O, ELF and PE), and the daemon
+# interpreter's architecture normalized to the same names (arm64, x86_64).
+BINARY_ARCHS = $(PYTHON) scripts/binary_archs.py
+DAEMON_ARCH = $(BINARY_ARCHS) --normalize "$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())')"
 DAEMON_BUILD_INPUTS += $(wildcard *.py)
 DAEMON_BUILD_INPUTS += $(shell find aries engine forecasting parsers rectification SWEP/src webapp/daemon webapp/frontend/scripts webapp/interface \
 	-type f \( -name '*.py' -o -name '*.pyx' -o -name '*.pxd' -o -name '*.c' -o -name '*.h' -o -name '*.spec' \) \
@@ -72,7 +78,8 @@ check: build-ext web-corpus web-runtime-resources web-legal web-check-deps web-t
 	cd webapp/frontend/src-tauri && cargo test
 	@if find tests aries -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then \
 		PYTHONPATH=$(SWEP_SRC) $(WEB_PYTHON) -m pytest -q \
-			aries/astrology/transit_fast/tests tests/test_public_readme_shortcuts.py; \
+			aries/astrology/transit_fast/tests tests/test_public_readme_shortcuts.py \
+			tests/test_binary_archs.py; \
 	else \
 		printf '%s\n' 'No Python tests in this source export; running static checks only.'; \
 	fi
@@ -249,30 +256,31 @@ $(DAEMON_BUILD_STAMP): $(DAEMON_BUILD_INPUTS)
 web-daemon-current: $(DAEMON_BUILD_STAMP)
 
 web-daemon-binary: web-build-deps
-	@ARCH=$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())'); \
+	@ARCH=$$($(DAEMON_ARCH)); \
 	case "$$ARCH" in arm64|x86_64) ;; *) echo "Unsupported daemon Python arch: $$ARCH" >&2; exit 1 ;; esac; \
 	PYTHON_BIN="$(WEB_PYTHON)" ./scripts/build_sweastrology.sh "$$ARCH"; \
 	SWE_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("sweastrology" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
-	SWE_ARCHS=$$(lipo -archs "$$SWE_SO" 2>/dev/null || true); \
+	SWE_ARCHS=$$($(BINARY_ARCHS) "$$SWE_SO" 2>/dev/null || true); \
 	case " $$SWE_ARCHS " in *" $$ARCH "*) ;; *) echo "$$SWE_SO has architecture(s) '$$SWE_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
 	KERNEL_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("aries/astrology/transit_fast/_transit_kernel" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
-	KERNEL_ARCHS=$$(lipo -archs "$$KERNEL_SO" 2>/dev/null || true); \
+	KERNEL_ARCHS=$$($(BINARY_ARCHS) "$$KERNEL_SO" 2>/dev/null || true); \
 	case " $$KERNEL_ARCHS " in *" $$ARCH "*) ;; *) echo "$$KERNEL_SO has architecture(s) '$$KERNEL_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
 	$(WEB_PYTHON) -c 'from aries.astrology.transit_fast import api; assert api.native_backend_available(), "native transit kernel import failed"'
 	$(WEB_PYTHON) -m PyInstaller webapp/daemon/aries-daemon.spec --clean --noconfirm --workpath webapp/.pyinstaller-build --distpath webapp/.pyinstaller-dist
-	@ARCH=$$($(WEB_PYTHON) -c 'import platform; print(platform.machine())'); \
-	if [ "$$ARCH" = "arm64" ]; then TRIPLE=aarch64-apple-darwin; else TRIPLE=x86_64-apple-darwin; fi; \
+	@ARCH=$$($(DAEMON_ARCH)); \
+	if [ "$$ARCH" = "arm64" ]; then CPU=aarch64; else CPU=x86_64; fi; \
+	case "$$(uname -s)" in Darwin) TRIPLE=$$CPU-apple-darwin ;; Linux) TRIPLE=$$CPU-unknown-linux-gnu ;; *) TRIPLE=$$CPU-unknown ;; esac; \
 	mkdir -p webapp/frontend/src-tauri/binaries; \
 	mkdir -p webapp/frontend/src-tauri/binaries/aries-daemon; \
 	find webapp/frontend/src-tauri/binaries/aries-daemon -mindepth 1 ! -name .gitkeep -exec rm -rf {} +; \
 	rm -f webapp/frontend/src-tauri/binaries/aries-daemon-aarch64-apple-darwin webapp/frontend/src-tauri/binaries/aries-daemon-x86_64-apple-darwin; \
 	cp -R webapp/.pyinstaller-dist/aries-daemon/. webapp/frontend/src-tauri/binaries/aries-daemon/; \
 	SWE_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("sweastrology" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
-	DAEMON_ARCHS=$$(lipo -archs webapp/frontend/src-tauri/binaries/aries-daemon/_internal/$$SWE_SO 2>/dev/null || true); \
+	DAEMON_ARCHS=$$($(BINARY_ARCHS) webapp/frontend/src-tauri/binaries/aries-daemon/_internal/$$SWE_SO 2>/dev/null || true); \
 	case " $$DAEMON_ARCHS " in *" $$ARCH "*) ;; *) echo "Bundled $$SWE_SO has architecture(s) '$$DAEMON_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
 	KERNEL_SO=$$($(WEB_PYTHON) -c 'import sysconfig; print("_transit_kernel" + sysconfig.get_config_var("EXT_SUFFIX"))'); \
 	KERNEL_PATH=webapp/frontend/src-tauri/binaries/aries-daemon/_internal/aries/astrology/transit_fast/$$KERNEL_SO; \
-	KERNEL_ARCHS=$$(lipo -archs "$$KERNEL_PATH" 2>/dev/null || true); \
+	KERNEL_ARCHS=$$($(BINARY_ARCHS) "$$KERNEL_PATH" 2>/dev/null || true); \
 	case " $$KERNEL_ARCHS " in *" $$ARCH "*) ;; *) echo "Bundled $$KERNEL_SO has architecture(s) '$$KERNEL_ARCHS', expected $$ARCH" >&2; exit 1 ;; esac; \
 	webapp/frontend/src-tauri/binaries/aries-daemon/aries-daemon --verify-native-transit-kernel; \
 	echo "Daemon bundle at webapp/frontend/src-tauri/binaries/aries-daemon ($$TRIPLE)"
