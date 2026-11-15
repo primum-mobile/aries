@@ -40,10 +40,9 @@ def native_compile_args() -> list[str]:
 
 def native_define_macros() -> list[tuple[str, str | None]]:
 	# Same process-wide Swiss Ephemeris state as sweastrology (SWEP/src/setup.py):
-	# macOS has no TLS in sweodef.h; MSVC would otherwise make it per-thread.
-	if sys.platform == "win32":
-		return [("TLSOFF", None)]
-	return []
+	# macOS has no TLS in sweodef.h; GCC on Linux and MSVC would otherwise make
+	# it per-thread.
+	return [("TLSOFF", None)]
 
 
 setup(
