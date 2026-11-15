@@ -31,21 +31,37 @@ print(sysconfig.get_config_var("EXT_SUFFIX") or ".so")
 PY
 )"
 
-case "${arch}" in
-    x86_64|arm64)
-        export ARCHFLAGS="-arch ${arch}"
-        ;;
-    universal)
-        export ARCHFLAGS="-arch x86_64 -arch arm64"
-        deployment_target="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
-        ;;
-    *)
-        echo "Usage: $0 [x86_64|arm64|universal]" >&2
-        exit 2
-        ;;
-esac
-
-export MACOSX_DEPLOYMENT_TARGET="${deployment_target}"
+if [ "$(uname -s)" = "Darwin" ]; then
+    case "${arch}" in
+        x86_64|arm64)
+            export ARCHFLAGS="-arch ${arch}"
+            ;;
+        universal)
+            export ARCHFLAGS="-arch x86_64 -arch arm64"
+            deployment_target="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
+            ;;
+        *)
+            echo "Usage: $0 [x86_64|arm64|universal]" >&2
+            exit 2
+            ;;
+    esac
+    export MACOSX_DEPLOYMENT_TARGET="${deployment_target}"
+else
+    # Other platforms build natively for the interpreter's own architecture;
+    # ARCHFLAGS and the macOS deployment target do not apply.
+    case "${arch}" in
+        x86_64|arm64)
+            ;;
+        universal)
+            echo "Universal builds are macOS only." >&2
+            exit 2
+            ;;
+        *)
+            echo "Usage: $0 [x86_64|arm64]" >&2
+            exit 2
+            ;;
+    esac
+fi
 
 # Remove the previously-built .so for this interpreter so a different-arch
 # build doesn't leave a stale binary in place (setuptools skips recompile when
